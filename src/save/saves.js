@@ -147,6 +147,15 @@ export function readJSONFile(file) {
 }
 
 export function saveFileName(world) {
-  const slug = world.townName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'town';
-  return `${slug}-day${world.day}.hearthvale.json`;
+  return fileNameOf(world.townName, world.day);
+}
+
+// File name for an already-serialized save (e.g. a browser slot or a Drive file).
+export function saveFileNameFor(data) {
+  return fileNameOf(data.name || 'town', data.meta?.day ?? data.state?.day ?? 1);
+}
+
+function fileNameOf(name, day) {
+  const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'town';
+  return `${slug}-day${day}.hearthvale.json`;
 }

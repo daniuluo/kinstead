@@ -37,7 +37,9 @@ export const BUILDINGS = {
     levels: [
       { name: 'Cottage', cost: 100, housing: 3 },
       { name: 'Family House', cost: 260, housing: 6, unlock: 25, req: { happiness: 50, water: true } },
-      { name: 'Townhouse', cost: 650, housing: 10, unlock: 120, req: { happiness: 62, water: true, health: true, education: true } },
+      { name: 'Townhouse', cost: 650, housing: 10, unlock: 60, req: { happiness: 58, water: true, health: true } },
+      { name: 'Manor House', cost: 1400, housing: 15, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Grand Manor', cost: 2800, housing: 22, unlock: 200, req: { happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
     ],
   },
 
@@ -49,6 +51,7 @@ export const BUILDINGS = {
       { name: 'Market Stall', cost: 150, jobs: 2, income: 4, visit: 3 },
       { name: 'Shop', cost: 380, jobs: 4, income: 5, visit: 5, unlock: 25 },
       { name: 'Emporium', cost: 900, jobs: 8, income: 6, visit: 8, unlock: 120 },
+      { name: 'Market Hall', cost: 1800, jobs: 12, income: 7, visit: 11, unlock: 200 },
     ],
   },
   bakery: {
@@ -57,6 +60,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Bakery', cost: 260, jobs: 3, income: 5, visit: 4 },
       { name: 'Patisserie', cost: 520, jobs: 5, income: 6, visit: 6, unlock: 60 },
+      { name: 'Grand Bakery', cost: 1100, jobs: 8, income: 7, visit: 8, unlock: 120 },
     ],
   },
   tavern: {
@@ -64,7 +68,8 @@ export const BUILDINGS = {
     desc: 'Where villagers gather in the evening.',
     levels: [
       { name: 'Tavern', cost: 320, jobs: 3, income: 4, visit: 5 },
-      { name: 'Inn', cost: 760, jobs: 6, income: 5, visit: 8, unlock: 120 },
+      { name: 'Inn', cost: 760, jobs: 6, income: 5, visit: 8, unlock: 60 },
+      { name: 'Coaching Inn', cost: 1500, jobs: 9, income: 6, visit: 11, unlock: 120 },
     ],
   },
 
@@ -76,6 +81,7 @@ export const BUILDINGS = {
       { name: 'Farmstead', cost: 260, jobs: 4, income: 10 },
       { name: 'Farm', cost: 520, jobs: 8, income: 11, unlock: 25 },
       { name: 'Estate', cost: 1100, jobs: 12, income: 12, unlock: 60 },
+      { name: 'Manor Farm', cost: 2000, jobs: 16, income: 13, unlock: 120 },
     ],
   },
   lumber: {
@@ -84,6 +90,7 @@ export const BUILDINGS = {
     levels: [
       { name: "Woodcutter's Hut", cost: 200, jobs: 3, income: 10 },
       { name: 'Sawmill', cost: 480, jobs: 6, income: 11, unlock: 60 },
+      { name: 'Timber Yard', cost: 950, jobs: 9, income: 12, unlock: 120 },
     ],
   },
   fishery: {
@@ -92,6 +99,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Fishing Hut', cost: 180, jobs: 2, income: 13 },
       { name: 'Fishery', cost: 420, jobs: 5, income: 14, unlock: 25 },
+      { name: 'Harbour', cost: 900, jobs: 8, income: 15, unlock: 120 },
     ],
   },
   workshop: {
@@ -111,6 +119,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Well', cost: 80, upkeep: 2, radius: 4 },
       { name: 'Water Tower', cost: 420, upkeep: 6, radius: 8, unlock: 60 },
+      { name: 'Waterworks', cost: 900, upkeep: 10, jobs: 3, radius: 12, unlock: 120 },
     ],
   },
   clinic: {
@@ -119,6 +128,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Herbalist', cost: 300, upkeep: 8, jobs: 2, radius: 6 },
       { name: 'Clinic', cost: 650, upkeep: 15, jobs: 5, radius: 9, unlock: 60 },
+      { name: 'Hospital', cost: 1400, upkeep: 24, jobs: 9, radius: 13, unlock: 120 },
     ],
   },
   school: {
@@ -127,6 +137,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Schoolhouse', cost: 350, upkeep: 9, jobs: 2, radius: 7 },
       { name: 'School', cost: 720, upkeep: 16, jobs: 5, radius: 10, unlock: 60 },
+      { name: 'Academy', cost: 1500, upkeep: 24, jobs: 8, radius: 14, unlock: 120 },
     ],
   },
   watch: {
@@ -135,6 +146,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Watch Post', cost: 240, upkeep: 6, jobs: 2, radius: 6 },
       { name: 'Guardhouse', cost: 560, upkeep: 12, jobs: 4, radius: 9, unlock: 60 },
+      { name: 'Constabulary', cost: 1200, upkeep: 18, jobs: 7, radius: 13, unlock: 120 },
     ],
   },
   chapel: {
@@ -142,7 +154,8 @@ export const BUILDINGS = {
     desc: 'A place for gatherings, weddings and quiet.',
     levels: [
       { name: 'Chapel', cost: 420, upkeep: 5, jobs: 1, radius: 8 },
-      { name: 'Church', cost: 950, upkeep: 10, jobs: 3, radius: 12, unlock: 120 },
+      { name: 'Church', cost: 950, upkeep: 10, jobs: 3, radius: 12, unlock: 60 },
+      { name: 'Minster', cost: 2200, upkeep: 16, jobs: 5, radius: 16, unlock: 200 },
     ],
   },
   townhall: {
@@ -171,6 +184,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Plaza', cost: 420, upkeep: 4, appeal: 12, radius: 5 },
       { name: 'Fountain Square', cost: 850, upkeep: 7, appeal: 20, radius: 7, unlock: 60 },
+      { name: 'Grand Square', cost: 1500, upkeep: 10, appeal: 28, radius: 9, unlock: 120 },
     ],
   },
   flowers: {

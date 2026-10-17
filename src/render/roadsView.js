@@ -95,6 +95,23 @@ export class RoadsView {
     }
     if (arms.length === 0) arms.push([0, 1, 0], [0, -1, Math.PI]);
     if (arms.length === 1) arms.push([-arms[0][0], -arms[0][1], arms[0][2] + Math.PI]);
+    // a single bend: lay the track on a quarter-circle so trains corner smoothly
+    const arc = railArc(x, z, arms);
+    if (arc) {
+      const pts = arc.map(([px, pz]) => [px, yAt(px, pz), pz]);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay, az] = pts[i], [bx, by, bz] = pts[i + 1];
+        const len = Math.hypot(bx - ax, bz - az), dh = by - ay;
+        gb.pushEuler(ax, ay, az, -Math.atan2(dh, len), Math.atan2(bx - ax, bz - az));
+        const L = Math.hypot(len, dh);
+        if (water) gb.box(0, -0.035, L / 2, 0.36, 0.045, L + 0.02, '#5e4a38');
+        if (i % 2 === 0) gb.box(0, -0.004, L / 2, 0.3, 0.022, 0.055, '#5e432c');
+        for (const sd of [-1, 1]) gb.box(sd * 0.075, 0.016, L / 2, 0.02, 0.026, L + 0.02, '#7d8187');
+        gb.pop();
+      }
+      if (water) gb.cyl(cx, -0.9, cz, 0.032, 0.036, bridgeDeckY() - 0.05 + 0.9, 7, '#3f3126');
+      return;
+    }
     const hc = yAt(cx, cz);
     for (const [dx, dz, ry] of arms) {
       const ex = cx + dx * 0.5, ez = cz + dz * 0.5;
@@ -114,4 +131,26 @@ export class RoadsView {
     this.scene.remove(this.props);
     this.props.geometry.dispose();
   }
+}
+
+// For a track tile with exactly two perpendicular arms, the quarter-circle
+// (radius 0.5, centred on the shared tile corner) joining the two edge
+// midpoints; otherwise null. arms: [[dx, dz], ...]
+export function railArc(x, z, arms, steps = 8) {
+  if (arms.length !== 2) return null;
+  const [a, b] = arms;
+  if (a[0] * b[0] + a[1] * b[1] !== 0) return null;
+  const cx = x + 0.5, cz = z + 0.5;
+  const ox = cx + (a[0] + b[0]) * 0.5, oz = cz + (a[1] + b[1]) * 0.5;
+  const a0 = Math.atan2(cz + a[1] * 0.5 - oz, cx + a[0] * 0.5 - ox);
+  let a1 = Math.atan2(cz + b[1] * 0.5 - oz, cx + b[0] * 0.5 - ox);
+  let d = a1 - a0;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = a0 + (d * i) / steps;
+    pts.push([ox + Math.cos(t) * 0.5, oz + Math.sin(t) * 0.5]);
+  }
+  return pts;
 }

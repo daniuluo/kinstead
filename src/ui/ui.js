@@ -3,7 +3,7 @@
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf } from '../defs.js';
 import { thumb } from './thumbs.js';
-import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName } from '../save/saves.js';
+import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 
@@ -219,7 +219,7 @@ export class UI {
       $('money').style.color = w.money < 0 ? 'var(--brick)' : '';
       const net = sim.budget.net;
       $('net').textContent = Number.isFinite(w.money) ? `${signed(net)} / day` : 'sandbox';
-      $('net').className = net >= 0 ? 'pos' : 'neg';
+      $('net').className = !Number.isFinite(w.money) ? '' : net >= 0 ? 'pos' : 'neg';
       $('pop').textContent = fmt(w.population);
       const free = sim.housing.cap - sim.housing.used;
       $('housing').textContent = `${free} free home${free === 1 ? '' : 's'}`;
@@ -509,16 +509,17 @@ export class UI {
       <div class="field"><label>Village name</label><input id="ngName" maxlength="40" value="${esc(name)}"></div>
       <div class="grid2">
         <div class="field"><label>Map seed</label><div class="inline"><input id="ngSeed" style="flex:1" value="${randomSeed() % 1000000}"><button class="btn small" id="ngDice" title="Random seed">🎲</button></div></div>
-        <div class="field"><label>Valley size</label><select id="ngSize"><option value="40">Small · 40×40</option><option value="48" selected>Medium · 48×48</option><option value="56">Large · 56×56</option></select></div>
+        <div class="field"><label>Valley size</label><select id="ngSize"><option value="32">Small · 32×32 (hamlet)</option><option value="48" selected>Medium · 48×48 (village)</option><option value="64">Large · 64×64 (town)</option><option value="80">Huge · 80×80 (valley)</option></select></div>
       </div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngInf"> Sandbox: unlimited coins</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngAll"> Sandbox: unlock every building from the start</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="ngFree"> Sandbox: upgrade buildings without meeting their needs</label></div>
       <div class="actions"><button class="btn primary" id="ngGo">🏡 Found the village</button></div>`, (c) => {
       c.querySelector('#ngDice').onclick = () => { c.querySelector('#ngSeed').value = randomSeed() % 1000000; };
       c.querySelector('#ngGo').onclick = () => {
         const seedStr = c.querySelector('#ngSeed').value.trim();
         const seed = /^\d+$/.test(seedStr) ? Number(seedStr) : [...seedStr].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked } };
+        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked } };
         this.closeModal();
         onCreate(opts);
       };
@@ -531,8 +532,19 @@ export class UI {
     const inGame = !!g.world && !g.demo;
     const tabs = [['local', '💻 This browser'], ['drive', '☁️ Google Drive'], ['file', '📁 File']];
     this.openModal(`<h2>Save & load</h2><p class="lead">${inGame ? `Saving <b>${esc(this.world.townName)}</b> — day ${this.world.day}, ${fmt(this.world.population)} villagers.` : 'Pick a saved village to continue.'}</p>
+      <div class="actions" style="margin:0 0 10px">
+        ${inGame ? '<button class="btn primary" id="svDownload" title="Ctrl+Shift+S">⬇ Download save (.json)</button>' : ''}
+        <label class="btn" title="You can also drop a .json save onto the game"><input type="file" id="svUpload" accept=".json,application/json" hidden>⬆ Open a .json save…</label>
+      </div>
       <div class="tabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div><div id="saveBody"></div>`, (c) => {
       for (const b of c.querySelectorAll('[data-tab]')) b.onclick = () => this.showSaves(b.dataset.tab);
+      const dl = c.querySelector('#svDownload');
+      if (dl) dl.onclick = () => g.downloadSave();
+      c.querySelector('#svUpload').onchange = async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        try { g.loadData(await readJSONFile(f)); this.closeModal(); this.toast(`Loaded ${f.name}`, 'good', '📁'); } catch (err) { this.toast(err.message, 'bad'); }
+      };
       const body = c.querySelector('#saveBody');
       if (tab === 'local') this._localTab(body, inGame);
       else if (tab === 'drive') this._driveTab(body, inGame);
@@ -552,12 +564,16 @@ export class UI {
       <div class="m">Day ${e.day} · ${fmt(e.pop)} villagers · 🪙 ${typeof e.money === "number" ? fmt(e.money) : e.money}</div><div class="m">${new Date(e.savedAt).toLocaleString()}</div></div>
       <div class="acts"><button class="btn small primary" data-load="${e.id}">Load</button>
       ${inGame && e.id !== 'autosave' ? `<button class="btn small" data-over="${e.id}">Overwrite</button>` : ''}
+      <button class="btn small" data-dl="${e.id}" title="Download as .json">⬇</button>
       <button class="btn small danger" data-del="${e.id}">✕</button></div></div>`).join('')}</div>`;
     body.innerHTML = h;
     const nb = body.querySelector('#lsNew');
     if (nb) nb.onclick = () => { if (g.saveLocal('s' + Date.now().toString(36))) this.showSaves('local'); };
     for (const b of body.querySelectorAll('[data-load]')) b.onclick = () => { try { g.loadData(LocalSaves.load(b.dataset.load)); this.closeModal(); } catch (e) { this.toast(e.message, 'bad'); } };
     for (const b of body.querySelectorAll('[data-over]')) b.onclick = () => { if (g.saveLocal(b.dataset.over)) this.showSaves('local'); };
+    for (const b of body.querySelectorAll('[data-dl]')) b.onclick = () => {
+      try { const data = LocalSaves.load(b.dataset.dl); downloadJSON(data, saveFileNameFor(data)); } catch (e) { this.toast(e.message, 'bad'); }
+    };
     for (const b of body.querySelectorAll('[data-del]')) b.onclick = () => {
       if (b.dataset.confirm) { LocalSaves.remove(b.dataset.del); this.showSaves('local'); }
       else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; }
@@ -602,6 +618,7 @@ export class UI {
         <div class="m">${new Date(f.modifiedTime).toLocaleString()}</div></div>
         <div class="acts"><button class="btn small primary" data-gload="${f.id}">Load</button>
         ${inGame ? `<button class="btn small" data-gover="${f.id}">Overwrite</button>` : ''}
+        <button class="btn small" data-gdl="${f.id}" title="Download as .json">⬇</button>
         <button class="btn small danger" data-gdel="${f.id}">✕</button></div></div>`;
     }).join('')}</div>`;
     body.innerHTML = h;
@@ -612,6 +629,11 @@ export class UI {
     for (const b of body.querySelectorAll('[data-gload]')) b.onclick = async () => {
       busy(b, '…');
       try { g.loadData(await drive.load(b.dataset.gload)); this.closeModal(); this.toast('Loaded from Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); b.disabled = false; b.textContent = 'Load'; }
+    };
+    for (const b of body.querySelectorAll('[data-gdl]')) b.onclick = async () => {
+      busy(b, '…');
+      try { const data = await drive.load(b.dataset.gdl); downloadJSON(data, saveFileNameFor(data)); } catch (e) { this.toast(e.message, 'bad'); }
+      b.disabled = false; b.textContent = '⬇';
     };
     for (const b of body.querySelectorAll('[data-gover]')) b.onclick = async () => {
       busy(b, '…');
@@ -719,7 +741,8 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
       ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited coins (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''}> Sandbox: unlock every building (this town)</label></div>` : ''}
+      <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''}> Sandbox: unlock every building (this town)</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>` : ''}
       <div class="field"><label>Google OAuth Client ID (for Drive saves)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div>
       <div class="actions"><button class="btn primary" id="stOk">Done</button><button class="btn" id="stMenu">Quit to title</button></div>`, (c) => {
       c.querySelector('#stOk').onclick = () => {
@@ -727,8 +750,13 @@ export class UI {
         s.ao = c.querySelector('#stAO').checked;
         s.pixelArt = c.querySelector('#stPix').checked;
         s.pixelSize = Number(c.querySelector('#stPixSize').value);
-        const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll');
-        if (inf && all) { g.world.setSandbox({ infiniteMoney: inf.checked, unlockAll: all.checked }); g.sim.recompute(); if (this.category) this.openFlyout(this.category); }
+        const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll'), free = c.querySelector('#stFree');
+        if (inf && all && free) {
+          g.world.setSandbox({ infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked });
+          g.sim.recompute();
+          if (this.category) this.openFlyout(this.category);
+          if (this.selection) this.renderInspector(true);
+        }
         s.autosave = c.querySelector('#stAuto').checked;
         s.sound = c.querySelector('#stSound').checked;
         const id = c.querySelector('#stGcid').value.trim();

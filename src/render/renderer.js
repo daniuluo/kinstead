@@ -11,6 +11,7 @@ import { PixelPass } from './pixelPass.js';
 // Classic 2:1 pixel-art isometric (dimetric) projection: 26.57° above the ground.
 export const ISO_ELEV = Math.atan(0.5);
 const DIST = 140;
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3();
 
 export class Renderer {
   constructor(container) {
@@ -126,8 +127,14 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------- camera
-  setBounds(N) { this.rig.bounds = N; }
+  setBounds(N) {
+    this.rig.bounds = N;
+    // let bigger maps zoom out far enough to see the whole valley
+    this.rig.minZoom = Math.min(0.45, 0.45 * 48 / N);
+    this.setZoom(this.rig.zoomT);
+  }
   lookAt(x, z, instant = false) {
+    this.rig.anchor = null;
     this.rig.goal.set(x, this.rig.goal.y, z);
     if (instant) this.rig.target.copy(this.rig.goal);
   }
@@ -141,18 +148,21 @@ export class Renderer {
   zoomBy(factor, clientX = null, clientY = null) {
     const rig = this.rig;
     const z0 = rig.zoomT;
-    const z1 = Math.min(6, Math.max(0.45, z0 * factor));
+    const z1 = Math.min(6, Math.max(rig.minZoom || 0.45, z0 * factor));
     if (clientX !== null) {
-      const p = this.screenToGround(clientX, clientY, rig.goal.y);
+      // Zoom toward the cursor: remember the ground point under it and its
+      // offset from the view centre (scaled by zoom), and hold it fixed while
+      // the zoom animates.
+      const p = this.screenToGround(clientX, clientY, rig.target.y);
       if (p) {
-        const k = z0 / z1;
-        rig.goal.x = p.x - (p.x - rig.goal.x) * k;
-        rig.goal.z = p.z - (p.z - rig.goal.z) * k;
+        rig.anchor = { x: p.x, z: p.z, cx: (p.x - rig.target.x) * rig.zoom, cz: (p.z - rig.target.z) * rig.zoom };
+        rig.goal.x = p.x - rig.anchor.cx / z1;
+        rig.goal.z = p.z - rig.anchor.cz / z1;
       }
     }
     rig.zoomT = z1;
   }
-  setZoom(z) { this.rig.zoomT = Math.min(6, Math.max(0.45, z)); }
+  setZoom(z) { this.rig.zoomT = Math.min(6, Math.max(this.rig.minZoom || 0.45, z)); }
 
   pan(dxPx, dyPx) {
     const rig = this.rig;
@@ -165,6 +175,7 @@ export class Renderer {
     const mz = -dxPx * upp * rz + (dyPx * upp * fz) / se;
     rig.goal.x += mx; rig.goal.z += mz;
     rig.target.x += mx; rig.target.z += mz;
+    if (rig.anchor) { rig.anchor.x += mx; rig.anchor.z += mz; }
     this._clamp();
   }
 
@@ -199,9 +210,18 @@ export class Renderer {
     const rig = this.rig;
     const k = 1 - Math.pow(0.0005, dt);
     rig.angle += (rig.angleT - rig.angle) * k;
-    rig.zoom += (rig.zoomT - rig.zoom) * k;
     rig.elev += (rig.elevT - rig.elev) * k;
-    rig.target.lerp(rig.goal, k);
+    // ease zoom in log space so zooming in and out feel the same
+    const lz = Math.log(rig.zoom), lzT = Math.log(rig.zoomT);
+    rig.zoom = Math.abs(lzT - lz) < 1e-3 ? rig.zoomT : Math.exp(lz + (lzT - lz) * k);
+    const zooming = rig.zoom !== rig.zoomT;
+    if (rig.anchor) {
+      // keep the point under the cursor exactly where it is for the whole animation
+      const an = rig.anchor;
+      rig.target.x = an.x - an.cx / rig.zoom;
+      rig.target.z = an.z - an.cz / rig.zoom;
+      if (!zooming) { rig.anchor = null; rig.goal.copy(rig.target); }
+    } else rig.target.lerp(rig.goal, k);
     this._clamp();
     const a = rig.angle, e = Math.min(rig.elev, Math.PI / 2 - 1e-4);
     const cam = this.camera;
@@ -215,8 +235,10 @@ export class Renderer {
     cam.lookAt(rig.target);
     cam.zoom = rig.zoom;
     cam.updateProjectionMatrix();
-    if (this.post && this.post.pix) {
-      // snap the view to whole pixels so pixel art doesn't shimmer while panning
+    if (this.post && this.post.pix && !zooming) {
+      // Snap the view to whole pixels so pixel art doesn't shimmer while panning.
+      // Not while zooming: the pixel grid itself changes size every frame then,
+      // and snapping to a moving grid makes the whole picture vibrate.
       cam.updateMatrixWorld();
       const e3 = cam.matrixWorld.elements;
       const right = new THREE.Vector3(e3[0], e3[1], e3[2]), up = new THREE.Vector3(e3[4], e3[5], e3[6]);
@@ -240,14 +262,24 @@ export class Renderer {
     const viewH = (cam.top - cam.bottom) / cam.zoom;
     const se = Math.max(0.35, Math.sin(rig.elev));
     let r = 0.5 * viewH * Math.sqrt(aspect * aspect + 1 / (se * se)) + 3;
-    r = Math.min(r, rig.bounds * 0.8 + 4);
+    // Grow/shrink the shadow area in coarse steps rather than every frame,
+    // otherwise shadow edges crawl while zooming.
+    r = Math.pow(2, Math.ceil(Math.log2(r) * 3) / 3);
+    r = Math.min(r, Math.pow(2, Math.ceil(Math.log2(rig.bounds * 0.8 + 4) * 3) / 3));
     const sc = this.sun.shadow.camera;
+    if (sc.right !== r) { sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.updateProjectionMatrix(); }
+    // snap the shadow camera to whole shadow-map texels in light space
     const texel = (2 * r) / this.sun.shadow.mapSize.x;
-    const tx = Math.round(rig.target.x / texel) * texel, tz = Math.round(rig.target.z / texel) * texel;
-    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r;
-    sc.updateProjectionMatrix();
-    this.sun.target.position.set(tx, 0.5, tz);
-    this.sun.position.set(tx + this.sunDir.x * 100, 0.5 + this.sunDir.y * 100, tz + this.sunDir.z * 100);
+    const lz = this.sunDir;
+    const lx = _lx.set(lz.z, 0, -lz.x);
+    if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0);
+    lx.normalize();
+    const ly = _ly.crossVectors(lz, lx);
+    const t = rig.target;
+    const px = Math.round(t.dot(lx) / texel) * texel, py = Math.round(t.dot(ly) / texel) * texel, pz = t.dot(lz);
+    const c = _c.copy(lx).multiplyScalar(px).addScaledVector(ly, py).addScaledVector(lz, pz);
+    this.sun.target.position.copy(c);
+    this.sun.position.copy(c).addScaledVector(lz, 100);
   }
 
   render() {

@@ -273,8 +273,10 @@ export class Input {
       } else if (sel && sel.kind === 'road') tiles.push({ x: sel.x, z: sel.z, color: GOLD, alpha: 0.3 });
       if (h && e && !d) {
         const r = g.agents.pick(e.clientX, e.clientY);
-        const b = r ? null : (this.pickBuilding(e) || w.buildingOn(h.x, h.z));
+        const an = r ? null : g.animals.pick(e.clientX, e.clientY);
+        const b = r || an ? null : (this.pickBuilding(e) || w.buildingOn(h.x, h.z));
         if (r) tip = `<b>${r.first} ${r.last}</b><br>${g.agents.activity(r)}`;
+        else if (an) tip = g.animals.describe(an);
         else if (b) {
           const def = BUILDINGS[b.type], L = def.levels[b.level];
           tip = `<b>${L.name}</b>`;
@@ -372,7 +374,7 @@ export class Input {
     const g = this.game, ui = this.ui;
     if (!g.world || g.demo) return;
     if (ui.modalOpen) { if (k === 'escape') ui.closeModal(); return; }
-    if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); g.quickSave(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); if (e.shiftKey) g.downloadSave(); else g.quickSave(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (k) {
       case 'escape':

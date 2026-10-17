@@ -8,6 +8,7 @@ import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
 import { Agents } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
+import { Animals } from '../src/sim/animals.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel } from '../src/render/buildings.js';
 import { BUILDINGS } from '../src/defs.js';
@@ -114,12 +115,58 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
     ok(rl.ok, `rail line created (${rl.reason || 'ok'})`);
     game.transit.rebuild();
     const v = game.transit.vehicles.find(v => v.line.mode === 'rail');
-    const s0 = v ? v.s : 0;
-    for (let i = 0; i < 300; i++) { game.sim.update(0.1); game.agents.update(0.1, 0.1); game.transit.update(0.1); }
-    ok(v && (v.s !== s0 || v.state === 'dwell'), 'train runs along the track');
+    const visited = new Set();
+    let minGap = Infinity, maxGap = 0, reversals = 0, lastDir = v ? v.dir : 1;
+    for (let i = 0; i < 2400; i++) {
+      game.sim.update(0.05); game.agents.update(0.05, 0.05); game.transit.update(0.05);
+      if (!v) break;
+      if (v.state === 'dwell') visited.add(v.next);
+      if (v.dir !== lastDir) { reversals++; lastDir = v.dir; }
+      const a = v.meshes[0].position, b = v.meshes[1].position;
+      const gap = Math.hypot(a.x - b.x, a.z - b.z);
+      minGap = Math.min(minGap, gap); maxGap = Math.max(maxGap, gap);
+    }
+    ok(v && visited.size === 2, `train calls at both stations (${[...visited].join(', ')})`);
+    ok(reversals >= 2, `train shuttles back and forth (${reversals} reversals)`);
+    ok(minGap > 0.45 && maxGap < 0.62, `engine never runs into its carriages (gap ${minGap.toFixed(2)}–${maxGap.toFixed(2)})`);
   } else console.log('      (no flat spot for a rail test on this map)');
   w.setSandbox({ infiniteMoney: false, unlockAll: false });
   ok(Number.isFinite(w.money), 'sandbox can be switched off again');
+}
+
+// 3c. animals keep out of buildings and stay in their habitat
+{
+  const animals = new Animals(game);
+  const counts = {};
+  for (const a of animals.list) counts[a.sp] = (counts[a.sp] || 0) + 1;
+  ok(animals.list.length > 5, `animals spawned: ${JSON.stringify(counts)}`);
+  let bad = 0;
+  const check = () => {
+    for (const a of animals.list) {
+      const tx = Math.floor(a.x), tz = Math.floor(a.z);
+      const b = w.buildingOn(tx, tz);
+      const water = w.terrain.isWater(tx, tz);
+      if (a.sp === 'duck') { if (!water) bad++; }
+      else if (a.farm != null) { if (!b || b.id !== a.farm) bad++; }
+      else if (b || water) bad++;
+    }
+  };
+  for (let i = 0; i < 1500; i++) {
+    game.sim.update(0.05); game.agents.update(0.05, 0.05); animals.update(0.05, 4);
+    if (i % 25 === 0) check();
+  }
+  ok(bad === 0, `no animal walked into a building or out of its habitat (${bad} violations)`);
+  // build right on top of a wild animal: it should be moved out of the way
+  const wild = animals.list.find(a => a.farm == null && a.sp !== 'duck');
+  if (wild) {
+    const tx = Math.floor(wild.x), tz = Math.floor(wild.z);
+    w.setSandbox({ infiniteMoney: true, unlockAll: true });
+    w.placeRoads([[tx + 1, tz]], 1);
+    const r = w.placeBuilding('house', tx, tz, {});
+    for (let i = 0; i < 30; i++) animals.update(0.05, 1);
+    if (r.ok) ok(!animals.list.includes(wild) || w.buildingOn(Math.floor(wild.x), Math.floor(wild.z)) === null, 'animal under a new building steps aside');
+    w.setSandbox({ infiniteMoney: false, unlockAll: false });
+  }
 }
 
 // 4. save round-trip

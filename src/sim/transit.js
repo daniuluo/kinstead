@@ -93,6 +93,9 @@ function carriageModel(color) {
 }
 
 const CARGO = { farm: 'hay', lumber: 'logs', fishery: 'fish', workshop: 'crates' };
+const CAR_SPACING = 0.56;   // distance between train car centres along the track
+const TRAIN_CARS = 3;       // engine + two carriages
+const TRAIN_HALF = (CAR_SPACING * (TRAIN_CARS - 1)) / 2 + 0.08;
 
 export class Transit {
   constructor(game) {
@@ -151,7 +154,8 @@ export class Transit {
     const w = this.world;
     const line = w.lines.find(l => l.id === id);
     if (!line) return { ok: false };
-    n = Math.max(1, Math.min(5, n));
+    n = Math.max(1, Math.min(line.mode === 'rail' ? 1 : 5, n));
+    if (n === line.vehicles) return { ok: false, reason: line.mode === 'rail' ? 'A single-track line runs one train' : null };
     if (n > line.vehicles) {
       const cost = TRANSIT[line.mode].vehicleCost;
       if (w.money < cost) return { ok: false, reason: 'Not enough coins' };
@@ -171,7 +175,9 @@ export class Transit {
     if (stops.length < 2) return null;
     let tiles = [];
     const stopIdx = [];
-    for (let i = 0; i < stops.length; i++) {
+    const open = line.mode === 'rail';
+    const legs = open ? stops.length - 1 : stops.length;
+    for (let i = 0; i < legs; i++) {
       const a = this._stopTile(stops[i], line.mode), b = this._stopTile(stops[(i + 1) % stops.length], line.mode);
       if (!a || !b) return null;
       const leg = line.mode === 'rail' ? paths.rail(a.x, a.z, b.x, b.z) : paths.road(a.x, a.z, b.x, b.z);
@@ -179,9 +185,10 @@ export class Transit {
       stopIdx.push(tiles.length ? tiles.length - 1 : 0);
       tiles = tiles.length ? tiles.concat(leg.slice(1)) : leg.slice();
     }
+    if (open) stopIdx.push(tiles.length - 1);
     const off = line.mode === 'rail' ? 0 : 0.17;
     let pts = tilePolyline(tiles, off);
-    pts = smoothPolyline(pts, line.mode === 'rail' ? 0.45 : 0.3, 4);
+    pts = smoothPolyline(pts, open ? 0.5 : 0.3, open ? 6 : 4);
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     const length = cum[cum.length - 1];
@@ -201,12 +208,19 @@ export class Transit {
       marks.push({ stop: stops[i].id, s: cum[best] });
       from = best;
     }
-    return { pts, cum, length, marks, mode: line.mode };
+    return { pts, cum, length, marks, mode: line.mode, open };
+  }
+
+  // Where a train's midpoint stops for a station: centred on the platform,
+  // but never so close to the end of the track that cars hang off it.
+  _stopS(route, i) {
+    const lo = Math.min(TRAIN_HALF, route.length / 2), hi = Math.max(route.length - TRAIN_HALF, route.length / 2);
+    return Math.min(hi, Math.max(lo, route.marks[i].s));
   }
 
   _sample(route, s) {
     const { pts, cum, length } = route;
-    s = ((s % length) + length) % length;
+    s = route.open ? Math.min(length, Math.max(0, s)) : ((s % length) + length) % length;
     let lo = 0, hi = cum.length - 1;
     while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid; }
     const a = pts[lo], b = pts[hi];
@@ -242,12 +256,21 @@ export class Transit {
       const r = this.routes.get(v.line.id);
       if (!w.lines.includes(v.line) || !r) { this._removeVehicle(v); continue; }
       v.route = r;
-      v.s = Math.min(v.s, r.length);
-      v.next = this._nextMark(r, v.s);
+      if (r.open) {
+        v.s = Math.min(Math.max(v.s, this._stopS(r, 0)), this._stopS(r, r.marks.length - 1));
+        let best = 0;
+        for (let i = 1; i < r.marks.length; i++) if (Math.abs(this._stopS(r, i) - v.s) < Math.abs(this._stopS(r, best) - v.s)) best = i;
+        v.next = best;
+        v.dir = best >= r.marks.length - 1 ? -1 : 1;
+      } else {
+        v.s = Math.min(v.s, r.length);
+        v.next = this._nextMark(r, v.s);
+      }
     }
     for (const line of w.lines) {
       const r = this.routes.get(line.id);
       if (!r) continue;
+      if (r.open) line.vehicles = 1;
       const mine = this.vehicles.filter(v => v.line === line);
       while (mine.length > line.vehicles) this._removeVehicle(mine.pop());
       for (let k = mine.length; k < line.vehicles; k++) mine.push(this._spawnVehicle(line, r, (r.length * k) / line.vehicles));
@@ -269,7 +292,8 @@ export class Transit {
       meshes.push(new THREE.Mesh(this._geo('coach' + line.color, () => coachModel(line.color)), MAT.building));
     }
     for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
-    const v = { line, route, s, meshes, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0 };
+    const v = { line, route, s, meshes, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0, dir: 1, orient: 1 };
+    if (route.open) { v.s = this._stopS(route, 0); v.next = 0; }
     this.vehicles.push(v);
     return v;
   }
@@ -298,7 +322,7 @@ export class Transit {
         if (db < dB) { dB = db; sB = m; }
       }
       if (!sA || !sB || sA === sB || dA > 7 || dB > 7) continue;
-      const ride = ((sB.s - sA.s) + route.length) % route.length;
+      const ride = route.open ? Math.abs(sB.s - sA.s) : ((sB.s - sA.s) + route.length) % route.length;
       const cfg = TRANSIT[line.mode];
       const cost = dA + dB + (ride * CONFIG.WALK_SPEED) / cfg.speed + 3;
       if (cost < walkLen * 0.85 && (!best || cost < best.cost)) {
@@ -397,6 +421,7 @@ export class Transit {
     for (const v of this.vehicles) {
       const cfg = TRANSIT[v.line.mode];
       const route = v.route;
+      if (route.open) { this._moveTrain(v, dt, speed, cfg); continue; }
       if (v.state === 'dwell') {
         v.dwell -= dt * speed;
         if (v.dwell <= 0) { v.state = 'move'; v.next = (v.next + 1) % route.marks.length; }
@@ -421,20 +446,56 @@ export class Transit {
         m.position.set(p.x, y, p.z);
         m.rotation.y = p.heading;
       }
-      if (v.line.mode === 'rail' && speed) {
-        v.smokeAcc += dt * (v.state === 'move' ? 6 : 1.5);
-        const m = v.meshes[0];
-        while (v.smokeAcc > 1) {
-          v.smokeAcc -= 1;
-          const fx = m.position.x + Math.sin(m.rotation.y) * 0.14, fz = m.position.z + Math.cos(m.rotation.y) * 0.14;
-          this.game.view.smoke.emit({
-            x: fx, y: m.position.y + 0.3, z: fz, vx: (Math.random() - 0.5) * 0.05, vy: 0.3, vz: (Math.random() - 0.5) * 0.05,
-            drag: 0.8, life: 2.5, size: 0.08, size1: 0.4, r: 0.92, g: 0.92, b: 0.95, alpha: 0.55, alpha1: 0, fadeIn: 0.05,
-          });
-        }
-      }
     }
     this._updateCarts(dt);
+  }
+
+  // Trains shuttle along their line as a push-pull set: the engine stays at
+  // its end of the train, so on the way back it pushes instead of pulling,
+  // and the whole consist reverses together at the end stations.
+  _moveTrain(v, dt, speed, cfg) {
+    const route = v.route, n = route.marks.length;
+    if (v.state === 'dwell') {
+      v.dwell -= dt * speed;
+      if (v.dwell <= 0) {
+        v.state = 'move';
+        let next = v.next + v.dir;
+        if (next < 0 || next >= n) { v.dir = -v.dir; next = v.next + v.dir; }
+        v.next = Math.max(0, Math.min(n - 1, next));
+      }
+    } else if (speed) {
+      const target = this._stopS(route, v.next);
+      const dist = target - v.s;
+      // gentle acceleration out of and braking into stations
+      const ease = Math.min(1, 0.35 + Math.abs(dist) * 0.9);
+      const step = dt * speed * cfg.speed * ease;
+      if (Math.abs(dist) <= step) {
+        v.s = target;
+        v.state = 'dwell';
+        v.dwell = 2.4;
+        this._atStop(v, route.marks[v.next]);
+      } else v.s += Math.sign(dist) * step;
+    }
+    for (let k = 0; k < v.meshes.length; k++) {
+      const off = v.orient * ((CAR_SPACING * (TRAIN_CARS - 1)) / 2 - k * CAR_SPACING);
+      const p = this._sample(route, v.s + off);
+      const m = v.meshes[k];
+      m.position.set(p.x, this._height('rail', p.x, p.z), p.z);
+      // the engine always faces outward from its end of the train
+      m.rotation.y = p.heading + (k === 0 && v.orient < 0 ? Math.PI : 0);
+    }
+    if (speed) {
+      v.smokeAcc += dt * (v.state === 'move' ? 6 : 1.5);
+      const m = v.meshes[0];
+      while (v.smokeAcc > 1) {
+        v.smokeAcc -= 1;
+        const fx = m.position.x + Math.sin(m.rotation.y) * 0.14, fz = m.position.z + Math.cos(m.rotation.y) * 0.14;
+        this.game.view.smoke.emit({
+          x: fx, y: m.position.y + 0.3, z: fz, vx: (Math.random() - 0.5) * 0.05, vy: 0.3, vz: (Math.random() - 0.5) * 0.05,
+          drag: 0.8, life: 2.5, size: 0.08, size1: 0.4, r: 0.92, g: 0.92, b: 0.95, alpha: 0.55, alpha1: 0, fadeIn: 0.05,
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------- carts

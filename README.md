@@ -8,16 +8,17 @@ A little isometric village builder that runs in your browser — pixel-art rende
 
 - **Pixel-art isometric 3D** — the scene is rendered in real 3D (three.js), then drawn at low resolution with depth/normal outlines and crisp pixel upscaling, using a classic 2:1 isometric camera with a single fixed angle. Settings let you choose the pixel size or switch to a smooth, antialiased renderer with ambient occlusion.
 - **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map; zoom in and out with the wheel or the `+`/`−` buttons.
-- **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Terraform it by raising, lowering and levelling land, and plant trees.
+- **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Pick a size: Small 32×32, Medium 48×48, Large 64×64 or Huge 80×80. Terraform by raising, lowering and levelling land, and plant trees.
 - **Organic village** — no two buildings look the same. Each one is generated from a seed: walls, roofs (thatch, tile, slate, shingle), half-timbering, chimneys, dormers, shutters, flower boxes, gardens and fences. Paths are worn into the grass and meander a little.
-- **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Upgrades need happiness and service coverage.
+- **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Homes have five levels: Cottage, Family House, Townhouse, Manor House and Grand Manor. Most other buildings have three or four levels, up to a Market Hall, Hospital, Academy or Minster. Upgrades need happiness and service coverage.
 - **Roads** — dirt paths, cobblestone and paved streets, plus wooden bridges over water. Street lamps light up at night.
-- **Transit** — horse-drawn **coach lines** between coach stops, and **railways** with track, stations and a steam train. Villagers on long trips walk to a stop, wait there, ride, and pay a fare.
+- **Transit** — horse-drawn **coach lines** loop between coach stops. **Railways** have track (with curves), stations, and a push-pull steam train that shuttles end to end and stops centred on each platform. Villagers on long trips walk to a stop, wait there, ride, and pay a fare.
+- **Animals** — deer and foxes roam the woods, rabbits the meadows, and mallards paddle on the lakes and river. Sheep, cows and chickens graze on the farms. Animals steer around buildings, mostly avoid roads and track, keep to their habitat, and bolt from villagers who get too close.
 - **Villagers** — every resident has a name, a home and maybe a job. They follow daily routines: work, school, shopping, the tavern, strolls in the park, and going home at night. Click anyone to see what they're doing, or follow them around.
 - **Economy** — taxes, shop visits, production, upkeep, a budget screen with charts, and RCI demand bars. New families arrive from the edge of the map when the village is attractive; unhappy households leave.
 - **Time and seasons** — sunrise and sunset, lit windows, lamps, lantern-carrying villagers, fireflies, then spring blossom, autumn leaves and winter snow.
-- **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Sandbox mode gives you unlimited coins and can unlock every building, either for a new game or from Settings.
-- **Saves** — in this browser (with an autosave every day), export and import `.json` files, or **Google Drive** cloud saves.
+- **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Three sandbox switches, available for a new game or from Settings: unlimited coins, unlock every building, and upgrade without meeting needs.
+- **Saves** — in this browser (with an autosave every day), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
 
 ## Controls
 
@@ -33,7 +34,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 | `[` / `]` | Slower / faster |
 | `O` · `B` · `L` · `H` | Overlays · budget · transit lines · help |
 | `Enter` / `Backspace` | Finish / undo stops while creating a transit line |
-| `Ctrl+S` | Quick save |
+| `Ctrl+S` · `Ctrl+Shift+S` | Quick save to the browser · download the save as `.json` |
 | `Esc` / right-click | Cancel the tool or close a window |
 
 ## Running locally
@@ -88,7 +89,7 @@ npm install three@0.170.0 --no-save
 node scripts/check.js
 ```
 
-This builds every building model, generates 25 valleys, simulates a town for six in-game days (walking villagers, a coach line, a train), and round-trips a save.
+This builds every building model at every level, generates 25 valleys, simulates a town for six in-game days (walking villagers, a coach line, a shuttling train), checks that animals never enter buildings or leave their habitat, and round-trips a save.
 
 ## Credits
 

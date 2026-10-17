@@ -13,10 +13,11 @@ import { PathFinder } from './sim/path.js';
 import { Sim } from './sim/sim.js';
 import { Agents } from './sim/agents.js';
 import { Transit } from './sim/transit.js';
+import { Animals } from './sim/animals.js';
 import { UI } from './ui/ui.js';
 import { Input } from './ui/input.js';
 import { Sfx } from './ui/sfx.js';
-import { serialize, deserialize, LocalSaves } from './save/saves.js';
+import { serialize, deserialize, LocalSaves, downloadJSON, readJSONFile, saveFileName } from './save/saves.js';
 import { Drive } from './save/gdrive.js';
 import { randomSeed, RNG } from './util/rng.js';
 import { townName } from './util/names.js';
@@ -63,6 +64,7 @@ export class Game {
     });
     this.on('transit:routes', () => this.updateRouteOverlay());
 
+    this._bindFileDrop();
     this.clock = performance.now();
     const loop = () => { this.frame(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
@@ -82,6 +84,7 @@ export class Game {
     this.transit = new Transit(this);
     if (fresh) this.sim.seedFounders(); else this.sim.recompute();
     this.agents = new Agents(this);
+    this.animals = new Animals(this);
     this.transit.rebuild();
     this.transit.planCarts();
     this.renderer.setBounds(world.N);
@@ -106,6 +109,7 @@ export class Game {
     if (!this.world) return;
     this.input._setGhost(null);
     this.agents?.dispose();
+    this.animals?.dispose();
     this.transit?.dispose();
     this.view?.dispose();
     this.lantern.clear();
@@ -173,6 +177,29 @@ export class Game {
   }
 
   quickSave() { this.saveLocal('quick'); }
+
+  // Plain .json download of the current town.
+  downloadSave() {
+    if (!this.world || this.demo) return;
+    downloadJSON(serialize(this.world), saveFileName(this.world));
+    this.ui.toast('Save file downloaded', 'good', '⬇');
+  }
+
+  // Drop a .json save anywhere on the page to load it.
+  _bindFileDrop() {
+    window.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+    window.addEventListener('drop', async (e) => {
+      const f = e.dataTransfer?.files?.[0];
+      if (!f) return;
+      e.preventDefault();
+      if (!/\.json$/i.test(f.name) && f.type !== 'application/json') { this.ui.toast('Drop a Hearthvale .json save to load it', 'bad'); return; }
+      try {
+        this.loadData(await readJSONFile(f));
+        this.ui.closeModal();
+        this.ui.toast(`Loaded ${f.name}`, 'good', '📁');
+      } catch (err) { this.ui.toast(err.message, 'bad'); }
+    });
+  }
 
   captureThumb() {
     try {
@@ -328,6 +355,7 @@ export class Game {
       this.view.setSeason(env.season);
       this.agents.update(dt, gameDt);
       this.transit.update(dt);
+      this.animals.update(dt, this.speed);
       this.view.update(dt, gameDt, env);
       // villagers carry little lanterns at night
       const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.05, y: wk.y + 0.12, z: wk.z - Math.sin(wk.heading) * 0.05, size: 0.16, r: 1, g: 0.75, b: 0.4, a: 0.8 }));

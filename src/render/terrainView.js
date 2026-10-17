@@ -8,6 +8,7 @@ import { MAT } from './materials.js';
 import { BUILDINGS } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
 import { doorPoint } from '../world/world.js';
+import { railArc } from './roadsView.js';
 
 export const SUB = 5;
 const BASE_Y = -2.2;
@@ -310,7 +311,10 @@ export class TerrainView {
     const w = this.world, N = w.N;
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       if (!w.rails[z * N + x] || w.terrain.isWater(x, z)) continue;
-      const segs = this._arms(x, z, w.rails);
+      let segs = this._arms(x, z, w.rails);
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => w.railAt(x + dx, z + dz));
+      const arc = railArc(x, z, dirs);
+      if (arc) { segs = []; for (let k = 0; k < arc.length - 1; k++) segs.push([arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1]]); }
       const onRoad = !!w.roads[z * N + x];
       this._range(x - 0.4, z - 0.4, x + 1.4, z + 1.4, (vi, px, pz, i, j) => {
         let d = 9;

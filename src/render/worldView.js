@@ -7,7 +7,7 @@ import { RoadsView } from './roadsView.js';
 import { NatureView } from './natureView.js';
 import { Overlay } from './overlay.js';
 import { Particles } from './particles.js';
-import { buildModel } from './buildings.js';
+import { buildModel, workArea } from './buildings.js';
 
 const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
@@ -92,12 +92,7 @@ export class WorldView {
       work: model.work,
     };
     // Outdoor work / wander area in world space
-    if (model.work) {
-      const [x0, z0, x1, z1] = model.work;
-      const a = toWorld({ x: x0, y: 0, z: z0 }), c = toWorld({ x: x1, y: 0, z: z1 });
-      item.workWorld = [Math.min(a.x, c.x), Math.min(a.z, c.z), Math.max(a.x, c.x), Math.max(a.z, c.z)];
-    }
-    b.work = item.workWorld || null;
+    b.work = workArea(b);
     this.items.set(b.id, item);
     if (animate) {
       mesh.scale.set(1, 0.01, 1);

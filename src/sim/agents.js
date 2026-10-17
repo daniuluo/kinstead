@@ -7,6 +7,7 @@ import { BUILDINGS } from '../defs.js';
 import { doorPoint } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { MAT } from '../render/materials.js';
+import { workArea } from '../render/buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RNG } from '../util/rng.js';
 
@@ -235,7 +236,7 @@ export class Agents {
     if (outdoor && r.walk) {
       const wk = r.walk;
       wk.mode = 'wander';
-      wk.area = B.work || [B.x + 0.15, B.z + 0.15, B.x + B.size - 0.15, B.z + B.size - 0.15];
+      wk.area = B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + B.size - 0.15, B.z + B.size - 0.15];
       wk.baseY = B.baseY + 0.012;
       wk.working = def.outdoorWork && r.job === B.id;
       wk.idle = 0.3;

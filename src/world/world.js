@@ -19,7 +19,7 @@ export class World {
     this.roads = new Uint8Array(N * N);
     this.rails = new Uint8Array(N * N);
     this.lines = [];
-    this.sandbox = { infiniteMoney: false, unlockAll: false };
+    this.sandbox = { infiniteMoney: false, unlockAll: false, freeUpgrades: false };
     this.buildingAt = new Int32Array(N * N).fill(-1);
     this.connected = new Uint8Array(N * N);
     this.treeCount = new Uint8Array(N * N);
@@ -192,8 +192,10 @@ export class World {
     if (!next) return { ok: false, reason: 'Fully upgraded', max: true };
     const unlock = unlockOf(b.type, b.level + 1);
     const reqs = [];
-    if (unlock) reqs.push({ label: `${unlock} villagers`, met: this.unlockPop >= unlock });
-    if (next.req) {
+    const free = this.sandbox.freeUpgrades;
+    if (free) reqs.push({ label: 'Sandbox: no requirements', met: true });
+    if (unlock && !free) reqs.push({ label: `${unlock} villagers`, met: this.unlockPop >= unlock });
+    if (next.req && !free) {
       if (next.req.happiness) reqs.push({ label: `Happiness ${next.req.happiness}%`, met: (b.happiness || 0) >= next.req.happiness });
       for (const s of ['water', 'health', 'education', 'safety', 'culture']) {
         if (next.req[s]) reqs.push({ label: `${s[0].toUpperCase() + s.slice(1)} coverage`, met: !!(b.factors && b.factors[s]) });
