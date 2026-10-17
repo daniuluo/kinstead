@@ -1,0 +1,11 @@
+{
+  "name": "hearthvale",
+  "version": "1.0.0",
+  "description": "A cozy isometric town builder that runs in the browser (three.js, no build step).",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "check": "node scripts/check.js"
+  }
+}

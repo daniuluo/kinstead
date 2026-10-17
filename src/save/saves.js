@@ -1,0 +1,152 @@
+// Save format + local (browser) save slots + file export/import.
+
+import { World } from '../world/world.js';
+import { Terrain } from '../world/terrain.js';
+import { BUILDINGS } from '../defs.js';
+import { titleFor } from '../config.js';
+
+export const SAVE_FORMAT = 'hearthvale-save';
+export const SAVE_VERSION = 1;
+
+function toB64(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function fromB64(b) {
+  const s = atob(b);
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+
+export function serialize(world) {
+  const H = world.terrain.H;
+  const q = new Int16Array(H.length);
+  for (let i = 0; i < H.length; i++) q[i] = Math.round(H[i] * 1000);
+  const trees = [];
+  for (const t of world.trees) trees.push(Math.round(t.x * 100), Math.round(t.z * 100), t.k, Math.round(t.s * 100), Math.round(t.r * 100));
+  return {
+    format: SAVE_FORMAT,
+    version: SAVE_VERSION,
+    savedAt: new Date().toISOString(),
+    name: world.townName,
+    seed: world.seed,
+    N: world.N,
+    heights: toB64(new Uint8Array(q.buffer)),
+    roads: toB64(world.roads),
+    rails: toB64(world.rails),
+    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built]),
+    trees,
+    residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look]),
+    lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
+    state: {
+      money: Number.isFinite(world.money) ? world.money : 0, sandbox: world.sandbox, taxRate: world.taxRate, day: world.day, hours: world.hours, nextId: world.nextId,
+      entry: world.entry, history: world.history, titleIdx: world.titleIdx, stats: world.stats,
+    },
+    meta: { day: world.day, pop: world.population, money: Number.isFinite(world.money) ? Math.round(world.money) : '∞', title: titleFor(world.population).name },
+  };
+}
+
+export function deserialize(data) {
+  if (!data || data.format !== SAVE_FORMAT) throw new Error('This file is not a Hearthvale save.');
+  if (data.version > SAVE_VERSION) throw new Error('This save was made by a newer version of Hearthvale.');
+  const N = data.N;
+  const raw = fromB64(data.heights);
+  const q = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+  const H = new Float32Array(q.length);
+  for (let i = 0; i < q.length; i++) H[i] = q[i] / 1000;
+  const w = new World(N, data.seed, new Terrain(N, H));
+  w.townName = data.name || 'Hearthvale';
+  w.roads.set(fromB64(data.roads).subarray(0, N * N));
+  if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
+  const tr = data.trees || [];
+  for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
+  for (const [id, type, level, x, z, variant, rot, built] of data.buildings) {
+    if (!BUILDINGS[type]) continue;
+    w.restoreBuilding({ id, type, level, x, z, variant, rot, built });
+  }
+  for (const [id, first, last, age, home, job, look] of data.residents) {
+    w.residents.set(id, { id, first, last, age, home: home >= 0 ? home : null, job: job >= 0 ? job : null, look, mood: 60 });
+  }
+  w.lines = (data.lines || []).map(l => ({ ...l, stops: l.stops.filter(s => w.buildings.has(s)) }));
+  const s = data.state;
+  Object.assign(w, {
+    money: s.money, taxRate: s.taxRate, day: s.day, hours: s.hours, nextId: s.nextId, entry: s.entry,
+    history: s.history || [], titleIdx: s.titleIdx || 0,
+  });
+  Object.assign(w.stats, s.stats || {});
+  if (s.sandbox) w.setSandbox(s.sandbox);
+  w.updateRoadNetwork();
+  w.updateRailLinks();
+  return w;
+}
+
+// ------------------------------------------------------------ local slots
+
+const INDEX_KEY = 'hearthvale.saves.v1';
+const SLOT_KEY = (id) => `hearthvale.slot.${id}`;
+
+export const LocalSaves = {
+  list() {
+    try { return JSON.parse(localStorage.getItem(INDEX_KEY) || '[]'); } catch { return []; }
+  },
+  _writeIndex(idx) { localStorage.setItem(INDEX_KEY, JSON.stringify(idx)); },
+  save(id, data, thumb) {
+    const idx = this.list().filter(e => e.id !== id);
+    const entry = { id, name: data.name, day: data.meta.day, pop: data.meta.pop, money: data.meta.money, title: data.meta.title, savedAt: data.savedAt, thumb: thumb || null };
+    try {
+      localStorage.setItem(SLOT_KEY(id), JSON.stringify(data));
+      idx.unshift(entry);
+      this._writeIndex(idx);
+    } catch (e) {
+      // Out of space: retry without thumbnails.
+      try {
+        for (const x of idx) x.thumb = null;
+        entry.thumb = null;
+        localStorage.setItem(SLOT_KEY(id), JSON.stringify(data));
+        idx.unshift(entry);
+        this._writeIndex(idx);
+      } catch {
+        throw new Error('Browser storage is full. Delete an old save or export to a file.');
+      }
+    }
+    return entry;
+  },
+  load(id) {
+    const s = localStorage.getItem(SLOT_KEY(id));
+    if (!s) throw new Error('Save not found.');
+    return JSON.parse(s);
+  },
+  remove(id) {
+    localStorage.removeItem(SLOT_KEY(id));
+    this._writeIndex(this.list().filter(e => e.id !== id));
+  },
+  has(id) { return !!localStorage.getItem(SLOT_KEY(id)); },
+};
+
+export function downloadJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function readJSONFile(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => { try { resolve(JSON.parse(fr.result)); } catch { reject(new Error('That file is not valid JSON.')); } };
+    fr.onerror = () => reject(fr.error);
+    fr.readAsText(file);
+  });
+}
+
+export function saveFileName(world) {
+  const slug = world.townName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'town';
+  return `${slug}-day${world.day}.hearthvale.json`;
+}

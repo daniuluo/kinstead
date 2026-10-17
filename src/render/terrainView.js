@@ -1,0 +1,388 @@
+// Terrain: a finely subdivided, smooth-shaded surface whose vertex colours are
+// "painted" — grass, sand and rock blend softly, and roads, rails, yards and
+// farm fields are painted straight into the ground for a rustic, organic look.
+
+import * as THREE from 'three';
+import { CONFIG } from '../config.js';
+import { MAT } from './materials.js';
+import { BUILDINGS } from '../defs.js';
+import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
+import { doorPoint } from '../world/world.js';
+
+export const SUB = 5;
+const BASE_Y = -2.2;
+const C = (h) => new THREE.Color(h);
+
+const GRASS = [
+  { a: C('#8db25a'), b: C('#5c8a3c'), meadow: C('#b8b56a'), dry: C('#a8a058') },  // spring
+  { a: C('#84a84e'), b: C('#557f36'), meadow: C('#b3a85a'), dry: C('#a39752') },  // summer
+  { a: C('#9aa055'), b: C('#77803f'), meadow: C('#b99a52'), dry: C('#a98a4c') },  // autumn
+  { a: C('#909478'), b: C('#757c62'), meadow: C('#a29f86'), dry: C('#97907a') },  // winter
+];
+const SAND = C('#d2bf8c'), MUD = C('#958564'), DEEP = C('#5f5a48');
+const ROCK_A = C('#9a948a'), ROCK_B = C('#7d776e');
+const SOIL_T = C('#7a5a3c'), SOIL_B = C('#5a432f'), ROCK_S = C('#6e655a'), ROCK_S2 = C('#4e473f');
+const DIRT = [C('#86663f'), C('#957349'), C('#a3825a'), C('#6f553a')];
+const COBBLE = [C('#9d968a'), C('#857e72'), C('#aaa395'), C('#6e675c')];
+const PAVED = [C('#827e78'), C('#78746f'), C('#cbbfa8'), C('#b3a890')];
+const GRAVEL = [C('#8d8477'), C('#7a7166')];
+const YARD = C('#a79064'), PACKED = C('#9a845f'), LAWN = C('#7fae4f'), STONE = C('#b4ac9d'), STONE2 = C('#a29a8b');
+const SOIL = C('#6e5235'), SOIL_D = C('#5c442c');
+const CROPS = [
+  [C('#86b65a'), C('#9cc46a'), C('#7aa752')],
+  [C('#d4b24e'), C('#7fae4f'), C('#c9a24a')],
+  [C('#c79a45'), C('#b58a42'), C('#a8853f')],
+  [C('#6f5a44'), C('#6a5640'), C('#74604a')],
+];
+
+const _a = new THREE.Color(), _b = new THREE.Color();
+
+function segDist(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az;
+  const L2 = dx * dx + dz * dz;
+  let t = L2 ? ((px - ax) * dx + (pz - az) * dz) / L2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const ex = px - ax - dx * t, ez = pz - az - dz * t;
+  return Math.sqrt(ex * ex + ez * ez);
+}
+
+export class TerrainView {
+  constructor(world, scene) {
+    this.world = world;
+    this.scene = scene;
+    this.season = 1;
+    this.n1 = makeNoise2D(world.seed + 11);
+    this.n2 = makeNoise2D(world.seed + 12);
+    this.n3 = makeNoise2D(world.seed + 13);
+    this.group = new THREE.Group();
+    scene.add(this.group);
+    const N = world.N, V = N * SUB + 1;
+    this.V = V;
+    const geo = new THREE.BufferGeometry();
+    this.pos = new Float32Array(V * V * 3);
+    this.col = new Float32Array(V * V * 3);
+    this.snow = new Float32Array(V * V).fill(1);
+    geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    geo.setAttribute('snowMask', new THREE.BufferAttribute(this.snow, 1));
+    const idx = new Uint32Array((V - 1) * (V - 1) * 6);
+    let k = 0;
+    for (let j = 0; j < V - 1; j++) for (let i = 0; i < V - 1; i++) {
+      const a = j * V + i, b = (j + 1) * V + i, c = (j + 1) * V + i + 1, d = j * V + i + 1;
+      idx[k++] = a; idx[k++] = b; idx[k++] = c; idx[k++] = a; idx[k++] = c; idx[k++] = d;
+    }
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    this.surface = new THREE.Mesh(geo, MAT.terrain);
+    this.surface.receiveShadow = true;
+    this.surface.castShadow = true;
+    this.surface.name = 'terrain';
+    this.sides = new THREE.Mesh(new THREE.BufferGeometry(), MAT.side);
+    this.sides.receiveShadow = true;
+    this.water = this._buildWater();
+    this.waterSides = new THREE.Mesh(new THREE.BufferGeometry(), MAT.waterSide);
+    this.group.add(this.surface, this.sides, this.water, this.waterSides);
+    this.rebuild();
+  }
+
+  setSeason(s) {
+    if (s === this.season) return;
+    this.season = s;
+    this.repaint();
+  }
+
+  rebuild() {
+    const { terrain: t } = this.world;
+    const V = this.V;
+    for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+      const x = i / SUB, z = j / SUB, o = (j * V + i) * 3;
+      this.pos[o] = x; this.pos[o + 1] = t.heightAt(x, z); this.pos[o + 2] = z;
+    }
+    const g = this.surface.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    g.computeBoundingBox();
+    this.repaint();
+    this._buildSides();
+  }
+
+  // ------------------------------------------------------------ painting
+  repaint() {
+    const w = this.world, t = w.terrain, N = w.N, V = this.V;
+    const P = this.pos, col = this.col, snow = this.snow;
+    const g = GRASS[this.season];
+    // smooth tree-density field at tile corners
+    const forest = new Float32Array((N + 1) * (N + 1));
+    for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
+      let s = 0;
+      for (const [dx, dz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) { const tx = x + dx, tz = z + dz; if (w.inBounds(tx, tz)) s += Math.min(3, w.treeCount[w.idx(tx, tz)]); }
+      forest[z * (N + 1) + x] = s / 4;
+    }
+    const forestAt = (x, z) => {
+      const fx = Math.min(N - 1e-4, x), fz = Math.min(N - 1e-4, z);
+      const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, S1 = N + 1;
+      return (forest[iz * S1 + ix] * (1 - u) + forest[iz * S1 + ix + 1] * u) * (1 - v) + (forest[(iz + 1) * S1 + ix] * (1 - u) + forest[(iz + 1) * S1 + ix + 1] * u) * v;
+    };
+    const step = 1 / SUB;
+    for (let j = 0; j < V; j++) {
+      for (let i = 0; i < V; i++) {
+        const vi = j * V + i, o = vi * 3;
+        const x = i * step, z = j * step, h = P[o + 1];
+        const hl = P[(j * V + Math.max(0, i - 1)) * 3 + 1], hr = P[(j * V + Math.min(V - 1, i + 1)) * 3 + 1];
+        const hu = P[(Math.max(0, j - 1) * V + i) * 3 + 1], hd = P[(Math.min(V - 1, j + 1) * V + i) * 3 + 1];
+        const slope = Math.hypot(hr - hl, hd - hu) / (2 * step);
+        const n1 = Math.min(1, Math.max(0, fbm(this.n1, x * 0.13, z * 0.13, 3) * 0.75 + 0.5));
+        const n2 = this.n2(x * 0.07, z * 0.07);
+        const fine = this.n3(x * 1.7, z * 1.7) * 0.5 + hash2(i, j, 5) - 0.5;
+        // grass
+        _a.copy(g.a).lerp(g.b, n1);
+        if (n2 > 0.3) _a.lerp(g.meadow, Math.min(0.55, (n2 - 0.3) * 1.8));
+        const fo = forestAt(x, z);
+        if (fo > 0) _a.lerp(g.b, Math.min(0.45, fo * 0.3)).multiplyScalar(1 - Math.min(0.12, fo * 0.06));
+        _a.lerp(g.dry, smoothstep(0.35, 0.0, h) * 0.3);
+        // rock on steep or high ground
+        const rock = Math.max(smoothstep(0.55, 0.95, slope), smoothstep(2.4, 3.2, h));
+        if (rock > 0) { _b.copy(ROCK_A).lerp(ROCK_B, hash2(i >> 1, j >> 1, 9)); _a.lerp(_b, rock); }
+        if (h > 1.9) _a.lerp(ROCK_A, smoothstep(1.9, 3.0, h) * 0.3);
+        // shores and lake beds
+        const wl = CONFIG.WATER_LEVEL;
+        if (h < wl + 0.22) _a.lerp(SAND, smoothstep(wl + 0.22, wl + 0.06, h) * 0.85);
+        if (h < wl) { _b.copy(MUD).lerp(DEEP, clamp(-h / 0.8, 0, 1)); _a.lerp(_b, smoothstep(wl, wl - 0.15, h)); }
+        const f = 1 + fine * 0.07;
+        col[o] = _a.r * f; col[o + 1] = _a.g * f; col[o + 2] = _a.b * f;
+        snow[vi] = 1;
+      }
+    }
+    this._paintBuildings();
+    this._paintRoads();
+    this._paintRails();
+    const geo = this.surface.geometry;
+    geo.attributes.color.needsUpdate = true;
+    geo.attributes.snowMask.needsUpdate = true;
+  }
+
+  _range(x0, z0, x1, z1, fn) {
+    const V = this.V;
+    const i0 = Math.max(0, Math.floor(x0 * SUB)), i1 = Math.min(V - 1, Math.ceil(x1 * SUB));
+    const j0 = Math.max(0, Math.floor(z0 * SUB)), j1 = Math.min(V - 1, Math.ceil(z1 * SUB));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) fn(j * V + i, i / SUB, j / SUB, i, j);
+  }
+
+  _blend(vi, color, a, snowK = null) {
+    if (a <= 0.001) return;
+    const o = vi * 3, c = this.col;
+    c[o] += (color.r - c[o]) * a; c[o + 1] += (color.g - c[o + 1]) * a; c[o + 2] += (color.b - c[o + 2]) * a;
+    if (snowK !== null) this.snow[vi] += (snowK - this.snow[vi]) * a;
+  }
+
+  _paintBuildings() {
+    const w = this.world, season = this.season;
+    for (const b of w.buildings.values()) {
+      const def = BUILDINGS[b.type];
+      const E = b.size / 2, cx = b.x + E, cz = b.z + E;
+      const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      const work = b.work;
+      const kind = b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
+        : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
+          : (def.park && b.type !== 'plaza') ? 'lawn'
+            : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';
+      const M = 0.14;
+      this._range(b.x - M, b.z - M, b.x + b.size + M, b.z + b.size + M, (vi, x, z, i, j) => {
+        const dx = x - cx, dz = z - cz;
+        const lx = dx * co - dz * si, lz = dx * si + dz * co;
+        const edge = Math.min(E - Math.abs(lx), E - Math.abs(lz));
+        const nz = this.n3(x * 2.3, z * 2.3) * 0.06;
+        let a;
+        switch (kind) {
+          case 'plaza': case 'stone': {
+            a = smoothstep(-0.02, 0.07, edge + nz * 0.5) * (kind === 'stone' ? 0.75 : 1);
+            _b.copy(STONE).lerp(STONE2, hash2(i, j, 3));
+            this._blend(vi, _b, a, 0.55);
+            break;
+          }
+          case 'packed': a = smoothstep(-0.08, 0.2, edge + nz) * 0.85; this._blend(vi, PACKED, a, 0.7); break;
+          case 'lawn': a = smoothstep(-0.1, 0.18, edge + nz) * 0.55; this._blend(vi, LAWN, a); break;
+          case 'farm': {
+            a = smoothstep(-0.08, 0.18, edge + nz) * 0.6;
+            this._blend(vi, YARD, a * 0.5);
+            if (work) {
+              const inside = x > work[0] - 0.02 && x < work[2] + 0.02 && z > work[1] - 0.02 && z < work[3] + 0.02;
+              if (inside) {
+                const fe = Math.min(x - work[0], work[2] - x, z - work[1], work[3] - z);
+                const fa = smoothstep(-0.02, 0.12, fe);
+                const row = Math.floor((lz + 10) / 0.2 + 1e-4) % 2;
+                const plot = Math.floor((lx + E) / ((2 * E) / 3));
+                const crop = CROPS[season][((plot % 3) + 3) % 3];
+                if (row === 0 || season === 3) { _b.copy(SOIL).lerp(SOIL_D, hash2(i, j, 2) * 0.6); this._blend(vi, _b, fa, 0.9); }
+                else this._blend(vi, crop, fa, 1);
+              }
+            }
+            break;
+          }
+          default: {
+            a = smoothstep(-0.12, 0.25, edge + nz) * 0.32;
+            _b.copy(YARD);
+            this._blend(vi, _b, a * (0.6 + 0.4 * (this.n3(x * 4, z * 4) * 0.5 + 0.5)));
+          }
+        }
+      });
+      // worn footpath from the door to the road
+      if (b.access) {
+        const d = doorPoint(b);
+        const ax = b.access.x + 0.5 - d.x, az = b.access.z + 0.5 - d.z;
+        const len = Math.hypot(ax, az) || 1, ux = ax / len, uz = az / len;
+        const p0x = d.x - ux * 0.28, p0z = d.z - uz * 0.28, p1x = d.x + ux * 0.32, p1z = d.z + uz * 0.32;
+        const stone = b.level >= 1 && kind !== 'yard';
+        this._range(Math.min(p0x, p1x) - 0.2, Math.min(p0z, p1z) - 0.2, Math.max(p0x, p1x) + 0.2, Math.max(p0z, p1z) + 0.2, (vi, x, z, i, j) => {
+          const dist = segDist(x, z, p0x, p0z, p1x, p1z) + this.n3(x * 4, z * 4) * 0.03;
+          const a = 1 - smoothstep(0.06, 0.13, dist);
+          _b.copy(stone ? COBBLE[(hash2(i, j, 4) * 3) | 0] : DIRT[(hash2(i, j, 4) * 3) | 0]);
+          this._blend(vi, _b, a * 0.9, 0.5);
+        });
+      }
+    }
+  }
+
+  // Road / rail skeleton for one tile: segments from a (gently wobbling)
+  // centre to each linked edge, so paths meander instead of ruling straight lines.
+  _arms(x, z, grid, amp = 0) {
+    const w = this.world, N = w.N;
+    const j = (px, pz) => this.n2(px * 0.9 + 7.3, pz * 0.9 - 2.1) * amp;
+    const cx = x + 0.5 + j(x + 0.5, z + 0.5), cz = z + 0.5 + j(z + 0.5, x + 0.5);
+    const segs = [];
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      const linked = (nx >= 0 && nz >= 0 && nx < N && nz < N) ? grid[nz * N + nx] : (grid === w.roads && x === w.entry.x && z === w.entry.z);
+      if (!linked) continue;
+      const mx = x + 0.5 + dx * 0.5, mz = z + 0.5 + dz * 0.5;
+      const off = j(mx, mz);
+      segs.push([cx, cz, mx + (dz ? off : 0), mz + (dx ? off : 0)]);
+    }
+    if (!segs.length) segs.push([cx, cz, cx, cz]);
+    return segs;
+  }
+
+  _paintRoads() {
+    const w = this.world, N = w.N, t = w.terrain;
+    const V = this.V;
+    const cov = new Float32Array(V * V), lvl = new Uint8Array(V * V), dn = new Float32Array(V * V);
+    const HW = [0, 0.2, 0.27, 0.32], SOFT = [0, 0.05, 0.035, 0.028];
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const L = w.roads[z * N + x];
+      if (!L) continue;
+      const segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07);
+      const hw = HW[L], sf = SOFT[L];
+      this._range(x - 0.45, z - 0.45, x + 1.45, z + 1.45, (vi, px, pz) => {
+        let d = 9;
+        for (const s of segs) { const dd = segDist(px, pz, s[0], s[1], s[2], s[3]); if (dd < d) d = dd; }
+        if (d > hw + sf * 2 + 0.1) return;
+        const rough = L === 1 ? this.n3(px * 3.1, pz * 3.1) * 0.06 + this.n1(px * 9, pz * 9) * 0.025 : this.n3(px * 5, pz * 5) * 0.012;
+        const c = 1 - smoothstep(hw - sf, hw + sf, d + rough);
+        if (c > cov[vi]) { cov[vi] = c; lvl[vi] = L; dn[vi] = d / hw; }
+      });
+    }
+    for (let vi = 0; vi < V * V; vi++) {
+      const c = cov[vi];
+      if (c <= 0.001) continue;
+      const L = lvl[vi], d = dn[vi];
+      const i = vi % V, j = (vi / V) | 0;
+      const hsh = hash2(i, j, 21);
+      if (L === 1) {
+        _b.copy(DIRT[0]).lerp(DIRT[1], hsh * 0.7);
+        if (d < 0.45) _b.lerp(DIRT[2], (0.45 - d) * 0.5);
+        if (d > 0.7) _b.lerp(DIRT[3], (d - 0.7) * 0.8);
+        this._blend(vi, _b, Math.min(1, c * 1.1), 0.45);
+      } else if (L === 2) {
+        _b.copy(COBBLE[(hsh * 3) | 0]);
+        if (d > 0.78) _b.lerp(COBBLE[3], 0.7);
+        this._blend(vi, _b, c, 0.3);
+      } else {
+        if (d < 0.66) _b.copy(PAVED[0]).lerp(PAVED[1], hsh);
+        else if (d < 0.74) _b.copy(PAVED[3]);
+        else _b.copy(PAVED[2]).lerp(PAVED[3], hsh * 0.4);
+        this._blend(vi, _b, c, 0.25);
+      }
+    }
+    void t;
+  }
+
+  _paintRails() {
+    const w = this.world, N = w.N;
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!w.rails[z * N + x] || w.terrain.isWater(x, z)) continue;
+      const segs = this._arms(x, z, w.rails);
+      const onRoad = !!w.roads[z * N + x];
+      this._range(x - 0.4, z - 0.4, x + 1.4, z + 1.4, (vi, px, pz, i, j) => {
+        let d = 9;
+        for (const s of segs) { const dd = segDist(px, pz, s[0], s[1], s[2], s[3]); if (dd < d) d = dd; }
+        const a = 1 - smoothstep(0.17, 0.24, d + this.n3(px * 4, pz * 4) * 0.02);
+        if (a <= 0) return;
+        _b.copy(GRAVEL[hash2(i, j, 8) < 0.5 ? 0 : 1]);
+        this._blend(vi, _b, a * (onRoad ? 0.5 : 0.95), 0.6);
+      });
+    }
+  }
+
+  // --------------------------------------------------------------- sides
+  _buildSides() {
+    const { terrain: t, N } = this.world;
+    const W = CONFIG.WATER_LEVEL - 0.02;
+    const pos = [], col = [], wpos = [];
+    const quad = (arr, carr, a, b, cc, d, ca, cb, out) => {
+      const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [cc[0] - a[0], cc[1] - a[1], cc[2] - a[2]];
+      const n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+      if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) { const tmp = b; b = d; d = tmp; }
+      for (const p of [a, b, cc, a, cc, d]) {
+        arr.push(p[0], p[1], p[2]);
+        if (carr) { const c = p[3] === 1 ? ca : cb; carr.push(c.r, c.g, c.b); }
+      }
+    };
+    const step = 1 / SUB;
+    const edge = (x0, z0, x1, z1, out) => {
+      const h0 = t.heightAt(x0, z0), h1 = t.heightAt(x1, z1);
+      const m0 = h0 - 0.3 - hash2(Math.round(x0 * 9), Math.round(z0 * 9), 3) * 0.1;
+      const m1 = h1 - 0.3 - hash2(Math.round(x1 * 9), Math.round(z1 * 9), 3) * 0.1;
+      const j = hash2(Math.round((x0 + x1) * 3), Math.round((z0 + z1) * 3), 9) * 0.06;
+      const soilT = SOIL_T.clone().multiplyScalar(1 + j);
+      quad(pos, col, [x0, h0, z0, 1], [x1, h1, z1, 1], [x1, m1, z1, 0], [x0, m0, z0, 0], soilT, SOIL_B, out);
+      const r1 = ROCK_S.clone().multiplyScalar(1 + j);
+      quad(pos, col, [x0, m0, z0, 1], [x1, m1, z1, 1], [x1, BASE_Y, z1, 0], [x0, BASE_Y, z0, 0], r1, ROCK_S2, out);
+      if (h0 < W || h1 < W) quad(wpos, null, [x0, W, z0], [x1, W, z1], [x1, Math.min(h1, W), z1], [x0, Math.min(h0, W), z0], null, null, out);
+    };
+    for (let k = 0; k < N * SUB; k++) {
+      const a = k * step, b = (k + 1) * step;
+      edge(a, 0, b, 0, [0, 0, -1]);
+      edge(a, N, b, N, [0, 0, 1]);
+      edge(0, a, 0, b, [-1, 0, 0]);
+      edge(N, a, N, b, [1, 0, 0]);
+    }
+    const g = this.sides.geometry;
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    const wg = this.waterSides.geometry;
+    wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wpos), 3));
+    wg.computeVertexNormals();
+    wg.computeBoundingSphere();
+  }
+
+  _buildWater() {
+    const N = this.world.N;
+    const geo = new THREE.PlaneGeometry(N, N, N * 2, N * 2);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(N / 2, CONFIG.WATER_LEVEL - 0.02, N / 2);
+    const m = new THREE.Mesh(geo, MAT.water);
+    m.receiveShadow = true;
+    m.renderOrder = 2;
+    return m;
+  }
+
+  dispose() {
+    this.scene.remove(this.group);
+    this.surface.geometry.dispose();
+    this.sides.geometry.dispose();
+    this.water.geometry.dispose();
+    this.waterSides.geometry.dispose();
+  }
+}

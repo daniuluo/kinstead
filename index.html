@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Hearthvale — a cozy isometric town builder</title>
+  <meta name="description" content="Build a little village in your browser: roads, homes, services, parks, transit, seasons and day/night — with villagers going about their lives.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><path d=%22M8 30 32 10l24 20v26H8z%22 fill=%22%23d8c29a%22/><path d=%22M4 32 32 8l28 24-4 4L32 15 8 36z%22 fill=%22%239c4a32%22/><rect x=%2227%22 y=%2240%22 width=%2210%22 height=%2216%22 fill=%22%235c3d26%22/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0&display=block" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="sky"></div>
+  <canvas id="stars"></canvas>
+  <div id="app"></div>
+  <div id="vignette"></div>
+
+  <div id="hud" class="hidden">
+    <div class="topbar">
+      <div class="panel town" id="townBox" title="Rename your town">
+        <div class="town-name" id="townName">Hearthvale</div>
+        <div class="town-title" id="townTitle">Hamlet</div>
+      </div>
+      <div class="panel clock">
+        <div id="clockIcon"><span class="ms">light_mode</span></div>
+        <div>
+          <div id="clockTime">07:00</div>
+          <div id="clockDate">Day 1 · Spring</div>
+        </div>
+        <div class="speed" id="speed">
+          <button data-speed="0" title="Pause (Space)"><span class="ms">pause</span></button>
+          <button data-speed="1" title="Normal speed" class="on"><span class="ms">play_arrow</span></button>
+          <button data-speed="2" title="2× speed">2×</button>
+          <button data-speed="4" title="4× speed">4×</button>
+          <button data-speed="8" title="8× speed">8×</button>
+          <button data-speed="16" title="16× speed">16×</button>
+          <button data-speed="32" title="32× speed">32×</button>
+        </div>
+      </div>
+      <div class="panel stats">
+        <div class="stat" title="Coins in the treasury, and the daily balance">
+          <span class="ico ms coin">toll</span><b id="money">0</b><small id="net">+0 / day</small>
+        </div>
+        <div class="stat" title="Villagers and free homes">
+          <span class="ico ms">groups</span><b id="pop">0</b><small id="housing">0 free homes</small>
+        </div>
+        <div class="stat" title="Average happiness">
+          <span class="ico ms" id="happyIco">sentiment_satisfied</span><b id="happy">60%</b><small>happiness</small>
+        </div>
+        <div class="stat" title="Jobs filled / jobs available">
+          <span class="ico ms">work</span><b id="jobs">0/0</b><small>jobs filled</small>
+        </div>
+        <div class="rci" title="Demand — Homes / Commerce / Industry">
+          <div class="bar r"><i id="demR"></i></div>
+          <div class="bar c"><i id="demC"></i></div>
+          <div class="bar i"><i id="demI"></i></div>
+          <span>RCI</span>
+        </div>
+      </div>
+      <div class="panel menu">
+        <button id="btnView" title="Toggle 2D top-down / isometric view (T)">2D</button>
+        <button id="btnOverlay" title="Data overlays (O)"><span class="ms">layers</span></button>
+        <button id="btnLines" title="Transit lines (L)"><span class="ms">route</span></button>
+        <button id="btnBudget" title="Budget & statistics (B)"><span class="ms">bar_chart</span></button>
+        <button id="btnSave" title="Save & load (Ctrl+S)"><span class="ms">save</span></button>
+        <button id="btnSettings" title="Settings"><span class="ms">settings</span></button>
+        <button id="btnHelp" title="How to play (H)"><span class="ms">help</span></button>
+      </div>
+    </div>
+
+    <div class="panel zoom">
+      <button id="zoomIn" title="Zoom in (+ / mouse wheel)"><span class="ms">add</span></button>
+      <button id="zoomOut" title="Zoom out (− / mouse wheel)"><span class="ms">remove</span></button>
+    </div>
+
+    <div id="overlayMenu" class="panel overlay-menu hidden"></div>
+    <div id="legend" class="panel legend hidden"></div>
+    <div id="flyout" class="panel flyout hidden"></div>
+    <div id="toolHint" class="hint hidden"></div>
+    <div id="toolbar" class="panel toolbar"></div>
+    <div id="inspector" class="panel inspector hidden"></div>
+    <div id="toasts"></div>
+    <div id="popups"></div>
+  </div>
+
+  <div id="tooltip" class="tooltip hidden"></div>
+  <div id="modal" class="modal hidden"><div class="modal-card panel" id="modalCard"></div></div>
+
+  <div id="title" class="title-screen">
+    <div class="title-card panel">
+      <div class="titlebar">Hearthvale</div>
+      <div class="logo">Hearthvale</div>
+      <div class="tagline">A little village builder</div>
+      <button class="btn primary" id="btnContinue">Continue</button>
+      <button class="btn gold" id="btnNew">New village</button>
+      <button class="btn" id="btnLoad">Load a save…</button>
+      <div class="title-foot">Built with three.js · saves locally or to Google Drive</div>
+    </div>
+  </div>
+
+  <noscript>Hearthvale needs JavaScript and WebGL.</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
