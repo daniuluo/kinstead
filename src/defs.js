@@ -470,7 +470,7 @@ export const BUILDINGS = {
 };
 
 export const TRANSIT = {
-  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.9, capacity: 8, stopType: 'coachstop', unlock: 0 },
+  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.45, capacity: 8, stopType: 'coachstop', unlock: 0 },
   rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25 },
 };
 export const RAIL_COST = 30;

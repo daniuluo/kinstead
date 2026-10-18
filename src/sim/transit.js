@@ -11,13 +11,21 @@ import { bridgeDeckY, isOpen } from '../world/world.js';
 
 const WARM = [1.7, 1.2, 0.55];
 
+// A horse's body, head and tail; its legs are separate pieces (horseLegs) so
+// they can trot.
+const LEGS = [[-0.025, 0.06], [0.025, 0.06], [-0.025, -0.06], [0.025, -0.06]];
+const LEG_H = 0.08;
+// legs swing this far either way; the gait advances with distance so that
+// hooves on the ground don't slide
+const LEG_SWING = 0.45, GAIT_PER_TILE = 1 / (LEG_H * LEG_SWING);
+const COACH_HORSE = { z: 0.26, color: '#7a5232' }, CART_HORSE = { z: 0.22, color: '#8a6542' };
+
 function horse(gb, x, z, color = '#7a5232') {
   gb.push(x, 0, z, 0);
   gb.box(0, 0.075, 0, 0.07, 0.07, 0.17, color);
   gb.box(0, 0.12, 0.1, 0.045, 0.07, 0.05, color, 0, -0.5);
   gb.box(0, 0.15, 0.14, 0.04, 0.035, 0.07, color);
   gb.box(0, 0.12, 0.07, 0.012, 0.06, 0.05, '#3a2a1f', 0, -0.4);
-  for (const [lx, lz] of [[-0.025, 0.06], [0.025, 0.06], [-0.025, -0.06], [0.025, -0.06]]) gb.box(lx, 0, lz, 0.018, 0.08, 0.018, color);
   gb.box(0, 0.09, -0.09, 0.012, 0.05, 0.012, '#3a2a1f', 0, 0.6);
   gb.pop();
 }
@@ -28,7 +36,7 @@ function wheels(gb, z, w, r = 0.04, color = '#3a2a1f') {
 
 function coachModel(color) {
   const gb = new GeoBuilder();
-  horse(gb, 0, 0.26);
+  horse(gb, 0, COACH_HORSE.z, COACH_HORSE.color);
   gb.box(0, 0.09, 0.16, 0.014, 0.014, 0.12, '#5b4231');
   gb.box(0, 0.06, -0.02, 0.2, 0.17, 0.34, color);
   gb.box(0, 0.23, -0.02, 0.22, 0.025, 0.37, '#3a3a3e');
@@ -49,7 +57,7 @@ function coachModel(color) {
 
 function cartModel(cargo) {
   const gb = new GeoBuilder();
-  horse(gb, 0, 0.22, '#8a6542');
+  horse(gb, 0, CART_HORSE.z, CART_HORSE.color);
   gb.box(0, 0.06, -0.04, 0.17, 0.05, 0.26, '#8a6542');
   for (const sx of [-1, 1]) gb.box(sx * 0.085, 0.11, -0.04, 0.01, 0.04, 0.26, '#7a5636');
   gb.box(0, 0.11, -0.17, 0.17, 0.04, 0.01, '#7a5636');
@@ -298,6 +306,27 @@ export class Transit {
     return w.terrain.heightAt(x, z) + (mode === 'rail' ? 0.06 : 0.03);
   }
 
+  // Four legs hung from the hips of the horse pulling this mesh.
+  _horseLegs(mesh, h) {
+    const geo = this._geo('leg' + h.color, () => { const gb = new GeoBuilder(); gb.box(0, -LEG_H, 0, 0.018, LEG_H, 0.018, h.color); return gb.build(); });
+    return LEGS.map(([lx, lz]) => {
+      const leg = new THREE.Mesh(geo, MAT.building);
+      leg.position.set(lx, LEG_H, h.z + lz);
+      leg.castShadow = true;
+      mesh.add(leg);
+      return leg;
+    });
+  }
+
+  // A trot: diagonal pairs of legs swing together; standing still, they settle.
+  _poseLegs(legs, gait, moving, dt) {
+    const a = Math.sin(gait) * LEG_SWING;
+    legs.forEach((leg, i) => {
+      const want = moving ? (i === 0 || i === 3 ? a : -a) : 0;
+      leg.rotation.x = moving ? want : leg.rotation.x * Math.max(0, 1 - dt * 8);
+    });
+  }
+
   _geo(key, fn) {
     let g = this.geoCache.get(key);
     if (!g) { g = fn(); this.geoCache.set(key, g); }
@@ -345,7 +374,8 @@ export class Transit {
       meshes.push(new THREE.Mesh(this._geo('coach' + line.color, () => coachModel(line.color)), MAT.building));
     }
     for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
-    const v = { line, route, s, meshes, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0 };
+    const legs = line.mode === 'rail' ? null : this._horseLegs(meshes[0], COACH_HORSE);
+    const v = { line, route, s, meshes, legs, gait: 0, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0 };
     this.vehicles.push(v);
     return v;
   }
@@ -489,6 +519,7 @@ export class Transit {
           if (since < 0) since += route.length;
           step *= Math.min(1, 0.25 + Math.min(dist, since) * 0.6);
         }
+        if (v.legs) v.gait += Math.min(step, dist) * GAIT_PER_TILE;
         if (step >= dist) {
           v.s = mark.s;
           v.state = 'dwell';
@@ -504,6 +535,7 @@ export class Transit {
         m.position.set(p.x, this._height(v.line.mode, p.x, p.z), p.z);
         m.rotation.y = p.heading;
       }
+      if (v.legs) this._poseLegs(v.legs, v.gait, v.state === 'move' && speed > 0, dt * speed);
       if (rail && speed) {
         v.smokeAcc += dt * (v.state === 'move' ? 6 : 1.5);
         const m = v.meshes[0];
@@ -548,7 +580,7 @@ export class Transit {
     const mesh = new THREE.Mesh(this._geo('cartmaterials', () => cartModel('materials')), MAT.building);
     mesh.castShadow = true;
     this.group.add(mesh);
-    this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, to: B.id, cb: onArrive });
+    this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id, cb: onArrive });
     return true;
   }
 
@@ -570,12 +602,14 @@ export class Transit {
         const mesh = new THREE.Mesh(this._geo('cart' + cargo, () => cartModel(cargo)), MAT.building);
         mesh.castShadow = true;
         this.group.add(mesh);
-        this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, to: B.id });
+        this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id });
       }
     }
     for (let i = this.carts.length - 1; i >= 0; i--) {
       const c = this.carts[i];
-      c.s += dt * speed * CONFIG.CART_SPEED;
+      const step = dt * speed * CONFIG.CART_SPEED;
+      c.s += step;
+      c.gait += step * GAIT_PER_TILE;
       if (c.s >= c.route.length) {
         this.group.remove(c.mesh);
         this.carts.splice(i, 1);
@@ -591,6 +625,7 @@ export class Transit {
       const p = this._sample(c.route, Math.min(c.s, c.route.length - 1e-3));
       c.mesh.position.set(p.x, this._height('coach', p.x, p.z), p.z);
       c.mesh.rotation.y = p.heading;
+      this._poseLegs(c.legs, c.gait, speed > 0, dt * speed);
     }
   }
 
