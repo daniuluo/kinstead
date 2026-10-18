@@ -5542,6 +5542,11 @@ export function buildModel(b, opts = {}) {
   const def = BUILDINGS[b.type];
   const annex = def && !opts.noAnnex ? annexPlan(def, b, Ex, Ez, c.box) : null;
   if (annex) { c.box = annex.main; c.Ex = annex.Ex; c.Ez = annex.Ez; }
+  // a building whose plot has grown but which isn't built across it yet
+  // keeps the small turn and offset it had on its own plot (the grown plot
+  // as a whole has none), so taking land doesn't shift it
+  const own = annex && b.spare && (def.merged ? 2 : def.size ** 2) === 1 && !opts.flat ? jitterOf({ type: b.type, variant: b.variant, size: 1 }) : null;
+  const fit = own || jit;
   MODELS[b.type](c, b.level);
   let geo = gb.build();
   if (geo) { weather(geo); tint(geo, pal.tint); }
@@ -5554,8 +5559,8 @@ export function buildModel(b, opts = {}) {
     const bcx = (B.x0 + B.x1) / 2, bcz = (B.z0 + B.z1) / 2, hx = (B.x1 - B.x0) / 2, hz = (B.z1 - B.z0) / 2;
     const tx = c.boxAware ? 0 : bcx, tz = c.boxAware ? 0 : bcz;
     const ex = Math.max(bcx - bb.min.x - tx, bb.max.x + tx - bcx), ez = Math.max(bcz - bb.min.z - tz, bb.max.z + tz - bcz);
-    const ya = Math.abs(jit.yaw), cy = Math.cos(ya), sy = Math.sin(ya);
-    const m = 0.02 + Math.abs(jit.ox) + Math.abs(jit.oz);
+    const ya = Math.abs(fit.yaw), cy = Math.cos(ya), sy = Math.sin(ya);
+    const m = 0.02 + Math.abs(fit.ox) + Math.abs(fit.oz);
     const k = Math.min(1, (hx - m) / (ex * cy + ez * sy), (hz - m) / (ex * sy + ez * cy));
     if (k < 1 || tx || tz) {
       geo.translate(tx - bcx, 0, tz - bcz);
@@ -5568,6 +5573,17 @@ export function buildModel(b, opts = {}) {
       if (c.spin) { sc(c.spin); c.spin.geo.scale(k, k, k); }
       if (c.doorAt) sc(c.doorAt);
     }
+  }
+  if (own && geo) {
+    // turned about the middle of its own footprint, and nudged as it was
+    const t = (b.rot * Math.PI) / 2, co = Math.cos(t), si = Math.sin(t), { x: px, z: pz } = annex.pc;
+    const ox = own.ox * co - own.oz * si, oz = own.ox * si + own.oz * co, cy = Math.cos(own.yaw), sy = Math.sin(own.yaw);
+    geo.translate(-px, 0, -pz); geo.rotateY(own.yaw); geo.translate(px + ox, 0, pz + oz); geo.computeBoundingSphere();
+    const mv = (p) => { const x = p.x - px, z = p.z - pz; p.x = px + ox + x * cy + z * sy; p.z = pz + oz - x * sy + z * cy; };
+    c.smoke.forEach(mv); c.glows.forEach(mv);
+    if (c.fountain) { const p = { x: c.fountain[0], z: c.fountain[2] }; mv(p); c.fountain[0] = p.x; c.fountain[2] = p.z; }
+    if (c.spin) { mv(c.spin); c.spin.ry = (c.spin.ry || 0) + own.yaw; }
+    if (c.doorAt) { mv(c.doorAt); const d = c.doorAt, dx = d.dx; d.dx = dx * cy + d.dz * sy; d.dz = -dx * sy + d.dz * cy; }
   }
   if (annex && geo) {
     geo.computeBoundingBox();
@@ -5630,15 +5646,27 @@ function annexPlan(def, b, Ex, Ez, B) {
   const [lw, ld] = Ez > Ex + 1e-6 && bw !== bd ? [bd, bw] : [bw, bd];
   const extraW = 2 * Ex - lw, extraD = 2 * Ez - ld;
   if (extraW < 0.5 && extraD < 0.5) return null;
-  const side = (b.variant >>> 4) & 1 ? 1 : -1;     // which end the building itself keeps
+  // which end the building itself keeps: the end it stood at when the land
+  // was taken (b.spare), so it doesn't move; older saves go by its seed
+  const sp = b.spare && b.spare.sx != null ? b.spare : null;
+  const side = sp && sp.sx ? sp.sx : (b.variant >>> 4) & 1 ? 1 : -1;
   const main = { x0: B.x0, x1: B.x1, z0: B.z0, z1: B.z1 };
   const areas = [];
   if (extraW >= 0.5) {
-    if (side < 0) { main.x1 = B.x1 - extraW; areas.push({ x0: main.x1, x1: B.x1, z0: B.z0, z1: B.z1, where: 'beside' }); }
-    else { main.x0 = B.x0 + extraW; areas.push({ x0: B.x0, x1: main.x0, z0: B.z0, z1: B.z1, where: 'beside' }); }
+    // the land beside keeps behind the street line (the building's own
+    // front, b.front, is the one that may come forward)
+    const az1 = sp ? B.z1 - (b.front || 0) : B.z1;
+    if (side < 0) { main.x1 = B.x1 - extraW; areas.push({ x0: main.x1, x1: B.x1, z0: B.z0, z1: az1, where: 'beside' }); }
+    else { main.x0 = B.x0 + extraW; areas.push({ x0: B.x0, x1: main.x0, z0: B.z0, z1: az1, where: 'beside' }); }
   }
-  if (extraD >= 0.5) { main.z0 = B.z0 + extraD; areas.push({ x0: main.x0, x1: main.x1, z0: B.z0, z1: main.z0, where: 'behind' }); }
-  return { main, areas, Ex: lw / 2, Ez: ld / 2 };
+  if (extraD >= 0.5) {
+    // land behind; or, the rare time it was taken in front, the land in front
+    if (sp && sp.sz < 0) { main.z1 = B.z0 + ld; areas.push({ x0: main.x0, x1: main.x1, z0: main.z1, z1: B.z1, where: 'beside' }); }
+    else { main.z0 = B.z0 + extraD; areas.push({ x0: main.x0, x1: main.x1, z0: B.z0, z1: main.z0, where: 'behind' }); }
+  }
+  // the middle of the building's own footprint, as it was on its own plot
+  const pc = { x: (main.x0 + main.x1) / 2, z: (main.z0 + main.z1 - (sp && sp.sz < 0 ? 0 : b.front || 0)) / 2 };
+  return { main, areas, Ex: lw / 2, Ez: ld / 2, pc };
 }
 
 // One annex in area A (local frame, street side at +z). `top` is how tall the

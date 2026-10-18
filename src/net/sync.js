@@ -10,7 +10,7 @@
 
 import { BUILDINGS } from '../defs.js';
 import { serialize, deserialize } from '../save/saves.js';
-import { fw, fd, spareOf, floorHeight } from '../world/world.js';
+import { fw, fd, spareOf, setFloor } from '../world/world.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 // Bump when the messages change in a way older pages can't read.
@@ -28,7 +28,7 @@ function conRec(c) {
 // con, leases, look, access, spare] — the save's record plus the entrance in use.
 export function buildingRec(b) {
   return [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, fw(b), fd(b), b.flavor || null,
-    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d] : null];
+    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null];
 }
 
 // One villager: the save's record plus their school place.
@@ -203,14 +203,7 @@ function setFootprint(w, b, id) {
   }
 }
 
-function plotHeights(w, b) {
-  let minH = Infinity, maxH = -Infinity;
-  for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) {
-    minH = Math.min(minH, w.terrain.tileMin(b.x + dx, b.z + dz));
-    maxH = Math.max(maxH, w.terrain.tileMax(b.x + dx, b.z + dz));
-  }
-  b.baseY = floorHeight(w.terrain, b.type, b.x, b.z, fw(b), fd(b), b.rot, minH, maxH); b.minY = minH;
-}
+function plotHeights(w, b) { setFloor(w.terrain, b); }
 
 function setLeases(w, b, leases) {
   b.leases = leases ? leases.map(l => ({ ...l })) : [];
@@ -304,14 +297,16 @@ export function applyDelta(game, d) {
       setFootprint(w, b, -1);
       b.x = x; b.z = z; b.w = bw; b.d = bd; b.size = Math.max(bw, bd);
       setFootprint(w, b, b.id);
-      plotHeights(w, b);
       if (def.needsRail) railLinks = true;
       structural = true;
     }
     if (b.type !== type || b.level !== level) simDirty = true;
-    if (JSON.stringify(b.spare || null) !== JSON.stringify(spare || null)) simDirty = true;
+    const spared = JSON.stringify(b.spare || null) !== JSON.stringify(spare || null);
+    if (spared) simDirty = true;
     Object.assign(b, { type, level, variant, rot, built, flavor, look });
     if (spare) b.spare = spare; else delete b.spare;
+    // the floor, once the plot and the part the building stands on are known
+    if (moved || spared) plotHeights(w, b);
     // keep the same site object while it is the same job, so builders keep their place in the queue
     if (!con) b.con = null;
     else if (prev && conLook(prev) === conLook(con)) Object.assign(prev, con);

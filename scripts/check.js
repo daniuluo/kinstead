@@ -497,6 +497,42 @@ const placePair = (tw, ta, tb) => {
   ok(play(home) === 0, 'without the play area the home misses it');
 }
 
+// 3d1a. taking the land beside or behind a building leaves it where it
+// stood: same place, same turn, same floor, before and after a save (which
+// rounds the ground heights a little)
+{
+  const tw = World.createNew({ N: 48, seed: 39, name: 'Stayput' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const P = placePair(tw, 'bakery', 'flowers');
+  const spot = { x: P[0].x, z: P[0].z };
+  tw.removeBuilding(P[0].id, 0); tw.removeBuilding(P[1].id, 0);
+  // where its front door is in the world, from its model
+  const doorAt = (b) => {
+    const m = buildModel(b), j = m.jitter, d = m.door, th = (b.rot * Math.PI) / 2 + j.yaw;
+    const cx = b.x + fw(b) / 2 + j.ox, cz = b.z + fd(b) / 2 + j.oz;
+    return [cx + d.x * Math.cos(th) + d.z * Math.sin(th), cz - d.x * Math.sin(th) + d.z * Math.cos(th), b.baseY];
+  };
+  const tried = [], moved = [];
+  for (let k = 0; k < 4; k++) {
+    for (const variant of [16, 48]) {   // both ends a seed would pick
+      const r = tw.placeBuilding('bakery', spot.x, spot.z, { instant: true, variant });
+      if (!r.ok) continue;
+      const b = r.building, before = doorAt(b);
+      const opt = tw.expandOptions(b).find(o => o.dir === k && o.kind === 'land');
+      if (opt && tw.expandBuilding(b.id, k, 'land').ok) {
+        const after = doorAt(b);
+        const w2 = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
+        const loaded = doorAt(w2.buildings.get(b.id));
+        const off = Math.max(...before.map((v, i) => Math.max(Math.abs(v - after[i]), Math.abs(v - loaded[i]))));
+        tried.push(`${opt.where} v${variant}`);
+        if (off > 1e-3) moved.push(`${opt.where} v${variant} by ${off.toFixed(3)}`);
+      }
+      tw.removeBuilding(b.id, 0);
+    }
+  }
+  ok(tried.length >= 2 && !moved.length, `taking land leaves the building where it stood (${tried.join(', ')})${moved.length ? ': moved ' + moved.join('; ') : ''}`);
+}
+
 // 3d1. taking a neighbouring plot: the land first (no builders, the building
 // stays its size), then what to build across it
 {
