@@ -9,6 +9,40 @@ import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stag
 
 const SERVICE_KEYS = Object.keys(SERVICES);
 
+// Does a home take another household? (Flats take any number, so there is
+// no need to count the ones in.)
+const takesHousehold = (w, b) => { const H = householdCap(b); return H === Infinity || householdsIn(w, b) < H; };
+
+// The tiles around a building's middle out to a whole radius R, for each
+// footprint: offsets from its corner and how far each tile's centre is,
+// nearest first. Worked out once, so a reach or a look only has to be
+// compared, not measured, each time the town is recomputed.
+const DISCS = new Map();
+function discOf(w, d, R) {
+  const key = (R * 64 + w) * 64 + d;
+  let m = DISCS.get(key);
+  if (m) return m;
+  const cx = w / 2, cz = d / 2, z0 = Math.floor(cz - R - 1), l = [];
+  for (let z = z0; z <= Math.ceil(cz + R); z++) {
+    for (let x = Math.floor(cx - R - 1); x <= Math.ceil(cx + R); x++) l.push([x, z, Math.hypot(x + 0.5 - cx, z + 0.5 - cz)]);
+  }
+  l.sort((a, b) => a[2] - b[2]);
+  m = { n: l.length, dx: Int16Array.from(l, e => e[0]), dz: Int16Array.from(l, e => e[1]), d: Float64Array.from(l, e => e[2]), rows: [] };
+  // and row by row (nearest first in each): for the nearest p tiles of a
+  // row, the span they cover and whether they fill it (lie side by side)
+  const rows = [];
+  for (const e of l) (rows[e[1] - z0] ||= []).push(e);
+  for (const row of rows) {
+    const z = row[0][1], k = row.length;
+    const span = new Int16Array(2 * (k + 1)), ok = new Uint8Array(k + 1);
+    let lo = Infinity, hi = -Infinity;
+    row.forEach((e, p) => { lo = Math.min(lo, e[0]); hi = Math.max(hi, e[0]); span[2 * p + 2] = lo; span[2 * p + 3] = hi; ok[p + 1] = hi - lo === p ? 1 : 0; });
+    m.rows.push({ dz: z, n: k, d: Float64Array.from(row, e => e[2]), dx: Int16Array.from(row, e => e[0]), span, ok });
+  }
+  DISCS.set(key, m);
+  return m;
+}
+
 export class Sim {
   constructor(game) {
     this.game = game;
@@ -18,6 +52,8 @@ export class Sim {
     for (const s of SERVICE_KEYS) this.coverage[s] = new Uint8Array(N * N);
     this.appeal = new Float32Array(N * N);
     this.pollution = new Float32Array(N * N);
+    this._ti = new Int32Array(0);
+    this._td = new Float64Array(0);
     this.budget = { income: {}, expense: {}, net: 0 };
     this.demand = { r: 0.5, c: 0.5, i: 0.5 };
     this.jobs = { total: 0, filled: 0 };
@@ -114,16 +150,6 @@ export class Sim {
     for (const s of SERVICE_KEYS) this.coverage[s].fill(0);
     this.appeal.fill(0);
     this.pollution.fill(0);
-    const stamp = (b, r, fn) => {
-      const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
-      const R = Math.ceil(r);
-      for (let z = Math.max(0, Math.floor(cz - R - 1)); z <= Math.min(N - 1, Math.ceil(cz + R)); z++) {
-        for (let x = Math.max(0, Math.floor(cx - R - 1)); x <= Math.min(N - 1, Math.ceil(cx + R)); x++) {
-          const d = Math.hypot(x + 0.5 - cx, z + 0.5 - cz);
-          if (d <= r) fn(z * N + x, d);
-        }
-      }
-    };
     // Utilities. Power: generators (and their crews) feed every
     // road-connected building through the street wires. Water: wells and
     // pumps can only draw for so many people. Short on either and some
@@ -168,17 +194,24 @@ export class Sim {
       if (b.wet !== 2) continue;
       for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) Wc[(b.z + dz) * N + b.x + dx] = 1;
     }
+    const A = this.appeal, Pol = this.pollution;
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      const reach = this.reachOf(b);
-      if (b.connected && reach) for (const s of servicesOf(def)) if (s !== 'water') stamp(b, reach, (i) => { this.coverage[s][i] = 1; });
+      const reach = this.reachOf(b), sv = servicesOf(def).filter(s => s !== 'water');
+      if (b.connected && reach && sv.length) this._cover(b, reach, sv.map(s => this.coverage[s]));
       // a park's fountain may be off; homes and orchards keep their looks
       const look = def.park ? b.working : 1;
-      if ((def.park || L.appeal) && look > 0) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * look * (1 - d / (L.radius + 1)); });
+      if ((def.park || L.appeal) && look > 0) {
+        const n = this._within(b, L.radius), ti = this._ti, td = this._td, a = L.appeal * look, out = L.radius + 1;
+        for (let k = 0; k < n; k++) A[ti[k]] += a * (1 - td[k] / out);
+      }
       // stopped works smoke far less
       const fumes = 16 * (0.3 + 0.7 * Math.min(1, b.working));
-      if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += fumes * (1 - d / (L.pollution + 1)); });
+      if (L.pollution) {
+        const n = this._within(b, L.pollution), ti = this._ti, td = this._td, out = L.pollution + 1;
+        for (let k = 0; k < n; k++) Pol[ti[k]] += fumes * (1 - td[k] / out);
+      }
     }
     this._lights();
     // streets with their power lines underground look tidier
@@ -210,6 +243,45 @@ export class Sim {
           const nx = x + dx, nz = z + dz;
           if (nx >= 0 && nz >= 0 && nx < N && nz < N) this.appeal[nz * N + nx] += Math.min(3, tc) * (dx || dz ? 0.35 : 0.6);
         }
+      }
+    }
+  }
+
+  // The tiles whose centres lie within r of building b's middle, into
+  // this._ti (tile index) and this._td (distance); returns how many.
+  _within(b, r) {
+    if (!(r >= 0)) return 0;
+    const N = this.world.N, m = discOf(fw(b), fd(b), Math.ceil(r));
+    if (this._ti.length < m.n) { this._ti = new Int32Array(m.n); this._td = new Float64Array(m.n); }
+    const ti = this._ti, td = this._td, D = m.d, DX = m.dx, DZ = m.dz;
+    let n = 0;
+    for (let k = 0; k < m.n; k++) {
+      const d = D[k];
+      if (d > r) break;
+      const x = b.x + DX[k], z = b.z + DZ[k];
+      if (x < 0 || z < 0 || x >= N || z >= N) continue;
+      ti[n] = z * N + x; td[n] = d; n++;
+    }
+    return n;
+  }
+
+  // Mark the same tiles in each of the maps (coverage), a row at a time.
+  _cover(b, r, maps) {
+    if (!(r >= 0)) return;
+    const N = this.world.N, m = discOf(fw(b), fd(b), Math.ceil(r));
+    for (const row of m.rows) {
+      const z = b.z + row.dz;
+      if (z < 0 || z >= N) continue;
+      // how many of the row lie within r
+      const D = row.d;
+      let p = 0, hi = row.n;
+      while (p < hi) { const mid = (p + hi) >> 1; if (D[mid] <= r) p = mid + 1; else hi = mid; }
+      if (!p) continue;
+      if (row.ok[p]) {
+        const x0 = Math.max(0, b.x + row.span[2 * p]), x1 = Math.min(N - 1, b.x + row.span[2 * p + 1]);
+        if (x0 <= x1) for (const C of maps) C.fill(1, z * N + x0, z * N + x1 + 1);
+      } else {
+        for (let k = 0; k < p; k++) { const x = b.x + row.dx[k]; if (x >= 0 && x < N) for (const C of maps) C[z * N + x] = 1; }
       }
     }
   }
@@ -286,31 +358,29 @@ export class Sim {
     return s >= 1 || (s > 0 && hash2(Math.floor(x * 4), Math.floor(z * 4), 13) < s);
   }
 
-  _near(b, pred, radius) {
-    const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
-    for (const o of this.world.buildings.values()) {
-      if (o === b || !isOpen(o) || !pred(o)) continue;
-      if (Math.hypot(o.x + fw(o) / 2 - cx, o.z + fd(o) / 2 - cz) <= radius) return true;
-    }
-    return false;
-  }
-
-  // Is there an open building matching pred whose own reach (its level's
-  // radius) takes in b?
-  _reaches(b, pred) {
-    const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
-    for (const o of this.world.buildings.values()) {
-      if (o === b || !isOpen(o) || !pred(o)) continue;
-      const R = BUILDINGS[o.type].levels[o.level].radius || 0;
-      if (Math.hypot(o.x + fw(o) / 2 - cx, o.z + fd(o) / 2 - cz) <= R + 0.5) return true;
-    }
-    return false;
-  }
-
   _happiness() {
     const w = this.world, N = w.N;
     const tax = w.taxRate;
     let total = 0, count = 0;
+    // the open buildings a home may have nearby, found once: shops and pubs,
+    // places to play, stops. near(): is one of them (not the home itself)
+    // within radius of the home's middle, or for a place to play, does its
+    // own reach (its level's radius) take the home in?
+    const shops = [], play = [], stops = [];
+    for (const o of w.buildings.values()) {
+      if (!isOpen(o)) continue;
+      const def = BUILDINGS[o.type];
+      if (!(def.shop || def.leisure || def.play || def.stop)) continue;
+      const at = { o, x: o.x + fw(o) / 2, z: o.z + fd(o) / 2, r: (def.levels[o.level].radius || 0) + 0.5 };
+      if (def.shop || def.leisure) shops.push(at);
+      if (def.play) play.push(at);
+      if (def.stop) stops.push(at);
+    }
+    const near = (list, b, radius) => {
+      const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
+      for (const p of list) if (p.o !== b && Math.hypot(p.x - cx, p.z - cz) <= (radius ?? p.r)) return true;
+      return false;
+    };
     for (const b of w.buildings.values()) {
       const def = BUILDINGS[b.type];
       if (!def.levels[b.level].housing) continue;
@@ -333,14 +403,14 @@ export class Sim {
       add('power', f.power ? 4 : 0, 4);
       f.appeal = Math.min(16, this.appeal[i] * 0.8);
       add('appeal', f.appeal, 16);
-      f.shops = this._near(b, o => BUILDINGS[o.type].shop || BUILDINGS[o.type].leisure, 7);
+      f.shops = near(shops, b, 7);
       add('shops', f.shops ? 5 : 0, 5);
       // somewhere for the children to play, for homes with children
       if (b.residents.some(id => { const r = w.residents.get(id); return r && r.age === 'child'; })) {
-        f.play = this._reaches(b, o => !!BUILDINGS[o.type].play);
+        f.play = near(play, b);
         add('play', f.play ? 4 : 0, 4);
       }
-      f.transit = this._near(b, o => !!BUILDINGS[o.type].stop, 4);
+      f.transit = near(stops, b, 4);
       add('transit', f.transit ? 3 : 0, 3);
       f.pollution = Math.min(22, this.pollution[i]);
       add('pollution', -f.pollution, 0);
@@ -399,10 +469,10 @@ export class Sim {
   assignSchools() {
     const w = this.world;
     const schools = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].seats && isOpen(b) && b.connected);
-    // places for as many as the teachers can manage
-    const left = new Map(schools.map(s => [s.id, this.seatsOf(s)]));
+    // places for as many as the teachers can manage, and the stage each teaches
+    const left = schools.map(s => this.seatsOf(s));
+    const stage = schools.map(s => BUILDINGS[s.type].levels[s.level].teaches || 1);
     for (const s of schools) s.pupils = [];
-    const teaches = (s) => BUILDINGS[s.type].levels[s.level].teaches || 1;
     // children go to the stage that fits their age; some young adults go on
     // to college or university instead of working
     const want = [];
@@ -419,21 +489,23 @@ export class Sim {
     }
     // students who already have a place keep it; then the oldest first
     want.sort((a, b) => (b[0].school != null) - (a[0].school != null) || yearsOf(b[0]) - yearsOf(a[0]));
-    const stats = { kids: 0, placed: 0, seats: schools.reduce((n, s) => n + left.get(s.id), 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
+    const stats = { kids: 0, placed: 0, seats: left.reduce((n, k) => n + k, 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
     for (const [r, st] of want) {
       if (r.age === 'child') stats.kids++;
       const home = r.home != null ? w.buildings.get(r.home) : null;
       const prev = r.school;
       r.school = null;
       if (!home) continue;
-      let best = null, bd = Infinity;
-      for (const s of schools) {
-        if (teaches(s) !== st || !left.get(s.id)) continue;
+      let k = -1, bd = Infinity;
+      for (let j = 0; j < schools.length; j++) {
+        if (stage[j] !== st || !left[j]) continue;
+        const s = schools[j];
         const d = (s.id === prev ? -100 : 0) + Math.abs(s.x - home.x) + Math.abs(s.z - home.z);
-        if (d < bd) { bd = d; best = s; }
+        if (d < bd) { bd = d; k = j; }
       }
-      if (!best) { if (r.age === 'child') stats.short[st]++; continue; }
-      left.set(best.id, left.get(best.id) - 1);
+      if (k < 0) { if (r.age === 'child') stats.short[st]++; continue; }
+      const best = schools[k];
+      left[k]--;
       best.pupils.push(r.id);
       r.school = best.id;
       if (r.age === 'child') stats.placed++; else { stats.students++; if (r.job != null) r.job = null; }
@@ -447,6 +519,18 @@ export class Sim {
   ageDay() {
     const w = this.world, rng = this.rng, ag = this.game.agents;
     const born = [], died = [];
+    // everyone by household (fam, or their own id), in the order they're
+    // listed: made when first needed, then kept up to date as babies arrive
+    // and grown-up children move out. The names already taken, likewise.
+    const key = (o) => o.fam ?? o.id;
+    let fams = null, names = null;
+    const famOf = (r) => {
+      if (!fams) {
+        fams = new Map();
+        for (const o of w.residents.values()) { const l = fams.get(key(o)); if (l) l.push(o); else fams.set(key(o), [o]); }
+      }
+      return fams.get(key(r));
+    };
     for (const r of [...w.residents.values()]) {
       const before = Math.floor(yearsOf(r));
       r.years = yearsOf(r) + 1 / YEAR_DAYS;
@@ -472,10 +556,17 @@ export class Sim {
           const home = r.home != null ? w.buildings.get(r.home) : null;
           const crowded = home && home.residents.length >= capOf(home, 'housing');
           if (crowded || rng.chance(0.4)) {
-            const to = this.vacantHomes().find(v => v !== home && v.residents.length < capOf(v, 'housing'));
+            const to = this._vacantWhere(v => v !== home && v.residents.length < capOf(v, 'housing'));
             if (to) {
               if (home) home.residents.splice(home.residents.indexOf(r.id), 1);
+              const was = key(r);
               r.home = to.id; r.fam = r.id;
+              if (fams && was !== r.id) {
+                const l = fams.get(was);
+                l.splice(l.indexOf(r), 1);
+                // a household of their own (anyone already in it, from an odd old save, in order)
+                fams.set(r.id, fams.get(r.id)?.length ? [...w.residents.values()].filter(o => key(o) === r.id) : [r]);
+              }
               to.residents.push(r.id);
               ag?.relocate(r);
               this.dirty = true;
@@ -486,15 +577,18 @@ export class Sim {
         if (y >= 65) { r.age = 'elder'; r.job = null; ag?.refreshLook(r); }
         else if (y >= 20 && y <= 42 && r.home != null) {
           const home = w.buildings.get(r.home);
-          const fam = [...w.residents.values()].filter(o => (o.fam ?? o.id) === (r.fam ?? r.id));
+          const fam = famOf(r);
           // a growing family can squeeze one more in (crowded homes are less
           // happy), but not without running water
           const room = home && isOpen(home) && home.residents.length < capOf(home, 'housing') + 1 && (home.wet ?? 2) === 2;
           // one chance a year per household, taken by its youngest grown-up
           const youngest = fam.filter(o => o.age === 'adult').sort((a, b) => yearsOf(a) - yearsOf(b))[0];
           if (room && youngest === r && fam.length < 8 && rng.chance(0.16)) {
-            const baby = { id: w.newId(), first: firstName(rng, this.namesInUse().first), last: r.last, age: 'child', years: 0, edu: 0, home: r.home, job: null, look: (rng.next() * 1e9) | 0, mood: 60, fam: r.fam ?? r.id, wealth: 0 };
+            names ||= this.namesInUse();
+            const baby = { id: w.newId(), first: firstName(rng, names.first), last: r.last, age: 'child', years: 0, edu: 0, home: r.home, job: null, look: (rng.next() * 1e9) | 0, mood: 60, fam: r.fam ?? r.id, wealth: 0 };
             w.residents.set(baby.id, baby);
+            names.first.add(baby.first); names.last.add(baby.last);
+            fam.push(baby);
             home.residents.push(baby.id);
             born.push(baby);
           }
@@ -536,18 +630,23 @@ export class Sim {
       filled += b.workers.length;
       if (b.connected && b.workers.length < j) open.push(b);
     }
+    // each open workplace's jobs, the schooling they need, and whether it
+    // builds (none of which changes while people are hired)
+    const jobs = open.map(b => this.jobsOf(b)), skill = open.map(b => BUILDINGS[b.type].levels[b.level].edu || 0), yard = open.map(b => !!BUILDINGS[b.type].builders);
     if (open.length) {
       for (const r of w.residents.values()) {
         if (r.age !== 'adult' || r.job || r.home == null || r.school != null) continue;
         const home = w.buildings.get(r.home);
         if (!home || !home.connected) continue;
-        let best = null, bd = Infinity;
-        for (const b of open) {
-          if (b.workers.length >= this.jobsOf(b)) continue;
-          if (eduOf(r) < (BUILDINGS[b.type].levels[b.level].edu || 0)) continue;
+        let best = null, bd = Infinity, edu = -1;
+        for (let k = 0; k < open.length; k++) {
+          const b = open[k];
+          if (b.workers.length >= jobs[k]) continue;
+          if (edu < 0) edu = eduOf(r);
+          if (edu < skill[k]) continue;
           // builders are hired first: nothing gets built without them; then
           // places with nobody at all, so as few as possible stand idle
-          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (BUILDINGS[b.type].builders ? 1000 : 0) - (b.workers.length ? 0 : 12);
+          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (yard[k] ? 1000 : 0) - (b.workers.length ? 0 : 12);
           if (d < bd) { bd = d; best = b; }
         }
         if (!best) continue;
@@ -556,7 +655,7 @@ export class Sim {
         filled++;
       }
     }
-    for (const b of open) if (b.workers.length < this.jobsOf(b) && BUILDINGS[b.type].levels[b.level].edu) this.jobsNeedingSkill += this.jobsOf(b) - b.workers.length;
+    open.forEach((b, k) => { if (b.workers.length < jobs[k] && skill[k]) this.jobsNeedingSkill += jobs[k] - b.workers.length; });
     this.jobs = { total, filled };
   }
 
@@ -617,7 +716,7 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.housing) { cap += capOf(b, 'housing'); used += b.residents.length; if (householdsIn(w, b) < householdCap(b)) open += capOf(b, 'housing') - b.residents.length; }
+      if (L.housing) { cap += capOf(b, 'housing'); used += b.residents.length; if (takesHousehold(w, b)) open += capOf(b, 'housing') - b.residents.length; }
       if (def.cat === 'commercial') comm += capOf(b, 'jobs');
       if (def.cat === 'industry') ind += capOf(b, 'jobs');
     }
@@ -649,9 +748,19 @@ export class Sim {
     const w = this.world, out = [];
     for (const b of w.buildings.values()) {
       const L = BUILDINGS[b.type].levels[b.level];
-      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing') && householdsIn(w, b) < householdCap(b)) out.push(b);
+      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing') && takesHousehold(w, b)) out.push(b);
     }
     return out;
+  }
+
+  // The first of vacantHomes() that pred accepts (without listing them all).
+  _vacantWhere(pred) {
+    const w = this.world;
+    for (const b of w.buildings.values()) {
+      const L = BUILDINGS[b.type].levels[b.level];
+      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing') && takesHousehold(w, b) && pred(b)) return b;
+    }
+    return undefined;
   }
 
   planMigration() {
@@ -771,10 +880,10 @@ export class Sim {
     const leaving = [], fams = new Map();
     for (const r of people) { const f = familyOf(r); if (!fams.has(f)) fams.set(f, []); fams.get(f).push(r); }
     for (const fam of fams.values()) {
-      const to = this.vacantHomes().find(v => v !== from && v.residents.length + fam.length <= capOf(v, 'housing'));
+      const to = this._vacantWhere(v => v !== from && v.residents.length + fam.length <= capOf(v, 'housing'));
       if (to) { for (const r of fam) this._moveIn(r, to, from); continue; }
       for (const r of fam) {
-        const h = this.vacantHomes().find(v => v !== from && !Number.isFinite(householdCap(v)));
+        const h = this._vacantWhere(v => v !== from && !Number.isFinite(householdCap(v)));
         if (h) this._moveIn(r, h, from); else leaving.push(r.id);
       }
     }
@@ -808,7 +917,7 @@ export class Sim {
         fams.get(f).push(r);
       }
       const last = [...fams.values()].sort((x, y) => Math.max(...y.map(r => r.id)) - Math.max(...x.map(r => r.id)))[0];
-      const to = this.vacantHomes().find(v => v !== b && v.residents.length + last.length <= capOf(v, 'housing'));
+      const to = this._vacantWhere(v => v !== b && v.residents.length + last.length <= capOf(v, 'housing'));
       if (!to) {
         if (!gone && this.rng.chance(0.2)) { gone = true; this.game.agents.depart(last.map(r => r.id), b); this.dirty = true; }
         continue;
