@@ -596,7 +596,7 @@ export function unlockOf(type, level = 0) {
 // Builder-hours of work for a job of the given coin value.
 const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6, demolish: 0.3 };
 export function workNeeded(cost, kind = 'build') {
-  return Math.round((4 + cost / 14) * (WORK_K[kind] ?? 1) * 10) / 10;
+  return Math.round((2 + cost / 28) * (WORK_K[kind] ?? 1) * 10) / 10;
 }
 
 export function isShop(type) { return !!BUILDINGS[type].shop; }
