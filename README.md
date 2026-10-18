@@ -6,7 +6,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 
 ## Features
 
-- **Pixel-art isometric 3D** — the scene is rendered in real 3D (three.js), then drawn at low resolution with depth/normal outlines and crisp pixel upscaling, using a classic 2:1 isometric camera with a single fixed angle. Settings let you choose the pixel size or switch to a smooth, antialiased renderer with ambient occlusion.
+- **Pixel-art isometric 3D** — the scene is rendered in real 3D (three.js), then drawn at low resolution with depth/normal outlines and crisp pixel upscaling, using a classic 2:1 isometric camera with a single fixed angle. Settings let you choose the pixel size or switch to a smooth, antialiased renderer with ambient occlusion. Both use neutral tone mapping, so the colours stay as painted (the smooth look used to grey them), and the smooth look keeps only a light haze over the far distance.
 - **Rotating view** — press `Q` / `E` or the rotate buttons beside `2D` to swing the camera a quarter turn around the ground at the middle of the screen and see the town from all four sides. The sun stays where it is in the sky, so shadows keep falling the same way across the ground and the far side of the town is the shaded side.
 - **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map (it rotates too); zoom in and out with the wheel or the `+`/`−` buttons.
 - **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Pick a size: Small 32×32, Medium 48×48, Large 64×64 or Huge 80×80. Terraform by raising, lowering and levelling land, and plant trees.

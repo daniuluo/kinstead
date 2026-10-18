@@ -78,8 +78,12 @@ export class Renderer {
     if (this.post) { this.post.composer.dispose?.(); this.post.passes.forEach(p => p.dispose?.()); this.post = null; }
     const dpr = Math.min(window.devicePixelRatio || 1, 2), scale = g.scale || 1;
     r.setPixelRatio(g.pixelArt ? dpr : Math.min(dpr, g.ao ? 1.5 : 2) * scale);
-    r.toneMapping = g.pixelArt ? THREE.NeutralToneMapping : THREE.AgXToneMapping;
-    this.baseExposure = g.pixelArt ? 1.0 : 1.2;
+    // Neutral tone mapping in both looks: it keeps the town's colours as they
+    // were painted (AgX, used for the smooth look before, greyed them and
+    // flattened the contrast). The smooth look is a touch brighter to make up
+    // for its soft contact shadows.
+    r.toneMapping = THREE.NeutralToneMapping;
+    this.baseExposure = g.pixelArt ? 1.0 : 1.05;
     const pixelSize = Math.max(1, Math.round((g.pixelSize * dpr) / scale));
     const tilt = TILT_SHIFT[g.tilt] ? new TiltShiftPass({
       look: TILT_SHIFT[g.tilt], band: TILT_BAND[g.tiltBand] || TILT_BAND.normal,
@@ -312,11 +316,12 @@ export class Renderer {
       cam.position.addScaledVector(right, dx).addScaledVector(up, dy);
       cam.updateMatrixWorld();
     }
-    // haze only things farther away than the focus point (none in top-down view)
+    // a light haze over only the farthest of the view in the smooth look (none
+    // in top-down view, or in pixel art)
     const top = Math.min(1, Math.max(0, (e - ISO_ELEV) / (Math.PI / 2 - ISO_ELEV - 0.15)));
     const noFog = this.gfx.pixelArt ? 1000 : 0;
-    this.scene.fog.near = DIST + 3 + top * 400 + noFog;
-    this.scene.fog.far = DIST + 3 + top * 400 + 150 / Math.max(0.5, rig.zoom) + noFog;
+    this.scene.fog.near = DIST + 14 + top * 400 + noFog;
+    this.scene.fog.far = DIST + 14 + top * 400 + 260 / Math.max(0.5, rig.zoom) + noFog;
     this._fitShadow();
   }
 
