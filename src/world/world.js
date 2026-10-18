@@ -518,7 +518,8 @@ export class World {
         const lo = Math.min(...all.map(([x, z]) => this.terrain.tileMin(x, z))), hi = Math.max(...all.map(([x, z]) => this.terrain.tileMax(x, z)));
         if (hi - lo > 1.2) continue;
         const trees = tiles.reduce((n, [x, z]) => n + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
-        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where: 'beside it', cost: Math.round(200 + 0.3 * def.levels[b.level].cost) + trees, label: 'Grow into a 2×2 estate' });
+        const [fx, fz] = DIRS[b.rot], where = (along ? -fz === s && !fx : -fx === s && !fz) ? 'behind it' : 'beside it';
+        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where, cost: Math.round(200 + 0.3 * def.levels[b.level].cost) + trees, label: `Grow into a 2×2 estate ${where}` });
       }
       return out;
     }

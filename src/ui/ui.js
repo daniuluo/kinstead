@@ -506,7 +506,8 @@ export class UI {
     if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
     if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
     if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
-    if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
+    if (isExpanded(b)) rows.push(['Plot', `${(b.w ?? b.size) * (b.d ?? b.size) >= 4 ? '2×2 estate' : 'Double plot'} · room for ${Math.round((sizeK(b) - 1) * 100)}% more`]);
+    else if (def.estate) rows.push(['Plot', '2×2 estate']);
     if (L.income) {
       let v = sim.incomeOf(b);
       rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `$${fmt(v)} / day`]);

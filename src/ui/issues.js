@@ -8,7 +8,8 @@ import { mainBlocker } from './working.js';
 
 const SEV = { bad: 0, warn: 1, info: 2 };
 // "iron foundry" → "iron foundries", "builder's yard" → "builder's yards"
-const pluralOf = (s) => (/[^aeiou]y$/.test(s) ? s.slice(0, -1) + 'ies' : /(s|sh|ch|x)$/.test(s) ? s + 'es' : s + 's');
+// (names already plural, like timber works or steam sawmills, stay as they are)
+const pluralOf = (s) => (/[^aeiou]y$/.test(s) ? s.slice(0, -1) + 'ies' : /(ss|sh|ch|x)$/.test(s) ? s + 'es' : /[^su]s$/.test(s) ? s : s + 's');
 
 export function computeIssues(game) {
   const w = game.world, sim = game.sim;

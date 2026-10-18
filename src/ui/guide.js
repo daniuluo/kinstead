@@ -126,11 +126,13 @@ export function showBuildingGuide(ui, type) {
   if (estates.length) {
     h += `<div class="guide-estates"><h5>On a 2×2 estate</h5>`;
     for (const { from, to } of estates) {
-      const E = BUILDINGS[to], nd = needs(world, to, 0);
+      const E = BUILDINGS[to], src = BUILDINGS[from].levels[0].name;
+      // growing the plot takes Great Plots, whatever the building itself needs
+      const nd = [...(techForLevel(to, 0) === 'bigplots' ? [] : [{ text: `Research: ${TECHS.bigplots.name}`, met: world.hasTech('bigplots') }]), ...needs(world, to, 0)];
       h += `<div class="guide-level"><img src="${thumb(to, 0)}" alt=""><div><div class="guide-lname"><b>${esc(E.levels[0].name)}</b><span>$${E.levels[0].cost}</span></div>`;
-      h += `<div class="guide-from">A ${esc(BUILDINGS[from].levels[0].name)} grown onto the two plots beside it can be rebuilt as this · ${E.levels.map(l => esc(l.name)).join(' › ')}</div>`;
+      h += `<div class="guide-from">${/^[AEIOU]/.test(src) ? 'An' : 'A'} ${esc(src)} grown onto the two plots beside it can be rebuilt as this · ${E.levels.map(l => esc(l.name)).join(' › ')}</div>`;
       h += `<div class="guide-stats">${stats(to, 0).map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join('')}</div>`;
-      h += `<div class="guide-needs">${[{ text: `Research: ${TECHS.bigplots.name}`, met: world.hasTech('bigplots') }, ...nd].map(n => `<span class="${n.met === false ? 'no' : n.met ? 'ok' : ''}">${esc(n.text)}</span>`).join('')}</div>`;
+      h += `<div class="guide-needs">${nd.map(n => `<span class="${n.met === false ? 'no' : n.met ? 'ok' : ''}">${esc(n.text)}</span>`).join('')}</div>`;
       h += '</div></div>';
     }
     h += '</div>';

@@ -2618,25 +2618,34 @@ function courtRange(c, x, z, len, dep, h, floors, wall, roof, alongZ, dir, rooms
 }
 const stackColor = (c) => (c.pal.style === 'brick' ? c.pal.brick : STONE);
 
-function coach(c, x, z, ry, body = '#3f5466') {
+// A standing horse, the size of the ones that pull the coaches (Transit):
+// facing +z, its head at z ≈ 0.17.
+function horse(c, x, z, ry, color = '#7a5232') {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
-  gb.cbox(0, 0.05, 0, 0.12, 0.1, 0.2, body, 0, 0.01);
-  gb.box(0, 0.15, 0, 0.13, 0.015, 0.22, '#2a2826');
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.068, 0.035, sz * 0.07, 0.035, 0.035, 0.01, 8, '#2a2018', 0, 0, Math.PI / 2);
-  gb.box(0, 0.02, 0.16, 0.012, 0.012, 0.14, '#5e432c');
+  gb.box(0, 0.075, 0, 0.07, 0.07, 0.17, color);
+  gb.box(0, 0.12, 0.1, 0.045, 0.07, 0.05, color, 0, -0.5);
+  gb.box(0, 0.15, 0.14, 0.04, 0.035, 0.07, color);
+  gb.box(0, 0.12, 0.07, 0.012, 0.06, 0.05, '#3a2a1f', 0, -0.4);
+  gb.box(0, 0.09, -0.09, 0.012, 0.05, 0.012, '#3a2a1f', 0, 0.6);
+  for (const [lx, lz] of [[-0.025, 0.06], [0.025, 0.06], [-0.025, -0.06], [0.025, -0.06]]) gb.box(lx, 0, lz, 0.018, 0.08, 0.018, shade(color, 0.85));
   gb.pop();
 }
 
-function horse(c, x, z, ry, color = '#7a4a2a') {
+// A stage coach the size of the ones on the coach lines, facing +z; with its
+// horse in the shafts if asked for.
+function coach(c, x, z, ry, body = '#3f5466', withHorse = false) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
-  gb.boxC(0, 0.075, 0, 0.042, 0.04, 0.11, color);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.014, 0, sz * 0.04, 0.012, 0.06, 0.012, shade(color, 0.8));
-  gb.boxC(0, 0.105, 0.06, 0.026, 0.05, 0.028, color, -0.7);
-  gb.boxC(0, 0.13, 0.085, 0.024, 0.024, 0.045, color, 0.3);
-  gb.boxC(0, 0.075, -0.06, 0.008, 0.04, 0.008, '#2a2018', 0.4);
+  gb.box(0, 0.06, -0.02, 0.2, 0.17, 0.34, body);
+  gb.box(0, 0.23, -0.02, 0.22, 0.025, 0.37, '#3a3a3e');
+  gb.box(0, 0.06, -0.02, 0.21, 0.025, 0.35, '#3a2a1f');
+  for (const sx of [-1, 1]) for (const wz of [-0.1, 0.05]) gb.box(sx * 0.101, 0.13, wz, 0.006, 0.06, 0.09, '#34475b');
+  gb.box(0, 0.2, 0.15, 0.12, 0.012, 0.06, '#3a2a1f');
+  for (const [wz, r] of [[0.08, 0.04], [-0.12, 0.05]]) for (const sx of [-1, 1]) gb.cyl(sx * 0.118, r, wz, r, r, 0.015, 8, '#3a2a1f', 0, 0, Math.PI / 2);
+  gb.box(0, 0.09, 0.2, 0.014, 0.014, 0.12, '#5b4231');
   gb.pop();
+  if (withHorse) horse(c, x + Math.sin(ry) * 0.26, z + Math.cos(ry) * 0.26, ry);
 }
 
 function hayBale(c, x, z, ry = 0) {
@@ -2840,14 +2849,14 @@ MODELS.markethall = (c, L) => {
       gb.wedge(x, 0.26, sz, sd + 0.04, 0.32, 0.08, pal.roof, (s * Math.PI) / 2);
       for (let i = 0; i < 3; i++) {
         const z = sz - sd / 2 + (i + 0.5) * (sd / 3);
-        plainDoor(c, ox, z - 0.07, 0.06, 0.15, rng.pick(DOORS), s > 0 ? 'r' : 'l');
+        plainDoor(c, ox, z - 0.07, 0.08, 0.17, rng.pick(DOORS), s > 0 ? 'r' : 'l');
         win(c, ox, 0.05, z + 0.05, 0.1, 0.12, s > 0 ? 'r' : 'l', 0.95);
         gb.boxC(ox + s * 0.055, 0.21, z, 0.11, 0.012, sd / 3 - 0.03, i % 2 ? '#e9dfc9' : pal.awning, 0, 0, -s * 0.45);
       }
     }
     // market day out front: stalls, sacks of grain, a cart
-    marketStall(c, -0.58, 0.74, 0.15, 0.8, pal.awning);
-    marketStall(c, 0.6, 0.72, -0.2, 0.8, pal.awning2);
+    marketStall(c, -0.58, 0.74, 0.15, 0.85, pal.awning);
+    marketStall(c, 0.6, 0.72, -0.2, 0.85, pal.awning2);
     for (let i = 0; i < 4; i++) { const x = -0.2 + (i % 2) * 0.06, z = 0.82 + Math.floor(i / 2) * 0.05; gb.blob(x, c.gy(x, z) + 0.025, z, 0.03, 0.035, 0.026, '#d8c8a0'); }
     handcart(c, 0.28, 0.86); barrel(c, -0.36, 0.9); crate(c, 0.38, 0.62);
     lamp(c, -0.34, 0.58, 0.3); lamp(c, 0.34, 0.58, 0.3);
@@ -2855,20 +2864,24 @@ MODELS.markethall = (c, L) => {
   } else {
     // the Covered Market Hall: a glazed nave between brick gable walls, lower
     // aisles either side with shops round the outside
-    const brick = pal.brick, roof = pal.slate, hz = -0.12, hd = 1.56, nw = 0.8, nh = 0.66, aw = 0.36, ah = 0.42, fz = hz + hd / 2;
+    const brick = pal.brick, roof = pal.slate, hz = -0.12, hd = 1.56, nw = 0.8, nh = 0.7, rh = 0.32, aw = 0.36, ah = 0.44, fz = hz + hd / 2;
     footing(c, 0, hz, nw + 2 * aw, hd);
     gb.cbox(0, 0, hz, nw, ah, hd, brick, 0, 0.012);
     gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, ah, hz, nw - 0.02, nh - ah, hd - 0.04, GLASS_ROOF); gb.noGlow();
     for (let i = 0; i <= 8; i++) for (const s of [-1, 1]) gb.box(s * (nw / 2 - 0.004), ah, hz - hd / 2 + 0.02 + (i * (hd - 0.04)) / 8, 0.014, nh - ah, 0.014, IRON);
-    gb.gable(0, nh, hz, nw + 0.02, hd - 0.02, 0.3, '#5a6268', '#4a5258', 0.03, true, 0.016);
-    glassRoof(c, 0, nh, hz, nw + 0.02, hd - 0.02, 0.3, true, 8);
+    gb.gable(0, nh, hz, nw + 0.02, hd - 0.02, rh, '#5a6268', '#4a5258', 0.03, true, 0.016);
+    glassRoof(c, 0, nh, hz, nw + 0.02, hd - 0.02, rh, true, 8);
+    // a louvred lantern along the middle of the ridge lets the air out
+    gb.cbox(0, nh + rh - 0.03, hz, 0.12, 0.09, 0.6, '#5a6268', 0, 0.006);
+    for (const s of [-1, 1]) for (let i = 0; i < 6; i++) gb.box(s * 0.062, nh + rh + 0.0, hz - 0.25 + i * 0.1, 0.006, 0.045, 0.06, '#3a4248');
+    gb.gable(0, nh + rh + 0.06, hz, 0.16, 0.64, 0.06, '#5a6268', '#4a5258', 0.02, true, 0.014);
     for (const s of [-1, 1]) {
       const ax = s * (nw / 2 + aw / 2), ox = s * (nw / 2 + aw);
       gb.cbox(ax, 0, hz, aw, ah, hd - 0.06, brick, 0, 0.014);
       gb.wedge(ax, ah, hz, hd - 0.02, aw + 0.06, 0.12, roof, (s * Math.PI) / 2);
       for (let i = 0; i < 5; i++) {
         const z = hz - hd / 2 + 0.2 + i * ((hd - 0.4) / 4);
-        plainDoor(c, ox, z - 0.07, 0.06, 0.16, rng.pick(DOORS), s > 0 ? 'r' : 'l');
+        plainDoor(c, ox, z - 0.07, 0.08, 0.17, rng.pick(DOORS), s > 0 ? 'r' : 'l');
         win(c, ox, 0.05, z + 0.06, 0.1, 0.14, s > 0 ? 'r' : 'l', 0.95);
         win(c, ox, 0.28, z, 0.07, 0.08, s > 0 ? 'r' : 'l', 0.8);
         gb.boxC(ox + s * 0.055, 0.23, z, 0.11, 0.012, (hd - 0.4) / 4 - 0.04, i % 2 ? '#e9dfc9' : pal.awning, 0, 0, -s * 0.45);
@@ -2879,7 +2892,7 @@ MODELS.markethall = (c, L) => {
       const z = hz + e * (hd / 2 + 0.02);
       gb.cbox(0, 0, z, nw + 2 * aw + 0.04, ah + 0.04, 0.06, shade(brick, 0.95), 0, 0.01);
       gb.cbox(0, 0, z, nw + 0.06, nh, 0.06, brick, 0, 0.01);
-      gb.roof(0, nh, z, 0.06, nw + 0.06, 0.3, 0.06, brick, Math.PI / 2);
+      gb.roof(0, nh, z, 0.06, nw + 0.06, rh, 0.06, brick, Math.PI / 2);
       gb.push(0, 0, z, e > 0 ? 0 : Math.PI);
       gb.cyl(0, nh - 0.04, 0.03, 0.18, 0.18, 0.008, 16, trim, 0, Math.PI / 2);
       gb.glow(1.6, 1.4, 1.0, 1.5); gb.cyl(0, nh - 0.04, 0.034, 0.16, 0.16, 0.008, 16, GLASS_ROOF, 0, Math.PI / 2); gb.noGlow();
@@ -2892,8 +2905,8 @@ MODELS.markethall = (c, L) => {
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, ah - 0.045, fz + 0.068, 0.42, 0.03, 0.008, '#e0c070'); gb.noGlow();
     gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, nh + 0.22, fz + 0.054, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
     // flower and fruit stalls on the pavement
-    marketStall(c, -0.62, 0.84, 0, 0.55, pal.awning);
-    marketStall(c, 0.62, 0.84, 0, 0.55, pal.awning2);
+    marketStall(c, -0.6, 0.84, 0, 0.85, pal.awning);
+    marketStall(c, 0.6, 0.84, 0, 0.85, pal.awning2);
     lamp(c, -0.3, 0.86, 0.3); lamp(c, 0.3, 0.86, 0.3);
   }
   if (f.turned) gb.pop();
@@ -2957,7 +2970,8 @@ MODELS.coachinginn = (c, L) => {
   const f = rowFrame(c);
   const floors = L + 2, fh = 0.26, h = floors * fh, D = 0.46, W = 1.76, fz = 0.6, ff = fz + D / 2, bf = fz - D / 2;
   const grand = L === 2, wall = grand ? '#ebe4d6' : pal.wall, roof = grand ? pal.slate : pal.roof;
-  const ax = (rng.chance(0.5) ? 1 : -1) * 0.46, aw = 0.16, ah = 0.25, dx = -Math.sign(ax) * 0.12;
+  // the carriage arch is wide and high enough for a coach (see coach)
+  const ax = (rng.chance(0.5) ? 1 : -1) * 0.46, aw = 0.24, ah = 0.3, dx = -Math.sign(ax) * 0.12;
   const jet = !grand && pal.timber && pal.jetty ? 0.03 : 0;
   footing(c, 0, fz, W, D);
   gb.cbox(0, 0, fz, W, fh, D, wall, 0, 0.02);
@@ -2996,7 +3010,7 @@ MODELS.coachinginn = (c, L) => {
   const sx = -Math.sign(ax) * 0.84;
   gb.box(sx, h * 0.5, ff + 0.06, 0.012, 0.012, 0.12, '#2f2c2a');
   sign(c, sx, h * 0.5 - 0.12, ff + 0.11, 0.11, 0.11, rng.pick(['#7a3a2a', '#2f4a6a', '#3f5a3a']), Math.PI / 2);
-  for (const s of [-1, 1]) { gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(ax + s * 0.12, 0.26, ff + 0.03, 0.04, 0.05, 0.04, '#ffe2a0'); gb.noGlow(); }
+  for (const s of [-1, 1]) { gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(ax + s * 0.18, 0.24, ff + 0.03, 0.04, 0.05, 0.04, '#ffe2a0'); gb.noGlow(); }
   bench(c, dx - Math.sign(ax) * 0.26, ff + 0.1, Math.PI);
   barrel(c, -Math.sign(ax) * 0.62, ff + 0.07); barrel(c, -Math.sign(ax) * 0.68, ff + 0.1, 0.9);
   if (grand) {
@@ -3016,8 +3030,8 @@ MODELS.coachinginn = (c, L) => {
     gb.gable(x, sh, szc, w, sd, 0.16, timberSide, pal.roof, 0.04, true, 0.03);
     for (let i = 0; i < 4; i++) {
       const z = szc - sd / 2 + (i + 0.5) * (sd / 4);
-      plainDoor(c, inner, z, 0.07, 0.15, '#5e432c', face);
-      gb.box(inner - s * 0.012, 0.075, z, 0.008, 0.008, 0.075, '#3f342c');
+      plainDoor(c, inner, z, 0.09, 0.17, '#5e432c', face);
+      gb.box(inner - s * 0.012, 0.085, z, 0.008, 0.008, 0.095, '#3f342c');
       if (L) win(c, inner, 0.3, z, 0.06, 0.08, face, 0.7);
       else win(c, x + (s * w) / 2, 0.08, z, 0.05, 0.06, s > 0 ? 'r' : 'l', 0.4);
     }
@@ -3029,25 +3043,25 @@ MODELS.coachinginn = (c, L) => {
   for (let i = 0; i <= 4; i++) gb.box(-W / 2 + 0.02 + (i * (W - 0.04)) / 4, 0, cz + cd / 2 - 0.02, 0.03, ch, 0.03, '#5e432c');
   gb.box(0, 0.002, cz, W - 0.04, 0.01, cd - 0.04, '#3a3230');
   gb.gable(0, ch, cz, W + 0.02, cd + 0.02, 0.16, timberSide, pal.roof, 0.04, false, 0.03);
-  coach(c, -0.22, cz + 0.02, Math.PI / 2, rng.pick(['#3f5466', '#5a2a2a', '#2f4a3a']));
+  coach(c, -0.215, cz + 0.02, Math.PI / 2, rng.pick(['#3f5466', '#5a2a2a', '#2f4a3a']));
+  const e = Math.sign(ax);
   if (L) {
-    // a clock turret over the coach house
+    // a clock turret over the coach house, and a coach ready to leave
     gb.cbox(0, ch + 0.08, cz, 0.1, 0.12, 0.1, '#ece6da', 0, 0.008);
     gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, ch + 0.14, cz + 0.051, 0.032, 0.032, 0.006, 10, '#efe8da', 0, Math.PI / 2); gb.noGlow();
     gb.roof(0, ch + 0.2, cz, 0.12, 0.12, 0.1, 0, pal.slate);
     gb.box(0, ch + 0.3, cz, 0.008, 0.06, 0.008, '#c9a43a');
-    coach(c, 0.18, -0.12, 0.3, '#3f5466');
-    horse(c, 0.2, 0.08, 0.3);
+    coach(c, -e * 0.04, -0.33, (e * Math.PI) / 2, '#3f5466', true);
   }
-  // in the yard: a trough and pump, hay, barrels and a horse waiting
-  const tx = -Math.sign(ax) * 0.38, ty = c.gy(tx, -0.3);
-  gb.cbox(tx, ty - 0.01, -0.3, 0.16, 0.05, 0.06, STONE, 0, 0.008);
-  gb.box(tx, ty + 0.035, -0.3, 0.14, 0.008, 0.045, POOL);
-  gb.cyl(tx + 0.1, ty, -0.3, 0.014, 0.016, 0.14, 6, '#3a3a3e');
-  gb.box(tx + 0.1, ty + 0.12, -0.28, 0.008, 0.008, 0.05, '#3a3a3e');
-  horse(c, tx, -0.18, Math.PI / 2, rng.pick(['#7a4a2a', '#4a3a30', '#c8b8a0']));
-  for (let i = 0; i < 3; i++) hayBale(c, Math.sign(ax) * 0.5, 0.1 - i * 0.08, 0);
-  barrel(c, Math.sign(ax) * 0.52, 0.22); barrel(c, Math.sign(ax) * 0.46, 0.25, 0.9);
+  // in the yard: a trough and pump, a horse drinking, hay and barrels
+  const tx = -e * 0.45, ty = c.gy(tx, 0.12);
+  gb.cbox(tx, ty - 0.01, 0.12, 0.06, 0.05, 0.16, STONE, 0, 0.008);
+  gb.box(tx, ty + 0.035, 0.12, 0.045, 0.008, 0.14, POOL);
+  gb.cyl(tx, ty, 0.24, 0.014, 0.016, 0.14, 6, '#3a3a3e');
+  gb.box(tx + e * 0.02, ty + 0.12, 0.24, 0.05, 0.008, 0.008, '#3a3a3e');
+  horse(c, -e * 0.27, 0.12, (-e * Math.PI) / 2, rng.pick(['#7a5232', '#4a3a30', '#c8b8a0']));
+  for (let i = 0; i < 3; i++) hayBale(c, e * 0.5, 0.18 - i * 0.08, 0);
+  barrel(c, e * 0.52, 0.27); barrel(c, e * 0.46, 0.3, 0.9);
   if (f.turned) gb.pop();
 };
 
@@ -3107,12 +3121,13 @@ MODELS.timberworks = (c, L) => {
     gb.cyl(-0.7, c.gy(-0.6, 0.2) + 0.33, 0.2, 0.024, 0.024, 0.2, 6, '#7d5b3b', 0, 0, Math.PI / 2);
     lamp(c, 0.12, 0.88, 0.3); lamp(c, 0.38, 0.88, 0.3);
   } else ginPole(c, -0.66, 0.5, 0.62, Math.PI / 2);
-  // a timber wagon by the gate
-  const wx = 0.06, wz = 0.74, wy = c.gy(wx, wz);
+  // a timber wagon by the gate, the size of the carts on the roads
+  const wx = 0.04, wz = 0.72, wy = c.gy(wx, wz);
   gb.push(wx, wy, wz, 0.1);
-  gb.cbox(0, 0.05, 0, 0.1, 0.03, 0.32, '#86663f', 0, 0.006);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.058, 0.036, sz * 0.11, 0.036, 0.036, 0.01, 8, '#4e3a2a', 0, 0, Math.PI / 2);
-  for (const sx of [-0.022, 0.022]) gb.cyl(sx, 0.1, -0.15, 0.022, 0.022, 0.3, 6, '#7d5b3b', 0, Math.PI / 2);
+  gb.cbox(0, 0.045, 0, 0.16, 0.035, 0.34, '#86663f', 0, 0.006);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.09, 0.045, sz * 0.11, 0.045, 0.045, 0.015, 8, '#4e3a2a', 0, 0, Math.PI / 2);
+  for (const sx of [-0.045, 0, 0.045]) gb.cyl(sx, 0.1, -0.16, 0.022, 0.022, 0.32, 6, '#7d5b3b', 0, Math.PI / 2);
+  gb.box(0, 0.08, 0.2, 0.014, 0.014, 0.1, '#5b4231');
   gb.pop();
   fence(c, -0.95, -0.95, 0.95, 0.95, FENCE, { x: 0.25, z: 0.95, w: 0.14 });
   if (f.turned) gb.pop();
@@ -3155,7 +3170,7 @@ MODELS.cathedralclose = (c, L) => {
   for (const [fx, fz] of [[0, 0.131], [0.131, 0], [-0.131, 0], [0, -0.131]]) gb.box(cx + fx, ct - 0.2, zc + fz, Math.abs(fz) ? 0.06 : 0.01, 0.13, Math.abs(fx) ? 0.06 : 0.01, '#2a2826');
   parapet(c, cx, ct, zc, 0.26, 0.26, stone);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cone(cx + sx * 0.11, ct + 0.02, zc + sz * 0.11, 0.025, 0.14, 6, roof);
-  if (L) { gb.cone(cx, ct, zc, 0.12, 0.72, 8, roof, Math.PI / 8); gb.box(cx, ct + 0.72, zc, 0.01, 0.07, 0.01, '#c9a43a'); }
+  if (L) { gb.cone(cx, ct, zc, 0.12, 0.62, 8, roof, Math.PI / 8); gb.box(cx, ct + 0.62, zc, 0.01, 0.07, 0.01, '#c9a43a'); }
   // the choir and its round apse at the east end
   gb.cbox(cx, 0, -0.7, 0.34, nh * 0.9, 0.18, stone, 0, 0.012);
   gb.gable(cx, nh * 0.9, -0.7, 0.34, 0.18, 0.24, stone, roof, 0.04, true, 0.03);
@@ -3263,13 +3278,6 @@ MODELS.infirmary = (c, L) => {
   bench(c, -0.18, 0.42, Math.PI); bench(c, 0.18, -0.22, 0);
   if (L) {
     lamp(c, -0.24, 0.96, 0.3); lamp(c, 0.24, 0.96, 0.3);
-    // a horse ambulance waiting at the gate
-    const ax = 0.5, az = 0.95 - 0.04;
-    gb.push(ax, c.gy(ax, az), az, Math.PI / 2);
-    gb.cbox(0, 0.05, 0, 0.11, 0.11, 0.2, '#ece6da', 0, 0.01);
-    gb.box(0, 0.09, 0.101, 0.04, 0.04, 0.004, '#c8423a');
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.062, 0.03, sz * 0.07, 0.03, 0.03, 0.01, 8, '#2a2018', 0, 0, Math.PI / 2);
-    gb.pop();
   }
   if (f.turned) gb.pop();
 };
@@ -3388,10 +3396,12 @@ MODELS.landscapepark = (c, L) => {
   gb.sphere(lx - side * 0.04, ly + 0.17, lz - 0.02, 0.07, rng.pick(LEAF), 1);
   // a jetty and a rowing boat on the near shore
   const jz = lz + 0.28, jy = ly + 0.008;
-  gb.box(lx + side * 0.06, jy, jz, 0.06, 0.012, 0.14, '#8a6a48');
-  gb.push(lx + side * 0.15, jy - 0.004, jz - 0.02, 0.3);
-  gb.cbox(0, 0, 0, 0.05, 0.024, 0.14, '#7a5a3c', 0, 0.01);
-  gb.box(0, 0.012, 0, 0.036, 0.014, 0.11, '#4e3a2a');
+  gb.box(lx + side * 0.04, jy, jz, 0.09, 0.012, 0.2, '#8a6a48');
+  for (const s of [-1, 1]) gb.box(lx + side * 0.04 + s * 0.04, jy - 0.04, jz - 0.08, 0.014, 0.05, 0.014, '#5e432c');
+  gb.push(lx + side * 0.17, jy - 0.004, jz - 0.04, 0.3);
+  gb.roof(0, 0, 0, 0.1, 0.26, 0.05, 0, '#6e4a2c', 0);
+  gb.box(0, 0, 0, 0.09, 0.03, 0.2, '#7d5b3b');
+  gb.box(0, 0.03, 0, 0.08, 0.008, 0.02, '#4a3a2c');
   gb.pop();
   if (L) { c.fountain = [lx, ly + 0.08, lz]; gb.cyl(lx, ly - 0.01, lz, 0.03, 0.04, 0.04, 8, STONE); }
   // the avenue from the gate up to the temple on the rise
@@ -3401,12 +3411,14 @@ MODELS.landscapepark = (c, L) => {
   for (const z of pairs) for (const s of [-1, 1]) smallTree(c, ax + s * 0.15, z, rng.float(0.95, 1.15));
   if (L) for (const z of [0.64, 0.36]) for (const s of [-1, 1]) { const x = ax + s * 0.1, y = c.gy(x, z); gb.cbox(x, y - 0.01, z, 0.04, 0.06, 0.04, STONE, 0, 0.006); gb.cyl(x, y + 0.05, z, 0.01, 0.014, 0.07, 6, '#d8d2c4'); }
   const tx = ax, tz = -0.58, ty = c.gy(tx, tz);
-  gb.cyl(tx, ty - 0.03, tz, 0.17, 0.19, 0.06, 12, STONE);
-  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.cyl(tx + Math.cos(a) * 0.13, ty + 0.03, tz + Math.sin(a) * 0.13, 0.012, 0.014, 0.22, 6, '#ece6da'); }
-  gb.cyl(tx, ty + 0.25, tz, 0.16, 0.16, 0.03, 12, '#ece6da');
-  gb.sphere(tx, ty + 0.28, tz, 0.15, '#8fa89a', 1, 0.6);
-  gb.cyl(tx, ty + 0.36, tz, 0.012, 0.012, 0.05, 6, '#ece6da');
-  gb.cyl(tx, ty + 0.03, tz, 0.025, 0.03, 0.12, 6, '#d8d2c4');
+  gb.cyl(tx, ty - 0.03, tz, 0.17, 0.19, 0.07, 12, STONE);
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.cyl(tx + Math.cos(a) * 0.13, ty + 0.04, tz + Math.sin(a) * 0.13, 0.013, 0.016, 0.3, 6, '#ece6da'); }
+  gb.cyl(tx, ty + 0.34, tz, 0.16, 0.16, 0.035, 12, '#ece6da');
+  gb.sphere(tx, ty + 0.375, tz, 0.15, '#8fa89a', 1, 0.6);
+  gb.cyl(tx, ty + 0.46, tz, 0.012, 0.012, 0.05, 6, '#ece6da');
+  gb.cbox(tx, ty + 0.04, tz, 0.05, 0.05, 0.05, STONE, 0, 0.006);
+  gb.cyl(tx, ty + 0.09, tz, 0.016, 0.022, 0.1, 6, '#d8d2c4');
+  gb.sphere(tx, ty + 0.205, tz, 0.018, '#d8d2c4', 0);
   // a winding walk from the avenue round the near side of the lake
   for (let i = 0; i < 9; i++) {
     const t = i / 8, x = ax + side * (0.12 + t * 0.9), z = 0.3 + Math.sin(t * Math.PI) * 0.12 - t * 0.12;
