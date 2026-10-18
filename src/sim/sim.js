@@ -3,9 +3,9 @@
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
-import { fw, fd, isOpen, capOf, sizeK } from '../world/world.js';
+import { fw, fd, isOpen, capOf, sizeK, householdCap } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
-import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stageForAge, hasTrait } from './people.js';
+import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stageForAge, hasTrait, familyOf, householdsIn } from './people.js';
 
 const SERVICE_KEYS = Object.keys(SERVICES);
 
@@ -475,7 +475,7 @@ export class Sim {
           const room = home && isOpen(home) && home.residents.length < capOf(home, 'housing') + 1 && (home.wet ?? 2) === 2;
           // one chance a year per household, taken by its youngest grown-up
           const youngest = fam.filter(o => o.age === 'adult').sort((a, b) => yearsOf(a) - yearsOf(b))[0];
-          if (room && youngest === r && fam.length < 6 && rng.chance(0.16)) {
+          if (room && youngest === r && fam.length < 8 && rng.chance(0.16)) {
             const baby = { id: w.newId(), first: firstName(rng, this.namesInUse().first), last: r.last, age: 'child', years: 0, edu: 0, home: r.home, job: null, look: (rng.next() * 1e9) | 0, mood: 60, fam: r.fam ?? r.id, wealth: 0 };
             w.residents.set(baby.id, baby);
             home.residents.push(baby.id);
@@ -596,19 +596,19 @@ export class Sim {
 
   _demand() {
     const w = this.world;
-    let cap = 0, used = 0, comm = 0, ind = 0, adults = 0;
+    let cap = 0, used = 0, open = 0, comm = 0, ind = 0, adults = 0;
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.housing) { cap += capOf(b, 'housing'); used += b.residents.length; }
+      if (L.housing) { cap += capOf(b, 'housing'); used += b.residents.length; if (householdsIn(w, b) < householdCap(b)) open += capOf(b, 'housing') - b.residents.length; }
       if (def.cat === 'commercial') comm += capOf(b, 'jobs');
       if (def.cat === 'industry') ind += capOf(b, 'jobs');
     }
     for (const r of w.residents.values()) if (r.age === 'adult') adults++;
-    this.housing = { cap, used };
+    this.housing = { cap, used, open };   // open: room where a new household can move in
     const pop = w.population;
     const freeJobs = this.jobs.total - this.jobs.filled;
-    const vacancy = cap - used;
+    const vacancy = open;
     const cl = (v) => Math.max(0, Math.min(1, v));
     this.demand = {
       r: cl(0.5 + (freeJobs - vacancy) / 16 + (this.happiness - 55) / 120),
@@ -632,13 +632,14 @@ export class Sim {
     const w = this.world, out = [];
     for (const b of w.buildings.values()) {
       const L = BUILDINGS[b.type].levels[b.level];
-      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing')) out.push(b);
+      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing') && householdsIn(w, b) < householdCap(b)) out.push(b);
     }
     return out;
   }
 
   planMigration() {
     const w = this.world, rng = this.rng;
+    this._settleHouseholds();
     const vac = this.vacantHomes().filter(b => b.happiness >= 38);
     const freeJobs = this.jobs.total - this.jobs.filled;
     const attract = Math.max(0, Math.min(1, (this.happiness - 38) / 40)) * 0.6 + (freeJobs > 0 ? 0.45 : 0.08);
@@ -671,10 +672,21 @@ export class Sim {
     const used = this.namesInUse();
     const last = lastName(rng, used.last);
     const fam = [];
-    const size = Math.max(1, Math.min(maxSize, rng.chance(0.25) ? 1 : rng.int(2, 4)));
+    // a single-family home takes one big family that all but fills it (a
+    // cottage three, a family house five or six, a villa six to eight);
+    // flats take anyone
+    const H = householdCap(home);
+    let size;
+    if (Number.isFinite(H)) {
+      const S = Math.min(8, Math.max(2, Math.round(capOf(home, 'housing') / H)));
+      const hi = Math.max(1, Math.min(S, maxSize)), lo = Math.min(hi, Math.max(2, Math.ceil(S * 0.75)));
+      size = rng.int(lo, hi);
+    } else size = Math.max(1, Math.min(maxSize, rng.chance(0.25) ? 1 : rng.int(2, 4)));
     for (let k = 0; k < size; k++) {
       let age = 'adult';
-      if (k >= 2) age = rng.chance(0.8) ? 'child' : 'elder';
+      // past the first two: children, and in a big family grown-up sons and
+      // daughters, a brother or sister, a grandparent
+      if (k >= 2) age = rng.chance(size >= 4 ? 0.55 : 0.8) ? 'child' : rng.chance(0.65) ? 'adult' : 'elder';
       else if (k === 1 && rng.chance(0.15)) age = 'elder';
       if (size === 1 && rng.chance(0.25)) age = 'elder';
       const r = { id: w.newId(), first: firstName(rng, used.first), last, age, home: home.id, job: null, look: (rng.next() * 1e9) | 0, mood: 60 };
@@ -696,7 +708,7 @@ export class Sim {
     if (!b || !b.connected || !isOpen(b)) return;
     const L = BUILDINGS[b.type].levels[b.level];
     const room = capOf(b, 'housing') - b.residents.length;
-    if (room <= 0) return;
+    if (room <= 0 || householdsIn(w, b) >= householdCap(b)) return;
     const fam = this.makeFamily(b, room);
     w.stats.arrivals += fam.length;
     this.dirty = true;
@@ -735,17 +747,60 @@ export class Sim {
     this._rehouse(out, b);
   }
 
-  // Find each person a home with room, otherwise they leave town.
+  // Find each household a home with room for it; failing that, its members
+  // go one by one into flats with room, or leave town.
   _rehouse(people, from) {
-    const vac = this.vacantHomes();
-    const leaving = [];
-    for (const r of people) {
-      const h = vac.find(v => v !== from && v.residents.length < capOf(v, 'housing'));
-      if (h) { r.home = h.id; h.residents.push(r.id); this.game.agents.relocate(r, from); }
-      else leaving.push(r.id);
+    const leaving = [], fams = new Map();
+    for (const r of people) { const f = familyOf(r); if (!fams.has(f)) fams.set(f, []); fams.get(f).push(r); }
+    for (const fam of fams.values()) {
+      const to = this.vacantHomes().find(v => v !== from && v.residents.length + fam.length <= capOf(v, 'housing'));
+      if (to) { for (const r of fam) this._moveIn(r, to, from); continue; }
+      for (const r of fam) {
+        const h = this.vacantHomes().find(v => v !== from && !Number.isFinite(householdCap(v)));
+        if (h) this._moveIn(r, h, from); else leaving.push(r.id);
+      }
     }
     if (leaving.length) this.game.agents.depart(leaving, from);
     this.dirty = true;
+  }
+
+  _moveIn(r, to, from) {
+    r.home = to.id;
+    to.residents.push(r.id);
+    this.game.agents.relocate(r, from);
+  }
+
+  // A single-family home with more households than it takes (in a town from
+  // before homes had a limit): the household that came last moves on to a
+  // home with room for it, a few a day; with nowhere in town to go, now and
+  // then one moves away to find a home of its own.
+  _settleHouseholds() {
+    const w = this.world;
+    let moved = 0, gone = false;
+    for (const b of w.buildings.values()) {
+      if (moved >= 3) break;
+      const H = householdCap(b);
+      if (!Number.isFinite(H) || householdsIn(w, b) <= H) continue;
+      const fams = new Map();
+      for (const id of b.residents) {
+        const r = w.residents.get(id);
+        if (!r) continue;
+        const f = familyOf(r);
+        if (!fams.has(f)) fams.set(f, []);
+        fams.get(f).push(r);
+      }
+      const last = [...fams.values()].sort((x, y) => Math.max(...y.map(r => r.id)) - Math.max(...x.map(r => r.id)))[0];
+      const to = this.vacantHomes().find(v => v !== b && v.residents.length + last.length <= capOf(v, 'housing'));
+      if (!to) {
+        if (!gone && this.rng.chance(0.2)) { gone = true; this.game.agents.depart(last.map(r => r.id), b); this.dirty = true; }
+        continue;
+      }
+      const ids = new Set(last.map(r => r.id));
+      b.residents = b.residents.filter(id => !ids.has(id));
+      for (const r of last) this._moveIn(r, to, b);
+      moved++;
+      this.dirty = true;
+    }
   }
 
   // What a shop or tavern takes from a visit, as a share of its full price:

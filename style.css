@@ -140,6 +140,8 @@ body.pixel #app canvas { image-rendering: pixelated; }
 .inspector .head img { width: 64px; height: 48px; background: #9fb383; box-shadow: var(--field); object-fit: cover; image-rendering: pixelated; }
 .inspector .head .big { font-size: 32px; width: 48px; text-align: center; }
 .inspector .head .big .ms { font-size: 36px; }
+.inspector .head .pm-open { margin-left: 6px; vertical-align: middle; min-height: 20px; padding: 1px 6px; }
+.inspector .head .pm-open .ms { font-size: 14px; vertical-align: -2px; }
 .inspector h3 { margin: 0; font-weight: 700; font-size: 17px; line-height: 1.1; }
 .inspector .sub { font-size: 12px; color: var(--ink-2); }
 .stars { color: #9a6a00; letter-spacing: 1px; }

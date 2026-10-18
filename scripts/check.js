@@ -483,6 +483,48 @@ const placePair = (tw, ta, tb) => {
   }
 }
 
+// 3d1e. single-family homes take one family (a few in the big houses), and
+// newcomers to them come as one family sized to the house; a home with more
+// households than it takes (an old save) lets the newest one move on
+{
+  const { householdCap } = await import('../src/world/world.js');
+  const { householdsIn } = await import('../src/sim/people.js');
+  const sim = game.sim;
+  w.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const placeNear = (type) => {
+    const th = [...w.buildings.values()].find(b => b.type === 'townhall');
+    for (let r = 2; r < 20; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const c = w.checkBuild(type, th.x + dx, th.z + dz);
+      if (!c.ok || !c.access.some(a => a.conn)) continue;
+      const p = w.placeBuilding(type, th.x + dx, th.z + dz, { instant: true });
+      if (p.ok) return p.building;
+    }
+    return null;
+  };
+  const evict = (b) => { for (const id of b.residents) w.residents.delete(id); b.residents = []; };
+  const fh = placeNear('house');
+  fh.level = 1;   // a Family House: room for 6, one household
+  const sizes = [];
+  for (let k = 0; k < 30; k++) { sizes.push(sim.makeFamily(fh, capOf(fh, 'housing')).length); evict(fh); }
+  ok(sizes.every(n => n >= 5 && n <= 6), `newcomers to a family house come as one family of 5–6 (${Math.min(...sizes)}–${Math.max(...sizes)})`);
+  sim.makeFamily(fh, 3);
+  ok(householdsIn(w, fh) === 1 && fh.residents.length < capOf(fh, 'housing') && !sim.vacantHomes().includes(fh), 'with a family in, it takes no other household, though it has room');
+  ok(householdCap({ type: 'house', level: 0 }) === 1 && householdCap({ type: 'villa', level: 2 }) === 2 && householdCap({ type: 'flats', level: 0 }) === Infinity, 'cottages and villas take one family, a grand manor two, flats any number');
+  // an old save: two households in one cottage, and a home with room nearby
+  const c = placeNear('house');
+  evict(c);
+  const lodger = sim.makeFamily(c, 1)[0], other = sim.makeFamily(c, 1)[0];
+  lodger.fam = lodger.id; other.fam = other.id;
+  const spare = placeNear('flats');
+  sim.recompute();
+  sim._settleHouseholds();
+  ok(householdsIn(w, c) === 1 && c.residents.includes(lodger.id) && w.residents.get(other.id).home !== c.id, 'an extra household moves on to a home with room (the newest one)');
+  for (const b of [fh, c, spare]) if (b && w.buildings.has(b.id)) { evict(b); w.removeBuilding(b.id, 0); }
+  w.setSandbox({ infiniteMoney: false, unlockAll: false, instantBuild: false });
+  w.money = 1e6;
+}
+
 // 3d1b. a home rebuilt to hold fewer people (a Grand Manor on a double plot
 // becoming a Country Mansion): the households that no longer fit move out
 {

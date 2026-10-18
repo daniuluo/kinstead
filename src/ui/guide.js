@@ -19,6 +19,7 @@ const WHO = { park: 'people out for a stroll', shop: 'shoppers', tavern: 'guests
 function stats(type, level) {
   const def = BUILDINGS[type], L = def.levels[level], out = [];
   if (L.housing) out.push(['Homes for', `${L.housing} villagers`]);
+  if (L.households) out.push(['Households', L.households === 1 ? 'one family' : `up to ${L.households} families`]);
   if (L.jobs) out.push(['Jobs', `${L.jobs}${L.edu ? ` (${EDU[L.edu].toLowerCase()} schooling)` : ''}`]);
   if (L.seats) out.push(['Pupils', `${L.seats}`]);
   const cap = visitors(type, level);

@@ -89,7 +89,7 @@ export function computeIssues(game) {
   const jobless = [...w.residents.values()].filter(r => r.age === 'adult' && r.job == null).length;
   if (jobless >= 3) add('warn', 'work_off', `${plural(jobless, 'villager')} looking for work`, { kind: 'people', filter: 'jobless' });
   if (sim.jobsNeedingSkill > 0) add('info', 'school', `${plural(sim.jobsNeedingSkill, 'skilled job')} unfilled — they need better-educated workers`, { kind: 'people', filter: '' });
-  const free = sim.housing.cap - sim.housing.used;
+  const free = sim.housing.open ?? sim.housing.cap - sim.housing.used;
   if (free <= 0 && sim.demand.r > 0.55) add('info', 'cottage', 'No free homes — newcomers can\'t move in', { kind: 'tool', cat: 'residential' });
 
   // happiness and smoke

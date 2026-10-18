@@ -2,7 +2,7 @@
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES } from '../defs.js';
-import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel } from '../world/world.js';
+import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
@@ -308,7 +308,7 @@ export class UI {
       $('net').textContent = Number.isFinite(w.money) ? `${net >= 0 ? '+' : '−'}$${fmt(Math.abs(net))} / day` : 'sandbox';
       $('net').className = !Number.isFinite(w.money) ? '' : net >= 0 ? 'pos' : 'neg';
       $('pop').textContent = fmt(w.population);
-      const free = sim.housing.cap - sim.housing.used;
+      const free = sim.housing.open ?? sim.housing.cap - sim.housing.used;
       $('housing').textContent = `${free} free home${free === 1 ? '' : 's'}`;
       const hp = Math.round(sim.happiness);
       $('happy').textContent = `${hp}%`;
@@ -501,7 +501,7 @@ export class UI {
     const def = BUILDINGS[b.type], L = def.levels[b.level], S = scaledLevel(L, sizeK(b));
     const open = isOpen(b);
     const stars = def.levels.length > 1 ? `<span class="stars">${'★'.repeat(b.level + 1)}${'☆'.repeat(def.levels.length - b.level - 1)}</span>` : '';
-    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}</div></div></div>`;
+    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}<button class="btn small pm-open" data-act="paths" title="Every upgrade, rebuild and join it can lead to"><span class="ms">account_tree</span> Paths</button></div></div></div>`;
     if (b.con) h += this._siteHTML(b);
     const chips = [];
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
@@ -513,7 +513,8 @@ export class UI {
     if (L.housing) {
       rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
       const hh = householdsIn(w, b);
-      rows.push(['Households', hh ? `${hh} ${hh === 1 ? 'family' : 'families'} · ${(b.residents.length / hh).toFixed(1)} people each` : 'Empty']);
+      const hc = householdCap(b), takes = Number.isFinite(hc) ? ` (${hc === 1 ? 'a home for one family' : `room for ${hc}`})` : '';
+      rows.push(['Households', hh ? `${hh} ${hh === 1 ? 'family' : 'families'} · ${(b.residents.length / hh).toFixed(1)} people each${takes}` : `Empty${takes}`]);
     }
     if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
     if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
@@ -608,7 +609,7 @@ export class UI {
         h += '</div></div>';
       }
     }
-    h += `<div class="actions"><button class="btn" data-act="paths" title="Everything it can be upgraded, rebuilt or joined into"><span class="ms">account_tree</span> All paths</button>`;
+    h += `<div class="actions">`;
     if (!b.con) h += w.hasTech('relocation')
       ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
       : '<button class="btn" disabled title="Research House Moving to move buildings">↔ Move 🔒</button>';

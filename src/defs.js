@@ -53,8 +53,8 @@ export const BUILDINGS = {
     name: 'House', cat: 'residential', size: 1, icon: '🏠',
     desc: 'Homes for your villagers. Upgrade them as services arrive.',
     levels: [
-      { name: 'Cottage', cost: 100, housing: 3, tax: 1 },
-      { name: 'Family House', cost: 260, housing: 6, tax: 1.25, unlock: 25, req: { happiness: 50, water: true } },
+      { name: 'Cottage', cost: 100, housing: 3, households: 1, tax: 1 },
+      { name: 'Family House', cost: 260, housing: 6, households: 1, tax: 1.25, unlock: 25, req: { happiness: 50, water: true } },
     ],
     branches: ['villa', 'flats'],
   },
@@ -63,9 +63,9 @@ export const BUILDINGS = {
     name: 'Grand Home', cat: 'residential', size: 1, hidden: true, spacious: true, tech: 'architecture', icon: '🏡', branch: 'Grand home', accent: '#9a6a12', pathIcon: 'castle',
     desc: 'A grand family home: fewer residents, but wealthy ones who pay far more tax and make the street prettier.',
     levels: [
-      { name: 'Villa', cost: 700, housing: 8, tax: 2, appeal: 3, radius: 2, unlock: 60, req: { happiness: 60, water: true, health: true } },
-      { name: 'Manor House', cost: 1500, housing: 12, tax: 2.6, appeal: 5, radius: 3, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
-      { name: 'Grand Manor', tech: 'grandarch', cost: 2900, housing: 16, tax: 3.2, appeal: 7, radius: 3, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+      { name: 'Villa', cost: 700, housing: 8, households: 1, tax: 2, appeal: 3, radius: 2, unlock: 60, req: { happiness: 60, water: true, health: true } },
+      { name: 'Manor House', cost: 1500, housing: 12, households: 2, tax: 2.6, appeal: 5, radius: 3, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Grand Manor', tech: 'grandarch', cost: 2900, housing: 16, households: 2, tax: 3.2, appeal: 7, radius: 3, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
     ],
   },
   // multi-unit path: many households stacked into flats
@@ -84,9 +84,9 @@ export const BUILDINGS = {
     name: 'Terrace', cat: 'residential', size: 2, merged: true, hidden: true, tech: 'urban', icon: '🏘️',
     desc: 'Two neighbouring homes joined into one row of houses.',
     levels: [
-      { name: 'Terrace Cottages', cost: 150, housing: 8 },
-      { name: 'Terraced Houses', cost: 700, housing: 16, unlock: 25, req: { happiness: 52, water: true } },
-      { name: 'Town Terrace', tech: 'highrise', cost: 1500, housing: 26, unlock: 120, req: { power: true, happiness: 64, water: true, health: true, education: true } },
+      { name: 'Terrace Cottages', cost: 150, housing: 8, households: 3 },
+      { name: 'Terraced Houses', cost: 700, housing: 16, households: 4, unlock: 25, req: { happiness: 52, water: true } },
+      { name: 'Town Terrace', tech: 'highrise', cost: 1500, housing: 26, households: 5, unlock: 120, req: { power: true, happiness: 64, water: true, health: true, education: true } },
     ],
   },
 
@@ -222,8 +222,8 @@ export const BUILDINGS = {
     name: 'Country House', cat: 'residential', size: 2, merged: true, hidden: true, tech: 'architecture', icon: '🏡', branch: 'Country mansion', accent: '#6a3f8a', pathIcon: 'villa',
     desc: 'A great house in its own grounds, for the town\'s wealthiest families.',
     levels: [
-      { name: 'Country Mansion', cost: 2000, housing: 14, tax: 3, appeal: 8, radius: 3, unlock: 60, req: { happiness: 62, water: true, health: true } },
-      { name: 'Stately Home', tech: 'grandarch', cost: 3800, housing: 20, tax: 3.6, appeal: 12, radius: 4, unlock: 200, req: { happiness: 72, water: true, health: true, education: true, power: true } },
+      { name: 'Country Mansion', cost: 2000, housing: 14, households: 2, tax: 3, appeal: 8, radius: 3, unlock: 60, req: { happiness: 62, water: true, health: true } },
+      { name: 'Stately Home', tech: 'grandarch', cost: 3800, housing: 20, households: 3, tax: 3.6, appeal: 12, radius: 4, unlock: 200, req: { happiness: 72, water: true, health: true, education: true, power: true } },
     ],
   },
   apartments: {
@@ -242,8 +242,8 @@ export const BUILDINGS = {
     name: 'Manor Estate', cat: 'residential', size: 2, hidden: true, estate: true, ground: 'lawn', tech: 'bigplots', icon: '🏡', branch: 'Manor estate', accent: '#4f2f6a', pathIcon: 'castle',
     desc: 'A great house in its own grounds: wings round a forecourt, a stable court and formal gardens, for the richest families in the land.',
     levels: [
-      { name: 'Manor Estate', cost: 5400, housing: 30, tax: 3.6, appeal: 14, radius: 5, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
-      { name: 'Ducal Seat', tech: 'grandarch', cost: 9200, housing: 42, tax: 4.2, appeal: 20, radius: 6, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+      { name: 'Manor Estate', cost: 5400, housing: 30, households: 4, tax: 3.6, appeal: 14, radius: 5, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Ducal Seat', tech: 'grandarch', cost: 9200, housing: 42, households: 5, tax: 4.2, appeal: 20, radius: 6, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
     ],
   },
   quadrangle: {

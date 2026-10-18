@@ -34,6 +34,15 @@ export function capOf(b, key) {
   const k = sizeK(b);
   return k > 1 ? Math.round(v * k) : v;
 }
+// The most households a home takes (its level's `households`): a cottage,
+// family house or villa is a home for one family, and the bigger houses and
+// terraces for a few; flats and shophouses take any number.
+export function householdCap(b) {
+  const H = BUILDINGS[b.type].levels[b.level].households;
+  if (!H) return Infinity;
+  const k = sizeK(b);
+  return Math.max(1, Math.floor(H * (k > 1 ? k : 1)));
+}
 // How much bigger than usual a building of this type is on a w × d plot. Its
 // capacity, output, upkeep, value and upgrade prices all scale by this.
 export function sizeKFor(type, w, d) {
