@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { newTownId } from '../util/text.js';
@@ -14,6 +14,31 @@ export const DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // Footprint in tiles along world x / z (merged buildings can be 2×1).
 export const fw = (b) => b.w ?? b.size;
 export const fd = (b) => b.d ?? b.size;
+
+// A farm's own field: the back row of its plot, behind the farmyard (an
+// orchard's trees fill its whole plot, so it has none). Farmland is this
+// and the farm's fields beyond the plot.
+export function homeField(b) {
+  const def = BUILDINGS[b.type];
+  if (!def || !def.fields || def.fruit) return [];
+  const [fx, fz] = DIRS[b.rot] || DIRS[0], cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2, out = [];
+  for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) {
+    if ((b.x + dx + 0.5 - cx) * fx + (b.z + dz + 0.5 - cz) * fz < 0) out.push([b.x + dx, b.z + dz]);
+  }
+  return out;
+}
+// A farm's farmland, as tile indices: its fields, and its own field behind
+// the yard once the farm stands (not while it is going up or coming down).
+export function farmlandOf(w, farm) {
+  const land = new Set((w.fieldTiles && w.fieldTiles.get(farm.id)) || []);
+  if (!farm.con || farm.con.kind === 'upgrade') for (const [x, z] of homeField(farm)) land.add(z * w.N + x);
+  return land;
+}
+// how far tile (x, z) lies in front of building b's front edge (> 0: in front)
+export function aheadOf(b, x, z) {
+  const [fx, fz] = DIRS[b.rot] || DIRS[0], cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
+  return (x + 0.5 - cx) * fx + (z + 0.5 - cz) * fz - (fx ? fw(b) : fd(b)) / 2;
+}
 
 // A building does its job unless it is a fresh building site or being taken
 // down. Upgrades and merges carry on behind the scaffolding.
@@ -1316,7 +1341,7 @@ export class World {
   // plot or its other fields, as many as its level allows (FIELD_MAX). Each
   // is ploughed and fenced for FIELD_COST (and any trees cleared), adds
   // FIELD_JOBS jobs (capOf), and gives a quarter back when taken out.
-  fieldMax(b) { return b && hasFields(b.type) ? CONFIG.FIELD_MAX[Math.min(b.level, CONFIG.FIELD_MAX.length - 1)] : 0; }
+  fieldMax(b) { return b && hasFields(b.type) ? CONFIG.FIELD_MAX[Math.min(b.level + (BUILDINGS[b.type].fieldsFrom || 0), CONFIG.FIELD_MAX.length - 1)] : 0; }
 
   // Why tile (x, z) can't become a field of farm b, or null.
   _fieldBlock(b, x, z) {
@@ -1329,6 +1354,7 @@ export class World {
     if (this.rails[i]) return 'Railway track';
     if (this.buildingAt[i] >= 0) return 'A building';
     if (this.terrain.slope(x, z) > 0.6) return 'Too steep to plough';
+    if (aheadOf(b, x, z) > 0) return 'Fields go behind and beside it, not between it and the road';
     return null;
   }
 
@@ -1359,7 +1385,7 @@ export class World {
     for (const t of plan.tiles) t.reason = this._fieldBlock(b, t.x, t.z);
     const open = new Map(plan.tiles.filter(t => !t.reason).map(t => [t.i, t]));
     const near = (x, z, test) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => this.inBounds(x + dx, z + dz) && test(this.idx(x + dx, z + dz)));
-    const queue = [...open.values()].filter(t => near(t.x, t.z, j => this.buildingAt[j] === id || this.fields[j] === id));
+    const queue = [...open.values()].filter(t => near(t.x, t.z, j => this.buildingAt[j] === id || this.fields[j] === id)).sort((p, q) => aheadOf(b, p.x, p.z) - aheadOf(b, q.x, q.z));
     const reached = new Set(queue.map(t => t.i)), take = [];
     const room = Math.max(0, plan.max - plan.have);
     while (queue.length && take.length < room) {
@@ -1401,6 +1427,7 @@ export class World {
   setProduce(id, key) {
     const b = this.buildings.get(id);
     if (!b || !hasFields(b.type)) return { ok: false, reason: 'Only a farm grows crops or keeps livestock' };
+    if (!choosesProduce(b.type)) return { ok: false, reason: 'An orchard grows fruit' };
     if (typeof key !== 'string' || !Object.hasOwn(PRODUCE, key)) return { ok: false, reason: "A farm can't do that" };
     const flavor = key === 'mixed' ? null : key;
     if ((b.flavor || null) === flavor) return { ok: false, reason: `It already does: ${PRODUCE[key].name.toLowerCase()}` };

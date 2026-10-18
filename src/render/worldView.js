@@ -62,8 +62,9 @@ export class WorldView {
         this.removeBuilding(b, true);
         this.addBuilding(b, !finished, true);
         this.dirty.roads = true;
-        // street trees and hedges leave room for the new front door
-        if (this.nature.dressed) this.dirty.nature = true;
+        // street trees and hedges leave room for the new front door; a farm's
+        // crop rows and fences follow what it has become
+        if (this.nature.dressed || BUILDINGS[b.type].fields) this.dirty.nature = true;
         if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
         this.dirty.paint = true;
       },

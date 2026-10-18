@@ -10,6 +10,7 @@ import { BUILDINGS, produceOf } from '../defs.js';
 import { GeoBuilder } from '../render/geo.js';
 import { RNG } from '../util/rng.js';
 import { workArea } from '../render/buildings.js';
+import { homeField } from '../world/world.js';
 
 // speed / run: tiles per second at 1x · walk / idle: seconds · turn: how much
 // the heading wanders (radians per second) · per: habitat tiles per animal
@@ -165,13 +166,15 @@ export class Animals {
     if (sp.swim) return t.tileAvg(tx, tz) < -0.08 && t.heightAt(x, z) < -0.12;
     if (sp.habitat === 'farm') {
       const f = w.buildings.get(a.farm);
-      const r = f && (f.work || (f.work = workArea(f)));
-      if (r && x > r[0] + 0.03 && x < r[2] - 0.03 && z > r[1] + 0.03 && z < r[3] - 0.03) return true;
-      // the strip of its own plot round its home field, on the way out to the others
-      if (r && w.buildingAt[i] === a.farm && x > r[0] - 0.16 && x < r[2] + 0.16 && z > r[1] - 0.16 && z < r[3] + 0.16) return true;
-      // or out in one of its fields, clear of the fence
-      if (!f || !w.fields || w.fields[i] !== f.id) return false;
-      const fx = x - tx, fz = z - tz, M = 0.08, mine = (nx, nz) => w.inBounds(nx, nz) && (w.fields[w.idx(nx, nz)] === f.id || w.buildingAt[w.idx(nx, nz)] === f.id);
+      if (!f) return false;
+      // its farmland (its own field behind the yard, and its fields), clear
+      // of the fence round it; an orchard's hens keep to the orchard
+      const home = homeField(f), land = (nx, nz) => w.inBounds(nx, nz) && (w.fields[w.idx(nx, nz)] === f.id || home.some(([hx, hz]) => hx === nx && hz === nz));
+      if (!land(tx, tz)) {
+        const r = f.work || (f.work = workArea(f));
+        return !!r && w.buildingAt[i] === f.id && x > r[0] + 0.03 && x < r[2] - 0.03 && z > r[1] + 0.03 && z < r[3] - 0.03;
+      }
+      const fx = x - tx, fz = z - tz, M = 0.08, mine = land;
       return (fx > M || mine(tx - 1, tz)) && (fx < 1 - M || mine(tx + 1, tz)) && (fz > M || mine(tx, tz - 1)) && (fz < 1 - M || mine(tx, tz + 1));
     }
     if (t.isWater(tx, tz) || t.heightAt(x, z) < 0.05) return false;

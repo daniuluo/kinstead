@@ -7,7 +7,7 @@ import { CONFIG } from '../config.js';
 import { MAT } from './materials.js';
 import { BUILDINGS, produceOf } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
-import { doorPoint, fw, fd } from '../world/world.js';
+import { doorPoint, fw, fd, farmlandOf } from '../world/world.js';
 import { railArc } from './roadsView.js';
 import { roadTile, cornerFrame, SIDES } from '../world/roadShape.js';
 
@@ -189,12 +189,14 @@ export class TerrainView {
     // shading from this season into the next as it turns (see setSeason)
     const next = (season + 1) % 4, sw = this.seasonW || 0;
     const bare = (season === 3 ? 1 - sw : 0) + (next === 3 ? sw : 0);
-    if (P.kind === 'livestock') {
+    if (P.kind === 'livestock' || P.kind === 'orchard') {
       const k = this.n3(i * 0.31, j * 0.31) * 0.5 + 0.5;
       const [g0, g1] = PASTURE[season], [n0, n1] = PASTURE[next];
       _b.copy(g0).lerp(g1, k);
       _a.copy(n0).lerp(n1, k);
       _b.lerp(_a, sw);
+      // an orchard's grass is a little darker in the shade along its rows of trees
+      if (P.kind === 'orchard') { const d = (((lz + 0.75) % 0.42) + 0.42) % 0.42; if (d < 0.1 || d > 0.32) _b.multiplyScalar(0.9); }
       this._blend(vi, _b, a * 0.85);
       return;
     }
@@ -208,19 +210,20 @@ export class TerrainView {
     this._blend(vi, _a, a, bare > 0.5 ? 0.9 : 1);
   }
 
-  // A farm's fields beyond its plot, furrowed the same way as its own, with
-  // soft edges where they meet open ground.
+  // A farm's farmland: its own field behind the yard and its fields beyond
+  // the plot, furrowed as one in the farm's frame, with soft edges where it
+  // meets anything else (the yard too).
   _paintFields() {
-    const w = this.world, f = w.fields, N = w.N, season = this.season;
-    if (!f || !w.fieldTiles || !w.fieldTiles.size) return;
-    for (const [id, tiles] of w.fieldTiles) {
-      const farm = w.buildings.get(id);
-      if (!farm) continue;
+    const w = this.world, N = w.N, season = this.season;
+    for (const farm of w.buildings.values()) {
+      if (!BUILDINGS[farm.type].fields) continue;
+      const land = farmlandOf(w, farm);
+      if (!land.size) continue;
       const P = produceOf(farm), th = (farm.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
       const cx = farm.x + fw(farm) / 2, cz = farm.z + fd(farm) / 2;
-      for (const t of tiles) {
+      for (const t of land) {
         const x = t % N, z = (t / N) | 0;
-        const same = (dx, dz) => w.inBounds(x + dx, z + dz) && f[(z + dz) * N + x + dx] === id;
+        const same = (dx, dz) => w.inBounds(x + dx, z + dz) && land.has((z + dz) * N + x + dx);
         const W = !same(-1, 0), Eo = !same(1, 0), Nn = !same(0, -1), S = !same(0, 1);
         this._range(x - (W ? 0.08 : 0), z - (Nn ? 0.08 : 0), x + 1 + (Eo ? 0.08 : 0), z + 1 + (S ? 0.08 : 0), (vi, px, pz, i, j) => {
           if ((!W && px < x) || (!Eo && px > x + 1) || (!Nn && pz < z) || (!S && pz > z + 1)) return;
@@ -258,7 +261,7 @@ export class TerrainView {
       const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
       const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
       const work = b.work;
-      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : def.fields ? 'farm' : b.type === 'plaza' ? 'plaza'
+      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : def.fields && !def.fruit ? 'farm' : b.type === 'plaza' ? 'plaza'
         : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
           : (def.park && b.type !== 'plaza') ? 'lawn'
             : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';
@@ -280,15 +283,8 @@ export class TerrainView {
           case 'lawn': a = smoothstep(-0.1, 0.18, edge + nz) * 0.55; this._blend(vi, LAWN, a); break;
           case 'farm': {
             a = smoothstep(-0.08, 0.18, edge + nz) * 0.6;
+            // (its field behind the yard is painted with its other fields)
             this._blend(vi, YARD, a * 0.5);
-            if (work) {
-              const inside = x > work[0] - 0.02 && x < work[2] + 0.02 && z > work[1] - 0.02 && z < work[3] + 0.02;
-              if (inside) {
-                const fe = Math.min(x - work[0], work[2] - x, z - work[1], work[3] - z);
-                const fa = smoothstep(-0.02, 0.12, fe);
-                this._fieldPaint(vi, i, j, produceOf(b), season, lx, lz, E, fa);
-              }
-            }
             break;
           }
           default: {

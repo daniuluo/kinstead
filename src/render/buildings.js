@@ -1873,12 +1873,16 @@ function farmstead(c, L, home) {
   // the fields behind, fenced, with a gate from the yard; an estate keeps an
   // orchard down one side
   const fx0 = L >= 3 ? -0.72 : -0.92, fx1 = 0.92, fz0 = L >= 1 ? -0.92 : -0.6, fz1 = 0.06;
-  c.work = [fx0 + 0.04, fz0 + 0.04, fx1 - 0.04, fz1 - 0.04];
+  c.work = [-0.96, -0.96, 0.96, -0.04];
   // the crops of this season, shading into the next's as it turns
   const tufts = (s) => (s === 3 || !P.crop ? CROP_TUFT[s] : P.crop[s]);
   const cA = tufts(c.season), cB = tufts((c.season + 1) % 4);
-  if (!stock) cropRows(c, fx0, fz0, fx1, fz1, c.seasonW ? cA.map((col, i) => mix(col, cB[i], c.seasonW)) : cA);
-  fence(c, fx0 - 0.04, fz0 - 0.03, fx1 + 0.04, fz1 + 0.03, FENCE, { x: 0, z: fz1 + 0.03, w: 0.12 });
+  // in the town the field is drawn with the farm's fields beyond the plot,
+  // as one fenced farmland (see TerrainView._paintFields and NatureView)
+  if (!c.inWorld) {
+    if (!stock) cropRows(c, fx0, fz0, fx1, fz1, c.seasonW ? cA.map((col, i) => mix(col, cB[i], c.seasonW)) : cA);
+    fence(c, fx0 - 0.04, fz0 - 0.03, fx1 + 0.04, fz1 + 0.03, FENCE, { x: 0, z: fz1 + 0.03, w: 0.12 });
+  }
   if (stock && P.animal === 'chicken') {
     // a hen house on legs
     const hx = 0.3, hz = -0.3, hy = c.gy(hx, hz);
@@ -5706,7 +5710,7 @@ export function jitterOf(b) {
 // Must match the c.work rectangles set by the models above.
 export function workArea(b) {
   let r = null;
-  if (BUILDINGS[b.type].fields) r = [b.level >= 3 ? -0.68 : -0.88, b.level >= 1 ? -0.88 : -0.56, 0.88, 0.02];   // the fields behind the farmyard (see MODELS.farm)
+  if (BUILDINGS[b.type].fields) r = BUILDINGS[b.type].fruit ? [-0.88, -0.88, 0.0, 0.88] : [-0.96, -0.96, 0.96, -0.04];   // the trees (MODELS.orchard), or the field behind the farmyard (MODELS.farm)
   else if (b.type === 'garden' || b.type === 'playground' || b.type === 'courts') r = [-0.4, -0.4, 0.4, 0.4];
   else if (b.type === 'plaza' || b.type === 'sportsground') r = [-0.85, -0.85, 0.85, 0.85];
   if (!r) return null;
@@ -5734,7 +5738,8 @@ export function buildModel(b, opts = {}) {
   const c = {
     gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     houses: [],   // every house() drawn, where it stands (see annexes)
-    frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !BUILDINGS[b.type].fields,
+    frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !(BUILDINGS[b.type].fields && !BUILDINGS[b.type].fruit),
+    inWorld: !!ground,   // standing in the town (not a picture in a menu)
     smoke: [], glows: [], spin: null, work: null, fountain: null,
     beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,

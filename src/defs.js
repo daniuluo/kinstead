@@ -508,7 +508,7 @@ export const BUILDINGS = {
     ],
   },
   orchard: {
-    name: 'Orchard', cat: 'industry', size: 2, hidden: true, outdoorWork: true, tech: 'horticulture', icon: '🌾', branch: 'Orchard', accent: '#5a7a2a', pathIcon: 'nutrition',
+    name: 'Orchard', cat: 'industry', size: 2, hidden: true, outdoorWork: true, fields: true, fruit: true, fieldsFrom: 1, tech: 'horticulture', icon: '🌾', branch: 'Orchard', accent: '#5a7a2a', pathIcon: 'nutrition',
     desc: 'Fruit trees and a cider mill: good money, and pretty to live near.',
     levels: [
       { name: 'Orchard & Cider Mill', cost: 700, jobs: 8, income: 12, appeal: 4, radius: 3 },
@@ -919,7 +919,12 @@ export const PRODUCE = {
   cattle: { name: 'Cattle', icon: '🐄', kind: 'livestock', jobs: 0.6, income: 1.5, animal: 'cow', desc: 'Dairy and beef herds on rich pasture.' },
   poultry: { name: 'Poultry', icon: '🐔', kind: 'livestock', jobs: 0.7, income: 1.3, animal: 'chicken', desc: 'Hens by the hundred: eggs every day.' },
 };
-export const produceOf = (b) => (b && b.flavor && Object.hasOwn(PRODUCE, b.flavor) ? PRODUCE[b.flavor] : PRODUCE.mixed);
+// An orchard's fields are planted with fruit trees, whatever the farm grew
+// before; it can't change what it grows.
+export const FRUIT = { name: 'Fruit trees', icon: '🍎', kind: 'orchard', jobs: 1, income: 1, desc: 'Rows of apple, pear and plum trees, grazed underneath.' };
+export const choosesProduce = (type) => !!(BUILDINGS[type] && BUILDINGS[type].fields && !BUILDINGS[type].fruit);
+export const produceOf = (b) => (b && b.type && BUILDINGS[b.type] && BUILDINGS[b.type].fruit ? FRUIT
+  : b && b.flavor && Object.hasOwn(PRODUCE, b.flavor) ? PRODUCE[b.flavor] : PRODUCE.mixed);
 
 export const MERGES = [
   { a: ['house'], b: ['house'], to: 'terrace' },
