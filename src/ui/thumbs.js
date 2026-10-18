@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { buildModel } from '../render/buildings.js';
 import { BUILDINGS } from '../defs.js';
-import { MAT } from '../render/materials.js';
+import { MAT, U } from '../render/materials.js';
 
 let R = null, scene = null, camera = null;
 const cache = new Map();
@@ -45,7 +45,11 @@ export function thumb(type, level = 0, variant = 777, flavor = null, look = null
   camera.position.set(bs.center.x + 10, bs.center.y + 8.2, bs.center.z + 10);
   camera.lookAt(bs.center);
   camera.updateProjectionMatrix();
+  // pictures for the menus are drawn without the winter's snow
+  const snow = [U.uSnow.value, U.uFresh.value];
+  U.uSnow.value = U.uFresh.value = 0;
   R.render(scene, camera);
+  [U.uSnow.value, U.uFresh.value] = snow;
   const url = R.domElement.toDataURL('image/png');
   scene.remove(mesh);
   model.geo.dispose();

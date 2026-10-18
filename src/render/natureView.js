@@ -75,15 +75,21 @@ const FOLIAGE = {
 // clipped box hedges stay green the year round, a little duller in winter
 const HEDGE = [['#4c7a3a', '#477238', '#52803e'], ['#46703a', '#416a36', '#4b763c'], ['#4f6e38', '#4a6834', '#557438'], ['#4b5f45', '#475a41', '#506449']];
 const TUFT = ['#6f9447', '#5f8a40', '#9a8f4a', '#7a8068'];
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const smoothstep01 = (v) => { v = clamp01(v); return v * v * (3 - 2 * v); };
 const BLOOMS = ['#f2ede0', '#e2b84a', '#c9536b', '#9c74c9', '#e3a0b4'];
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
+const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+// a colour part way from a to b
+const mixC = (a, b, t) => (t <= 0 ? a : t >= 1 ? b : _c1.set(a).lerp(_c2.set(b), t));
 
 export class NatureView {
   constructor(world, scene) {
     this.world = world;
     this.scene = scene;
     this.season = 1;
+    this.seasonW = 0;
     const mk = (geo, mat, max, shadow = true) => {
       const m = new THREE.InstancedMesh(geo, mat, Math.max(1, max));
       m.castShadow = shadow; m.receiveShadow = true;
@@ -110,15 +116,24 @@ export class NatureView {
     this.rebuild();
   }
 
-  setSeason(s) {
-    if (s === this.season) return;
+  // The season, and how far it has turned towards the next (0 .. 1).
+  setSeason(s, w = 0) {
+    if (s === this.season && w === (this.seasonW || 0)) return;
     this.season = s;
+    this.seasonW = w;
     this.rebuild();
   }
 
   rebuild() {
-    const w = this.world, t = w.terrain, s = this.season;
+    const w = this.world, t = w.terrain, s = this.season, n = (s + 1) % 4, sw = this.seasonW || 0;
     const M = this.meshes;
+    // each tree turns in its own time as the season shades into the next
+    const turn = (h) => (sw <= 0 ? 0 : sw >= 1 ? 1 : clamp01((sw - h * 0.3) / 0.7));
+    // trees bare in winter: how far, as the season turns
+    const bareOf = (k) => (s === 3 ? 1 - k : 0) + (n === 3 ? k : 0);
+    // flowers out in spring and summer, coming a few at a time (not before
+    // the snow has gone) and going the same way
+    const flowering = (s <= 1 ? 1 : 0) + ((n <= 1 ? 1 : 0) - (s <= 1 ? 1 : 0)) * (s === 3 ? smoothstep01((sw - 0.6) / 0.4) : sw);
     const counts = { trunk: 0, pine: 0, round: 0, birch: 0, bush: 0, rock: 0, tuft: 0, bloom: 0, crop: 0, post: 0, rail: 0 };
     const put = (key, x, y, z, sc, rot, color, sy = 1) => {
       const mesh = M[key];
@@ -132,24 +147,25 @@ export class NatureView {
       const y = t.heightAt(tr.x, tr.z) - 0.01;
       const h = hash2(Math.floor(tr.x * 100), Math.floor(tr.z * 100), 3);
       const pick = (arr) => arr[Math.floor(h * arr.length) % arr.length];
+      const k = turn(hash2(Math.floor(tr.x * 100), Math.floor(tr.z * 100), 11)), both = (set) => mixC(pick(set[s]), pick(set[n]), k);
       switch (tr.k) {
         case TREE.PINE:
           put('trunk', tr.x, y, tr.z, tr.s, tr.r, '#6b4a2f');
-          put('pine', tr.x, y, tr.z, tr.s, tr.r, pick(FOLIAGE.pine[s]));
+          put('pine', tr.x, y, tr.z, tr.s, tr.r, both(FOLIAGE.pine));
           break;
         case TREE.ROUND: {
           put('trunk', tr.x, y, tr.z, tr.s, tr.r, '#6e4d31', 1.1);
-          const bare = s === 3;
-          const col = s === 0 && h > 0.9 ? '#e3b7c0' : pick(FOLIAGE.round[s].slice(0, s === 0 ? 3 : undefined));
-          put('round', tr.x, y + (bare ? 0.04 : 0), tr.z, tr.s * (bare ? 0.7 : 1), tr.r, col);
+          const bare = bareOf(k);
+          const colOf = (q) => (q === 0 && h > 0.9 ? '#e3b7c0' : pick(FOLIAGE.round[q].slice(0, q === 0 ? 3 : undefined)));
+          put('round', tr.x, y + bare * 0.04, tr.z, tr.s * (1 - bare * 0.3), tr.r, mixC(colOf(s), colOf(n), k));
           break;
         }
         case TREE.BIRCH:
           put('trunk', tr.x, y, tr.z, tr.s * 0.8, tr.r, '#e8e4da', 1.6);
-          put('birch', tr.x, y, tr.z, tr.s * (s === 3 ? 0.75 : 1), tr.r, pick(FOLIAGE.birch[s]));
+          put('birch', tr.x, y, tr.z, tr.s * (1 - bareOf(k) * 0.25), tr.r, both(FOLIAGE.birch));
           break;
         case TREE.BUSH:
-          put('bush', tr.x, y, tr.z, tr.s, tr.r, pick(FOLIAGE.bush[s]));
+          put('bush', tr.x, y, tr.z, tr.s, tr.r, both(FOLIAGE.bush));
           break;
         case TREE.ROCK:
           put('rock', tr.x, y, tr.z, tr.s, tr.r, h > 0.5 ? '#9b968c' : '#8a857b');
@@ -166,18 +182,18 @@ export class NatureView {
       const sp = dressSpots(w);
       for (const tr of sp.trees) {
         const y = t.heightAt(tr.x, tr.z) - 0.01, h = hash2(Math.floor(tr.x * 100), Math.floor(tr.z * 100), 3);
-        const bare = s === 3, leaves = FOLIAGE.round[s];
+        const k = turn(h), bare = bareOf(k), leaf = (q) => FOLIAGE.round[q][Math.floor(h * Math.min(3, FOLIAGE.round[q].length))];
         put('trunk', tr.x, y, tr.z, tr.s, tr.r, '#6e4d31', 1.3);
-        put('round', tr.x, y + 0.03 + (bare ? 0.04 : 0), tr.z, tr.s * (bare ? 0.7 : 1), tr.r, leaves[Math.floor(h * Math.min(3, leaves.length))]);
+        put('round', tr.x, y + 0.03 + bare * 0.04, tr.z, tr.s * (1 - bare * 0.3), tr.r, mixC(leaf(s), leaf(n), k));
       }
       for (const hg of sp.hedges) {
-        const c = HEDGE[s][Math.floor(hash2(Math.floor(hg.x * 40), Math.floor(hg.z * 40), 5) * 3)];
+        const hi = Math.floor(hash2(Math.floor(hg.x * 40), Math.floor(hg.z * 40), 5) * 3), c = mixC(HEDGE[s][hi], HEDGE[n][hi], sw);
         put('bush', hg.x, t.heightAt(hg.x, hg.z) - 0.005, hg.z, 0.62, hg.r, c, 0.9);
       }
       for (const sh of sp.shrubs) {
         const y = t.heightAt(sh.x, sh.z) + 0.04, h = hash2(Math.floor(sh.x * 100), Math.floor(sh.z * 100), 7);
-        put('bush', sh.x, y, sh.z, 0.5, sh.r, FOLIAGE.bush[s][Math.floor(h * 3)]);
-        if (s <= 1) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
+        put('bush', sh.x, y, sh.z, 0.5, sh.r, mixC(FOLIAGE.bush[s][Math.floor(h * 3)], FOLIAGE.bush[n][Math.floor(h * 3)], turn(h)));
+        if (hash2(Math.floor(sh.x * 70), Math.floor(sh.z * 70), 12) < flowering) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
       }
     }
     // farm fields: rows of crop tufts (none in winter, or on grazing land)
@@ -225,9 +241,9 @@ export class NatureView {
         const n = Math.floor(hash2(x, z, 41) * 3);
         for (let k = 0; k < n; k++) {
           const px = x + hash2(x, z, 50 + k), pz = z + hash2(x, z, 60 + k);
-          put('tuft', px, t.heightAt(px, pz), pz, 0.8 + hash2(x, z, 70 + k) * 0.6, hash2(x, z, 80 + k) * 6, TUFT[s]);
+          put('tuft', px, t.heightAt(px, pz), pz, 0.8 + hash2(x, z, 70 + k) * 0.6, hash2(x, z, 80 + k) * 6, mixC(TUFT[s], TUFT[n], sw));
         }
-        if (s <= 1 && hash2(x, z, 43) < 0.18) {
+        if (hash2(x, z, 43) < 0.18 * flowering) {
           const fc = BLOOMS[Math.floor(hash2(x, z, 44) * BLOOMS.length)];
           for (let k = 0; k < 3; k++) {
             const px = x + 0.15 + hash2(x, z, 90 + k) * 0.7, pz = z + 0.15 + hash2(x, z, 95 + k) * 0.7;

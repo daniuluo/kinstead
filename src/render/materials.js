@@ -7,9 +7,10 @@ export const U = {
   uNight: { value: 0 },  // 0 day → 1 night (windows, lamps)
   uLate: { value: 0 },   // 0 → 1 past midnight (windows switch off)
   uSnow: { value: 0 },   // winter snow cover
+  uFresh: { value: 0 },  // snow fresh from a fall (see sky.js freshSnowAt)
 };
 
-const HEAD = 'uniform float uTime;\nuniform float uNight;\nuniform float uLate;\nuniform float uSnow;\n';
+const HEAD = 'uniform float uTime;\nuniform float uNight;\nuniform float uLate;\nuniform float uSnow;\nuniform float uFresh;\n';
 
 const SNOW = `
 {
@@ -55,10 +56,33 @@ const WAVES = `
 }
 `;
 
+// Buildings: the winter's snow lies on pitched roofs too, not only on flat
+// tops, and a fresh fall whitens them all over again.
+const SNOW_ROOF = `
+{
+  vec3 wN = normalize(inverseTransformDirection(normal, viewMatrix));
+  float snowAmt = max(uSnow, uFresh) * 0.9 * smoothstep(0.38, 0.72, wN.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 1.0), snowAmt);
+}
+`;
+
+// Roads: a patchy, trodden dusting through the winter that a fresh fall
+// thickens, greyer than the fields and never quite covering the street.
+const SNOW_ROAD = `
+{
+  vec3 wN = normalize(inverseTransformDirection(normal, viewMatrix));
+  vec2 cell = floor(vWPos.xz / 0.055);
+  float n = fract(sin(dot(cell, vec2(27.619, 57.583))) * 43758.5453);
+  float lie = clamp(uSnow * 0.3 + uFresh * 0.72, 0.0, 0.82);
+  float snowAmt = lie * smoothstep(0.2, 0.6, wN.y) * smoothstep(0.0, 0.75, n + lie - 0.35);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.86, 0.9), snowAmt);
+}
+`;
+
 const SNOW_MASKED = `
 {
   vec3 wN = normalize(inverseTransformDirection(normal, viewMatrix));
-  float snowAmt = uSnow * vSnowMask * smoothstep(0.42, 0.85, wN.y);
+  float snowAmt = max(uSnow, uFresh * 0.9) * vSnowMask * smoothstep(0.42, 0.85, wN.y);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 1.0), snowAmt);
 }
 `;
@@ -120,7 +144,7 @@ export function patch(material, { snow = false, snowMask = false, emit = false, 
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSnowMask = snowMask;');
       fs = fs.replace('#include <common>', '#include <common>\nvarying float vSnowMask;')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + SNOW_MASKED);
-    } else if (snow) fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + SNOW);
+    } else if (snow) fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + (snow === 'roof' ? SNOW_ROOF : snow === 'road' ? SNOW_ROAD : SNOW));
     shader.vertexShader = vs;
     shader.fragmentShader = fs;
   };
@@ -129,15 +153,16 @@ export function patch(material, { snow = false, snowMask = false, emit = false, 
 }
 
 export const MAT = {
-  building: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, pattern: 'building' }, 'bld'),
+  building: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: 'roof', emit: true, pattern: 'building' }, 'bld'),
   // the same, lit by candles and lanterns (no power), or dark (work stopped)
-  buildingCandle: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, light: 'candle', pattern: 'building' }, 'bldC'),
-  buildingOff: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, light: 'off', pattern: 'building' }, 'bldO'),
+  buildingCandle: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: 'roof', emit: true, light: 'candle', pattern: 'building' }, 'bldC'),
+  buildingOff: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: 'roof', emit: true, light: 'off', pattern: 'building' }, 'bldO'),
   // building sites are open-topped shells, so their insides must show
-  site: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide }), { snow: true, emit: true, pattern: 'building' }, 'site'),
+  site: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide }), { snow: 'roof', emit: true, pattern: 'building' }, 'site'),
   terrain: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }), { snowMask: true, pattern: 'terrain' }, 'ter'),
-  // crisp road surfaces laid over the terrain (kept clear of snow so streets stay readable)
-  road: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), { pattern: 'terrain' }, 'road'),
+  // crisp road surfaces laid over the terrain (only ever a trodden dusting of
+  // snow, so streets stay readable)
+  road: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), { snow: 'road', pattern: 'terrain' }, 'road'),
   side: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }),
   foliage: patch(new THREE.MeshStandardMaterial({ roughness: 0.92 }), { snow: true, wind: true }, 'fol'),
   grass: patch(new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.95 }), { snow: true, wind: true }, 'grs'),

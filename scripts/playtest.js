@@ -106,13 +106,15 @@ function growRoads() {
 // a workplace type that already has a building standing idle for want of
 // workers, or one still going up, isn't worth building more of yet (build
 // homes for more villagers instead)
+// any high-street trade the town can build yet (market, baker, butcher, draper...)
+const anyShop = () => rng.pick(Object.keys(BUILDINGS).filter(t => BUILDINGS[t].cat === 'commercial' && !BUILDINGS[t].hidden && w.hasTech(BUILDINGS[t].tech) && w.unlockPop >= (BUILDINGS[t].unlock || 0)));
 const idleType = (type) => !!BUILDINGS[type].levels[0].jobs && [...w.buildings.values()].some(b => b.type === type && (b.con ? b.con.kind === 'build' : (b.blockers || []).includes('workers')));
 const placeUseful = (type, near) => place(idleType(type) ? 'house' : type, near);
 
 function botDay() {
   const sim = game.sim;
   if (w.money < 150) return;
-  for (let k = 1; k < busy; k++) { if (!placeUseful(rng.pick(['house', 'house', 'market', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'well']))) growRoads(); }
+  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well']); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
   const issues = computeIssues(game);
   const has = (t) => issues.some(i => i.text.includes(t));
   // research: cheapest available project, but water and power once the
@@ -144,7 +146,7 @@ function botDay() {
   if (free < 4) { for (let i = 0; i < 2; i++) if (!place('house')) { growRoads(); break; } }
   // jobs
   const jobless = [...w.residents.values()].filter(r => r.age === 'adult' && r.job == null && r.school == null).length;
-  if (jobless > 3) place(rng.pick(['market', 'farm', 'workshop', 'lumber', 'bakery', 'tavern'].filter(t => w.checkBuild(t, center.x, center.z).reason !== `Research ${w.techName(BUILDINGS[t].tech)} first`)));
+  if (jobless > 3) place(rng.pick([anyShop(), 'farm', 'workshop', 'lumber', 'bakery', 'tavern'].filter(t => w.checkBuild(t, center.x, center.z).reason !== `Research ${w.techName(BUILDINGS[t].tech)} first`)));
   // services that homes lack
   for (const [s, type] of [['water', 'well'], ['health', 'clinic'], ['safety', 'watch'], ['education', 'school']]) {
     const miss = [...w.buildings.values()].filter(b => b.factors && !b.factors[s] && BUILDINGS[b.type].levels[b.level].housing);
