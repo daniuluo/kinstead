@@ -155,13 +155,14 @@ export function siteGeo(o) {
     else { scaffoldH = top + 0.05; pile = 0.15; }
   } else {
     // 0 = bare plot, 1 = finished
-    let q = o.kind === 'dismantle' ? 1 - o.p : o.kind === 'merge' ? 0.3 + 0.7 * o.p : o.p;
+    const down = o.kind === 'dismantle' || o.kind === 'demolish';
+    let q = down ? 1 - o.p : o.kind === 'merge' ? 0.3 + 0.7 * o.p : o.p;
     if (o.wait) q = 0;
     if (q < 0.12) { cut = -1; peg = o.kind === 'build'; }
     else if (q < 0.3) { cut = lerp(-0.25, 0.07, (q - 0.12) / 0.18); peg = q < 0.2 && o.kind === 'build'; }
     else if (q < 0.9) { cut = lerp(0.07, top + 0.01, (q - 0.3) / 0.6); scaffoldH = Math.min(top + 0.05, cut + 0.12); }
     else scaffoldH = top + 0.05;
-    if (o.kind === 'dismantle') pile = 0.25 + 0.75 * o.p;
+    if (down) pile = 0.25 + 0.75 * o.p;
     else if (o.wait) pile = 0;
     else pile = q < 0.3 ? 1 : 1 - (q - 0.3) * 1.2;
   }

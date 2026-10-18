@@ -177,6 +177,12 @@ function win(c, x, y, z, w, h, face, lit = 0.75) {
 
 function door(c, x, z, w, h, color) {
   const { gb } = c;
+  // remember the main (first) door so villagers can walk in and out of it
+  if (!c.doorAt) {
+    const p = new THREE.Vector3(x, 0, z + 0.015).applyMatrix4(gb.M), q = new THREE.Vector3(x, 0, z + 1).applyMatrix4(gb.M);
+    const len = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+    c.doorAt = { x: p.x, y: p.y, z: p.z, dx: (q.x - p.x) / len, dz: (q.z - p.z) / len };
+  }
   gb.box(x, 0, z + 0.004, w + 0.026, h + 0.018, 0.014, '#5a4330');
   gb.box(x, 0, z + 0.01, w, h, 0.014, color);
   const g = c.gy(x, z + 0.07);
@@ -582,7 +588,7 @@ function homeModel(c, L) {
     const w = Math.min(two ? rng.float(0.5, 0.6) : rng.float(0.44, 0.54), bw - 0.22);
     const d = two ? rng.float(0.4, 0.46) : rng.float(0.34, 0.4);
     const h = two ? rng.float(0.52, 0.58) : rng.float(0.28, 0.33);
-    const front = B.z1 - rng.float(0.17, 0.22);
+    const front = B.z1 - rng.float(0.12, 0.2);
     const lo = B.x0 + 0.11 + w / 2, hi = B.x1 - 0.11 - w / 2;
     const hx = Math.min(hi, Math.max(lo, (B.x0 + B.x1) / 2 + rng.float(-0.06, 0.06)));
     const thatch = pal.thatched && (!two || rng.chance(0.5));
@@ -1902,6 +1908,162 @@ MODELS.shophouse = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// ------------------------------------------------------------- utilities
+
+// Which side of the plot the water is on (the lowest ground), as a local
+// direction. Without terrain (thumbnails) it's the back.
+function waterSide(c) {
+  let best = [0, -1], lo = Infinity;
+  for (const [dx, dz] of [[0, -1], [1, 0], [-1, 0], [0, 1]]) {
+    const g = c.gy(dx * 0.62, dz * 0.62);
+    if (g < lo - 1e-3) { lo = g; best = [dx, dz]; }
+  }
+  return best;
+}
+
+// A wooden utility pole with a cross-arm and insulators.
+function pole(c, x, z, h = 0.5) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y - 0.02, z, 0.011, 0.015, h + 0.02, 6, '#5e4630');
+  gb.box(x, y + h - 0.06, z, 0.16, 0.014, 0.016, '#5e4630');
+  for (const s of [-1, 1]) gb.cyl(x + s * 0.06, y + h - 0.046, z, 0.008, 0.008, 0.02, 5, '#d8d0c0');
+}
+
+MODELS.watermill = (c, L) => {
+  const { gb, rng, pal } = c;
+  const [sx, sz] = waterSide(c);
+  const w = L ? 0.54 : 0.44, d = L ? 0.44 : 0.38, h = L ? 0.5 : 0.32;
+  const hx = -sx * 0.12, hz = -sz * 0.12;
+  house(c, {
+    x: hx, z: hz, w, d, h, floors: L ? 2 : 1, wall: L ? pal.brick : pal.wall, roof: L ? pal.slate : pal.roof, roofType: 'gable',
+    rh: 0.22, timber: !L && pal.timber, nFront: 2, chimney: false, lit: 0.7, fancy: false, plinth: STONE,
+  });
+  // the wheel turns in the stream beside the mill
+  const R = L ? 0.24 : 0.2;
+  const off = (sx ? w : d) / 2 + 0.06;
+  const wx = hx + sx * off, wz = hz + sz * off;
+  const wy = Math.max(0.1, c.gy(wx, wz) + R * 0.55);
+  const wheel = new GeoBuilder();
+  wheel.vary = 0.06;
+  const n = 10;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    wheel.boxC(Math.cos(a) * R, Math.sin(a) * R, 0, 2 * R * Math.sin(Math.PI / n) + 0.01, 0.022, 0.1, '#6e5034', 0, 0, a + Math.PI / 2);
+    wheel.boxC(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, 0, R, 0.014, 0.014, '#5e432c', 0, 0, a);
+    wheel.boxC(Math.cos(a) * (R + 0.025), Math.sin(a) * (R + 0.025), 0, 0.055, 0.012, 0.1, '#86663f', 0, 0, a);
+  }
+  wheel.boxC(0, 0, 0, 0.05, 0.05, 0.16, '#3a2f28');
+  c.spin = { geo: wheel.build(), x: wx, y: wy, z: wz, speed: 0.7, ry: sx ? Math.PI / 2 : 0 };
+  // stone wheel pit and a flume bringing the water in
+  gb.cbox(wx - sz * 0.0, Math.min(0, c.gy(wx, wz)) - 0.1, wz, sx ? 0.22 : 0.62, 0.1, sx ? 0.62 : 0.22, STONE_D, 0, 0.01);
+  gb.box(wx - sz * 0.0 + (sx ? 0 : -0.1), wy + R + 0.04, wz + (sx ? -0.1 : 0), sx ? 0.08 : 0.3, 0.03, sx ? 0.3 : 0.08, '#6e5034');
+  // dynamo shed and the line out to the town
+  const dx = hx - sx * 0.02 + (sz ? 0.32 : 0), dz = hz + 0.3;
+  gb.cbox(dx, c.gy(dx, dz), dz, 0.14, 0.12, 0.12, '#7a6a58', 0, 0.008);
+  gb.wedge(dx, c.gy(dx, dz) + 0.12, dz, 0.16, 0.14, 0.04, pal.slate, 0);
+  pole(c, 0.4, 0.42);
+  if (L) pole(c, -0.4, 0.42);
+  sign(c, hx, 0.24, hz + d / 2 + 0.008, 0.18, 0.04, '#3b2f2a');
+  void rng;
+};
+
+MODELS.windgen = (c, L) => {
+  const { gb, pal } = c;
+  if (L === 0) {
+    // a smock-mill tower with four canvas sails driving a dynamo
+    footing(c, 0, -0.05, 0.36, 0.36);
+    gb.cyl(0, 0, -0.05, 0.12, 0.17, 0.6, 8, '#a8885c');
+    for (let k = 0; k < 3; k++) gb.cyl(0, 0.15 + k * 0.17, -0.05, 0.172 - k * 0.017, 0.172 - k * 0.017, 0.012, 8, '#5e4630');
+    gb.cone(0, 0.6, -0.05, 0.15, 0.14, 8, pal.roof);
+    door(c, 0, 0.11, 0.07, 0.14, pal.door);
+    const sails = new GeoBuilder();
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2;
+      sails.boxC(Math.cos(a) * 0.17, Math.sin(a) * 0.17, 0, 0.34, 0.016, 0.012, '#5e4630', 0, 0, a);
+      sails.boxC(Math.cos(a) * 0.2 + Math.cos(a + Math.PI / 2) * 0.035, Math.sin(a) * 0.2 + Math.sin(a + Math.PI / 2) * 0.035, 0.004, 0.24, 0.06, 0.006, '#e8e0cc', 0, 0, a);
+    }
+    sails.cyl(0, 0, -0.03, 0.025, 0.025, 0.05, 6, '#3a2f28', 0, Math.PI / 2);
+    c.spin = { geo: sails.build(), x: 0, y: 0.62, z: 0.1, speed: 1.3 };
+    gb.cbox(0.3, c.gy(0.3, 0.25), 0.25, 0.16, 0.12, 0.14, '#7a6a58', 0, 0.008);
+    gb.wedge(0.3, c.gy(0.3, 0.25) + 0.12, 0.25, 0.18, 0.16, 0.04, pal.slate, 0);
+    pole(c, -0.38, 0.38);
+  } else {
+    // a tall wind turbine on a slim mast
+    footing(c, 0, -0.05, 0.16, 0.16);
+    gb.cbox(0, -0.02, -0.05, 0.16, 0.05, 0.16, STONE, 0, 0.01);
+    gb.cyl(0, 0.02, -0.05, 0.022, 0.04, 1.28, 8, '#e6e4de');
+    gb.cbox(0, 1.27, -0.09, 0.07, 0.07, 0.19, '#dcdad4', 0, 0.01);
+    const blades = new GeoBuilder();
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2 + Math.PI / 2;
+      blades.boxC(Math.cos(a) * 0.24, Math.sin(a) * 0.24, 0, 0.46, 0.035, 0.008, '#f0eee8', 0, 0, a);
+    }
+    blades.sphere(0, 0, 0.01, 0.03, '#d0cec8', 1);
+    c.spin = { geo: blades.build(), x: 0, y: 1.305, z: 0.03, speed: 2.4 };
+    gb.cbox(0.3, c.gy(0.3, 0.28), 0.28, 0.18, 0.14, 0.14, '#d8d2c4', 0, 0.008);
+    gb.box(0.3, c.gy(0.3, 0.28) + 0.14, 0.28, 0.2, 0.02, 0.16, '#5a5f63');
+    pole(c, -0.38, 0.38);
+  }
+};
+
+MODELS.pump = (c, L) => {
+  const { gb, pal } = c;
+  const [sx, sz] = waterSide(c);
+  const hx = -sx * 0.1, hz = -sz * 0.1;
+  const w = L ? 0.56 : 0.42, d = L ? 0.44 : 0.36;
+  house(c, {
+    x: hx, z: hz, w, d, h: L ? 0.44 : 0.32, wall: pal.brick, roof: pal.slate, roofType: 'gable', rh: 0.18,
+    nFront: 2, chimney: false, lit: 0.8, fancy: false, plinth: STONE,
+  });
+  const cx = hx - (sx ? 0 : w * 0.3) , cz = hz - (sz ? 0 : d * 0.3);
+  chimney(c, cx, 0.2, L ? 1.05 : 0.8, cz, 'heavy', '#7f3f2e');
+  // intake pipe down to the water
+  const ex = hx + sx * ((sx ? w : d) / 2 + 0.2), ez = hz + sz * ((sx ? w : d) / 2 + 0.2);
+  const mx = (hx + ex) / 2 + (sx ? 0 : 0.1), mz = (hz + ez) / 2 + (sz ? 0 : 0.1);
+  gb.boxC(mx, Math.max(c.gy(mx, mz), -0.1) + 0.04, mz, sx ? 0.36 : 0.04, 0.04, sx ? 0.04 : 0.36, '#4a4a4e');
+  gb.cyl(ex + (sx ? 0 : 0.1), Math.min(c.gy(ex, ez), 0) - 0.12, ez + (sz ? 0 : 0.1), 0.035, 0.035, 0.2, 8, '#4a4a4e');
+  if (L) {
+    // a raised tank on iron legs
+    const tx = -hx * 0 + (sx ? 0 : 0.3) - sx * 0.3, tz = 0.28;
+    for (const ax of [-1, 1]) for (const az of [-1, 1]) gb.box(tx + ax * 0.08, c.gy(tx, tz), tz + az * 0.08, 0.02, 0.5, 0.02, '#3a3a3e');
+    gb.cyl(tx, c.gy(tx, tz) + 0.5, tz, 0.13, 0.13, 0.16, 12, '#6f7f86');
+    gb.cone(tx, c.gy(tx, tz) + 0.66, tz, 0.14, 0.06, 12, '#4a5560');
+  } else {
+    gb.cyl(0.32, c.gy(0.32, 0.3), 0.3, 0.09, 0.1, 0.16, 12, '#6f7f86');
+  }
+};
+
+MODELS.powerplant = (c, L) => {
+  const { gb, pal } = c;
+  const brick = pal.style === 'stone' ? pal.stoneWall : pal.brick;
+  // turbine hall with tall windows
+  house(c, {
+    x: -0.22, z: -0.18, w: 1.1, d: 0.66, h: L ? 0.72 : 0.6, floors: 2, wall: brick, roof: pal.slate, roofType: 'gable', rh: 0.22,
+    fancy: false, nFront: 6, doorX: 0, doorW: 0.14, lit: 0.85, plinth: STONE_D, chimney: false,
+  });
+  // boiler house and chimneys
+  const bx = 0.62, bz = -0.36;
+  footing(c, bx, bz, 0.5, 0.52);
+  gb.cbox(bx, 0, bz, 0.5, 0.52, 0.52, shade(brick, 0.88), 0, 0.016);
+  gb.hip(bx, 0.52, bz, 0.5, 0.52, 0.12, pal.slate, 0.04);
+  const stacks = L ? [[0.5, -0.66], [0.78, -0.66], [0.64, -0.12]] : [[0.62, -0.68]];
+  for (const [x, z] of stacks) {
+    const top = L ? 1.75 : 1.5;
+    gb.cyl(x, 0.3, z, 0.06, 0.085, top - 0.3, 10, '#7f3f2e');
+    gb.cyl(x, top, z, 0.07, 0.07, 0.04, 10, '#5e2e22');
+    c.addSmoke(x, top + 0.05, z, 'heavy');
+  }
+  // coal heaps and a little rail of tubs
+  gb.blob(-0.55, c.gy(-0.55, 0.55) - 0.02, 0.55, 0.3, 0.13, 0.22, '#2a2826');
+  gb.blob(-0.2, c.gy(-0.2, 0.62) - 0.02, 0.62, 0.18, 0.08, 0.14, '#33302d');
+  for (let i = 0; i < 3; i++) gb.cbox(0.1 + i * 0.12, c.gy(0.1 + i * 0.12, 0.6), 0.6, 0.09, 0.06, 0.07, '#4a4a4e', 0, 0.006);
+  // transformer yard
+  for (const [x, z] of [[0.55, 0.3], [0.8, 0.3], [0.55, 0.6], [0.8, 0.6]]) pole(c, x, z, 0.46);
+  gb.cbox(0.68, c.gy(0.68, 0.45), 0.45, 0.14, 0.12, 0.12, '#5a5f63', 0, 0.008);
+  fence(c, 0.42, 0.18, 0.94, 0.9, '#5a5a5e', { x: 0.68, z: 0.9, w: 0.08 });
+};
+
 function tint(geo, t) {
   const c = geo.attributes.color;
   for (let i = 0; i < c.count; i++) c.setXYZ(i, c.getX(i) * (1 + t[0]), c.getY(i) * (1 + t[1]), c.getZ(i) * (1 + t[2]));
@@ -1926,6 +2088,13 @@ const hasExt = (b) => !!(b.ext && (b.ext.x0 || b.ext.x1 || b.ext.z0 || b.ext.z1)
 // The part of the world a building may use, in its own local frame: its plot,
 // grown or shrunk by any garden land bought from or sold to a neighbour.
 function plotBox(b, Ex, Ez) {
+  const box = landBox(b, Ex, Ez);
+  // the front may come forward into the street's verge (b.front, set by the world)
+  if (b.front) box.z1 += b.front;
+  return box;
+}
+
+function landBox(b, Ex, Ez) {
   if (!hasExt(b)) return { x0: -Ex, x1: Ex, z0: -Ez, z1: Ez };
   const e = b.ext, W = fw(b) / 2, D = fd(b) / 2;
   const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
@@ -2014,7 +2183,8 @@ export function buildModel(b, opts = {}) {
       c.smoke.forEach(sc); c.glows.forEach(sc);
       if (c.fountain) { const p = { x: c.fountain[0], z: c.fountain[2] }; sc(p); c.fountain[0] = p.x; c.fountain[2] = p.z; }
       if (c.spin) { sc(c.spin); c.spin.geo.scale(k, k, k); }
+      if (c.doorAt) sc(c.doorAt);
     }
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit };
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null };
 }

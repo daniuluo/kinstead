@@ -1,8 +1,8 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf } from '../defs.js';
-import { isOpen } from '../world/world.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH } from '../defs.js';
+import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf } from '../sim/people.js';
@@ -30,7 +30,7 @@ const ICONS = {
   '🐟': 'set_meal', '🌾': 'grass', '🪓': 'carpenter', '🔨': 'hardware', '🥖': 'bakery_dining', '🍺': 'sports_bar',
   '🧺': 'shopping_basket', '🏛': 'account_balance', '🌷': 'local_florist', '🌼': 'filter_vintage', '🚉': 'train', '🏠': 'home',
   '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
-  '🏪': 'store', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
+  '🏪': 'store', '⚡': 'bolt', '🔬': 'science', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {
@@ -53,6 +53,7 @@ const OVERLAYS = [
   { id: 'education', name: '📚 Education' },
   { id: 'safety', name: '🛡️ Safety' },
   { id: 'culture', name: '🔔 Culture' },
+  { id: 'power', name: '⚡ Power' },
   { id: 'appeal', name: '🌳 Scenery' },
   { id: 'pollution', name: '🏭 Pollution' },
   { id: 'transit', name: '🚏 Transit routes' },
@@ -84,6 +85,7 @@ export class UI {
     $('btnLines').onclick = () => this.showLines();
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
+    $('btnResearch').onclick = () => this.showResearch();
     $('btnPops').onclick = () => this.togglePopups();
     this.syncPopButton();
     $('btnSave').onclick = () => this.showSaves();
@@ -152,7 +154,8 @@ export class UI {
       for (const [type, def] of Object.entries(BUILDINGS)) {
         if (def.cat !== cat || def.hidden) continue;
         const u = unlockOf(type, 0);
-        cards.push(card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, pop < u ? u : 0, () => this.game.input.setTool({ kind: 'build', type }), def.desc));
+        const lock = pop < u ? u : !this.world.hasTech(def.tech) ? `🔬 ${TECHS[def.tech].name}` : 0;
+        cards.push(card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type }), def.desc));
       }
       if (cat === 'parks') cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
       if (cat === 'transit') {
@@ -169,8 +172,10 @@ export class UI {
       el.dataset.key = c.key;
       el.title = c.title;
       const img = c.img.startsWith('data:') ? `<img src="${c.img}" alt="">` : `<div class="ph">${ico(c.img)}</div>`;
-      el.innerHTML = ico(`${img}<div class="n">${esc(c.name)}</div>` + (c.locked ? `<div class="lock">🔒 ${c.locked} villagers</div>` : (c.cost ? `<div class="c">🪙 ${c.cost}</div>` : '')));
+      const research = typeof c.locked === 'string';
+      el.innerHTML = ico(`${img}<div class="n">${esc(c.name)}</div>` + (c.locked ? `<div class="lock">${research ? esc(c.locked) : `🔒 ${c.locked} villagers`}</div>` : (c.cost ? `<div class="c">🪙 ${c.cost}</div>` : '')));
       el.onclick = () => {
+        if (research) { this.toast(`${c.name} needs research: ${c.locked.replace('🔬 ', '')}. Press K to open Research.`, 'bad', '🔬'); return; }
         if (c.locked) { this.toast(`${c.name} unlocks when your town reaches ${c.locked} villagers.`, 'bad', '🔒'); return; }
         c.onclick();
       };
@@ -240,6 +245,13 @@ export class UI {
       $('happy').textContent = `${hp}%`;
       $('happyIco').textContent = hp >= 75 ? 'sentiment_very_satisfied' : hp >= 55 ? 'sentiment_satisfied' : hp >= 40 ? 'sentiment_neutral' : 'sentiment_dissatisfied';
       $('jobs').textContent = `${sim.jobs.filled}/${sim.jobs.total}`;
+      const U = sim.utility;
+      if (U) {
+        $('power').textContent = U.power.gen ? `${U.power.demand}/${U.power.gen} kW` : 'no power';
+        $('power').style.color = U.power.gen && U.power.demand > U.power.gen ? 'var(--bad)' : '';
+        $('water').textContent = `water ${U.water.demand}/${U.water.supply}`;
+        $('water').className = U.water.demand > U.water.supply ? 'neg' : '';
+      }
       $('demR').style.height = `${sim.demand.r * 100}%`;
       $('demC').style.height = `${sim.demand.c * 100}%`;
       $('demI').style.height = `${sim.demand.i * 100}%`;
@@ -254,6 +266,8 @@ export class UI {
 
   // ------------------------------------------------------------ inspector
   inspect(sel) {
+    this.confirmExpand = null;
+    if (this.game.input) this.game.input.previewTiles = null;
     if (this.preview && (!sel || sel.kind !== 'building' || sel.id !== this.preview.id)) { this.preview = null; this.game.view?.setPreview(null, null); }
     this.selection = sel;
     this.game.agents.select(sel && sel.kind === 'resident' ? this.world.residents.get(sel.id) : null);
@@ -288,6 +302,11 @@ export class UI {
     if (sel.kind === 'building') this._syncPreview(w.buildings.get(sel.id));
     el.classList.remove('hidden');
     for (const a of el.querySelectorAll('[data-act]')) a.onclick = (e) => this._act(a.dataset.act, a.dataset, e);
+    // hovering an expansion option shows the plot it would take
+    for (const a of el.querySelectorAll('[data-act="expand"]')) {
+      a.onmouseenter = () => { this.game.input.previewTiles = [{ x: Number(a.dataset.x), z: Number(a.dataset.z), color: a.dataset.kind === 'land' ? '#7fdc6a' : '#ff6b5a', alpha: 0.45 }]; this.game.input.refresh(); };
+      a.onmouseleave = () => { this.game.input.previewTiles = null; this.game.input.refresh(); };
+    }
   }
 
   // Side-by-side numbers: the building now vs. after this upgrade.
@@ -327,7 +346,7 @@ export class UI {
     const con = b.con;
     const tdef = BUILDINGS[con.toType || b.type];
     const target = con.kind === 'upgrade' ? tdef.levels[con.to].name : BUILDINGS[b.type].levels[b.level].name;
-    const title = con.kind === 'dismantle' ? 'Being taken down for a move'
+    const title = con.kind === 'demolish' ? 'Being demolished' : con.kind === 'dismantle' ? 'Being taken down for a move'
       : con.wait === 'dismantle' ? 'Waiting for the old building to come down'
         : con.wait === 'haul' ? 'Materials on their way by cart'
           : con.kind === 'upgrade' ? `Upgrading to ${target}`
@@ -366,9 +385,10 @@ export class UI {
     h += `<div class="chips">${chips.join('')}</div>`;
     const rows = [];
     if (L.housing) {
-      rows.push(['Residents', `${b.residents.length} / ${L.housing}`]);
+      rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
     }
-    if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${L.jobs}`]);
+    if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
+    if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
     if (L.income) {
       let v = b.workers.length * L.income;
       rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `🪙 ${fmt(v)} / day`]);
@@ -385,6 +405,10 @@ export class UI {
       rows.push(['Lines', lines.length ? lines.map(l => `<span style="color:${l.color}">●</span> ${esc(l.name)}`).join('<br>') : 'None yet']);
       rows.push(['Waiting', `${waiting}`]);
     }
+    const U = sim.utility;
+    if (L.kw) rows.push(['Power output', `${L.kw} kW`], ['Town grid', `${U.power.demand} of ${U.power.gen} kW in use`]);
+    if (L.supply) rows.push(['Water supply', `${L.supply} people`], ['Town water', `${U.water.demand} of ${U.water.supply} people`]);
+    if (open && !def.park && !L.kw) rows.push(['Electricity', b.powered ? 'Connected' : U.power.gen ? (b.connected ? 'Cut off — not enough power' : 'Not on the grid') : 'No generator in town']);
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
     if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
     if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].name : b.flavor]);
@@ -401,6 +425,7 @@ export class UI {
       h += `<div class="sec"><h5>Happiness ${b.happiness}%</h5><div class="meter"><i style="width:${b.happiness}%;background-position:${-300 + b.happiness * 3}px 0"></i></div>`;
       const fc = [];
       for (const [k, s] of Object.entries(SERVICES)) fc.push(`<span class="chip ${f[k] ? 'ok' : 'no'}">${s.icon} ${s.name}</span>`);
+      if (f.dry) fc.push('<span class="chip no">💧 Water runs short</span>');
       if (f.shops) fc.push('<span class="chip ok">🛍️ Shops nearby</span>');
       if (f.transit) fc.push('<span class="chip ok">🚏 Transit nearby</span>');
       if (f.appeal > 3) fc.push(`<span class="chip ok">🌳 Pretty (+${Math.round(f.appeal)})</span>`);
@@ -441,12 +466,23 @@ export class UI {
         }
         if (styled) {
           const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
-          h += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}">${s.name}</button>`).join('')}</div>`;
+          h += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => { const t = STYLE_TECH[s.id], ok = !t || w.hasTech(t); return `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}" ${ok ? '' : `disabled title="Research ${esc(TECHS[t].name)}"`}>${ok ? '' : '🔒'}${s.name}</button>`; }).join('')}</div>`;
           h += `<div class="actions"><button class="btn small ${on ? 'gold' : ''}" data-act="preview" data-type="${o.type}">👁 ${on ? 'Previewing in town · hide' : 'Preview in town'}</button></div>`;
         }
         h += this._compareHTML(b, o, n);
         h += `<div class="req">${up.reqs.map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
         h += `<div class="actions"><button class="btn primary" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? esc(n.name) : 'Upgrade'} · 🪙 ${fmt(n.cost)}</button></div></div>`;
+      }
+      const grow = w.expandOptions(b);
+      if (grow.length) {
+        h += `<div class="sec"><h5>⇲ Expand onto a neighbouring plot</h5><div class="note">A double plot holds 50% more ${L.housing ? 'households' : 'workers'}. Builders extend it while it stays open.</div><div class="actions col">`;
+        for (const o of grow) {
+          const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
+          const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · 🪙 ${fmt(o.cost)}`;
+          h += `<button class="btn ${o.warn ? 'warn' : ''} ${confirm ? 'gold' : ''}" data-act="expand" data-dir="${o.dir}" data-kind="${o.kind}" data-x="${o.x}" data-z="${o.z}" ${w.money >= o.cost ? '' : 'disabled'}>${label}</button>`;
+          if (o.warn) h += `<div class="warnline">⚠ ${esc(o.warn)}</div>`;
+        }
+        h += '</div></div>';
       }
       const merges = w.mergeOptions(b);
       if (merges.length) {
@@ -460,7 +496,7 @@ export class UI {
     }
     h += `<div class="actions">`;
     if (!b.con) h += `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · 🪙 ${fmt(w.moveCost(b))}</button>`;
-    if (b.type !== 'townhall' || b.con) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
+    if ((b.type !== 'townhall' || b.con) && !(b.con && b.con.kind === 'demolish')) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
     h += `</div>`;
     return h;
   }
@@ -551,6 +587,19 @@ export class UI {
         break;
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
+      case 'expand': {
+        const key = `${sel.id}:${data.dir}:${data.kind}`;
+        // anything that shrinks or demolishes a neighbour needs a second click
+        if (data.kind !== 'land' && this.confirmExpand !== key) { this.confirmExpand = key; this.renderInspector(true); break; }
+        this.confirmExpand = null;
+        g.input.previewTiles = null;
+        const r = w.expandBuilding(sel.id, Number(data.dir), data.kind);
+        if (!r.ok) { this.toast(r.reason, 'bad'); break; }
+        g.sfx('build');
+        this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'Builders will extend it onto the new plot', 'good', '🏗️');
+        this.renderInspector(true);
+        break;
+      }
       case 'look':
         this.lookChoice.set(sel.id, data.look || null);
         this.preview = { id: sel.id, type: data.type };
@@ -564,7 +613,12 @@ export class UI {
       }
       case 'demolish': {
         const b = w.buildings.get(sel.id);
-        if (b) { w.removeBuilding(b.id); g.sfx('demolish'); this.inspect(null); }
+        if (!b) break;
+        const r = w.demolishBuilding(b.id);
+        if (!r.ok) { this.toast(r.reason || "Can't demolish that", 'bad'); break; }
+        g.sfx('demolish');
+        if (r.instant) this.inspect(null);
+        else { this.toast('A demolition crew is on its way; the people inside have moved out', 'info', '🏗️'); this.renderInspector(true); }
         break;
       }
       case 'follow': g.setFollow(g.follow === sel.id ? null : sel.id); this.renderInspector(true); break;
@@ -951,6 +1005,46 @@ export class UI {
     });
   }
 
+  // What each research project unlocks, worked out from the definitions.
+  _techUnlocks(id) {
+    const out = [];
+    for (const [type, def] of Object.entries(BUILDINGS)) {
+      if (def.tech === id) out.push(def.merged ? `${def.name} (join neighbours)` : def.branch ? `${def.branch} upgrade path` : def.name);
+      def.levels.forEach((L) => { if (L.tech === id) out.push(`${L.name} upgrade`); });
+    }
+    for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) out.push(`${STYLES.find(s => s.id === style).name} style`);
+    if (id === 'railways') out.push('Railway track and lines');
+    return out;
+  }
+
+  showResearch() {
+    const g = this.game, w = this.world;
+    if (!w || g.demo) return;
+    const R = w.research, rate = g.sim.researchRate();
+    const tiers = [0, 1, 2, 3].map(t => Object.entries(TECHS).filter(([, x]) => x.tier === t));
+    const card = ([id, t]) => {
+      const done = w.hasTech(id) && R.done.includes(id) || w.sandbox.unlockAll;
+      const cur = R.current === id, can = w.canResearch(id);
+      const pct = cur ? Math.round((R.progress / t.cost) * 100) : 0;
+      const days = rate > 0 ? Math.ceil((t.cost - (cur ? R.progress : 0) - (cur ? 0 : R.bank)) / rate) : null;
+      let foot;
+      if (done) foot = '<div class="tdone">✓ Researched</div>';
+      else if (cur) foot = `<div class="meter build"><i style="width:${pct}%"></i></div><div class="tsub">${R.progress}/${t.cost} · ${days != null ? `about ${Math.max(1, days)} day${days === 1 ? '' : 's'}` : 'no research yet'}</div>`;
+      else if (can) foot = `<button class="btn small primary" data-tech="${id}">🔬 Research · ${t.cost}</button>`;
+      else foot = `<div class="tsub">Needs ${t.needs.filter(n => !R.done.includes(n)).map(n => esc(TECHS[n].name)).join(' + ')}</div>`;
+      return `<div class="tech ${done ? 'done' : cur ? 'cur' : can ? 'can' : 'locked'}"><b>${esc(t.name)}</b><div class="tdesc">${esc(t.desc)}</div><ul>${this._techUnlocks(id).map(u => `<li>${esc(u)}</li>`).join('')}</ul>${foot}</div>`;
+    };
+    const sources = [];
+    for (const b of w.buildings.values()) if (['townhall', 'school', 'chapel'].includes(b.type) && b.connected) sources.push(BUILDINGS[b.type].levels[b.level].name);
+    this.openModal(`<h2>Research</h2><p class="lead">🔬 ${rate} point${rate === 1 ? '' : 's'} a day from ${sources.length ? esc([...new Set(sources)].join(', ')) : 'nowhere yet'} and your villagers${R.bank ? ` · ${R.bank} banked` : ''}. Schools and chapels speed research up. ${w.sandbox.unlockAll ? '<b>Sandbox: everything is unlocked.</b>' : ''}</p>
+      <div class="techtree">${tiers.map((col, i) => `<div class="tcol"><h5>${['Crafts', 'Learning', 'Industry', 'Modern'][i]}</h5>${col.map(card).join('')}</div>`).join('')}</div>`, (c) => {
+      c.classList.add('wide');
+      for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => {
+        if (w.startResearch(btn.dataset.tech)) { g.sfx('click'); this.showResearch(); }
+      };
+    });
+  }
+
   // One switch for every pop-up (coins, notices, hover tips, name tags).
   togglePopups() {
     const s = this.game.settings;
@@ -1046,6 +1140,7 @@ export class UI {
         ${k('Space')}<span>Pause · ${k('[')} ${k(']')} slower / faster (up to 32×)</span>
         ${k('O')}<span>Overlays · ${k('B')} budget · ${k('L')} lines · ${k('P')} villagers</span>
         ${k('N')}<span>Hide / show pop-ups (coins, notices, tips)</span>
+        ${k('K')}<span>Research: unlock buildings, upgrade paths and styles</span>
         ${k('Esc')}<span>Cancel / close</span>
       </div><div style="font-size:13px;line-height:1.5">
         <b>Getting started</b><br>
@@ -1053,7 +1148,7 @@ export class UI {
         2. Give them work: 🧺 markets, 🌾 farms, 🪓 woodcutters, 🐟 fisheries.<br>
         3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
         Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
-        4. Watch the RCI bars to see what's in demand.<br>
+        4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
         6. Save to this browser, a file, or Google Drive from 💾.
       </div></div>`);

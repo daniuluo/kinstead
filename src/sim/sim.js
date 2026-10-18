@@ -1,9 +1,9 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
-import { BUILDINGS, SERVICES, TRANSIT } from '../defs.js';
-import { RNG } from '../util/rng.js';
-import { fw, fd, isOpen } from '../world/world.js';
+import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES } from '../defs.js';
+import { RNG, hash2 } from '../util/rng.js';
+import { fw, fd, isOpen, capOf } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
 import { settleDay, startingWealth } from './people.js';
 
@@ -30,6 +30,7 @@ export class Sim {
     const mark = () => { this.dirty = true; };
     for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
+    this.world.on('building:vacate', (b) => { this.dirty = true; this._onRemoved(b); });
   }
 
   get speed() { return this.game.speed; }
@@ -71,6 +72,7 @@ export class Sim {
     if (w.history.length > 400) w.history.shift();
     w.stats.todayVisitIncome = 0;
     settleDay(w);
+    w.addResearch(this.researchRate());
     w.encroachPass(() => this.rng.next());
     this.planMigration();
     this.game.emit('day', w.day);
@@ -123,6 +125,30 @@ export class Sim {
       if (def.park || L.appeal) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * (1 - d / (L.radius + 1)); });
       if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += 16 * (1 - d / (L.pollution + 1)); });
     }
+    // Utilities. Water: wells and pumps can only draw for so many people.
+    // Power: generators feed every road-connected building through the
+    // street wires. Short on either and some buildings go without.
+    let wSup = 0, pGen = 0, pDem = 0;
+    for (const b of w.buildings.values()) {
+      if (!isOpen(b) || !b.connected) continue;
+      const def = BUILDINGS[b.type], L = def.levels[b.level];
+      if (L.supply && def.service === 'water') wSup += L.supply;
+      if (L.kw) pGen += L.kw;
+      else if (!def.park) pDem += 0.5 + 0.2 * (L.housing || 0) + 0.25 * (L.jobs || 0);
+    }
+    this.utility = { water: { supply: wSup, demand: w.population }, power: { gen: pGen, demand: Math.round(pDem) } };
+    this.waterShare = w.population ? Math.min(1, wSup / w.population) : 1;
+    this.powerShare = pGen ? Math.min(1, pDem ? pGen / pDem : 1) : 0;
+    const P = this.coverage.power;
+    for (const b of w.buildings.values()) {
+      const L = BUILDINGS[b.type].levels[b.level];
+      b.powered = !!(isOpen(b) && b.connected && this.powerShare > 0 && (L.kw || hash2(b.id, 11, 5) < this.powerShare));
+      if (!b.powered) continue;
+      for (let dz = -1; dz <= fd(b); dz++) for (let dx = -1; dx <= fw(b); dx++) {
+        const x = b.x + dx, z = b.z + dz;
+        if (x >= 0 && z >= 0 && x < N && z < N) P[z * N + x] = 1;
+      }
+    }
     // trees and water make places pleasant
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const tc = w.treeCount[z * N + x];
@@ -155,11 +181,15 @@ export class Sim {
       const f = {};
       let h = 42;
       for (const s of SERVICE_KEYS) f[s] = !!this.coverage[s][i];
+      // not enough water to go round: some homes in reach still go dry
+      if (f.water && hash2(b.id, 3, 9) >= this.waterShare) { f.water = false; f.dry = true; }
+      f.power = !!b.powered;
       if (f.water) h += 10;
       if (f.health) h += 9;
       if (f.education) h += 8;
       if (f.safety) h += 7;
       if (f.culture) h += 6;
+      if (f.power) h += 4;
       f.appeal = Math.min(16, this.appeal[i] * 0.8);
       h += f.appeal;
       f.shops = this._near(b, o => BUILDINGS[o.type].shop || BUILDINGS[o.type].leisure, 7);
@@ -194,7 +224,18 @@ export class Sim {
     }
   }
 
-  jobsOf(b) { return isOpen(b) ? (BUILDINGS[b.type].levels[b.level].jobs || 0) : 0; }
+  // Research points per day.
+  researchRate() {
+    const w = this.world;
+    let p = Math.floor(w.population / 30);
+    for (const b of w.buildings.values()) {
+      const src = RESEARCH_SOURCES[b.type];
+      if (src && isOpen(b) && b.connected) p += src[Math.min(b.level, src.length - 1)];
+    }
+    return p;
+  }
+
+  jobsOf(b) { return isOpen(b) ? capOf(b, 'jobs') : 0; }
 
   assignJobs() {
     const w = this.world;
@@ -252,7 +293,7 @@ export class Sim {
       const def = BUILDINGS[b.type], L = def.levels[b.level];
       const workers = b.workers.length;
       if (L.income && workers) {
-        let v = workers * L.income;
+        let v = workers * L.income * (b.powered ? 1.15 : 1);
         if (def.nearTrees) v *= 0.6 + Math.min(1, this._treesNear(b, 3) / 18) * 0.8;
         if (def.cat === 'industry') inc.industry += v; else inc.commerce += v;
       }
@@ -285,9 +326,9 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.housing) { cap += L.housing; used += b.residents.length; }
-      if (def.cat === 'commercial') comm += L.jobs || 0;
-      if (def.cat === 'industry') ind += L.jobs || 0;
+      if (L.housing) { cap += capOf(b, 'housing'); used += b.residents.length; }
+      if (def.cat === 'commercial') comm += capOf(b, 'jobs');
+      if (def.cat === 'industry') ind += capOf(b, 'jobs');
     }
     for (const r of w.residents.values()) if (r.age === 'adult') adults++;
     this.housing = { cap, used };
@@ -317,7 +358,7 @@ export class Sim {
     const w = this.world, out = [];
     for (const b of w.buildings.values()) {
       const L = BUILDINGS[b.type].levels[b.level];
-      if (L.housing && b.connected && isOpen(b) && b.residents.length < L.housing) out.push(b);
+      if (L.housing && b.connected && isOpen(b) && b.residents.length < capOf(b, 'housing')) out.push(b);
     }
     return out;
   }
@@ -369,7 +410,7 @@ export class Sim {
     const b = w.buildings.get(a.home);
     if (!b || !b.connected || !isOpen(b)) return;
     const L = BUILDINGS[b.type].levels[b.level];
-    const room = (L.housing || 0) - b.residents.length;
+    const room = capOf(b, 'housing') - b.residents.length;
     if (room <= 0) return;
     const fam = this.makeFamily(b, room);
     w.stats.arrivals += fam.length;
@@ -399,7 +440,7 @@ export class Sim {
     const vac = this.vacantHomes();
     const leaving = [];
     for (const r of homeless) {
-      const h = vac.find(v => v.residents.length < BUILDINGS[v.type].levels[v.level].housing);
+      const h = vac.find(v => v.residents.length < capOf(v, 'housing'));
       if (h) { r.home = h.id; h.residents.push(r.id); this.game.agents.relocate(r, b); }
       else leaving.push(r.id);
     }

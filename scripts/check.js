@@ -299,10 +299,14 @@ const runUntil = (pred, days = 6) => {
       if (deals) break;
     }
   }
+  const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
   const rects = [...w.buildings.values()].map(b => {
-    const e = b.ext || { x0: 0, x1: 0, z0: 0, z1: 0 };
+    const e = { x0: 0, x1: 0, z0: 0, z1: 0, ...(b.ext || {}) };
+    const [dx, dz] = DIR[b.rot], f = b.front || 0;
+    if (dx > 0) e.x1 += f; if (dx < 0) e.x0 += f; if (dz > 0) e.z1 += f; if (dz < 0) e.z0 += f;
     return [b.x - e.x0, b.z - e.z0, b.x + fw(b) + e.x1, b.z + fd(b) + e.z1, b.id];
   });
+  ok([...w.buildings.values()].some(b => b.front > 0), `buildings come forward to the street (${[...w.buildings.values()].filter(b => b.front > 0).length})`);
   let overlaps = 0;
   for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
     const a = rects[i], b = rects[j];
@@ -313,6 +317,69 @@ const runUntil = (pred, days = 6) => {
   w.setSandbox({ freeUpgrades: false, unlockAll: false, instantBuild: false });
 }
 
+// 3d1. expanding onto a neighbouring plot
+{
+  w.setSandbox({ infiniteMoney: true });
+  let done = null;
+  for (const b of [...w.buildings.values()]) {
+    if (b.type !== 'house' || b.con) continue;
+    const opt = w.expandOptions(b).find(o => o.kind === 'land') || w.expandOptions(b).find(o => o.kind === 'takeover');
+    if (!opt) continue;
+    const cap0 = b.level >= 0 ? (b.residents.length, null) : null; void cap0;
+    const r = w.expandBuilding(b.id, opt.dir, opt.kind);
+    if (r.ok) { done = { b, opt }; break; }
+  }
+  ok(done && fw(done.b) * fd(done.b) === 2 && done.b.con && done.b.con.expand, `a house expands onto a neighbouring plot (${done ? done.opt.kind : 'none'})`);
+  if (done) {
+    ok(w.buildingOn(done.opt.x, done.opt.z) === done.b, 'the new plot belongs to it');
+    ok(runUntil(() => !done.b.con).ok, 'builders finished the extension');
+  }
+  w.setSandbox({ infiniteMoney: false });
+  w.money = 1e6;
+}
+
+// 3d2. demolition takes a crew and some time
+{
+  const target = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);
+  const people = target.residents.slice();
+  const r = w.demolishBuilding(target.id);
+  ok(r.ok && target.con && target.con.kind === 'demolish', 'demolition starts as a job for a crew');
+  ok(people.every(id => w.residents.get(id)?.home !== target.id), 'the household moved out at once');
+  const res = runUntil(() => !w.buildings.has(target.id), 4);
+  ok(res.ok, `the crew pulled it down (peak ${res.peak} on site)`);
+}
+
+// 3d3. research gates buildings and is earned daily
+{
+  const fresh = World.createNew({ N: 32, seed: 99, name: 'Lab' });
+  let spot = null;
+  for (let z = 1; z < 31 && !spot; z++) for (let x = 1; x < 31 && !spot; x++) if (fresh.checkBuild('house', x, z, { ignoreMoney: true }).ok) spot = [x, z];
+  fresh.residents.set(9999, { id: 9999, age: 'adult' });
+  for (let i = 0; i < 40; i++) fresh.residents.set(10000 + i, { id: 10000 + i, age: 'adult' });
+  const c1 = fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true });
+  ok(!c1.ok && /Research/.test(c1.reason), `a bakery needs research first ("${c1.reason}")`);
+  ok(fresh.startResearch('commerce') && fresh.research.current === 'commerce', 'research project started');
+  fresh.addResearch(30);
+  ok(fresh.research.done.includes('commerce') && fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true }).ok, 'finished research unlocks the bakery');
+  ok(!fresh.canResearch('highrise'), 'later projects wait for their prerequisites');
+}
+
+// 3e. utilities: a generator powers the town, demand is counted
+{
+  game.sim.recompute();
+  const before = [...w.buildings.values()].filter(b => b.powered).length;
+  let gen = null;
+  for (let z = 2; z < w.N - 3 && !gen; z++) for (let x = 2; x < w.N - 3 && !gen; x++) {
+    const r = w.placeBuilding('windgen', x, z, { instant: true, ignoreMoney: true, ignoreUnlock: true });
+    if (r.ok && r.building.connected) gen = r.building; else if (r.ok) w.removeBuilding(r.building.id, 0);
+  }
+  game.sim.recompute();
+  const U = game.sim.utility;
+  const after = [...w.buildings.values()].filter(b => b.powered).length;
+  ok(gen && U.power.gen >= 25 && after > before, `a wind generator powers ${after} buildings (${U.power.demand}/${U.power.gen} kW)`);
+  ok(U.water.supply > 0 && U.water.demand === w.population, `water: ${U.water.demand} villagers, supply for ${U.water.supply}`);
+}
+
 // 4. save round-trip
 const data = serialize(w);
 const json = JSON.stringify(data);
@@ -321,6 +388,7 @@ ok(w2.buildings.size === w.buildings.size, `save round-trip buildings (${w.build
 ok(w2.residents.size === w.residents.size, `save round-trip residents (${w.residents.size})`);
 ok(w2.trees.length === w.trees.length, `save round-trip trees (${w.trees.length})`);
 ok(w2.lines.length === w.lines.length, 'save round-trip lines');
+ok(JSON.stringify(w2.research.done) === JSON.stringify(w.research.done), 'save round-trip research');
 ok([...w.buildings.values()].every(b => { const c = w2.buildings.get(b.id); return c && c.type === b.type && fw(c) === fw(b) && fd(c) === fd(b) && (c.look || null) === (b.look || null) && JSON.stringify(c.leases || []) === JSON.stringify(b.leases || []); }), 'save round-trip plots, styles and land deals');
 let same = true;
 for (let i = 0; i < w.terrain.H.length; i++) if (Math.abs(w.terrain.H[i] - w2.terrain.H[i]) > 0.001) same = false;

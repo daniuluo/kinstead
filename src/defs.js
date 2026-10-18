@@ -12,6 +12,8 @@
 //   unlock    population needed before this level becomes available
 //   req       requirements for upgrading into this level
 //   rate      (builder's yard) how fast each of its builders works
+//   supply    (water) people it can supply with water
+//   kw        (generators) electricity produced
 //   tax       (homes) tax paid per working resident, relative to a cottage
 //
 // branches: at its top level a type can be rebuilt as one of these types
@@ -24,6 +26,7 @@ export const CATEGORIES = [
   { id: 'commercial', name: 'Commerce', icon: '🛍️', key: '3' },
   { id: 'industry', name: 'Industry', icon: '⚒️', key: '4' },
   { id: 'services', name: 'Services', icon: '⛲', key: '5' },
+  { id: 'utilities', name: 'Utilities', icon: '⚡', key: 'U' },
   { id: 'parks', name: 'Parks & Decor', icon: '🌳', key: '6' },
   { id: 'transit', name: 'Transit', icon: '🚂', key: '7' },
 ];
@@ -34,6 +37,7 @@ export const SERVICES = {
   education: { name: 'Education', icon: '📚', color: '#e3a73b' },
   safety: { name: 'Safety', icon: '🛡️', color: '#5b6fd6' },
   culture: { name: 'Culture', icon: '🔔', color: '#a46ad8' },
+  power: { name: 'Power', icon: '⚡', color: '#e8c33a' },
 };
 
 export const BUILDINGS = {
@@ -49,33 +53,33 @@ export const BUILDINGS = {
   },
   // grand path: few, wealthy residents who pay far more tax and lift the street
   villa: {
-    name: 'Villa', cat: 'residential', size: 1, hidden: true, spacious: true, icon: '🏡', branch: 'Grand home',
+    name: 'Villa', cat: 'residential', size: 1, hidden: true, spacious: true, tech: 'architecture', icon: '🏡', branch: 'Grand home',
     desc: 'A grand family home: fewer residents, but wealthy ones who pay far more tax and make the street prettier.',
     levels: [
       { name: 'Villa', cost: 700, housing: 8, tax: 2, appeal: 3, radius: 2, unlock: 60, req: { happiness: 60, water: true, health: true } },
       { name: 'Manor House', cost: 1500, housing: 12, tax: 2.6, appeal: 5, radius: 3, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
-      { name: 'Grand Manor', cost: 2900, housing: 16, tax: 3.2, appeal: 7, radius: 3, unlock: 200, req: { happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+      { name: 'Grand Manor', cost: 2900, housing: 16, tax: 3.2, appeal: 7, radius: 3, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
     ],
   },
   // multi-unit path: many households stacked into flats
   flats: {
-    name: 'Flats', cat: 'residential', size: 1, hidden: true, spacious: true, icon: '🏘️', branch: 'Flats',
+    name: 'Flats', cat: 'residential', size: 1, hidden: true, spacious: true, tech: 'urban', icon: '🏘️', branch: 'Flats',
     desc: 'Homes stacked into flats: room for many households on one plot.',
     levels: [
       { name: 'Townhouse Flats', cost: 650, housing: 12, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
-      { name: 'Tenement', cost: 1300, housing: 22, tax: 1.25, unlock: 120, req: { happiness: 60, water: true, health: true, education: true } },
-      { name: 'Mansion Block', cost: 2600, housing: 34, tax: 1.3, unlock: 200, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Tenement', tech: 'highrise', cost: 1300, housing: 22, tax: 1.25, unlock: 120, req: { power: true, happiness: 60, water: true, health: true, education: true } },
+      { name: 'Mansion Block', tech: 'highrise', cost: 2600, housing: 34, tax: 1.3, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
     ],
   },
 
   // Two neighbouring homes joined together (see World.mergeOptions).
   terrace: {
-    name: 'Terrace', cat: 'residential', size: 2, merged: true, hidden: true, icon: '🏘️',
+    name: 'Terrace', cat: 'residential', size: 2, merged: true, hidden: true, tech: 'urban', icon: '🏘️',
     desc: 'Two neighbouring homes joined into one row of houses.',
     levels: [
       { name: 'Terrace Cottages', cost: 150, housing: 8 },
       { name: 'Terraced Houses', cost: 700, housing: 16, unlock: 25, req: { happiness: 52, water: true } },
-      { name: 'Town Terrace', cost: 1500, housing: 26, unlock: 120, req: { happiness: 64, water: true, health: true, education: true } },
+      { name: 'Town Terrace', tech: 'highrise', cost: 1500, housing: 26, unlock: 120, req: { power: true, happiness: 64, water: true, health: true, education: true } },
     ],
   },
 
@@ -87,11 +91,11 @@ export const BUILDINGS = {
       { name: 'Market Stall', cost: 150, jobs: 2, income: 4, visit: 3 },
       { name: 'Shop', cost: 380, jobs: 4, income: 5, visit: 5, unlock: 25 },
       { name: 'Emporium', cost: 900, jobs: 8, income: 6, visit: 8, unlock: 120 },
-      { name: 'Market Hall', cost: 1800, jobs: 12, income: 7, visit: 11, unlock: 200 },
+      { name: 'Market Hall', tech: 'civic', cost: 1800, jobs: 12, income: 7, visit: 11, unlock: 200, req: { power: true } },
     ],
   },
   bakery: {
-    name: 'Bakery', cat: 'commercial', size: 1, shop: true, unlock: 25, icon: '🥖',
+    name: 'Bakery', cat: 'commercial', size: 1, shop: true, unlock: 25, tech: 'commerce', icon: '🥖',
     desc: 'Fresh bread every morning. The ovens smoke all day.',
     levels: [
       { name: 'Bakery', cost: 260, jobs: 3, income: 5, visit: 4 },
@@ -100,7 +104,7 @@ export const BUILDINGS = {
     ],
   },
   tavern: {
-    name: 'Tavern', cat: 'commercial', size: 1, leisure: true, unlock: 25, icon: '🍺',
+    name: 'Tavern', cat: 'commercial', size: 1, leisure: true, unlock: 25, tech: 'commerce', icon: '🍺',
     desc: 'Where villagers gather in the evening.',
     levels: [
       { name: 'Tavern', cost: 320, jobs: 3, income: 4, visit: 5 },
@@ -111,12 +115,12 @@ export const BUILDINGS = {
 
   // A home joined with a shop, bakery or tavern: trade below, families above.
   shophouse: {
-    name: 'Shophouse', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, icon: '🏪',
+    name: 'Shophouse', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, tech: 'commerce', icon: '🏪',
     desc: 'Mixed use: a shop on the ground floor with homes above.',
     levels: [
       { name: 'Shophouse', cost: 150, housing: 6, jobs: 4, income: 6, visit: 6 },
       { name: 'Market Row', cost: 900, housing: 12, jobs: 7, income: 6, visit: 8, unlock: 60, req: { happiness: 55, water: true } },
-      { name: 'Merchant Block', cost: 1900, housing: 18, jobs: 10, income: 7, visit: 10, unlock: 120, req: { happiness: 62, water: true, health: true } },
+      { name: 'Merchant Block', tech: 'highrise', cost: 1900, housing: 18, jobs: 10, income: 7, visit: 10, unlock: 120, req: { power: true, happiness: 62, water: true, health: true } },
     ],
   },
 
@@ -126,8 +130,8 @@ export const BUILDINGS = {
     desc: 'Home of the construction crews. Every new building, upgrade and move needs builders.',
     levels: [
       { name: "Builder's Yard", cost: 120, upkeep: 2, jobs: 3, rate: 1 },
-      { name: 'Master Builder', cost: 420, upkeep: 4, jobs: 5, rate: 1.25, unlock: 25 },
-      { name: "Masons' Lodge", cost: 950, upkeep: 6, jobs: 8, rate: 1.5, unlock: 120 },
+      { name: 'Master Builder', tech: 'carpentry', cost: 420, upkeep: 4, jobs: 5, rate: 1.25, unlock: 25 },
+      { name: "Masons' Lodge", tech: 'masonry', cost: 950, upkeep: 6, jobs: 8, rate: 1.5, unlock: 120 },
     ],
   },
   farm: {
@@ -163,19 +167,51 @@ export const BUILDINGS = {
     desc: 'Lucrative, but its smoke makes neighbours unhappy.',
     levels: [
       { name: 'Workshop', cost: 300, jobs: 4, income: 14, pollution: 3 },
-      { name: 'Smithy', cost: 620, jobs: 7, income: 15, pollution: 4, unlock: 25 },
-      { name: 'Manufactory', cost: 1300, jobs: 14, income: 16, pollution: 5, unlock: 120 },
+      { name: 'Smithy', tech: 'brickmaking', cost: 620, jobs: 7, income: 15, pollution: 4, unlock: 25 },
+      { name: 'Manufactory', tech: 'steam', cost: 1300, jobs: 14, income: 16, pollution: 5, unlock: 120, req: { power: true } },
     ],
   },
 
   // ------------------------------------------------------------- services
   well: {
-    name: 'Well', cat: 'services', size: 1, service: 'water', icon: '💧',
-    desc: 'Supplies water to nearby homes.',
+    name: 'Well', cat: 'utilities', size: 1, service: 'water', icon: '💧',
+    desc: 'Supplies water to nearby homes — but only as many people as it can draw for.',
     levels: [
-      { name: 'Well', cost: 80, upkeep: 2, radius: 4 },
-      { name: 'Water Tower', cost: 420, upkeep: 6, radius: 8, unlock: 60 },
-      { name: 'Waterworks', cost: 900, upkeep: 10, jobs: 3, radius: 12, unlock: 120 },
+      { name: 'Well', cost: 80, upkeep: 2, radius: 4, supply: 30 },
+      { name: 'Water Tower', tech: 'hydraulics', cost: 420, upkeep: 6, radius: 8, supply: 120, unlock: 60 },
+      { name: 'Waterworks', tech: 'steam', cost: 900, upkeep: 10, jobs: 3, radius: 12, supply: 300, unlock: 120, req: { power: true } },
+    ],
+  },
+  pump: {
+    name: 'Water Pump', cat: 'utilities', size: 1, service: 'water', needsWater: true, unlock: 25, tech: 'hydraulics', icon: '💧',
+    desc: 'Pumps river or lake water for a lot of people. Must be built next to water.',
+    levels: [
+      { name: 'Pump House', cost: 350, upkeep: 4, jobs: 1, radius: 6, supply: 150 },
+      { name: 'Pumping Station', tech: 'steam', cost: 900, upkeep: 8, jobs: 3, radius: 9, supply: 400, unlock: 120, req: { power: true } },
+    ],
+  },
+  watermill: {
+    name: 'Water Wheel', cat: 'utilities', size: 1, generator: true, needsWater: true, unlock: 25, tech: 'electricity', icon: '⚡',
+    desc: 'A mill wheel turning a dynamo. Cheap, clean power — build it beside a stream or lake.',
+    levels: [
+      { name: 'Water Wheel', cost: 300, upkeep: 2, jobs: 1, kw: 40 },
+      { name: 'Mill Turbine', cost: 750, upkeep: 4, jobs: 2, kw: 100, unlock: 60 },
+    ],
+  },
+  windgen: {
+    name: 'Wind Generator', cat: 'utilities', size: 1, generator: true, unlock: 25, tech: 'electricity', icon: '⚡',
+    desc: 'Clean power from the wind. Small, but it can go anywhere.',
+    levels: [
+      { name: 'Wind Generator', cost: 260, upkeep: 2, kw: 25 },
+      { name: 'Wind Turbine', cost: 650, upkeep: 4, kw: 60, unlock: 120 },
+    ],
+  },
+  powerplant: {
+    name: 'Power Station', cat: 'utilities', size: 2, generator: true, unlock: 60, tech: 'steam', icon: '🏭',
+    desc: 'Coal-fired: lots of power for a growing town, and lots of smoke.',
+    levels: [
+      { name: 'Coal Power Station', cost: 1600, upkeep: 14, jobs: 8, kw: 220, pollution: 4 },
+      { name: 'Steam Power Station', cost: 3000, upkeep: 22, jobs: 12, kw: 450, pollution: 5, unlock: 200 },
     ],
   },
   clinic: {
@@ -183,8 +219,8 @@ export const BUILDINGS = {
     desc: 'Keeps villagers healthy.',
     levels: [
       { name: 'Herbalist', cost: 300, upkeep: 8, jobs: 2, radius: 6 },
-      { name: 'Clinic', cost: 650, upkeep: 15, jobs: 5, radius: 9, unlock: 60 },
-      { name: 'Hospital', cost: 1400, upkeep: 24, jobs: 9, radius: 13, unlock: 120 },
+      { name: 'Clinic', tech: 'medicine', cost: 650, upkeep: 15, jobs: 5, radius: 9, unlock: 60 },
+      { name: 'Hospital', tech: 'medicine', cost: 1400, upkeep: 24, jobs: 9, radius: 13, unlock: 120, req: { power: true } },
     ],
   },
   school: {
@@ -193,7 +229,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Schoolhouse', cost: 350, upkeep: 9, jobs: 2, radius: 7 },
       { name: 'School', cost: 720, upkeep: 16, jobs: 5, radius: 10, unlock: 60 },
-      { name: 'Academy', cost: 1500, upkeep: 24, jobs: 8, radius: 14, unlock: 120 },
+      { name: 'Academy', cost: 1500, upkeep: 24, jobs: 8, radius: 14, unlock: 120, req: { power: true } },
     ],
   },
   watch: {
@@ -201,7 +237,7 @@ export const BUILDINGS = {
     desc: 'Watchmen keep the peace.',
     levels: [
       { name: 'Watch Post', cost: 240, upkeep: 6, jobs: 2, radius: 6 },
-      { name: 'Guardhouse', cost: 560, upkeep: 12, jobs: 4, radius: 9, unlock: 60 },
+      { name: 'Guardhouse', tech: 'masonry', cost: 560, upkeep: 12, jobs: 4, radius: 9, unlock: 60 },
       { name: 'Constabulary', cost: 1200, upkeep: 18, jobs: 7, radius: 13, unlock: 120 },
     ],
   },
@@ -210,7 +246,7 @@ export const BUILDINGS = {
     desc: 'A place for gatherings, weddings and quiet.',
     levels: [
       { name: 'Chapel', cost: 420, upkeep: 5, jobs: 1, radius: 8 },
-      { name: 'Church', cost: 950, upkeep: 10, jobs: 3, radius: 12, unlock: 60 },
+      { name: 'Church', tech: 'masonry', cost: 950, upkeep: 10, jobs: 3, radius: 12, unlock: 60 },
       { name: 'Minster', cost: 2200, upkeep: 16, jobs: 5, radius: 16, unlock: 200 },
     ],
   },
@@ -220,7 +256,7 @@ export const BUILDINGS = {
     levels: [
       { name: 'Town Hall', cost: 1000, upkeep: 5, jobs: 3, taxBonus: 0 },
       { name: 'Guild Hall', cost: 1600, upkeep: 10, jobs: 6, taxBonus: 0.1, unlock: 120 },
-      { name: 'Grand Hall', cost: 3200, upkeep: 18, jobs: 10, taxBonus: 0.2, unlock: 200 },
+      { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 18, jobs: 10, taxBonus: 0.2, unlock: 200, req: { power: true } },
     ],
   },
 
@@ -235,12 +271,12 @@ export const BUILDINGS = {
     ],
   },
   plaza: {
-    name: 'Plaza', cat: 'parks', size: 2, park: true, outdoor: true, unlock: 25, icon: '⛲',
+    name: 'Plaza', cat: 'parks', size: 2, park: true, outdoor: true, unlock: 25, tech: 'architecture', icon: '⛲',
     desc: 'A cobbled square where villagers meet.',
     levels: [
       { name: 'Plaza', cost: 420, upkeep: 4, appeal: 12, radius: 5 },
       { name: 'Fountain Square', cost: 850, upkeep: 7, appeal: 20, radius: 7, unlock: 60 },
-      { name: 'Grand Square', cost: 1500, upkeep: 10, appeal: 28, radius: 9, unlock: 120 },
+      { name: 'Grand Square', tech: 'civic', cost: 1500, upkeep: 10, appeal: 28, radius: 9, unlock: 120 },
     ],
   },
   flowers: {
@@ -249,7 +285,7 @@ export const BUILDINGS = {
     levels: [{ name: 'Flower Bed', cost: 25, upkeep: 0.5, appeal: 3, radius: 2 }],
   },
   statue: {
-    name: 'Statue', cat: 'parks', size: 1, park: true, unlock: 60, icon: '🗽',
+    name: 'Statue', cat: 'parks', size: 1, park: true, unlock: 60, tech: 'architecture', icon: '🗽',
     desc: 'A monument to your founders.',
     levels: [{ name: 'Statue', cost: 260, upkeep: 1, appeal: 8, radius: 4 }],
   },
@@ -261,7 +297,7 @@ export const BUILDINGS = {
     levels: [{ name: 'Coach Stop', cost: 60, upkeep: 1 }],
   },
   station: {
-    name: 'Railway Station', cat: 'transit', size: 1, stop: 'rail', needsRail: true, unlock: 25, icon: '🚉',
+    name: 'Railway Station', cat: 'transit', size: 1, stop: 'rail', needsRail: true, unlock: 25, tech: 'railways', icon: '🚉',
     desc: 'Needs a road on one side and railway track on another.',
     levels: [
       { name: 'Railway Halt', cost: 350, upkeep: 4, jobs: 1 },
@@ -277,6 +313,31 @@ export const TRANSIT = {
 export const RAIL_COST = 30;
 export const LINE_COLORS = ['#d9534f', '#3f7fbf', '#4f9a5a', '#e3a73b', '#8a5aa8', '#2fa3a3', '#d9734a', '#c75b9b'];
 
+// Research: one project at a time, paid for with research points that the
+// town hall, schools and chapels produce every day. Each project unlocks
+// building types (def.tech), upgrade levels (level.tech), the villa / flats
+// paths, joined buildings, and building styles.
+export const TECHS = {
+  carpentry: { name: 'Carpentry', cost: 15, tier: 0, needs: [], desc: 'Timber framing and clapboard; better tools for the builders.' },
+  pigments: { name: 'Paints & Limewash', cost: 15, tier: 0, needs: [], desc: 'Painted and limewashed walls.' },
+  masonry: { name: 'Masonry', cost: 20, tier: 0, needs: [], desc: 'Dressed stone for walls, churches and guardhouses.' },
+  brickmaking: { name: 'Brickmaking', cost: 20, tier: 0, needs: [], desc: 'Kilns and brick walls; the smithy.' },
+  commerce: { name: 'Shopkeeping', cost: 25, tier: 0, needs: [], desc: 'Bakeries, taverns, and shops with homes above.' },
+  hydraulics: { name: 'Hydraulics', cost: 30, tier: 0, needs: [], desc: 'Pumps and water towers for a thirsty town.' },
+  medicine: { name: 'Medicine', cost: 35, tier: 1, needs: ['pigments'], desc: 'Proper clinics, then a hospital.' },
+  architecture: { name: 'Architecture', cost: 45, tier: 1, needs: ['masonry'], desc: 'Grand homes, squares and monuments.' },
+  urban: { name: 'Town Living', cost: 45, tier: 1, needs: ['brickmaking'], desc: 'Terraces and flats: more homes per plot.' },
+  electricity: { name: 'Electricity', cost: 60, tier: 1, needs: ['hydraulics'], desc: 'Dynamos turned by water and wind; wires along the streets.' },
+  railways: { name: 'Railways', cost: 70, tier: 2, needs: ['masonry', 'carpentry'], desc: 'Track, stations and steam trains.' },
+  steam: { name: 'Steam Power', cost: 100, tier: 2, needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations and manufactories.' },
+  civic: { name: 'Civic Planning', cost: 90, tier: 2, needs: ['architecture', 'commerce'], desc: 'Market halls, the Grand Hall and grand squares.' },
+  highrise: { name: 'Tall Buildings', cost: 120, tier: 3, needs: ['urban', 'steam'], desc: 'Tenements, mansion blocks and the tallest terraces.' },
+};
+export const STYLE_TECH = { timber: 'carpentry', clapboard: 'carpentry', plaster: 'pigments', painted: 'pigments', stone: 'masonry', brick: 'brickmaking' };
+
+// Daily research points: town hall, schools, chapels, plus a little per villager.
+export const RESEARCH_SOURCES = { townhall: [3, 5, 8], school: [2, 4, 7], chapel: [1, 2, 3] };
+
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 
 export function levelDef(type, level) {
@@ -289,7 +350,7 @@ export function unlockOf(type, level = 0) {
 }
 
 // Builder-hours of work for a job of the given coin value.
-const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6 };
+const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6, demolish: 0.3 };
 export function workNeeded(cost, kind = 'build') {
   return Math.round((4 + cost / 14) * (WORK_K[kind] ?? 1) * 10) / 10;
 }

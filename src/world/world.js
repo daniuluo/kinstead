@@ -2,7 +2,8 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH } from '../defs.js';
+const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
 
@@ -18,6 +19,14 @@ export const fd = (b) => b.d ?? b.size;
 //   b.con = { kind: 'build' | 'upgrade' | 'merge' | 'dismantle', work, done, ... }
 export const isOpen = (b) => !b.con || b.con.kind === 'upgrade' || b.con.kind === 'merge';
 
+// A building that has grown onto a neighbouring plot (see World.expandOptions)
+// holds half as many people / jobs again.
+export const isExpanded = (b) => !BUILDINGS[b.type].merged && fw(b) * fd(b) > BUILDINGS[b.type].size ** 2;
+export function capOf(b, key) {
+  const v = BUILDINGS[b.type].levels[b.level][key] || 0;
+  return isExpanded(b) ? Math.round(v * 1.5) : v;
+}
+
 // Neighbouring buildings that can be joined into one mixed-use building.
 const MERGE_SHOPS = ['market', 'bakery', 'tavern'];
 const MERGE_COST = [150, 300, 500];
@@ -32,6 +41,11 @@ function mergeResult(a, o) {
   const level = Math.min(Math.max(a.level, o.level), BUILDINGS[type].levels.length - 1);
   return { type, base, flavor, level, cost: MERGE_COST[level], name: BUILDINGS[type].levels[level].name };
 }
+
+// How far a building may come forward into the street in front of it (in
+// tiles). Roads are narrower than their tiles, so this is verge, not roadway;
+// two buildings facing each other across a street still stay well apart.
+export const FRONT = 0.16;
 
 export const TREE = { PINE: 0, ROUND: 1, BIRCH: 2, BUSH: 3, ROCK: 4, PEBBLE: 5 };
 
@@ -60,6 +74,7 @@ export class World {
     this.history = [];
     this.titleIdx = 0;
     this.stats = { visits: 0, visitIncome: 0, todayVisitIncome: 0, arrivals: 0, departures: 0 };
+    this.research = { done: [], current: null, progress: 0, bank: 0 };
     this._listeners = {};
   }
 
@@ -87,6 +102,41 @@ export class World {
   }
 
   newId() { return this.nextId++; }
+
+  // ------------------------------------------------------------ research
+  hasTech(id) { return !id || this.sandbox.unlockAll || this.research.done.includes(id); }
+  techName(id) { return TECHS[id] ? TECHS[id].name : id; }
+  canResearch(id) {
+    const t = TECHS[id];
+    return !!t && !this.research.done.includes(id) && t.needs.every(n => this.research.done.includes(n));
+  }
+  startResearch(id) {
+    if (!this.canResearch(id)) return false;
+    const R = this.research;
+    if (R.current && R.current !== id) R.bank += R.progress;
+    R.current = id;
+    R.progress = R.current === id ? R.progress : 0;
+    // points banked while idle go straight in
+    const use = Math.min(R.bank, TECHS[id].cost);
+    R.progress += use; R.bank -= use;
+    this._checkResearch();
+    return true;
+  }
+  addResearch(points) {
+    const R = this.research;
+    if (!R.current) { R.bank += points; return; }
+    R.progress += points;
+    this._checkResearch();
+  }
+  _checkResearch() {
+    const R = this.research;
+    if (!R.current || R.progress < TECHS[R.current].cost) return;
+    const id = R.current;
+    R.bank += R.progress - TECHS[id].cost;
+    R.done.push(id);
+    R.current = null; R.progress = 0;
+    this.emit('research:done', id);
+  }
 
   // Walkable surface height (roads hover slightly, bridges float over water,
   // and the road ramps up or down to meet a bridge deck).
@@ -141,6 +191,7 @@ export class World {
     const t = this.terrain;
     let reason = null;
     if (!opts.ignoreUnlock && this.unlockPop < unlockOf(type, 0)) reason = `Unlocks at ${unlockOf(type, 0)} villagers`;
+    if (!reason && !opts.ignoreUnlock && !this.hasTech(def.tech)) reason = `Research ${this.techName(def.tech)} first`;
     if (def.unique && !opts.ignoreUnique) for (const b of this.buildings.values()) if (b.type === type) { reason = 'Only one allowed'; break; }
     let minH = Infinity, maxH = -Infinity, trees = 0;
     for (let dz = 0; dz < D && !reason; dz++) {
@@ -192,6 +243,7 @@ export class World {
     if (!opts.free) this.money -= chk.cost;
     if (!opts.instant && !this.sandbox.instantBuild) b.con = { kind: 'build', work: workNeeded(def.levels[b.level].cost), done: 0 };
     this.buildings.set(b.id, b);
+    this._updateFronts(b);
     if (chk.trees) this.emit('trees');
     this.emit('building:add', b);
     return { ok: true, building: b, cost: chk.cost };
@@ -217,6 +269,41 @@ export class World {
     };
   }
 
+  // A building comes forward into the street when every tile along its
+  // front is road.
+  _frontTiles(b) {
+    const [dx, dz] = DIRS[b.rot];
+    const W = fw(b), D = fd(b), tiles = [];
+    if (dz) for (let k = 0; k < W; k++) tiles.push([b.x + k, dz > 0 ? b.z + D : b.z - 1]);
+    else for (let k = 0; k < D; k++) tiles.push([dx > 0 ? b.x + W : b.x - 1, b.z + k]);
+    return tiles;
+  }
+
+  _frontOf(b) {
+    if (!b.access) return 0;
+    const tiles = this._frontTiles(b);
+    if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
+    // two buildings on a street corner facing the same road tile would meet
+    // in its corner, so neither of them comes forward there
+    const [dx, dz] = DIRS[b.rot];
+    for (const [x, z] of tiles) for (const s of [-1, 1]) {
+      const o = this.buildingOn(x + (dz ? s : 0), z + (dx ? s : 0));
+      if (o && o !== b && o.access && this._frontTiles(o).some(([fx, fz]) => fx === x && fz === z)) return 0;
+    }
+    return FRONT;
+  }
+
+  // Re-decide every building's street front (after building, demolishing or
+  // re-laying roads). The new building itself, if any, is not refitted.
+  _updateFronts(except = null) {
+    const refit = [];
+    for (const b of this.buildings.values()) {
+      const f = this._frontOf(b);
+      if (f !== (b.front || 0)) { b.front = f; if (b !== except) refit.push(b); }
+    }
+    for (const b of refit) this.emit('building:refit', b);
+  }
+
   _occupy(b) {
     for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
       this.buildingAt[this.idx(b.x + dx, b.z + dz)] = b.id;
@@ -232,6 +319,7 @@ export class World {
     for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) this.buildingAt[this.idx(b.x + dx, b.z + dz)] = -1;
     this.buildings.delete(b.id);
     this.emit('building:remove', b);
+    this._updateFronts();
   }
 
   // Point everyone and everything that refers to one building at another.
@@ -262,6 +350,7 @@ export class World {
   finishConstruction(b) {
     const con = b.con;
     if (!con) return;
+    if (con.kind === 'demolish') { this.removeBuilding(b.id); return; }
     if (con.kind === 'dismantle') {
       const dest = this.buildings.get(con.dest);
       this._detach(b);
@@ -346,6 +435,100 @@ export class World {
     }
   }
 
+  // ----------------------------------------------------------- expansion
+  // Grow a 1×1 building onto the plot beside or behind it. Empty land is
+  // simply taken; a small neighbour is either squeezed (it sells a garden
+  // strip and keeps its house) or bought out and demolished.
+  expandOptions(b) {
+    const out = [];
+    const def = BUILDINGS[b.type];
+    if (!b || b.con || def.merged || def.park || def.stop || fw(b) !== 1 || fd(b) !== 1 || def.size !== 1) return out;
+    const base = Math.round(80 + 0.35 * def.levels[b.level].cost);
+    const front = DIRS[b.rot];
+    const sideOf = (k) => (k === b.rot ? 'in front' : (k + 2) % 4 === b.rot ? 'behind' : 'beside');
+    const names = { 0: 'z1', 1: 'x1', 2: 'z0', 3: 'x0' };
+    DIRS.forEach(([dx, dz], k) => {
+      const x = b.x + dx, z = b.z + dz;
+      if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z)) return;
+      const lo = Math.min(this.terrain.tileMin(x, z), this.terrain.tileMin(b.x, b.z)), hi = Math.max(this.terrain.tileMax(x, z), this.terrain.tileMax(b.x, b.z));
+      if (hi - lo > 1.1) return;
+      const o = this.buildingOn(x, z);
+      const where = sideOf(k);
+      const trees = this.treeCount[this.idx(x, z)] * CLEAR_COST;
+      if (!o) { out.push({ dir: k, x, z, kind: 'land', where, cost: base + trees, label: `Take the empty plot ${where}` }); return; }
+      if (o.con || BUILDINGS[o.type].unique || fw(o) !== 1 || fd(o) !== 1) return;
+      const oname = BUILDINGS[o.type].levels[o.level].name;
+      // squeeze: buy a strip of a cottage's garden (it keeps its house)
+      const side = names[k], opp = names[(k + 2) % 4];
+      const be = b.ext || {}, oe = o.ext || {};
+      if (o.type === 'house' && !be[side] && !(oe[side[0] + '0'] < 0 || oe[side[0] + '1'] < 0)) {
+        out.push({ dir: k, x, z, kind: 'strip', where, other: o, side, opp, cost: 60 + 40 * b.level, label: `Buy a strip of the ${oname}'s garden ${where}`, warn: `The ${oname} next door gets a smaller garden (its owners are paid)` });
+      }
+      const comp = Math.round(this.buildValue(o) * 0.5);
+      out.push({ dir: k, x, z, kind: 'takeover', where, other: o, cost: base + comp, comp, label: `Take over the ${oname} ${where}`,
+        warn: `The ${oname} will be demolished${o.residents.length ? ` and its ${o.residents.length} resident${o.residents.length > 1 ? 's' : ''} rehoused` : ''} (🪙 ${comp} compensation included)` });
+    });
+    return out;
+  }
+
+  expandBuilding(id, dir, kind) {
+    const b = this.buildings.get(id);
+    const opt = b && this.expandOptions(b).find(o => o.dir === dir && o.kind === kind);
+    if (!opt) return { ok: false, reason: "Can't expand that way" };
+    if (this.money < opt.cost) return { ok: false, reason: 'Not enough coins' };
+    if (opt.kind === 'strip') {
+      const LAND = 0.25;
+      this.money -= opt.cost;
+      this._ext(b)[opt.side] = LAND;
+      this._ext(opt.other)[opt.opp] = -LAND;
+      (b.leases ||= []).push({ with: opt.other.id, side: opt.side, amt: LAND, price: opt.cost, buyer: true });
+      (opt.other.leases ||= []).push({ with: b.id, side: opt.opp, amt: LAND, price: opt.cost, buyer: false });
+      this.emit('building:refit', opt.other);
+      this.emit('building:refit', b);
+      this.emit('land:sold', { buyer: b, seller: opt.other, price: opt.cost });
+      return { ok: true, building: b, kind: 'strip' };
+    }
+    if (opt.other) this.removeBuilding(opt.other.id, 0);
+    this.money -= opt.cost;
+    this._dissolveLeases(b);
+    this._clearTrees(opt.x, opt.z);
+    this.buildingAt[this.idx(opt.x, opt.z)] = b.id;
+    const x0 = Math.min(b.x, opt.x), z0 = Math.min(b.z, opt.z);
+    b.w = b.x !== opt.x ? 2 : 1; b.d = b.z !== opt.z ? 2 : 1;
+    b.x = x0; b.z = z0; b.size = 2;
+    let minH = Infinity, maxH = -Infinity;
+    for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
+      minH = Math.min(minH, this.terrain.tileMin(b.x + dx, b.z + dz));
+      maxH = Math.max(maxH, this.terrain.tileMax(b.x + dx, b.z + dz));
+    }
+    b.baseY = maxH; b.minY = minH;
+    this._updateFronts(b);
+    this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
+    if (!this.sandbox.instantBuild) b.con = { kind: 'upgrade', to: b.level, toType: b.type, work: workNeeded(opt.cost, 'upgrade'), done: 0, expand: true };
+    this.emit('trees');
+    this.emit('building:change', b);
+    return { ok: true, building: b, kind: opt.kind };
+  }
+
+  // ---------------------------------------------------------- demolition
+  // A demolition crew (builders, or hired hands) pulls the building down
+  // over time. People move out at once; plots that are still only pegged
+  // out, and anything in instant-build sandbox, are cleared straight away.
+  demolishBuilding(id) {
+    const b = this.buildings.get(id);
+    if (!b) return { ok: false };
+    if (b.con && b.con.kind === 'demolish') return { ok: false, reason: 'Already being demolished' };
+    if (this.sandbox.instantBuild || (b.con && (b.con.kind === 'build' || b.con.kind === 'dismantle'))) {
+      this.removeBuilding(id);
+      return { ok: true, instant: true };
+    }
+    this._dissolveLeases(b);
+    b.con = { kind: 'demolish', work: workNeeded(this.buildValue(b), 'demolish'), done: 0 };
+    this.emit('building:vacate', b);
+    this.emit('building:change', b);
+    return { ok: true, building: b };
+  }
+
   // ------------------------------------------------------------- moving
   moveCost(b) { return Math.round(40 + this.buildValue(b) * 0.3); }
 
@@ -370,6 +553,7 @@ export class World {
     this.money -= chk.cost;
     this._retarget(b.id, nb.id);
     this.buildings.set(nb.id, nb);
+    this._updateFronts(nb);
     if (this.sandbox.instantBuild) {
       this._detach(b);
       if (chk.trees) this.emit('trees');
@@ -393,7 +577,7 @@ export class World {
       const o = this.buildingOn(b.x + dx, b.z + dz);
       if (!o || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
       const m = mergeResult(b, o);
-      if (m) out.push({ other: o, ...m, ok: this.money >= m.cost });
+      if (m && this.hasTech(BUILDINGS[m.type].tech)) out.push({ other: o, ...m, ok: this.money >= m.cost });
     }
     return out;
   }
@@ -423,6 +607,7 @@ export class World {
     this._occupy(nb);
     if (!this.sandbox.instantBuild) nb.con = { kind: 'merge', work: workNeeded(opt.cost * 3, 'merge'), done: 0 };
     this.buildings.set(nb.id, nb);
+    this._updateFronts(nb);
     this.emit('building:add', nb);
     return { ok: true, building: nb, cost: opt.cost };
   }
@@ -467,6 +652,7 @@ export class World {
     const next = BUILDINGS[target.type].levels[target.level];
     if (b.con) return { ok: false, reason: 'Construction under way', busy: true, next, target, reqs: [] };
     const unlock = unlockOf(target.type, target.level);
+    const tech = next.tech || (target.type !== b.type ? BUILDINGS[target.type].tech : null);
     const reqs = [];
     const free = this.sandbox.freeUpgrades;
     if (free) reqs.push({ label: 'Sandbox: no requirements', met: true });
@@ -476,13 +662,16 @@ export class World {
       for (const s of ['water', 'health', 'education', 'safety', 'culture']) {
         if (next.req[s]) reqs.push({ label: `${s[0].toUpperCase() + s.slice(1)} coverage`, met: !!(b.factors && b.factors[s]) });
       }
+      if (next.req.power) reqs.push({ label: 'Electricity', met: !!b.powered });
     }
+    if (tech) reqs.unshift({ label: `Research: ${this.techName(tech)}`, met: this.hasTech(tech), tech });
     reqs.push({ label: `${next.cost} coins`, met: this.money >= next.cost });
     const ok = reqs.every(r => r.met);
     return { ok, next, target, reqs, reason: ok ? null : 'Requirements not met' };
   }
 
   upgradeBuilding(id, toType = null, look = undefined) {
+    if (look && !this.hasTech(STYLE_TECH_OF(look))) look = undefined;
     const b = this.buildings.get(id);
     if (!b) return { ok: false };
     const chk = this.upgradeCheck(b, toType);
@@ -519,6 +708,7 @@ export class World {
     for (let l = 0; l <= b.level; l++) value += def.levels[l].cost;
     this.money += Math.round(value * refund);
     this.emit('building:remove', b);
+    this._updateFronts();
     if (def.stop) {
       let changed = false;
       for (const line of this.lines) {
@@ -541,6 +731,7 @@ export class World {
     if (!water && t.slope(x, z) > 0.6) return { ok: false, reason: 'Too steep for track' };
     if (water && t.tileAvg(x, z) < -0.9) return { ok: false, reason: 'Water too deep' };
     if (this.unlockPop < 25) return { ok: false, reason: 'Railways unlock at 25 villagers' };
+    if (!this.hasTech('railways')) return { ok: false, reason: 'Research Railways first' };
     let cost = RAIL_COST * (water ? BRIDGE_MULT : 1) + this.treeCount[i] * CLEAR_COST;
     return { ok: true, cost, water };
   }
@@ -644,6 +835,7 @@ export class World {
       b.connected = !!(pick && pick.conn);
     }
     this.emit('roads');
+    this._updateFronts();
   }
 
   // -------------------------------------------------------------- terrain
@@ -731,7 +923,7 @@ export class World {
   bulldoze(x, z) {
     if (!this.inBounds(x, z)) return { ok: false };
     const b = this.buildingOn(x, z);
-    if (b) { this.removeBuilding(b.id); return { ok: true, what: 'building', building: b }; }
+    if (b) { const r = this.demolishBuilding(b.id); return { ok: r.ok, what: 'building', building: b, reason: r.reason }; }
     if (this.railAt(x, z)) { this.removeRail(x, z); return { ok: true, what: 'rail' }; }
     if (this.roadAt(x, z)) {
       const r = this.removeRoad(x, z);

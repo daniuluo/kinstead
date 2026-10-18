@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { BUILDINGS, TRANSIT } from '../defs.js';
-import { fw, fd } from '../world/world.js';
+import { fw, fd, capOf } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
@@ -285,6 +285,7 @@ export class Input {
       if (sel && sel.kind === 'building') {
         const b = w.buildings.get(sel.id);
         if (b) for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: GOLD, alpha: 0.25 });
+        for (const t of this.previewTiles || []) tiles.push(t);
       } else if (sel && sel.kind === 'road') tiles.push({ x: sel.x, z: sel.z, color: GOLD, alpha: 0.3 });
       if (h && e && !d) {
         const r = g.agents.pick(e.clientX, e.clientY);
@@ -295,9 +296,9 @@ export class Input {
         else if (b) {
           const def = BUILDINGS[b.type], L = def.levels[b.level];
           tip = `<b>${L.name}</b>`;
-          if (b.con) tip += `<br>🏗️ ${b.con.kind === 'dismantle' ? 'coming down' : 'being built'} · ${Math.round(Math.min(1, b.con.done / b.con.work) * 100)}%`;
-          else if (L.housing) tip += `<br>${b.residents.length}/${L.housing} residents · ${b.happiness}% happy`;
-          else if (L.jobs) tip += `<br>${b.workers.length}/${L.jobs} workers`;
+          if (b.con) tip += `<br>🏗️ ${b.con.kind === 'dismantle' || b.con.kind === 'demolish' ? 'coming down' : 'being built'} · ${Math.round(Math.min(1, b.con.done / b.con.work) * 100)}%`;
+          else if (L.housing) tip += `<br>${b.residents.length}/${capOf(b, 'housing')} residents · ${b.happiness}% happy`;
+          else if (L.jobs) tip += `<br>${b.workers.length}/${capOf(b, 'jobs')} workers`;
           if (!b.connected && (!def.park || b.access)) tip += `<br><span class="bad">Not connected</span>`;
           for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: SOFT, alpha: 0.14, border: false });
         } else tiles.push({ x: h.x, z: h.z, color: SOFT, alpha: 0.12 });
@@ -318,7 +319,7 @@ export class Input {
         if (b) { for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: BAD, alpha: 0.4 }); }
         else tiles.push({ x, z, color: BAD, alpha: (w.roadAt(x, z) || w.railAt(x, z) || w.treeCount[w.idx(x, z)]) ? 0.4 : 0.15 });
       }
-      if (!d && h) { const b = w.buildingOn(h.x, h.z); if (b) tip = `Demolish ${BUILDINGS[b.type].levels[b.level].name}`; }
+      if (!d && h) { const b = w.buildingOn(h.x, h.z); if (b) tip = `Demolish ${BUILDINGS[b.type].levels[b.level].name}` + (b.con && b.con.kind === 'build' ? '' : '<br>A crew will pull it down; residents move out'); }
     } else if (t.kind === 'build' && h) {
       const def = BUILDINGS[t.type];
       const o = this._origin(h, def.size);
@@ -436,6 +437,8 @@ export class Input {
       case 'o': ui.toggleOverlayMenu(); break;
       case 'b': ui.showBudget(); break;
       case 'p': ui.showPeople(); break;
+      case 'k': ui.showResearch(); break;
+      case 'u': ui.pressTool('utilities'); break;
       case 'n': ui.togglePopups(); break;
       case 'l': ui.showLines(); break;
       case 'h': ui.showHelp(); break;

@@ -2,7 +2,7 @@
 
 import { World } from '../world/world.js';
 import { Terrain } from '../world/terrain.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, TECHS } from '../defs.js';
 import { titleFor } from '../config.js';
 
 export const SAVE_FORMAT = 'hearthvale-save';
@@ -42,7 +42,7 @@ export function serialize(world) {
     lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
     state: {
       money: Number.isFinite(world.money) ? world.money : 0, sandbox: world.sandbox, taxRate: world.taxRate, day: world.day, hours: world.hours, nextId: world.nextId,
-      entry: world.entry, history: world.history, titleIdx: world.titleIdx, stats: world.stats,
+      entry: world.entry, history: world.history, titleIdx: world.titleIdx, stats: world.stats, research: world.research,
     },
     meta: { day: world.day, pop: world.population, money: Number.isFinite(world.money) ? Math.round(world.money) : '∞', title: titleFor(world.population).name },
   };
@@ -81,6 +81,9 @@ export function deserialize(data) {
   });
   Object.assign(w.stats, s.stats || {});
   if (s.sandbox) w.setSandbox(s.sandbox);
+  // saves from before research existed keep everything they could already build
+  if (s.research) w.research = { done: [], current: null, progress: 0, bank: 0, ...s.research };
+  else w.research.done = Object.keys(TECHS);
   w.updateRoadNetwork();
   w.updateRailLinks();
   return w;

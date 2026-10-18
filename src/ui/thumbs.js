@@ -37,7 +37,7 @@ export function thumb(type, level = 0, variant = 777, flavor = null, look = null
   plate.position.y = -0.025;
   mesh.add(plate);
   const extras = [];
-  if (model.spin) { const s = new THREE.Mesh(model.spin.geo, MAT.building); s.position.set(model.spin.x, model.spin.y, model.spin.z); mesh.add(s); extras.push(s); }
+  if (model.spin) { const s = new THREE.Mesh(model.spin.geo, MAT.building); s.position.set(model.spin.x, model.spin.y, model.spin.z); s.rotation.y = model.spin.ry || 0; mesh.add(s); extras.push(s); }
   model.geo.computeBoundingSphere();
   const bs = model.geo.boundingSphere;
   const r = bs.radius * 1.02;

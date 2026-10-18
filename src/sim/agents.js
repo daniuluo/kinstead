@@ -41,7 +41,7 @@ export function lookOf(r) {
     pants: new THREE.Color(g.pick(PANTS)),
     hat: g.chance(r.age === 'child' ? 0.1 : 0.32) ? new THREE.Color(g.pick(HATS)) : null,
     scale: (r.age === 'child' ? 0.64 : elder ? 0.86 : 0.88 + g.next() * 0.08),
-    lane: 0.14 + g.next() * 0.16,
+    lane: 0.07 + g.next() * 0.13,
     speed: (r.age === 'elder' ? 0.72 : r.age === 'child' ? 1.15 : 1) * (0.9 + g.next() * 0.2),
   };
 }
@@ -211,11 +211,30 @@ export class Agents {
     this._walk(r, A, B, tiles, startPos, () => this._arrive(r, B.id));
   }
 
+  // Front door of a building as a short path: a step inside (hidden by the
+  // walls), the doorway, and the doorstep. Null for open-air places.
+  _doorway(B, r, arriving) {
+    const d = B && B.door;
+    if (!d) return null;
+    const def = BUILDINGS[B.type];
+    if (def.stop || def.outdoor || (def.outdoorWork && r && r.job === B.id) || (B.con && r && r.site === B.id) || !isOpen(B)) return null;
+    const inside = [d.x - d.dx * 0.09, d.z - d.dz * 0.09], door = [d.x, d.z], step = [d.x + d.dx * 0.08, d.z + d.dz * 0.08];
+    return arriving ? [step, door, inside] : [inside, door, step];
+  }
+
   _walk(r, A, B, tiles, startPos, onArrive) {
     const start = doorPoint(A), end = doorPoint(B);
     const pts = tilePolyline(tiles, r.lk.lane, start, end);
+    const out = startPos ? null : this._doorway(A, r, false), into = this._doorway(B, r, true);
+    // with a real door the plot-edge point is skipped (the front may stand
+    // further forward than the plot edge)
+    if (out) { pts.shift(); pts.unshift(...out); }
+    if (into) { pts.pop(); pts.push(...into); }
     if (startPos) pts.unshift([startPos.x, startPos.z]);
     const wk = this._makeWalker(r.lk, pts, onArrive);
+    wk.doorOut = out ? out.length : 0;
+    wk.doorIn = into ? into.length : 0;
+    if (out) wk.delay = Math.random() * 0.25;
     wk.r = r;
     r.walk = wk;
     r.loc = 'walk';
@@ -304,6 +323,8 @@ export class Agents {
       if (!tiles) continue;
       const startEdge = { x: e.x + 0.5 + (e.x === 0 ? -0.5 : e.x === w.N - 1 ? 0.5 : 0), z: e.z + 0.5 + (e.z === 0 ? -0.5 : e.z === w.N - 1 ? 0.5 : 0) };
       const pts = tilePolyline(tiles, r.lk.lane, startEdge, doorPoint(home));
+      const into = this._doorway(home, r, true);
+      if (into) { pts.pop(); pts.push(...into); }
       const delay = Math.random() * 1.5;
       for (let k = 0; k < 2; k++) pts.unshift([startEdge.x, startEdge.z]);
       const wk = this._makeWalker(r.lk, pts, () => { r.loc = 'in'; r.at = home.id; this._drop(wk); this.planDay(r, w.hours); });
@@ -331,7 +352,10 @@ export class Agents {
       const tiles = this.game.paths.road(from.access.x, from.access.z, e.x, e.z);
       if (!tiles) continue;
       const pts = tilePolyline(tiles, r.lk.lane, doorPoint(from), null);
+      const out = this._doorway(from, r, false);
+      if (out) { pts.shift(); pts.unshift(...out); }
       const wk = this._makeWalker(r.lk, pts, () => this._drop(wk));
+      if (out) wk.doorOut = out.length;
       wk.ghost = true;
     }
     this.game.sim.dirty = true;
@@ -369,7 +393,8 @@ export class Agents {
     for (const wk of [...this.walkers]) {
       if (wk.delay > 0) { wk.delay -= dt * speed; continue; }
       if (wk.mode === 'path') {
-        let rem = move * wk.speedK;
+        const atDoor = (wk.doorOut && wk.seg < wk.doorOut - 1) || (wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1);
+        let rem = move * wk.speedK * (atDoor ? 0.45 : 1);
         while (rem > 0 && wk.seg < wk.pts.length - 1) {
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
           const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -517,7 +542,7 @@ export class Agents {
     }
     const site = r.site != null ? w.buildings.get(r.site) : null;
     if (site && site.con) {
-      const what = site.con.kind === 'dismantle' ? 'Taking down' : site.con.kind === 'upgrade' ? 'Upgrading' : 'Building';
+      const what = site.con.kind === 'dismantle' ? 'Taking down' : site.con.kind === 'demolish' ? 'Demolishing' : site.con.kind === 'upgrade' ? 'Upgrading' : 'Building';
       if (r.loc === 'walk') return 'Heading to a building site';
       if (r.loc === 'out' && r.at === site.id) return `${what} the ${name(site.id)}`;
     }

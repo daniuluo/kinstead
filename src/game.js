@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { CONFIG, SEASONS, TITLES } from './config.js';
-import { BUILDINGS, SERVICES, unlockOf } from './defs.js';
+import { BUILDINGS, SERVICES, unlockOf, TECHS } from './defs.js';
 import { Renderer } from './render/renderer.js';
 import { Sky } from './render/sky.js';
 import { WorldView } from './render/worldView.js';
@@ -89,6 +89,7 @@ export class Game {
     this.construction = new Construction(this);
     world.on('building:done', (e) => this._onBuilt(e));
     world.on('land:sold', (e) => this._onLand(e));
+    world.on('research:done', (id) => this._onResearch(id));
     this.transit.rebuild();
     this.transit.planCarts();
     this.renderer.setBounds(world.N);
@@ -226,6 +227,11 @@ export class Game {
 
   _onDay() {
     if (this.demo) return;
+    const U = this.sim.utility;
+    if (U && this.world.day % 2 === 0) {
+      if (U.power.gen && U.power.demand > U.power.gen) this.ui.toast(`Power is short by ${U.power.demand - U.power.gen} kW — some buildings are in the dark. Build more generators.`, 'bad', '⚡');
+      if (U.water.demand > U.water.supply) this.ui.toast(`Water runs short: ${U.water.demand} villagers, enough for ${U.water.supply}. Build wells, a pump or a water tower.`, 'bad', '💧');
+    }
     this.transit.planCarts();
     if (this.settings.autosave && (this.world.day % CONFIG.AUTOSAVE_DAYS === 0)) this.saveLocal('autosave', true);
   }
@@ -281,6 +287,14 @@ export class Game {
       : moved ? `The ${name} is back up on its new plot` : `The builders finished a new ${name}`;
     this.ui.toast(msg, 'good', '🏗️');
     this.sfx('upgrade');
+  }
+
+  _onResearch(id) {
+    if (this.demo) return;
+    this.ui.toast(`Research complete: ${TECHS[id].name}! Press K to choose the next project.`, 'big', '🔬');
+    this.sfx('upgrade');
+    if (this.ui.category) this.ui.openFlyout(this.ui.category);
+    if (this.ui.selection) this.ui.renderInspector(true);
   }
 
   _onLand({ buyer, seller, price }) {

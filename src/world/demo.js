@@ -1,12 +1,13 @@
 // Grows a lived-in village automatically — used behind the title screen.
 
 import { RNG } from '../util/rng.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, TECHS } from '../defs.js';
 
 const FREE = { free: true, ignoreMoney: true, ignoreUnlock: true, instant: true };
 
 export function growDemoTown(world, seed, size = 1) {
   const rng = new RNG(seed);
+  world.research.done = Object.keys(TECHS);
   const N = world.N, t = world.terrain;
   let start = null;
   for (const b of world.buildings.values()) if (b.type === 'townhall') start = { x: b.x + 1, z: b.z + 1 };
@@ -50,7 +51,7 @@ export function growDemoTown(world, seed, size = 1) {
   spots.sort((a, b) => a[2] - b[2]);
   const weights = [
     ['house', 30], ['villa', 2], ['flats', 2], ['market', 3], ['bakery', 2], ['tavern', 2], ['farm', 3], ['lumber', 2], ['fishery', 2],
-    ['workshop', 2], ['builder', 1], ['well', 3], ['clinic', 1], ['school', 1], ['watch', 1], ['chapel', 1], ['garden', 4],
+    ['workshop', 2], ['builder', 1], ['well', 3], ['windgen', 1], ['clinic', 1], ['school', 1], ['watch', 1], ['chapel', 1], ['garden', 4],
     ['plaza', 1], ['flowers', 2], ['statue', 1], ['coachstop', 1],
   ];
   const total = weights.reduce((s, w) => s + w[1], 0);

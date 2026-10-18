@@ -12,7 +12,8 @@ const HALF = [0, 0.16, 0.215, 0.27];
 const SURF = [null, new THREE.Color('#a3835a'), new THREE.Color('#9a9488'), new THREE.Color('#5f5d5a')];
 const KERB = [null, null, new THREE.Color('#bbb3a2'), new THREE.Color('#cfc9bc')];
 const BAND = 0.035, CELL = 0.125;
-import { bridgeDeckY, RAMP } from '../world/world.js';
+import { bridgeDeckY, RAMP, isOpen } from '../world/world.js';
+import { BUILDINGS } from '../defs.js';
 import { CONFIG } from '../config.js';
 
 export class RoadsView {
@@ -47,14 +48,15 @@ export class RoadsView {
           const straightNS = n.N && n.S && !n.E && !n.W, straightEW = n.E && n.W && !n.N && !n.S;
           if ((straightNS || straightEW) && hash2(x, z, 91) < 0.4) {
             const side = hash2(x, z, 92) < 0.5 ? -1 : 1;
-            const lx = x + 0.5 + (straightNS ? side * 0.44 : 0);
-            const lz = z + 0.5 + (straightEW ? side * 0.44 : 0);
+            const lx = x + 0.5 + (straightNS ? side * 0.31 : 0);
+            const lz = z + 0.5 + (straightEW ? side * 0.31 : 0);
             this._lamp(gb, lx, t.heightAt(lx, lz), lz);
           }
         }
       }
     }
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (w.rails[w.idx(x, z)]) this._rail(gb, x, z);
+    if ([...w.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b))) this._powerLines(gb);
     const pg = gb.build();
     this.props.geometry.dispose();
     this.props.geometry = pg || new THREE.BufferGeometry();
@@ -117,6 +119,31 @@ export class RoadsView {
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
+  }
+
+  // Once the town makes electricity, poles and wires follow the streets:
+  // a pole on every other road tile (near its corner), wired to the next pole
+  // two tiles along when the road runs straight between them.
+  _powerLines(gb) {
+    const w = this.world, t = w.terrain, N = w.N;
+    const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0;
+    const H = 0.5, at = (x, z) => [x + 0.81, t.heightAt(x + 0.81, z + 0.81) + H - 0.05, z + 0.81];
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!has(x, z)) continue;
+      const [px, py, pz] = at(x, z);
+      const g = py - H + 0.05;
+      gb.cyl(px, g - 0.02, pz, 0.011, 0.015, H + 0.02, 6, '#5e4630');
+      gb.box(px, g + H - 0.06, pz, 0.15, 0.013, 0.015, '#5e4630', Math.PI / 4);
+      for (const [dx, dz] of [[2, 0], [0, 2]]) {
+        if (!has(x + dx, z + dz) || !w.roadAt(x + dx / 2, z + dz / 2)) continue;
+        const [qx, qy, qz] = at(x + dx, z + dz);
+        const len = Math.hypot(qx - px, qy - py, qz - pz), mx = (px + qx) / 2, my = (py + qy) / 2 - 0.02, mz = (pz + qz) / 2;
+        for (const s of [-0.045, 0.045]) {
+          if (dx) gb.boxC(mx, my, mz + s, len, 0.005, 0.005, '#2a2622', 0, 0, Math.atan2(qy - py, qx - px));
+          else gb.boxC(mx + s, my, mz, 0.005, 0.005, len, '#2a2622', -Math.atan2(qy - py, qz - pz));
+        }
+      }
+    }
   }
 
   _lamp(gb, x, y, z) {

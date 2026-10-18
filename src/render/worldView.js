@@ -10,6 +10,7 @@ import { Particles } from './particles.js';
 import { buildModel, workArea } from './buildings.js';
 import { siteGeo, bodyBox } from './construction.js';
 import { fw, fd } from '../world/world.js';
+import { BUILDINGS } from '../defs.js';
 
 const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
@@ -56,6 +57,7 @@ export class WorldView {
         const finished = !!(prev && prev.site && !b.con);
         this.removeBuilding(b, true);
         this.addBuilding(b, !finished, true);
+        if (BUILDINGS[b.type].generator) this.dirty.roads = true;
         if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
         this.dirty.paint = true;
       },
@@ -91,6 +93,7 @@ export class WorldView {
     if (model.spin) {
       spin = new THREE.Mesh(model.spin.geo, MAT.building);
       spin.position.set(model.spin.x, model.spin.y, model.spin.z);
+      spin.rotation.y = model.spin.ry || 0;
       spin.castShadow = true;
       spin.userData.buildingId = b.id;
       spin.userData.speed = model.spin.speed;
@@ -108,6 +111,7 @@ export class WorldView {
     };
     // Outdoor work / wander area in world space
     b.work = workArea(b);
+    b.door = this._doorOf(model, mesh, b);
     this.items.set(b.id, item);
     if (animate) {
       mesh.scale.set(1, 0.01, 1);
@@ -143,10 +147,21 @@ export class WorldView {
     };
     const item = { b, mesh, spin: null, smoke: [], glows: [], fountain: null, work: null, site };
     b.work = workArea(b);
+    mesh.updateMatrixWorld(true);
+    b.door = this._doorOf(old || target, mesh, b);
     this.items.set(b.id, item);
     this._refreshSite(item);
     if (animate) this.dust(cx, b.baseY, cz, b.size, false);
     this.dirty.glows = true;
+  }
+
+  // The model's front door in world space, with its outward direction.
+  _doorOf(model, mesh, b) {
+    const d = model.door;
+    if (!d) return null;
+    const p = new THREE.Vector3(d.x, d.y, d.z).applyMatrix4(mesh.matrixWorld);
+    const th = mesh.rotation.y, co = Math.cos(th), si = Math.sin(th);
+    return { x: p.x, y: p.y, z: p.z, dx: d.dx * co + d.dz * si, dz: -d.dx * si + d.dz * co, ground: b.baseY };
   }
 
   _refreshSite(item) {
