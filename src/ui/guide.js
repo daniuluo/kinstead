@@ -122,7 +122,7 @@ export function showBuildingGuide(ui, type) {
     const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;
     if (other) more.push(`Joined with a neighbouring ${other.map(o => esc(BUILDINGS[o].levels[0].name.toLowerCase())).join(' or ')}: <b>${esc(BUILDINGS[m.to].levels[0].name)}</b>`);
   }
-  if (more.length) h += `<div class="guide-more"><h5>Other paths</h5>${more.map(t => `<div>${t}</div>`).join('')}<button class="btn small" data-paths="${type}">All paths as a tree</button></div>`;
+  if (more.length) h += `<div class="guide-more"><h5>Other paths</h5>${more.map(t => `<div>${t}</div>`).join('')}<button class="btn small" data-paths="${type}">All paths</button></div>`;
   // and the 2×2 estates further along (Great Plots)
   const estates = estatesFrom(type);
   if (estates.length) {

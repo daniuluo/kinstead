@@ -572,26 +572,32 @@ table.hap.big td { padding: 4px 8px; }
 .guide-more h5, .guide-estates h5 { margin: 10px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
 .guide-more div { font-size: 12px; margin: 2px 0; }
 .guide-more .btn { margin-top: 6px; }
-/* Upgrades & joins: everything a building can become, as a tree */
-.pathmap { font-size: 12px; max-height: min(68vh, 640px); overflow: auto; padding: 2px 4px 2px 0; }
-.pathmap ul { list-style: none; margin: 4px 0 4px 14px; padding-left: 12px; border-left: 2px dotted #0004; }
-.pathmap li { margin: 6px 0; }
-.pm-how { color: var(--ink-2); font-size: 11px; display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
-.pm-how .ms { font-size: 14px; }
-.pm-node { display: flex; gap: 8px; align-items: center; padding: 4px 6px; background: var(--face); box-shadow: var(--raised); }
-.pm-node.here { outline: 2px solid #c79a1e; }
-.pm-node img { width: 52px; height: auto; image-rendering: pixelated; flex: none; }
-.pm-name { font-weight: 700; cursor: pointer; text-decoration: underline dotted; }
-.pm-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 3px; }
-.pm-chain i { font-style: normal; color: var(--ink-2); }
-.pm-lv { padding: 1px 5px; border: 1px solid #0003; background: #ffffff80; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.pm-lv small { color: var(--ink-2); }
+/* Upgrades & joins: everything a building can become, one column per step */
+.pm-legend { display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: 11px; color: var(--ink-2); margin: 0 0 6px; }
+.pm-legend > span { display: inline-flex; align-items: center; gap: 3px; }
+.pm-legend .ms { font-size: 14px; color: var(--k, var(--ink-2)); }
+.pm-wrap { overflow: auto; max-height: min(64vh, 640px); background: #fff; box-shadow: var(--field); padding: 8px 10px 10px; }
+.pm-grid { position: relative; display: grid; column-gap: 44px; align-items: start; justify-content: start; min-width: max-content; }
+.pm-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 0; }
+.pm-col { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; }
+.pm-colhead { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); padding-bottom: 2px; border-bottom: 1px solid #0002; }
+.pm-card { background: var(--face); box-shadow: var(--raised); padding: 5px 6px 6px; cursor: pointer; font-size: 12px; }
+.pm-card:hover { box-shadow: 0 0 0 2px var(--navy), var(--raised); }
+.pm-card.here { box-shadow: 0 0 0 2px #d8a630, var(--raised); background: #fff8e0; }
+.pm-card.locked .pm-top { opacity: 0.75; }
+.pm-how { display: flex; flex-wrap: wrap; gap: 1px 8px; font-size: 11px; line-height: 1.25; margin-bottom: 3px; }
+.pm-how > span { display: inline-flex; align-items: center; gap: 2px; color: var(--k); font-weight: 700; }
+.pm-how .ms { font-size: 13px; }
+.pm-top { display: flex; align-items: center; gap: 6px; }
+.pm-top img { width: 46px; height: auto; image-rendering: pixelated; flex: none; }
+.pm-top b { font-size: 12.5px; line-height: 1.2; }
+.pm-lvls { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.pm-lv { display: flex; align-items: center; gap: 3px; padding: 1px 5px; background: #ffffffa0; border: 1px solid #0002; font-size: 11px; white-space: nowrap; overflow: hidden; }
+.pm-lv small { margin-left: auto; padding-left: 6px; color: var(--ink-2); }
 .pm-lv.done { background: #d6ead0; }
 .pm-lv.now { background: #ffe7a0; font-weight: 700; border-color: #000; }
 .pm-lv.locked { color: var(--ink-2); }
 .pm-lv .ms { font-size: 12px; }
-.pm-ref { color: var(--ink-2); font-style: italic; }
-.pm-ref a { cursor: pointer; text-decoration: underline dotted; }
 
 /* merge villages */
 .modal-card.merge-win { width: min(900px, calc(100vw - 16px)); }
