@@ -15,6 +15,9 @@ export const CONFIG = {
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
   PLOT_PRICE: 60,           // a neighbouring plot of land, bought to grow a building's plot
+  FIELD_COST: 40,           // a tile of farmland, ploughed and fenced (a quarter back when it's taken out)
+  FIELD_JOBS: 0.4,          // farm jobs each field adds
+  FIELD_MAX: [6, 12, 20, 30],   // fields a farm can work, by its level
   ARRIVE_RATE: 0.8,         // how readily newcomer households take up empty homes each day
   ARRIVE_MAX: 10,           // ...and at most this many a day (each takes a home of its own)
   FAMILY_KIDS: 0.6,         // a newcomer family's third member and on: the chance each is a child

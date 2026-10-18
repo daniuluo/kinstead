@@ -457,6 +457,21 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   w.nextId = Math.max(w.nextId, wA.nextId, wB.nextId + off, ...[...w.buildings.keys(), ...w.residents.keys(), ...w.lines.map(l => l.id)].map(i => i + 1));
   w.updateRoadNetwork();
   w.updateRailLinks();
+  // farmland goes with its farm, on ground nothing else took; fields cut off
+  // from their farm (one that moved, say) are dropped
+  for (const s of [A, B]) {
+    if (!s.w.fields) continue;
+    for (let z = 0; z < s.N; z++) for (let x = 0; x < s.N; x++) {
+      const f = s.w.fields[z * s.N + x];
+      if (f < 0) continue;
+      const [X, Z] = s.tile(x, z);
+      if (!w.inBounds(X, Z)) continue;
+      const i = w.idx(X, Z), id = s.id(f), farm = w.buildings.get(id);
+      if (!farm || farm.type !== 'farm' || w.roads[i] || w.rails[i] || w.buildingAt[i] >= 0 || w.fields[i] >= 0 || w.terrain.isWater(X, Z)) continue;
+      w.fields[i] = id;
+    }
+  }
+  w._pruneFields();
   // streets that were taken up keep no buried line or dressing
   for (let i = 0; i < N * N; i++) if (!w.roads[i]) { w.buried[i] = 0; w.dress[i] = 0; }
 

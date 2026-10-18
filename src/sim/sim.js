@@ -28,7 +28,7 @@ export class Sim {
     this.dirty = true;
     this._hourAcc = 0;
     const mark = () => { this.dirty = true; };
-    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines', 'dress']) this.world.on(e, mark);
+    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines', 'dress', 'fields']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
     this.world.on('building:vacate', (b) => { this.dirty = true; this._onRemoved(b); });
     this.world.on('building:shrink', (b) => this._onShrunk(b));

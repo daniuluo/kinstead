@@ -962,38 +962,43 @@ MODELS.tavern = (c, L) => {
 
 MODELS.farm = (c, L) => {
   const { gb, rng, pal } = c;
-  // farmhouse + barn at the back, fields at the front
+  // the farmhouse and barn face the road, with the yard behind them and the
+  // fields beyond (the street is at +z)
   house(c, {
-    x: -0.5, z: -0.54, w: 0.6, d: 0.46, h: L >= 3 ? 0.52 : 0.32, floors: L >= 3 ? 2 : 1, wall: L >= 3 ? pal.stoneWall : pal.wall,
+    x: -0.5, z: 0.5, w: 0.6, d: 0.44, h: L >= 3 ? 0.52 : 0.32, floors: L >= 3 ? 2 : 1, wall: L >= 3 ? pal.stoneWall : pal.wall,
     roof: L >= 3 ? pal.slate : pal.thatched ? pal.thatch : pal.roof,
     roofType: L >= 3 ? 'hip' : pal.thatched ? 'thatch' : 'gable', rh: 0.24, chimney: true, timber: L < 3 && pal.timber,
   });
   const barnCol = rng.pick(['#8f3e2c', '#83402e', '#7a5a3c', '#9a4a34']);
-  footing(c, 0.44, -0.52, 0.66, 0.54);
-  gb.cbox(0.44, 0, -0.52, 0.66, 0.4, 0.54, barnCol, 0, 0.02);
-  gb.gable(0.44, 0.4, -0.52, 0.66, 0.54, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
-  gb.box(0.44, 0, -0.245, 0.24, 0.27, 0.012, '#d8ccb4');
-  gb.box(0.44, 0, -0.238, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
-  gb.box(0.44, 0.0, -0.232, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
-  // fields (painted furrows + crop tufts)
-  const fx0 = -0.92, fx1 = 0.92, fz0 = L >= 1 ? -0.12 : 0.04, fz1 = 0.92;
+  const bz = 0.5, bf = bz + 0.25;   // the barn, and its front wall
+  footing(c, 0.44, bz, 0.66, 0.5);
+  gb.cbox(0.44, 0, bz, 0.66, 0.4, 0.5, barnCol, 0, 0.02);
+  gb.gable(0.44, 0.4, bz, 0.66, 0.5, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
+  gb.box(0.44, 0, bf + 0.005, 0.24, 0.27, 0.012, '#d8ccb4');
+  gb.box(0.44, 0, bf + 0.012, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
+  gb.box(0.44, 0.0, bf + 0.018, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
+  // the fields behind (painted furrows and crop tufts), fenced, with a gate
+  // from the yard; an estate keeps an orchard down one side
+  const fx0 = L >= 3 ? -0.72 : -0.92, fx1 = 0.92, fz0 = L >= 1 ? -0.92 : -0.6, fz1 = 0.06;
   c.work = [fx0 + 0.04, fz0 + 0.04, fx1 - 0.04, fz1 - 0.04];
   cropRows(c, fx0, fz0, fx1, fz1, CROP_TUFT[c.season]);
-  fence(c, -0.96, fz0 - 0.03, 0.96, 0.96, FENCE, { x: 0, z: 0.96, w: 0.12 });
+  fence(c, fx0 - 0.04, fz0 - 0.03, fx1 + 0.04, fz1 + 0.03, FENCE, { x: 0, z: fz1 + 0.03, w: 0.12 });
   if (L >= 1) {
-    const sx = -0.03, sz = -0.66, sy = c.gy(sx, sz);
+    // a silo between the house and the barn, hay and a trough in the yard
+    const sx = -0.045, sz = 0.44, sy = c.gy(sx, sz);
     gb.cyl(sx, sy - 0.02, sz, 0.13, 0.14, 0.66, 12, '#b8b0a0');
     gb.sphere(sx, sy + 0.64, sz, 0.135, '#6f7f8a', 1, 0.6);
     for (let i = 0; i < 2; i++) {
-      const hx = -0.86 + i * 0.17, hz = -0.2, hy = c.gy(hx, hz);
+      const hx = 0.62 + i * 0.17, hz = 0.16, hy = c.gy(hx, hz);
       gb.cyl(hx, hy - 0.01, hz, 0.065, 0.075, 0.08, 9, '#cfa944');
       gb.sphere(hx, hy + 0.07, hz, 0.068, '#c9a240', 1, 0.7);
     }
-    const tx = -0.16, tz = -0.24;
+    const tx = -0.3, tz = 0.17;
     gb.cbox(tx, c.gy(tx, tz), tz, 0.22, 0.05, 0.07, '#6b4a2f', 0, 0.008);
   }
   if (L >= 2) {
-    const mx = 0.84, mz = -0.86, my = c.gy(mx, mz);
+    // a windmill in the far corner of the fields
+    const mx = 0.8, mz = -0.8, my = c.gy(mx, mz);
     gb.cyl(mx, my - 0.03, mz, 0.1, 0.17, 0.8, 9, '#ddd2bc');
     gb.cone(mx, my + 0.77, mz, 0.13, 0.18, 9, '#5e4a36');
     gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(mx, my + 0.32, mz + 0.125, 0.04, 0.06, 0.02, GLASS); gb.noGlow();
@@ -1007,9 +1012,9 @@ MODELS.farm = (c, L) => {
     c.spin = { geo: blades.build(), x: mx, y: my + 0.72, z: mz + 0.19, speed: 1.2 };
   }
   if (L >= 3) {
-    // orchard along the front fence and a dovecote
-    for (let i = 0; i < 6; i++) smallTree(c, -0.8 + i * 0.32, 0.86, 0.75);
-    const dx = -0.86, dz = -0.86, dy = c.gy(dx, dz);
+    // an orchard down the side of the fields, and a dovecote by the house
+    for (let i = 0; i < 4; i++) smallTree(c, -0.86, -0.8 + i * 0.26, 0.75);
+    const dx = -0.88, dz = 0.16, dy = c.gy(dx, dz);
     gb.cyl(dx, dy - 0.02, dz, 0.06, 0.07, 0.32, 8, '#e3dccb');
     gb.cone(dx, dy + 0.3, dz, 0.09, 0.1, 8, '#4e463e');
   }
@@ -3807,7 +3812,7 @@ export function jitterOf(b) {
 // Must match the c.work rectangles set by the models above.
 export function workArea(b) {
   let r = null;
-  if (b.type === 'farm') r = [-0.88, b.level >= 1 ? -0.08 : 0.08, 0.88, 0.88];
+  if (b.type === 'farm') r = [b.level >= 3 ? -0.68 : -0.88, b.level >= 1 ? -0.88 : -0.56, 0.88, 0.02];   // the fields behind the farmyard (see MODELS.farm)
   else if (b.type === 'garden') r = [-0.4, -0.4, 0.4, 0.4];
   else if (b.type === 'plaza') r = [-0.85, -0.85, 0.85, 0.85];
   if (!r) return null;

@@ -75,6 +75,11 @@ export const COMMANDS = {
       return { ok: n > 0, n, reason };
     },
   },
+  // add fields to a farm, or take them out
+  fields: {
+    check: (w, c) => int(c.id) && typeof c.add === 'boolean' && tiles(w, c.tiles, 400),
+    run: (g, c) => g.world.setFields(c.id, c.tiles, c.add),
+  },
   terraform: {
     check: (w, c) => tile(w, c) && ['raise', 'lower', 'flatten'].includes(c.mode),
     run: (g, c) => g.world.terraform(c.x, c.z, c.mode),

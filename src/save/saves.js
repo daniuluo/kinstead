@@ -40,6 +40,7 @@ export function serialize(world) {
     rails: toB64(world.rails),
     ...(world.buried && world.buried.some((v, i) => v && world.roads[i]) ? { buried: toB64(world.buried.map((v, i) => (v && world.roads[i] ? 1 : 0))) } : {}),
     ...(world.dress && world.dress.some((v, i) => v && world.roads[i]) ? { dress: toB64(world.dress.map((v, i) => (world.roads[i] ? v : 0))) } : {}),
+    ...(world.fieldTiles && world.fieldTiles.size ? { fields: [...world.fieldTiles].map(([id, tiles]) => [id, ...tiles]) } : {}),
     buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.spare ? [b.spare.w, b.spare.d] : null]),
     trees,
     residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
@@ -96,6 +97,15 @@ export function deserialize(data) {
   // saves from before research existed keep everything they could already build
   if (s.research) w.research = { done: [], current: null, progress: 0, bank: 0, ...s.research };
   else w.research.done = Object.keys(TECHS);
+  // farmland, for the farms that are there, on ground nothing else stands on
+  if (Array.isArray(data.fields)) {
+    for (const [id, ...tiles] of data.fields) {
+      const b = w.buildings.get(id);
+      if (!b || b.type !== 'farm') continue;
+      for (const i of tiles) if (Number.isInteger(i) && i >= 0 && i < N * N && w.buildingAt[i] < 0 && !w.roads[i] && !w.rails[i]) w.fields[i] = id;
+    }
+  }
+  w._countFields();
   w.updateRoadNetwork();
   w.updateRailLinks();
   return w;

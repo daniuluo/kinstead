@@ -105,6 +105,7 @@ export class Tracker {
     this.rails = w.rails.slice();
     this.buried = w.buried.slice();
     this.dress = w.dress.slice();
+    this.fields = w.fields.slice();
     this.H = heights(w);
     this.trees = new Map([...treeTiles(w)].map(([t, a]) => [t, a.join()]));
     this.ln = JSON.stringify(linesRec(w));
@@ -158,6 +159,8 @@ export class Tracker {
     if (bu) d.bu = bu;
     const ds = gridDiff(this.dress, w.dress);
     if (ds) d.ds = ds;
+    const fl = gridDiff(this.fields, w.fields);
+    if (fl) d.fl = fl;
     if (this.hDirty) {
       this.hDirty = false;
       const H = heights(w), out = [];
@@ -263,6 +266,8 @@ export function applyDelta(game, d) {
   // streets dressed with trees, hedges, lamps or a median
   const dressed = !!(d.ds && grid(w.dress, d.ds));
   if (dressed) w.emit('dress');
+  // farmland
+  if (d.fl && grid(w.fields, d.fl)) { w._countFields(); w.emit('fields'); simDirty = true; }
   let land = null;
   if (d.h) {
     const S = w.N + 1, H = w.terrain.H;

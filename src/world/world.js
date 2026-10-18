@@ -32,7 +32,9 @@ export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 export function capOf(b, key) {
   const v = BUILDINGS[b.type].levels[b.level][key] || 0;
   const k = sizeK(b);
-  return k > 1 ? Math.round(v * k) : v;
+  // a farm's fields beyond its plot need hands too
+  const fields = key === 'jobs' && b.fields ? Math.round(b.fields * CONFIG.FIELD_JOBS) : 0;
+  return (k > 1 ? Math.round(v * k) : v) + fields;
 }
 // The most households a home takes (its level's `households`): a cottage,
 // family house or villa is a home for one family, and the bigger houses and
@@ -107,6 +109,8 @@ export class World {
     this.rails = new Uint8Array(N * N);
     this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
     this.dress = new Uint8Array(N * N);    // how the street is dressed: an index into DRESSINGS (0: plain)
+    this.fields = new Int32Array(N * N).fill(-1);   // the farm a tile is a field of (-1: none)
+    this.fieldTiles = new Map();           // farm id → its field tiles (kept by _countFields)
     this.lines = [];
     this.sandbox = { infiniteMoney: false, unlockAll: false, freeUpgrades: false, instantBuild: false };
     this.buildingAt = new Int32Array(N * N).fill(-1);
@@ -254,6 +258,7 @@ export class World {
         if (this.roads[i]) { reason = 'A road is in the way'; break; }
         if (this.rails[i]) { reason = 'Railway track is in the way'; break; }
         if (this.buildingAt[i] >= 0) { reason = 'Occupied'; break; }
+        if (this.fields[i] >= 0) { reason = 'Farm fields: take them out of the farm first'; break; }
         minH = Math.min(minH, t.tileMin(tx, tz));
         maxH = Math.max(maxH, t.tileMax(tx, tz));
         trees += this.treeCount[i];
@@ -372,6 +377,7 @@ export class World {
   // and line stops have already been pointed elsewhere).
   _detach(b) {
     this._dissolveLeases(b);
+    this._dropFields(b);
     for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) this.buildingAt[this.idx(b.x + dx, b.z + dz)] = -1;
     this.buildings.delete(b.id);
     this.emit('building:remove', b);
@@ -422,6 +428,7 @@ export class World {
       if (con.look !== undefined) b.look = con.look;
       b.level = Math.min(con.to, BUILDINGS[b.type].levels.length - 1);
       this._fill(b, con.extend);
+      if (b.type !== 'farm') this._dropFields(b);
     }
     if (con.kind === 'build') b.built = this.day;
     b.con = null;
@@ -867,6 +874,7 @@ export class World {
       b.level = level;
       if (look !== undefined) b.look = look;
       this._fill(b, chk.target.extend);
+      if (b.type !== 'farm') this._dropFields(b);
       this.emit('building:change', b);
       this._shrunk(b, homes);
       return { ok: true, building: b, instant: true };
@@ -888,6 +896,7 @@ export class World {
       if (dest && dest.con && dest.con.wait) dest.con.wait = null;
     }
     this._dissolveLeases(b);
+    this._dropFields(b);
     for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) this.buildingAt[this.idx(b.x + dx, b.z + dz)] = -1;
     this.buildings.delete(id);
     const def = BUILDINGS[b.type];
@@ -913,6 +922,7 @@ export class World {
     const i = this.idx(x, z);
     const t = this.terrain;
     if (this.buildingAt[i] >= 0) return { ok: false, reason: 'A building is in the way' };
+    if (this.fields[i] >= 0) return { ok: false, reason: 'Farm fields are in the way: take them out of the farm first' };
     if (this.rails[i]) return { ok: true, cost: 0, noop: true };
     const water = t.isWater(x, z);
     if (!water && t.slope(x, z) > 0.6) return { ok: false, reason: 'Too steep for track' };
@@ -963,6 +973,7 @@ export class World {
     const i = this.idx(x, z);
     const t = this.terrain;
     if (this.buildingAt[i] >= 0) return { ok: false, reason: 'A building is in the way' };
+    if (this.fields[i] >= 0) return { ok: false, reason: 'Farm fields are in the way: take them out of the farm first' };
     const water = t.isWater(x, z);
     if (!water && t.slope(x, z) > 0.85) return { ok: false, reason: 'Too steep for a road' };
     if (water && t.tileAvg(x, z) < -0.9) return { ok: false, reason: 'Water too deep' };
@@ -1150,6 +1161,7 @@ export class World {
       return { ok: true, what: 'road' };
     }
     const i = this.idx(x, z);
+    if (this.fields[i] >= 0) { const r = this.setFields(this.fields[i], [[x, z]], false); return { ok: r.ok, what: 'fields', reason: r.reason }; }
     if (this.treeCount[i]) {
       const cost = this.treeCount[i] * CLEAR_COST;
       if (this.money < cost) return { ok: false, reason: 'Not enough money' };
@@ -1159,6 +1171,140 @@ export class World {
       return { ok: true, what: 'trees', cost };
     }
     return { ok: false };
+  }
+
+  // ------------------------------------------------------------ farmland
+  // A farm works fields beyond its own plot: tiles of farmland touching the
+  // plot or its other fields, as many as its level allows (FIELD_MAX). Each
+  // is ploughed and fenced for FIELD_COST (and any trees cleared), adds
+  // FIELD_JOBS jobs (capOf), and gives a quarter back when taken out.
+  fieldMax(b) { return b && b.type === 'farm' ? CONFIG.FIELD_MAX[Math.min(b.level, CONFIG.FIELD_MAX.length - 1)] : 0; }
+
+  // Why tile (x, z) can't become a field of farm b, or null.
+  _fieldBlock(b, x, z) {
+    if (!this.inBounds(x, z)) return 'Out of bounds';
+    const i = this.idx(x, z), f = this.fields[i];
+    if (f === b.id) return 'Already one of its fields';
+    if (f >= 0) return "Another farm's field";
+    if (this.terrain.isWater(x, z)) return 'Water';
+    if (this.roads[i]) return 'A road';
+    if (this.rails[i]) return 'Railway track';
+    if (this.buildingAt[i] >= 0) return 'A building';
+    if (this.terrain.slope(x, z) > 0.6) return 'Too steep to plough';
+    return null;
+  }
+
+  // What adding (add) or taking out these tiles would do for farm id:
+  // { tiles: [{ x, z, i, reason }], n (tiles that change), cost, refund,
+  // max, have, short }. New fields must touch the farm or its fields, or
+  // other new fields that do, nearest first, up to its limit.
+  planFields(id, list, add = true) {
+    const b = this.buildings.get(id);
+    const plan = { tiles: [], n: 0, cost: 0, refund: 0, max: this.fieldMax(b), have: b ? b.fields || 0 : 0, short: null };
+    if (!b || b.type !== 'farm') { plan.short = 'Only a farm has fields'; return plan; }
+    if (b.con && b.con.kind !== 'upgrade') { plan.short = 'Not until the farm is built'; return plan; }
+    const seen = new Set();
+    for (const [x, z] of list) {
+      if (!this.inBounds(x, z)) continue;
+      const i = this.idx(x, z);
+      if (seen.has(i)) continue;
+      seen.add(i);
+      plan.tiles.push({ x, z, i, reason: null });
+    }
+    if (!add) {
+      for (const t of plan.tiles) {
+        if (this.fields[t.i] !== id) { t.reason = 'Not one of its fields'; continue; }
+        plan.n++; plan.refund += Math.round(CONFIG.FIELD_COST * 0.25);
+      }
+      return plan;
+    }
+    for (const t of plan.tiles) t.reason = this._fieldBlock(b, t.x, t.z);
+    const open = new Map(plan.tiles.filter(t => !t.reason).map(t => [t.i, t]));
+    const near = (x, z, test) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => this.inBounds(x + dx, z + dz) && test(this.idx(x + dx, z + dz)));
+    const queue = [...open.values()].filter(t => near(t.x, t.z, j => this.buildingAt[j] === id || this.fields[j] === id));
+    const reached = new Set(queue.map(t => t.i)), take = [];
+    const room = Math.max(0, plan.max - plan.have);
+    while (queue.length && take.length < room) {
+      const t = queue.shift();
+      take.push(t);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inBounds(t.x + dx, t.z + dz)) continue;
+        const j = this.idx(t.x + dx, t.z + dz);
+        if (open.has(j) && !reached.has(j)) { reached.add(j); queue.push(open.get(j)); }
+      }
+    }
+    const taken = new Set(take.map(t => t.i));
+    for (const t of plan.tiles) {
+      if (t.reason || taken.has(t.i)) continue;
+      t.reason = reached.has(t.i) || room === 0 ? `It can work ${plan.max} fields at most` : 'Must touch the farm or its fields';
+    }
+    for (const t of take) { plan.n++; plan.cost += CONFIG.FIELD_COST + this.treeCount[t.i] * CLEAR_COST; }
+    if (plan.n && plan.cost > this.money) plan.short = 'Not enough money';
+    return plan;
+  }
+
+  setFields(id, list, add = true) {
+    const plan = this.planFields(id, list, add);
+    if (plan.short) return { ok: false, reason: plan.short };
+    if (!plan.n) return { ok: false, reason: (plan.tiles.find(t => t.reason) || {}).reason || 'No fields there' };
+    for (const t of plan.tiles) {
+      if (t.reason) continue;
+      if (add) { this.fields[t.i] = id; this._clearTrees(t.x, t.z); } else this.fields[t.i] = -1;
+    }
+    this.money += plan.refund - plan.cost;
+    this._countFields();
+    if (add) this.emit('trees');
+    this.emit('fields');
+    return { ok: true, n: plan.n, cost: plan.cost, refund: plan.refund, skipped: plan.tiles.length - plan.n };
+  }
+
+  // Each farm's fields (b.fields, fieldTiles) from the grid; fields of a
+  // building that is no farm are dropped.
+  _countFields() {
+    this.fieldTiles = new Map();
+    for (const b of this.buildings.values()) if (b.type === 'farm') b.fields = 0;
+    for (let i = 0; i < this.fields.length; i++) {
+      const f = this.fields[i];
+      if (f < 0) continue;
+      const b = this.buildings.get(f);
+      if (!b || b.type !== 'farm') { this.fields[i] = -1; continue; }
+      b.fields++;
+      if (!this.fieldTiles.has(f)) this.fieldTiles.set(f, []);
+      this.fieldTiles.get(f).push(i);
+    }
+  }
+
+  // A farm's fields must reach its plot (through its other fields), up to
+  // its limit, nearest first; any others go (after a town merge, say).
+  _pruneFields() {
+    const keep = new Uint8Array(this.fields.length);
+    for (const b of this.buildings.values()) {
+      if (b.type !== 'farm') continue;
+      const max = this.fieldMax(b), q = [];
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) q.push([b.x + dx, b.z + dz]);
+      let n = 0;
+      for (let k = 0; k < q.length && n < max; k++) {
+        const [x, z] = q[k];
+        for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + ox, nz = z + oz;
+          if (!this.inBounds(nx, nz)) continue;
+          const j = this.idx(nx, nz);
+          if (this.fields[j] !== b.id || keep[j] || n >= max) continue;
+          keep[j] = 1; n++; q.push([nx, nz]);
+        }
+      }
+    }
+    for (let i = 0; i < this.fields.length; i++) if (this.fields[i] >= 0 && !keep[i]) this.fields[i] = -1;
+    this._countFields();
+  }
+
+  _dropFields(b) {
+    let any = false;
+    for (let i = 0; i < this.fields.length; i++) if (this.fields[i] === b.id) { this.fields[i] = -1; any = true; }
+    if (!any) return;
+    this._countFields();
+    b.fields = 0;
+    this.emit('fields');
   }
 
   // ------------------------------------------------------------ creation
