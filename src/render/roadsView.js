@@ -29,6 +29,11 @@ export class RoadsView {
     this.surface = new THREE.Mesh(new THREE.BufferGeometry(), MAT.road);
     this.surface.receiveShadow = true;
     scene.add(this.surface);
+    // the paths from front doors to the street, kept apart so a building
+    // changing redraws just them (see rebuildDoors)
+    this.doors = new THREE.Mesh(new THREE.BufferGeometry(), MAT.road);
+    this.doors.receiveShadow = true;
+    scene.add(this.doors);
     this.lamps = [];
     // street lamps are electric: lit(x, z) says whether one has power
     this.lit = () => false;
@@ -60,12 +65,37 @@ export class RoadsView {
     for (const l of dressed.lamps) this._lamp(gb, l.x, t.heightAt(l.x, l.z), l.z);
     for (const m of dressed.medians) this._median(gb, m);
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (w.rails[w.idx(x, z)]) this._rail(gb, x, z);
-    if ([...w.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b))) this._powerLines(gb);
+    this.wired = this._wired();
+    if (this.wired) this._powerLines(gb);
     const pg = gb.build();
     this.props.geometry.dispose();
     this.props.geometry = pg || new THREE.BufferGeometry();
     this.surface.geometry.dispose();
     this.surface.geometry = this._surfaces();
+    this.rebuildDoors();
+  }
+
+  // Power lines go up once the town has a working generator.
+  _wired() { return [...this.world.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b)); }
+
+  // After a building has come, gone or changed: does more than its door path
+  // need redrawing? Dressed streets leave gaps at doors, and the first (or
+  // last) working generator puts up (or takes down) the power lines.
+  needsRebuild() {
+    const d = this.world.dress;
+    return !!(d && d.some(Boolean)) || this._wired() !== this.wired;
+  }
+
+  rebuildDoors() {
+    const pos = [], col = [];
+    this._doorPaths(pos, col);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    this.doors.geometry.dispose();
+    this.doors.geometry = g;
   }
 
   // Each road tile is laid as small cells that follow the ground (see
@@ -187,7 +217,6 @@ export class RoadsView {
       if (s.bend >= 0) { bend(s); continue; }
       for (let k = 0; k < 4; k++) if (s.fillets.includes(k)) fillet(s, k); else quarter(s, k);
     }
-    this._doorPaths(pos, col);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -434,6 +463,7 @@ export class RoadsView {
 
   dispose() {
     this.surface.geometry.dispose(); this.scene.remove(this.surface);
+    this.doors.geometry.dispose(); this.scene.remove(this.doors);
     this.scene.remove(this.props);
     this.props.geometry.dispose();
   }

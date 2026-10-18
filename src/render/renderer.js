@@ -32,14 +32,15 @@ export class Renderer {
     this.scene.fog = new THREE.Fog('#dfe8ea', DIST + 6, DIST + 110);
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, DIST - 110, DIST + 110);
     this.post = null;
-    this.gfx = { pixelArt: true, pixelSize: 2, ao: true };
+    // scale: the share of the screen's resolution drawn (the Performance
+    // settings; pixel art gets chunkier pixels instead)
+    this.gfx = { pixelArt: true, pixelSize: 2, ao: true, scale: 1 };
 
     this.hemi = new THREE.HemisphereLight('#cfe6f7', '#7f6f55', 0.9);
     this.sun = new THREE.DirectionalLight('#ffffff', 2.8);
     this.sun.castShadow = true;
-    const maxTex = r.capabilities.maxTextureSize || 4096;
-    const sm = Math.min(4096, maxTex);
-    this.sun.shadow.mapSize.set(sm, sm);
+    this.maxShadow = Math.min(4096, r.capabilities.maxTextureSize || 4096);
+    this.sun.shadow.mapSize.set(this.maxShadow, this.maxShadow);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.025;
     // shadows let a little sunlight through, like a bright day's soft shade
@@ -71,14 +72,14 @@ export class Renderer {
     Object.assign(this.gfx, opts);
     const g = this.gfx, r = this.renderer;
     if (this.post) { this.post.composer.dispose?.(); this.post.passes.forEach(p => p.dispose?.()); this.post = null; }
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    r.setPixelRatio(g.pixelArt ? dpr : Math.min(dpr, g.ao ? 1.5 : 2));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2), scale = g.scale || 1;
+    r.setPixelRatio(g.pixelArt ? dpr : Math.min(dpr, g.ao ? 1.5 : 2) * scale);
     r.toneMapping = g.pixelArt ? THREE.NeutralToneMapping : THREE.AgXToneMapping;
     this.baseExposure = g.pixelArt ? 1.0 : 1.2;
     try {
       if (g.pixelArt) {
         const composer = new EffectComposer(r);
-        const pix = new PixelPass(Math.max(1, Math.round(g.pixelSize * dpr)), this.scene, this.camera);
+        const pix = new PixelPass(Math.max(1, Math.round((g.pixelSize * dpr) / scale)), this.scene, this.camera);
         composer.addPass(pix);
         composer.addPass(new OutputPass());
         this.post = { composer, passes: [pix], pix };
@@ -125,10 +126,26 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
-  setShadows(on) {
+  // size: the shadow map's width in texels (sharper and slower the bigger)
+  setShadows(on, size = this.maxShadow) {
+    size = Math.min(size, this.maxShadow);
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      // made again at the new size when next drawn
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    if (this.renderer.shadowMap.enabled === on && this.sun.castShadow === on) return;
     this.renderer.shadowMap.enabled = on;
     this.sun.castShadow = on;
     this.scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
+  }
+
+  // Is the camera still gliding to where it was sent (panning, zooming,
+  // turning or tilting)?
+  get moving() {
+    const r = this.rig;
+    return !!r.anchor || r.zoom !== r.zoomT || r.turn !== r.turnT || Math.abs(r.elev - r.elevT) > 1e-4 || Math.abs(r.base - r.baseT) > 1e-4
+      || Math.abs(r.target.x - r.goal.x) > 1e-3 || Math.abs(r.target.z - r.goal.z) > 1e-3;
   }
 
   // ------------------------------------------------------------- camera

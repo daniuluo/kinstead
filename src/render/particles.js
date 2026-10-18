@@ -48,9 +48,14 @@ export class Particles {
     this.points.renderOrder = additive ? 5 : 4;
     scene.add(this.points);
     this.statics = [];
+    // how many of the particles emitted are kept (the Effects setting: all,
+    // about half, or none); statics always show
+    this.keep = 1;
+    this._n = 0;
   }
 
   emit(p) {
+    if (this.keep < 1 && Math.random() >= this.keep) return;
     if (this.items.length >= this.max - this.statics.length) return;
     p.age = 0;
     this.items.push(p);
@@ -94,9 +99,15 @@ export class Particles {
       n++;
     }
     this.geo.setDrawRange(0, n);
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aSize.needsUpdate = true;
-    this.geo.attributes.aColor.needsUpdate = true;
+    // send the graphics card only the points in use
+    if (n || this._n) {
+      for (const a of [this.geo.attributes.position, this.geo.attributes.aSize, this.geo.attributes.aColor]) {
+        a.clearUpdateRanges();
+        a.addUpdateRange(0, Math.max(1, n) * a.itemSize);
+        a.needsUpdate = true;
+      }
+    }
+    this._n = n;
   }
 
   clear() { this.items.length = 0; this.statics = []; }

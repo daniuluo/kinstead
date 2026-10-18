@@ -39,6 +39,7 @@ import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
 import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel } from './roadSelect.js';
 import { roadRun } from '../world/roadEdit.js';
+import { perfHTML, bindPerf, readPerf } from './perfSettings.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -384,8 +385,14 @@ export class UI {
       html = roadSelHTML(this.game);
       if (html == null) { this.inspect(null); return; }
     }
-    el.innerHTML = `<button class="close" data-act="close">✕</button>` + ico(html);
+    const full = `<button class="close" data-act="close">✕</button>` + ico(html);
+    // the regular refresh with nothing new to show leaves the panel be
+    // (rebuilding it costs far more than working it out)
+    const same = !force && full === this._inspHTML && !el.classList.contains('hidden');
+    this._inspHTML = full;
+    if (!same) el.innerHTML = full;
     if (sel.kind === 'building') this._syncPreview(w.buildings.get(sel.id));
+    if (same) return;
     el.classList.remove('hidden');
     for (const a of el.querySelectorAll('[data-act]')) a.onclick = (e) => this._act(a.dataset.act, a.dataset, e);
     if (sel.kind === 'roadsel') bindRoadSel(this, el);
@@ -1305,7 +1312,6 @@ export class UI {
     const g = this.game;
     const s = g.settings;
     this.openModal(`<h2>Settings</h2>
-      <div class="field"><label class="inline"><input type="checkbox" id="stShadow" ${s.shadows ? 'checked' : ''}> Soft shadows (turn off on slower computers)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAO" ${s.ao ? 'checked' : ''}> Ambient occlusion (soft contact shadows)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAuto" ${s.autosave ? 'checked' : ''}> Autosave every in-game day</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stSound" ${s.sound ? 'checked' : ''}> Sound effects</label></div>
@@ -1318,6 +1324,7 @@ export class UI {
         <label class="inline"><input type="checkbox" id="stBlocked" ${s.popBlocked !== false ? 'checked' : ''}> Warnings over buildings with no power, water or workers</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
+      ${perfHTML(s)}
       ${g.world && !g.demo ? `${g.isGuest ? '<div class="note">Only the host can change the sandbox switches of this town.</div>' : ''}
       <div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlimited money (this town)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlock every building (this town)</label></div>
@@ -1325,8 +1332,9 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
       <div class="field"><label>Google OAuth Client ID (for Drive saves)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div>
       <div class="actions"><button class="btn primary" id="stOk">Done</button><button class="btn" id="stMenu">Quit to title</button></div>`, (c) => {
+      bindPerf(c);
       c.querySelector('#stOk').onclick = () => {
-        s.shadows = c.querySelector('#stShadow').checked;
+        readPerf(c, s);
         s.ao = c.querySelector('#stAO').checked;
         s.pixelArt = c.querySelector('#stPix').checked;
         s.pixelSize = Number(c.querySelector('#stPixSize').value);

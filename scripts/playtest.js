@@ -280,6 +280,8 @@ while (w.day < startDay + DAYS && steps < 400000) {
 }
 // a save from the middle of all this must load back the same
 const json = JSON.stringify(serialize(w));
+// PLAYTEST_SAVE=<file>: keep the town as a save, e.g. to load into the game for profiling
+if (process.env.PLAYTEST_SAVE) (await import('node:fs')).writeFileSync(process.env.PLAYTEST_SAVE, json);
 const w2 = deserialize(JSON.parse(json));
 if (w2.buildings.size !== w.buildings.size || w2.residents.size !== w.residents.size) problems.push('save round-trip lost buildings or people');
 

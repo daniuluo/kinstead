@@ -36,7 +36,7 @@ export function visitorCap(b) {
   return Math.max(2, Math.round(base * fw(b) * fd(b) * (1 + (kind === 'park' ? 0.3 : 0.5) * b.level)));
 }
 
-const _v = new THREE.Vector3();
+const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sp = new THREE.Sphere(), _v = new THREE.Vector3();
 
 export class Agents {
   constructor(game) {
@@ -78,6 +78,22 @@ export class Agents {
     return out;
   }
 
+  // Every kind of place a day's plan can lead to, looked up once and kept
+  // for the rest of this update (days are only planned in update(), and
+  // nothing there opens, closes or links up a building): planning the whole
+  // town's day at midnight doesn't search the town for each villager.
+  _places() {
+    return this._lists ||= {
+      shops: this._candidates(d => d.shop),
+      parks: this._candidates(d => d.park && d.outdoor),
+      plays: this._candidates(d => d.play),
+      taverns: this._candidates(d => d.leisure && !d.park),
+      chapels: this._candidates(d => servicesOf(d).includes('culture')),
+      schools: this._candidates(d => servicesOf(d).includes('education')),
+      clinics: this._candidates(d => visitKind(d) === 'clinic'),
+    };
+  }
+
   _nearest(r, list, k = 3) {
     if (!list.length) return null;
     const home = this.world.buildings.get(r.home);
@@ -109,13 +125,7 @@ export class Agents {
 
   planDay(r, now) {
     const R = Math.random;
-    const shops = this._candidates(d => d.shop);
-    const parks = this._candidates(d => d.park && d.outdoor);
-    const plays = this._candidates(d => d.play);
-    const taverns = this._candidates(d => d.leisure && !d.park);
-    const chapels = this._candidates(d => servicesOf(d).includes('culture'));
-    const schools = this._candidates(d => servicesOf(d).includes('education'));
-    const clinics = this._candidates(d => visitKind(d) === 'clinic');
+    const { shops, parks, plays, taverns, chapels, schools, clinics } = this._places();
     const pick = (list) => this._nearest(r, list), shop = () => this._shopFor(r, shops);
     const plan = [];
     const home = r.home;
@@ -474,6 +484,7 @@ export class Agents {
   // ---------------------------------------------------------------- update
   update(dt, gameDt) {
     const w = this.world;
+    this._lists = null;
     if (this.plannedDay !== w.day) {
       if (this.plannedDay === -1) { for (const r of w.residents.values()) { if (!r.lk) this._initResident(r); this.planDay(r, w.hours); } this.plannedDay = w.day; }
       else this.newDay();
@@ -557,8 +568,32 @@ export class Agents {
     this._render(dt);
   }
 
+  // The walkers to draw this frame: those in view, with a tile to spare for
+  // their shadows (off-screen villagers cost time and look no different),
+  // and of those, if the Performance settings ask (settings.villagers),
+  // only some, or only those near the middle of the view. The selected
+  // villager always shows. Sets wk.shown, which their lanterns follow.
+  _drawList() {
+    const out = this._shown || (this._shown = []);
+    out.length = 0;
+    const g = this.game, cam = g.renderer && g.renderer.camera, mode = (g.settings && g.settings.villagers) || 'all';
+    if (cam) _fr.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    const c = cam && g.renderer.rig.target, sel = this.selected;
+    for (const wk of this.walkers) {
+      let show = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
+      if (show && mode !== 'all' && !(sel && wk.r === sel)) {
+        // the same half of the town every frame (the lane is each villager's own)
+        if (mode === 'some') show = (wk.lk.lane * 997) % 1 < 0.5;
+        else if (c) show = Math.hypot(wk.x - c.x, wk.z - c.z) < 12;
+      }
+      wk.shown = show;
+      if (show) out.push(wk);
+    }
+    return out;
+  }
+
   _render(dt) {
-    this.view.draw(this.walkers, this.game.env, this.game.renderer.camera);
+    this.view.draw(this._drawList(), this.game.env, this.game.renderer.camera);
     // selection ring
     const sel = this.selected;
     if (sel && sel.walk && this.walkers.has(sel.walk)) {
