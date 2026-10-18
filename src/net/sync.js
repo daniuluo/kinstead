@@ -11,6 +11,7 @@
 import { BUILDINGS } from '../defs.js';
 import { serialize, deserialize } from '../save/saves.js';
 import { fw, fd } from '../world/world.js';
+import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 // Bump when the messages change in a way older pages can't read.
 export const PROTOCOL = 1;
@@ -73,7 +74,7 @@ export function worldFromSnapshot(snap) {
   for (const [id, x, z] of snap.access || []) { const b = w.buildings.get(id); if (b) b.access = { x, z }; }
   w.updateRoadNetwork();
   for (const [id, s] of snap.school || []) { const r = w.residents.get(id); if (r) r.school = s; }
-  if (snap.lines) w.lines = snap.lines.map(l => ({ ...l, stops: l.stops.slice() }));
+  if (Array.isArray(snap.lines)) w.lines = snap.lines.map(cleanLine);
   const c = snap.clock;
   if (c) { w.day = c[0]; w.hours = c[1]; w.money = c[3] === 'inf' ? Infinity : c[3]; Object.assign(w.stats, c[4] || {}); }
   return w;
@@ -269,8 +270,8 @@ export function applyDelta(game, d) {
   let railLinks = rails;
   for (const rec of d.b || []) {
     const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc] = rec;
+    if (!hasKey(BUILDINGS, type)) continue;
     const def = BUILDINGS[type];
-    if (!def) continue;
     let b = w.buildings.get(id);
     if (!b) {
       w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look });
@@ -337,10 +338,10 @@ export function applyDelta(game, d) {
   // 8. transit lines (updated in place, so the vehicles on them carry on)
   if (d.ln) {
     const byId = new Map(w.lines.map(l => [l.id, l]));
-    w.lines = d.ln.map(l => {
+    w.lines = (Array.isArray(d.ln) ? d.ln : []).map(cleanLine).map(l => {
       const cur = byId.get(l.id);
-      if (!cur) return { ...l, stops: l.stops.slice() };
-      Object.assign(cur, l, { stops: l.stops.slice() });
+      if (!cur) return l;
+      Object.assign(cur, l);
       return cur;
     });
     w.emit('lines');
@@ -352,7 +353,7 @@ export function applyDelta(game, d) {
     const before = new Set(w.research.done);
     out.sandbox = JSON.stringify(w.sandbox) !== JSON.stringify(s.sandbox);
     if (s.taxRate !== w.taxRate) simDirty = true;
-    Object.assign(w, { taxRate: s.taxRate, nextId: s.nextId, titleIdx: s.titleIdx, townName: s.townName, entry: s.entry });
+    Object.assign(w, { taxRate: s.taxRate, nextId: s.nextId, titleIdx: s.titleIdx, townName: cleanText(s.townName, 40) || w.townName, entry: s.entry });
     Object.assign(w.sandbox, s.sandbox);
     w.research = { ...s.research, done: s.research.done.slice() };
     for (const id of w.research.done) if (!before.has(id)) w.emit('research:done', id);
@@ -383,9 +384,15 @@ export function applyDelta(game, d) {
   return out;
 }
 
+// A transit line as the host describes it, kept to what the game uses.
+function cleanLine(l) {
+  return { id: l?.id, mode: l?.mode, name: cleanText(l?.name, 40), color: cleanColor(l?.color), stops: Array.isArray(l?.stops) ? l.stops.filter(Number.isInteger) : [], vehicles: Number.isInteger(l?.vehicles) ? l.vehicles : 1 };
+}
+
 function upsertResident(game, rec) {
   const w = game.world, ag = game.agents;
-  const [id, first, last, age, home, job, look, wealth, fam, years, edu, edYrs, school] = rec;
+  const [id, rawFirst, rawLast, age, home, job, look, wealth, fam, years, edu, edYrs, school] = rec;
+  const first = cleanText(rawFirst, 24), last = cleanText(rawLast, 24);
   const H = home >= 0 ? home : null, J = job >= 0 ? job : null;
   let r = w.residents.get(id);
   if (!r) {

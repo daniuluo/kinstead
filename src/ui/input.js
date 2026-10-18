@@ -6,7 +6,7 @@ import { fw, fd, capOf } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
-import { fmt } from './ui.js';
+import { fmt, esc } from './ui.js';
 
 const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a';
 
@@ -298,7 +298,7 @@ export class Input {
         const r = g.agents.pick(e.clientX, e.clientY);
         const an = r ? null : g.animals.pick(e.clientX, e.clientY);
         const b = r || an ? null : (this.pickBuilding(e) || w.buildingOn(h.x, h.z));
-        if (r) tip = `<b>${r.first} ${r.last}</b><br>${g.agents.activity(r)}`;
+        if (r) tip = `<b>${esc(r.first)} ${esc(r.last)}</b><br>${esc(g.agents.activity(r))}`;
         else if (an) tip = g.animals.describe(an);
         else if (b) {
           const def = BUILDINGS[b.type], L = def.levels[b.level];

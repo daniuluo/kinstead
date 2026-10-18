@@ -14,7 +14,7 @@ import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel, STYLES } from '../src/render/buildings.js';
 import { fw, fd } from '../src/world/world.js';
-import { BUILDINGS } from '../src/defs.js';
+import { BUILDINGS, TECHS } from '../src/defs.js';
 
 let failures = 0;
 const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg); } else console.log('ok  ', msg); };
@@ -393,7 +393,7 @@ const runUntil = (pred, days = 6) => {
   const c1 = fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true });
   ok(!c1.ok && /Research/.test(c1.reason), `a bakery needs research first ("${c1.reason}")`);
   ok(fresh.startResearch('commerce') && fresh.research.current === 'commerce', 'research project started');
-  fresh.addResearch(30);
+  fresh.addResearch(TECHS.commerce.cost);
   ok(fresh.research.done.includes('commerce') && fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true }).ok, 'finished research unlocks the bakery');
   ok(!fresh.canResearch('highrise'), 'later projects wait for their prerequisites');
 }

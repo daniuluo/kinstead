@@ -7,6 +7,7 @@
 
 import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
 import { STYLES } from './render/buildings.js';
+import { cleanText, hasKey } from './util/text.js';
 
 const SPEEDS = [0, 1, 2, 4, 8, 16, 32];
 const LOOKS = new Set(STYLES.map(s => s.id));
@@ -22,7 +23,7 @@ const ok = (v, reason) => (v ? { ok: true } : { ok: false, reason });
 // t → { check(world, cmd), run(game, cmd), host: only the host may do it }
 export const COMMANDS = {
   place: {
-    check: (w, c) => !!BUILDINGS[c.type] && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6),
+    check: (w, c) => hasKey(BUILDINGS, c.type) && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6),
     run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0 }),
   },
   roads: {
@@ -59,7 +60,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.plantTree(c.x, c.z),
   },
   upgrade: {
-    check: (w, c) => int(c.id) && (c.to == null || !!BUILDINGS[c.to]) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
+    check: (w, c) => int(c.id) && (c.to == null || hasKey(BUILDINGS, c.to)) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
     run: (g, c) => g.world.upgradeBuilding(c.id, c.to || null, c.look),
   },
   expand: {
@@ -79,7 +80,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.demolishBuilding(c.id),
   },
   research: {
-    check: (w, c) => typeof c.id === 'string' && !!TECHS[c.id],
+    check: (w, c) => hasKey(TECHS, c.id),
     run: (g, c) => ok(g.world.startResearch(c.id), "That project can't be started yet"),
   },
   tax: {
@@ -87,11 +88,11 @@ export const COMMANDS = {
     run: (g, c) => { g.world.taxRate = c.rate; g.sim.recompute(); return { ok: true }; },
   },
   rename: {
-    check: (w, c) => typeof c.name === 'string' && c.name.trim().length > 0 && c.name.trim().length <= 40,
-    run: (g, c) => { g.world.townName = c.name.trim(); return { ok: true }; },
+    check: (w, c) => typeof c.name === 'string' && c.name.length <= 200 && cleanText(c.name).length > 0,
+    run: (g, c) => { g.world.townName = cleanText(c.name, 40); return { ok: true }; },
   },
   line: {
-    check: (w, c) => !!TRANSIT[c.mode] && Array.isArray(c.stops) && c.stops.length <= 64 && c.stops.every(s => int(s)),
+    check: (w, c) => hasKey(TRANSIT, c.mode) && Array.isArray(c.stops) && c.stops.length <= 64 && c.stops.every(s => int(s)),
     run: (g, c) => g.transit.createLine(c.mode, c.stops),
   },
   unline: {
@@ -117,7 +118,7 @@ export const COMMANDS = {
 // Check and apply one command. `from` is the remote player who sent it
 // (null for the local player). Returns the World's own result object.
 export function runCommand(game, cmd, from = null) {
-  const def = cmd && typeof cmd === 'object' ? COMMANDS[cmd.t] : null;
+  const def = cmd && typeof cmd === 'object' && hasKey(COMMANDS, cmd.t) ? COMMANDS[cmd.t] : null;
   if (!def) return { ok: false, reason: 'Unknown action' };
   if (!game.world || game.demo) return { ok: false, reason: 'No town is open' };
   if (from && def.host) return { ok: false, reason: 'Only the host can change that' };
