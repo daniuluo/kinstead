@@ -151,6 +151,24 @@ export const BUILDINGS = {
       { name: 'Grand Hotel', cost: 2000, jobs: 14, income: 7, visit: 16, unlock: 120, req: { power: true } },
     ],
   },
+  // A tavern joined with a workshop: it brews its own ale and sells it.
+  brewhouse: {
+    name: 'Brewing', cat: 'commercial', size: 2, merged: true, hidden: true, leisure: true, tech: 'hospitality', icon: '🍺', branch: 'Brewhouse', accent: '#8a5a1e', pathIcon: 'sports_bar',
+    desc: 'A brewhouse with its own taproom: ale brewed on the spot and sold across the bar.',
+    levels: [
+      { name: 'Brewhouse', cost: 700, jobs: 7, income: 9, visit: 8 },
+      { name: 'Brewery', tech: 'industry3', cost: 1700, jobs: 12, income: 10, visit: 11, pollution: 1, unlock: 60 },
+    ],
+  },
+  // A fishing hut joined with a market stall: the catch landed and sold on the quay.
+  fishmarket: {
+    name: 'Fish Trade', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, tech: 'trade2', icon: '🐟', branch: 'Fish market', accent: '#2f6a7a', pathIcon: 'set_meal',
+    desc: 'The catch landed and sold on the spot: fish stalls under an open roof, with an ice house behind.',
+    levels: [
+      { name: 'Fish Market', cost: 550, jobs: 6, income: 8, visit: 6 },
+      { name: 'Fish Hall', tech: 'trade3', cost: 1400, jobs: 10, income: 9, visit: 9, unlock: 60 },
+    ],
+  },
   joinery: {
     name: 'Joinery', cat: 'industry', size: 2, merged: true, hidden: true, tech: 'woodwork', icon: '🪚', branch: 'Joinery', accent: '#6e5034', pathIcon: 'carpenter',
     desc: 'Timber in, furniture and doors out.',
@@ -173,6 +191,15 @@ export const BUILDINGS = {
     levels: [
       { name: 'Almshouse', cost: 450, upkeep: 8, jobs: 3, radius: 7, housing: 8, edu: 1 },
       { name: 'Infirmary', tech: 'hospitals', cost: 1200, upkeep: 16, jobs: 7, radius: 11, housing: 12, edu: 3, unlock: 60 },
+    ],
+  },
+  // Two watch posts joined: one station, a cell block and a wider beat.
+  watchhouse: {
+    name: 'Police', cat: 'services', size: 2, merged: true, hidden: true, service: 'safety', tech: 'services2', icon: '🛡️', branch: 'Watch house', accent: '#2f3e5a', pathIcon: 'local_police',
+    desc: 'The watch under one roof, with cells and a yard: one station keeps a much wider area safe than two posts.',
+    levels: [
+      { name: 'Watch House', cost: 650, upkeep: 12, jobs: 5, radius: 10, edu: 1 },
+      { name: 'Police Station', tech: 'services3', cost: 1500, upkeep: 20, jobs: 9, radius: 15, edu: 2, unlock: 120 },
     ],
   },
   fountaingarden: {
@@ -586,12 +613,12 @@ export const TECHS = {
   pigments: { name: 'Limewash', cost: 30, tier: 0, branch: 'colour', needs: [], desc: 'Limewashed walls.' },
   paints: { name: 'Paints', cost: 90, tier: 1, branch: 'colour', needs: ['pigments'], desc: 'Painted walls in every colour.' },
   commerce: { name: 'Shopkeeping', cost: 60, tier: 0, branch: 'trade', needs: [], desc: 'Bakeries, and shops with homes above.' },
-  trade2: { name: 'Shopfitting', cost: 115, tier: 1, branch: 'trade', needs: ['commerce'], desc: 'Second-level shop upgrades.' },
+  trade2: { name: 'Shopfitting', cost: 115, tier: 1, branch: 'trade', needs: ['commerce'], desc: 'Second-level shop upgrades, and fish markets joined from a fishing hut and a market stall.' },
   arcades: { name: 'Arcades', cost: 270, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
   trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades.' },
   civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, the Grand Hall, grand squares and covered markets.' },
   gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks.' },
-  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns and inns.' },
+  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns and inns, and brewhouses joined from a tavern and a workshop.' },
   parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
   industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: 'Second-level industry: sawmills, smithies, bigger farms.' },
@@ -605,14 +632,14 @@ export const TECHS = {
   electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets.' },
   steam: { name: 'Steam Power', cost: 750, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
   cables: { name: 'Underground Cables', cost: 800, tier: 4, branch: 'power', needs: ['steam'], desc: 'Bury the power lines under the streets, street by street or the whole town: no more poles and wires, and prettier streets.' },
-  services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings: guardhouses, churches, water towers.' },
+  services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings (guardhouses, churches, water towers), and watch houses joined from two watch posts.' },
   medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, and almshouses.' },
   firefighting: { name: 'Fire Brigades', cost: 270, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
   hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals and infirmaries.' },
   services3: { name: 'Civic Services', cost: 720, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
   schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools and middle schools.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
-  academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot) and cathedral schools.' },
+  academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
   railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
@@ -646,16 +673,24 @@ export const MERGES = [
   { a: ['tavern'], b: ['market', 'bakery', 'tavern'], to: 'inn' },
   { a: ['chapel'], b: ['school'], to: 'parishschool' },
   { a: ['clinic'], b: ['chapel', 'house'], to: 'almshouse' },
-  { a: ['well'], b: ['garden', 'flowers'], to: 'fountaingarden' },
+  { a: ['well'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
   { a: ['workshop', 'lumber'], b: ['workshop', 'lumber'], to: 'joinery' },
   { a: ['garden', 'flowers'], b: ['garden', 'flowers', 'statue'], to: 'park' },
+  // a grand home or a block of flats takes in the house next door (lead: the
+  // first one's look carries on, not the cottage's)
+  { a: ['villa'], b: ['villa', 'house'], to: 'mansion', lead: true },
+  { a: ['flats'], b: ['flats', 'house'], to: 'apartments', lead: true },
+  { a: ['middleschool'], b: ['middleschool', 'school'], to: 'highschool' },
+  { a: ['tavern'], b: ['workshop'], to: 'brewhouse' },
+  { a: ['watch'], b: ['watch'], to: 'watchhouse' },
+  { a: ['fishery'], b: ['market'], to: 'fishmarket' },
 ];
 
 // What a building on an expanded (double) plot can be rebuilt as.
 export const LARGE = {
   house: ['mansion', 'apartments', 'terrace'], villa: ['mansion'], flats: ['apartments'],
-  market: ['arcade'], bakery: ['arcade'], tavern: ['inn'], workshop: ['joinery'], lumber: ['joinery'],
-  school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'],
+  market: ['arcade'], bakery: ['arcade'], tavern: ['inn', 'brewhouse'], workshop: ['joinery'], lumber: ['joinery'],
+  school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).
@@ -696,6 +731,8 @@ export const NEEDS = {
   markethall: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lamps down its aisles' } },
   coachinginn: { water: { from: 0, without: 0.5, what: 'brewing, baths, the kitchens and the horses' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
   musichall: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights' } },
+  brewhouse: { water: { from: 0, without: 0.3, what: 'the mash tun and the coppers' }, power: { from: 1, use: 'machines', without: 0.6, what: 'its steam-driven mash tuns' } },
+  fishmarket: { water: { from: 0, without: 0.6, what: 'washing down the slabs' }, power: { from: 1, use: 'machines', without: 0.7, what: 'its ice machines' } },
   lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
   workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
   joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },

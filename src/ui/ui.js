@@ -596,6 +596,7 @@ export class UI {
           const on = BUILDINGS[m.other.type].levels[m.other.level].name;
           h += `<button class="btn" data-act="merge" data-id="${m.other.id}" ${m.ok ? '' : 'disabled'} title="${esc(BUILDINGS[m.type].desc)}">+ ${esc(on)} → ${esc(m.name)} · $${fmt(m.cost)}</button>`;
           h += `<div class="mergedesc">${esc(BUILDINGS[m.type].desc)}</div>`;
+          if (m.moveOut) h += `<div class="warnline">⚠ Room for fewer people: about ${m.moveOut} resident${m.moveOut > 1 ? 's' : ''} will move out</div>`;
         }
         h += '</div></div>';
       }
@@ -1647,7 +1648,7 @@ export class UI {
         1. Build 🏡 cottages along the road — builders from the 🧱 Builder's Yard put them up, then families move in from the edge of the map.<br>
         2. Give them work: 🧺 markets, 🌾 farms, 🪓 woodcutters, 🐟 fisheries.<br>
         3. Build 💧 wells (water reaches every home on the roads through the mains), cover homes with 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
-        Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
+        Select a building next to another to 🔗 join them into one on a double plot (two homes make a terrace, a home and a shop a shophouse, a tavern and a workshop a brewhouse, two watch posts a watch house: the building guide lists every pair), or ↔ move any building (it is taken down and rebuilt).<br>
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
         Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>

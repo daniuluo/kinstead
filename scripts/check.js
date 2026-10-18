@@ -327,27 +327,59 @@ const runUntil = (pred, days = 6) => {
   w.setSandbox({ freeUpgrades: false, unlockAll: false, instantBuild: false });
 }
 
-// 3d0. combination joins: every recipe yields its building (in a fresh
-// town with a long street, so there is room for every pair)
+// 3d0. combination joins: every pairing in every recipe yields its building,
+// and no earlier recipe takes a pair meant for a later one (in a fresh town
+// with a long street, so there is room for every pair)
+// Two side-by-side plots with a short street in front, for joining tests.
+const placePair = (tw, ta, tb) => {
+  for (let z = 3; z < tw.N - 4; z++) for (let x = 3; x < tw.N - 5; x++) {
+    if (![x, x + 1].every(k => tw.checkRoad(k, z - 1, 1).ok || tw.roadAt(k, z - 1))) continue;
+    if (![[x, z], [x + 1, z]].every(([a, b]) => tw.inBounds(a, b) && !tw.buildingOn(a, b) && !tw.roadAt(a, b) && !tw.terrain.isWater(a, b))) continue;
+    if (!tw.roadAt(x, z - 1) || !tw.roadAt(x + 1, z - 1)) tw.placeRoads([[x, z - 1], [x + 1, z - 1]], 1);
+    const A = tw.placeBuilding(ta, x, z, { instant: true }), B = A.ok && tw.placeBuilding(tb, x + 1, z, { instant: true });
+    if (A.ok && B.ok) return [A.building, B.building];
+    for (const P of [A, B]) if (P && P.ok && tw.buildings.has(P.building.id)) tw.removeBuilding(P.building.id, 0);
+  }
+  return null;
+};
 {
   const { MERGES } = await import('../src/defs.js');
   const tw = World.createNew({ N: 64, seed: 31, name: 'Joinbury' });
   tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
-  const made = [];
-  for (const m of MERGES) {
-    let done = false;
-    for (let z = 3; z < tw.N - 4 && !done; z++) for (let x = 3; x < tw.N - 5 && !done; x++) {
-      // a short street in front of the pair
-      if (![x, x + 1].every(k => tw.checkRoad(k, z - 1, 1).ok || tw.roadAt(k, z - 1))) continue;
-      if (![[x, z], [x + 1, z]].every(([a, b]) => tw.inBounds(a, b) && !tw.buildingOn(a, b) && !tw.roadAt(a, b) && !tw.terrain.isWater(a, b))) continue;
-      tw.placeRoads([[x, z - 1], [x + 1, z - 1]], 1);
-      const A = tw.placeBuilding(m.a[0], x, z, { instant: true }), B = tw.placeBuilding(m.b[0], x + 1, z, { instant: true });
-      const r = A.ok && B.ok ? tw.mergeBuildings(A.building.id, B.building.id) : { ok: false };
-      if (r.ok && r.building.type === m.to) { made.push(m.to); done = true; }
-      else for (const P of [A, B]) if (P.ok && tw.buildings.has(P.building.id)) tw.removeBuilding(P.building.id, 0);
-    }
+  const pairs = [];
+  for (const m of MERGES) for (const ta of m.a) for (const tb of m.b) pairs.push([ta, tb, m.to]);
+  const wrong = [];
+  for (const [ta, tb, to] of pairs) {
+    const P = placePair(tw, ta, tb);
+    const r = P ? tw.mergeBuildings(P[0].id, P[1].id) : { ok: false, reason: 'no room' };
+    if (!r.ok || r.building.type !== to) wrong.push(`${ta} + ${tb} → ${r.ok ? r.building.type : r.reason} (not ${to})`);
   }
-  ok(made.length === MERGES.length, `every join recipe works (${made.join(', ')})`);
+  ok(!wrong.length, `every pairing in every join recipe makes its building (${pairs.length} pairs, ${MERGES.length} recipes)${wrong.length ? ': ' + wrong.join('; ') : ''}`);
+}
+
+// 3d0b. a joined building is never a level the town can't build yet, a grand
+// home leads when it takes in a cottage, and the join says who must move out
+{
+  const tw = World.createNew({ N: 48, seed: 33, name: 'Clampton' });
+  tw.money = 1e6;
+  Object.defineProperty(tw, 'unlockPop', { value: 500 });
+  tw.research.done.push('carpentry', 'joining', 'masonry', 'stonework', 'architecture', 'homes2', 'homes3', 'brickmaking', 'urban', 'flats');
+  const [V, H] = placePair(tw, 'villa', 'house');
+  V.level = 1;   // a Manor House
+  let opt = tw.mergeOptions(V).find(m => m.other === H);
+  ok(opt && opt.type === 'mansion' && opt.level === 0, `a Manor House and a cottage make a ${opt && opt.name} until Grand Architecture is researched`);
+  tw.research.done.push('pigments', 'paints', 'grandarch');
+  opt = tw.mergeOptions(V).find(m => m.other === H);
+  ok(opt && opt.level === 1 && opt.name === 'Stately Home', `...and a ${opt && opt.name} after`);
+  const r = tw.mergeBuildings(V.id, H.id);
+  ok(r.ok && r.building.variant === V.variant, 'the villa leads: the joined house keeps its look, not the cottage\'s');
+  const [F, G] = placePair(tw, 'flats', 'flats');
+  F.level = G.level = 2;   // two Mansion Blocks, full
+  F.residents = new Array(34).fill(0); G.residents = new Array(34).fill(0);
+  tw.research.done.push('steam', 'electricity', 'hydraulics', 'highrise');
+  opt = tw.mergeOptions(F).find(m => m.other === G);
+  ok(opt && opt.name === 'Grand Apartments' && opt.moveOut === 68 - 50, `two full Mansion Blocks joined say ${opt && opt.moveOut} people must move out of the ${opt && opt.name}`);
+  F.residents = []; G.residents = [];
 }
 
 // 3d1. expanding onto a neighbouring plot

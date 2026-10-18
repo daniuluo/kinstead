@@ -2292,6 +2292,207 @@ MODELS.joinery = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// A brewhouse: the brewing tower with a louvred ventilator on its ridge (the
+// steam off the coppers escapes there), the copper house across the back of
+// the yard, and the taproom on the street with its sign, benches and casks.
+// The Brewery is brick and a storey taller, with a square works stack and a
+// horse dray loading in the yard.
+MODELS.brewhouse = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, back = -f.dep / 2, front = f.dep / 2;
+  const wall = L ? pal.brick : pal.stoneWall;
+  // the taproom first: its door is the one customers use
+  const pw = 0.7, px = W / 2 - pw / 2 - 0.02, pd = 0.5, pz = back + 0.36, ph = L ? 0.58 : 0.52;
+  house(c, {
+    x: px, z: pz, w: pw, d: pd, h: ph, floors: 2, wall: pal.wall, roof: L ? pal.slate : pal.roof, roofType: 'gable', rh: 0.26,
+    timber: L ? false : pal.timber, chimney: true, lit: 0.95, plinth: STONE, doorX: -pw * 0.2,
+  });
+  // the brewing tower at the other end, with a loading door and hoist beam
+  const tw = 0.46, td = 0.44, tx = -W / 2 + tw / 2 + 0.04, tz = back + 0.3, th = L ? 0.86 : 0.62, trh = 0.22;
+  house(c, { x: tx, z: tz, w: tw, d: td, h: th, floors: L ? 3 : 2, wall, roof: pal.slate, roofType: 'gable', rh: trh, nFront: 2, noDoor: true, chimney: false, fancy: false, lit: 0.7 });
+  gb.box(tx, th - 0.21, tz + td / 2 + 0.006, 0.09, 0.14, 0.012, '#4e3828');
+  gb.box(tx, th - 0.04, tz + td / 2 + 0.06, 0.016, 0.016, 0.12, '#3a2f28');
+  gb.box(tx, th - 0.17, tz + td / 2 + 0.11, 0.004, 0.13, 0.004, '#2a2620');
+  // louvred ventilator on the ridge
+  const vy = th + trh - 0.03;
+  gb.cbox(tx, vy, tz, 0.14, 0.1, 0.12, pal.wood, 0, 0.006);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) gb.box(tx, vy + 0.02 + i * 0.026, tz + s * 0.062, 0.12, 0.008, 0.008, '#3a2f28');
+  gb.gable(tx, vy + 0.1, tz, 0.18, 0.16, 0.06, pal.wood, pal.slate, 0.02);
+  if (!L) c.addSmoke(tx, vy + 0.18, tz, 'home');
+  // the copper house between them, across the back of the yard
+  const cx = (tx + tw / 2 + px - pw / 2) / 2, cw = px - pw / 2 - (tx + tw / 2) - 0.04, cz = back + 0.2;
+  worksShed(c, cx, cz, cw, 0.32, 0.34, 1, wall, pal.slate, 0.16, (u) => Math.abs(u - cx) < 0.1);
+  plainDoor(c, cx, cz + 0.16, 0.13, 0.2, '#4e3828');
+  if (L) {
+    // a square works stack through the copper house roof, and a sign on the tower
+    const sx = cx + cw / 2 - 0.08, sz = cz - 0.04;
+    gb.cbox(sx, 0, sz, 0.1, 1.15, 0.1, '#7f3f2e', 0, 0.01);
+    gb.cbox(sx, 1.15, sz, 0.125, 0.04, 0.125, '#5f3022', 0, 0.008);
+    c.addSmoke(sx, 1.22, sz, 'work');
+    sign(c, tx, th * 0.5, tz + td / 2 + 0.012, 0.36, 0.07, '#2f3a2a');
+  }
+  // the yard: casks stacked by the copper house, sacks of malt, a dray
+  const yz = cz + 0.24;
+  for (let i = 0; i < 4; i++) barrel(c, cx - cw / 2 + 0.07 + i * 0.07, yz);
+  for (let i = 0; i < 3; i++) barrel(c, cx - cw / 2 + 0.1 + i * 0.07, yz + 0.07, 0.95);
+  for (let i = 0; i < 2; i++) gb.blob(cx + cw / 2 - 0.08 + i * 0.05, c.gy(cx + cw / 2 - 0.08, yz) + 0.02, yz + 0.02, 0.03, 0.035, 0.025, '#d4bc88');
+  const dx = cx - 0.02, dz = front - 0.2;
+  if (L) {
+    // a horse dray with casks aboard, the horse towards the tower end
+    gb.push(dx, c.gy(dx, dz), dz, -Math.PI / 2);
+    gb.cbox(0, 0.06, 0, 0.18, 0.025, 0.3, '#6e5034', 0, 0.006);
+    for (const sx of [-1, 1]) for (const wz of [-0.09, 0.09]) gb.cyl(sx * 0.1, 0.05, wz, 0.05, 0.05, 0.012, 8, '#3a2a1f', 0, 0, Math.PI / 2);
+    for (let i = 0; i < 3; i++) gb.cyl(0, 0.1, -0.09 + i * 0.09, 0.034, 0.034, 0.075, 9, '#6e4a2c', 0, 0, Math.PI / 2);
+    gb.pop();
+    horse(c, dx - 0.27, dz, -Math.PI / 2);
+  } else handcart(c, dx, dz);
+  // out front of the taproom: a hanging sign, benches and a cask table
+  const fz = pz + pd / 2;
+  const sx2 = px + pw * 0.38, sz2 = front - 0.08, sy = c.gy(sx2, sz2);
+  gb.box(sx2, sy, sz2, 0.018, 0.4, 0.018, '#3a2f28');
+  gb.box(sx2 - 0.06, sy + 0.38, sz2, 0.14, 0.018, 0.018, '#3a2f28');
+  sign(c, sx2 - 0.08, sy + 0.27, sz2, 0.11, 0.09, rng.pick(['#5a3a1e', '#2f4a3a', '#6a2a2a']));
+  gb.cyl(sx2 - 0.08, sy + 0.31, sz2 + 0.01, 0.022, 0.022, 0.012, 8, '#d9b04a', 0, Math.PI / 2);
+  bench(c, px - pw * 0.25, fz + 0.12, Math.PI); bench(c, px + pw * 0.1, fz + 0.12, Math.PI);
+  barrel(c, px - pw * 0.08, fz + 0.24); barrel(c, px + pw * 0.26, fz + 0.22, 0.9);
+  lamp(c, px - pw / 2 - 0.02, front - 0.06, 0.28);
+  if (f.turned) gb.pop();
+};
+
+// A fish market: an open-sided market roof over slabs of the catch, an ice
+// house behind, nets drying and a boat drawn up on trestles. The Fish Hall
+// walls the market in with tall arched openings under a glazed roof, and the
+// ice house becomes a smokehouse with its stack.
+MODELS.fishmarket = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, back = -f.dep / 2, front = f.dep / 2;
+  const FISH = ['#b8c4cc', '#9fb0b8', '#c9d2d6', '#d98a7a', '#8a9aa6', '#a9b8a0'];
+  const slab = (x, z) => {
+    const y = c.gy(x, z);
+    for (const sx of [-1, 1]) gb.box(x + sx * 0.1, y, z, 0.02, 0.1, 0.1, STONE_D);
+    gb.cbox(x, y + 0.1, z, 0.26, 0.02, 0.13, '#d8d2c6', 0, 0.004);
+    for (let i = 0; i < 6; i++) gb.box(x - 0.09 + (i % 3) * 0.09, y + 0.12, z - 0.03 + Math.floor(i / 3) * 0.06, 0.07, 0.014, 0.024, rng.pick(FISH), rng.float(-0.4, 0.4));
+  };
+  // the market: open at L0, a hall with a glazed roof at L1
+  const mx = 0.24, mw = 1.32, md = 0.66, mz = 0;
+  if (L) {
+    const h = 0.44, hw = pal.brick;
+    door(c, mx, md / 2, 0.16, 0.24, '#3f4f5a');
+    footing(c, mx, mz, mw, md);
+    gb.cbox(mx, 0, mz, mw, h, md, hw, 0, 0.02);
+    for (let i = 0; i < 4; i++) {
+      const x = mx - mw / 2 + (i + 0.5) * (mw / 4);
+      if (Math.abs(x - mx) < 0.12) continue;
+      win(c, x, 0.07, md / 2, 0.15, 0.22, 'f', 0.95);
+      gb.cyl(x, 0.07 + 0.22 * (c.winH || 1) + 0.012, md / 2 + 0.004, 0.087, 0.087, 0.016, 10, '#e3dccd', 0, Math.PI / 2);
+    }
+    // a fanlight over the doors (its lower half sits behind the door frame)
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.cyl(mx, 0.26, md / 2 + 0.001, 0.09, 0.09, 0.008, 10, '#e3dccd', 0, Math.PI / 2); gb.noGlow();
+    for (const s of [-1, 1]) for (let i = 0; i < 2; i++) win(c, mx + s * mw / 2, 0.12, -0.14 + i * 0.28, 0.12, 0.18, s > 0 ? 'r' : 'l', 0.8);
+    gb.gable(mx, h, mz, mw + 0.02, md, 0.24, hw, pal.slate, 0.05, false, 0.035);
+    glassRoof(c, mx, h, mz, mw * 0.55, md, 0.24, false, 5);
+    sign(c, mx, h - 0.09, md / 2 + 0.012, 0.42, 0.06, '#2f4a5a');
+    // a louvred lantern on the ridge with a fish for a vane
+    gb.cbox(mx, h + 0.2, mz, 0.12, 0.08, 0.12, '#e3dccd', 0, 0.006);
+    gb.hip(mx, h + 0.28, mz, 0.16, 0.16, 0.07, pal.slate, 0.02);
+    gb.box(mx, h + 0.35, mz, 0.008, 0.08, 0.008, '#2f2c2a');
+    gb.box(mx, h + 0.42, mz, 0.1, 0.03, 0.006, '#c9a640');
+  } else {
+    // posts carrying a long roof, open all round
+    const eave = 0.3;
+    for (let i = 0; i <= 4; i++) for (const s of [-1, 1]) {
+      const x = mx - mw / 2 + 0.03 + (i * (mw - 0.06)) / 4, z = mz + s * (md / 2 - 0.03);
+      gb.box(x, c.gy(x, z) - 0.01, z, 0.026, eave + 0.01 - c.gy(x, z), 0.026, '#5e432c');
+    }
+    gb.box(mx, eave - 0.02, mz + md / 2 - 0.03, mw, 0.03, 0.03, '#5e432c');
+    gb.box(mx, eave - 0.02, mz - md / 2 + 0.03, mw, 0.03, 0.03, '#5e432c');
+    gb.gable(mx, eave, mz, mw + 0.04, md + 0.06, 0.18, pal.wood, pal.roof, 0.04, false, 0.03);
+    for (const x of [mx - 0.42, mx, mx + 0.42]) for (const z of [mz - 0.13, mz + 0.13]) slab(x, z);
+    sign(c, mx, eave - 0.07, mz + md / 2 + 0.012, 0.4, 0.06, '#2f4a5a');
+  }
+  // ice by the front, and baskets of the catch
+  for (let i = 0; i < 3; i++) crate(c, mx - 0.5 + i * 0.09, front - 0.1, 0.9, '#dfeaf0');
+  for (let i = 0; i < 2; i++) { const x = mx + 0.4 + i * 0.1, z = front - 0.09; gb.cyl(x, c.gy(x, z), z, 0.035, 0.03, 0.05, 8, '#a8804e'); gb.box(x, c.gy(x, z) + 0.05, z, 0.04, 0.008, 0.03, rng.pick(FISH)); }
+  // the ice house (a smokehouse at the Fish Hall) at the back of one end
+  const ix = -W / 2 + 0.22, iz = back + 0.24, iw = 0.38, id = 0.36, ih = L ? 0.46 : 0.3;
+  house(c, { x: ix, z: iz, w: iw, d: id, h: ih, floors: L ? 2 : 1, wall: L ? pal.brick : pal.stoneWall, roof: pal.slate, roofType: 'hip', rh: 0.14, nFront: 1, noDoor: true, chimney: false, fancy: false, lit: 0.4 });
+  plainDoor(c, ix, iz + id / 2, 0.08, 0.16, '#3f4f5a');
+  if (L) chimney(c, ix, ih + 0.02, ih + 0.3, iz - 0.06, 'work', STONE_D);
+  // nets drying on a frame, and a boat on trestles
+  const nz = iz + id / 2 + 0.16, ny = c.gy(ix, nz);
+  for (const s of [-1, 1]) gb.box(ix + s * 0.15, ny, nz, 0.016, 0.2, 0.016, '#4e3a2a');
+  gb.box(ix, ny + 0.19, nz, 0.33, 0.012, 0.012, '#4e3a2a');
+  for (let i = 0; i < 5; i++) gb.box(ix - 0.12 + i * 0.06, ny + 0.11, nz, 0.045, 0.075, 0.006, '#93a6b0');
+  const bx = ix, bz = front - 0.13;
+  gb.push(bx, c.gy(bx, bz), bz, Math.PI / 2);
+  for (const s of [-1, 1]) gb.box(0, 0, s * 0.09, 0.1, 0.05, 0.014, '#5e432c');
+  gb.roof(0, 0.05, 0, 0.13, 0.32, 0.065, 0, '#6e4a2c', 0);
+  gb.box(0, 0.05, 0, 0.11, 0.035, 0.24, '#7d5b3b');
+  gb.pop();
+  lamp(c, mx + mw / 2 - 0.02, front - 0.05, 0.28);
+  if (f.turned) gb.pop();
+};
+
+// A watch house: the station on the street with a blue lamp over the door, a
+// watch tower at its end, and a walled yard with the cells along the back.
+// The Police Station is brick, three storeys, with a porch, a clock in the
+// tower and the police wagon in the yard.
+MODELS.watchhouse = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, back = -f.dep / 2, front = f.dep / 2;
+  const wall = L ? pal.brick : pal.stoneWall;
+  // the station
+  const hw = 0.84, hd = 0.48, hx = -W / 2 + hw / 2 + 0.02, hz = back + 0.3, floors = L ? 3 : 2, h = L ? 0.78 : 0.52;
+  house(c, { x: hx, z: hz, w: hw, d: hd, h, floors, wall, roof: pal.slate, roofType: 'hip', rh: 0.2, nFront: L ? 5 : 4, doorX: 0, chimney: true, fancy: false, lit: 0.9, plinth: STONE });
+  const hf = hz + hd / 2;
+  gb.glow(1.0, 1.4, 2.2, 3.0); gb.box(hx, 0.21, hf + 0.03, 0.04, 0.05, 0.03, '#b8d0ff'); gb.noGlow();
+  gb.box(hx, 0.2, hf + 0.012, 0.012, 0.012, 0.04, '#2f2c2a');
+  sign(c, hx, h / floors + 0.01, hf + 0.012, 0.34, 0.05, '#2f3e5a');
+  if (L) portico(c, hx, hf, 0.24, 0.2, 2, pal.slate);
+  // the watch tower beside it (a clock in it at the Police Station)
+  const s = L ? 1 : 0.9, tx = hx + hw / 2 + 0.13, tz = back + 0.2, H = L ? 1.25 : 0.95;
+  footing(c, tx, tz, 0.26 * s, 0.26 * s);
+  gb.cbox(tx, 0, tz, 0.26 * s, H, 0.26 * s, wall, 0, 0.02);
+  gb.cbox(tx, H, tz, 0.32 * s, 0.045, 0.32 * s, STONE_D, 0, 0.012);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cbox(tx + sx * 0.125 * s, H + 0.045, tz + sz * 0.125 * s, 0.07 * s, 0.07, 0.07 * s, wall, 0, 0.01);
+  gb.roof(tx, H + 0.11, tz, 0.3 * s, 0.3 * s, 0.24, 0, pal.slate);
+  gb.box(tx, H + 0.33, tz, 0.011, 0.22, 0.011, '#2f2c2a');
+  gb.box(tx + 0.055, H + 0.47, tz, 0.11, 0.065, 0.004, rng.pick(['#2f3e5a', '#a8473a', '#3f6a8f']));
+  for (let k = 0; k < 2; k++) win(c, tx, H * (0.3 + k * 0.3), tz + 0.13 * s, 0.05, 0.08, 'f', 0.9);
+  if (L) {
+    gb.cyl(tx, H * 0.84, tz + 0.132, 0.065, 0.065, 0.012, 14, STONE_D, 0, Math.PI / 2);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(tx, H * 0.84, tz + 0.138, 0.055, 0.055, 0.01, 14, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+  }
+  c.addGlow(tx, H * 0.6 + 0.04, tz + 0.15 * s);
+  // the cells along the back of the yard, barred windows facing in
+  const yx0 = tx + 0.15, yx1 = W / 2, cx = (yx0 + yx1) / 2, cl = yx1 - yx0 - 0.02, cz = back + 0.16;
+  footing(c, cx, cz, cl, 0.26);
+  gb.cbox(cx, 0, cz, cl, 0.26, 0.26, wall, 0, 0.014);
+  gb.gable(cx, 0.26, cz, cl + 0.02, 0.26, 0.12, wall, pal.slate, 0.04, false, 0.03);
+  const n = Math.max(3, Math.round(cl / 0.16));
+  for (let i = 0; i < n; i++) {
+    const x = cx - cl / 2 + (i + 0.5) * (cl / n);
+    gb.box(x, 0.13, cz + 0.132, 0.05, 0.05, 0.008, '#2a2a2e');
+    for (let k = -1; k <= 1; k++) gb.box(x + k * 0.016, 0.13, cz + 0.137, 0.005, 0.05, 0.005, '#6a6a6e');
+  }
+  plainDoor(c, cx - cl / 2 + 0.08, cz + 0.13, 0.07, 0.16, '#3a3a3e');
+  // a high yard wall round the front, with gate piers
+  const wz = front - 0.06, wy = 0.12, wc = '#9a9284';
+  const seg = (ax, az, bx, bz) => { const mx = (ax + bx) / 2, mz = (az + bz) / 2; gb.cbox(mx, c.gy(mx, mz) - 0.01, mz, Math.abs(bx - ax) + 0.04, wy, Math.abs(bz - az) + 0.04, wc, 0, 0.012); };
+  const gx = cx + 0.08;
+  seg(yx0, wz, gx - 0.11, wz); seg(gx + 0.11, wz, yx1 - 0.02, wz);
+  seg(yx1 - 0.02, cz + 0.13, yx1 - 0.02, wz);
+  seg(yx0, tz + 0.13 * s + 0.02, yx0, wz);
+  gatePiers(c, gx, wz, 0.22);
+  if (L) coach(c, cx, cz + 0.36, Math.PI / 2, '#22304a', false);
+  else { handcart(c, cx + 0.1, cz + 0.32); barrel(c, yx1 - 0.1, cz + 0.24); }
+  lamp(c, hx + hw / 2 - 0.06, front - 0.06, 0.3); lamp(c, hx - hw / 2 + 0.06, front - 0.06, 0.3);
+  if (f.turned) gb.pop();
+};
+
 MODELS.park = (c, L) => {
   const { gb, rng } = c;
   const f = rowFrame(c);

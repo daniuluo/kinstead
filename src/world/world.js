@@ -53,7 +53,7 @@ export function scaledLevel(L, k) {
 // Neighbouring buildings that can be joined into one mixed-use building.
 const MERGE_SHOPS = ['market', 'bakery', 'tavern'];
 const MERGE_COST = [150, 300, 500];
-function mergeResult(a, o) {
+function mergeResult(a, o, has = () => true) {
   const one = (x) => BUILDINGS[x.type].size === 1 && !BUILDINGS[x.type].merged;
   if (!one(a) || !one(o)) return null;
   for (const m of MERGES) {
@@ -61,10 +61,13 @@ function mergeResult(a, o) {
     if (m.a.includes(a.type) && m.b.includes(o.type)) { base = a; other = o; }
     else if (m.a.includes(o.type) && m.b.includes(a.type)) { base = o; other = a; }
     if (!base) continue;
-    // keep the house's look when a house is involved
-    if (other.type === 'house' && base.type !== 'house') [base, other] = [other, base];
+    // keep the house's look when a house is involved (unless the recipe's
+    // first building leads: a villa taking in a cottage stays a villa)
+    if (!m.lead && other.type === 'house' && base.type !== 'house') [base, other] = [other, base];
     const def = BUILDINGS[m.to];
-    const level = Math.min(Math.max(a.level, o.level), def.levels.length - 1);
+    // the higher of the two levels, but never one the town can't build yet
+    let level = Math.min(Math.max(a.level, o.level), def.levels.length - 1);
+    while (level > 0 && !has(m.to, level)) level--;
     const flavor = m.to === 'shophouse' || m.to === 'inn' ? (base.type === 'house' || base.type === 'tavern' ? other.type : base.type) : null;
     const cost = Math.round(120 + def.levels[level].cost * 0.3);
     return { type: m.to, base, flavor, level, cost, name: def.levels[level].name };
@@ -675,8 +678,11 @@ export class World {
     for (const [dx, dz] of DIRS) {
       const o = this.buildingOn(b.x + dx, b.z + dz);
       if (!o || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
-      const m = mergeResult(b, o);
-      if (m && this.hasTech(BUILDINGS[m.type].tech)) out.push({ other: o, ...m, ok: this.money >= m.cost });
+      const m = mergeResult(b, o, (type, level) => this.hasTech(techForLevel(type, level)) && this.unlockPop >= unlockOf(type, level));
+      if (!m || !this.hasTech(BUILDINGS[m.type].tech)) continue;
+      // people who won't fit in what the two become
+      const people = b.residents.length + o.residents.length, room = capOf({ type: m.type, level: m.level, w: 2, d: 1, size: 2 }, 'housing');
+      out.push({ other: o, ...m, moveOut: Math.max(0, people - room), ok: this.money >= m.cost });
     }
     return out;
   }
