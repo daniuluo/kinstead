@@ -18,6 +18,8 @@ import { CONFIG } from '../config.js';
 import { serialize, deserialize } from './saves.js';
 import { RNG, makeNoise2D, fbm, hash2, smoothstep, clamp, lerp } from '../util/rng.js';
 import { firstName } from '../util/names.js';
+import { Sim } from '../sim/sim.js';
+import { starterSave } from '../world/starters.js';
 
 // Largest merged map. Two big valleys side by side are trimmed of empty
 // countryside at their outer edges to fit (never of buildings).
@@ -166,6 +168,19 @@ function segDist(px, pz, ax, az, bx, bz) {
 }
 
 // ------------------------------------------------------------- merging
+// A brand-new village to merge in: an empty valley with its founding
+// families, as in a new game, or one of the starter towns.
+export function newVillage({ starter = null, seed, N = 48, name }) {
+  if (starter) {
+    const data = structuredClone(starterSave(starter));
+    if (name) data.name = name;
+    return data;
+  }
+  const w = World.createNew({ N, seed, name });
+  new Sim({ world: w, speed: 0, emit() {}, on() {} }).seedFounders();
+  return serialize(w);
+}
+
 export function mergeTowns(dataA, dataB, arr = {}, opts = {}) {
   return mergeWorlds(deserialize(dataA), deserialize(dataB), arr, opts);
 }
@@ -1086,7 +1101,7 @@ export function reportLines(rep) {
   if (rep.linesTrimmed.length || rep.linesRemoved.length) {
     out.push(['directions_bus', [...rep.linesTrimmed.map(l => `${l.name} lost ${n(l.stops, 'stop')}`), ...rep.linesRemoved.map(l => `${l.name} (${l.from}) closed`)].join(' · ')]);
   }
-  if (rep.research) out.push(['science', `Research: ${rep.research.total} projects known (${rep.research.a} + ${rep.research.b}, shared ones counted once)`]);
+  if (rep.research) out.push(['science', `Research: ${n(rep.research.total, 'project')} known (${rep.research.a} + ${rep.research.b}, shared ones counted once)`]);
   if (rep.money) out.push(['savings', `Treasury: ${money(rep.money.a)} + ${money(rep.money.b)}${rep.refundTotal ? ` + ${money(rep.refundTotal)} refunds` : ''} = ${money(rep.money.total)}`]);
   if (rep.day) out.push(['calendar_month', `Calendar: day ${rep.day.total} (the later of day ${rep.day.a} and day ${rep.day.b})`]);
   return out;

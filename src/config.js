@@ -1,4 +1,4 @@
-// Global tunables for Hearthvale.
+// Global tunables for Kinstead.
 
 export const CONFIG = {
   // Google Drive cloud saves: paste your OAuth 2.0 Web Client ID here
@@ -11,7 +11,7 @@ export const CONFIG = {
   WATER_LEVEL: 0,
   START_MONEY: 4000,
   WALK_SPEED: 0.275,       // tiles per real second at 1x
-  CART_SPEED: 0.75,
+  CART_SPEED: 0.36,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
   VIEW_HEIGHT: 22,         // world units visible vertically at zoom 1

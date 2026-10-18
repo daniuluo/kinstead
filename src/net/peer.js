@@ -8,7 +8,7 @@
 
 const PEERJS_SRC = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js';
 const PEERJS_SRI = 'sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu';
-const PREFIX = 'hearthvale-';
+const PREFIX = 'hearthvale-';   // the game's old name: an internal id only, kept so the peer ids don't change
 // no 0/O, 1/I/L: easy to read out and type
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
@@ -69,6 +69,8 @@ function whenOpen(peer) {
 }
 
 // A PeerJS data connection as a raw string channel (see session.js makeLink).
+// `peer` is the other side's PeerJS id, which the host uses to recognise a
+// player it has removed.
 function channel(conn, peer = null) {
   const closers = [];
   let closed = false;
@@ -78,6 +80,7 @@ function channel(conn, peer = null) {
   const pc = conn.peerConnection;
   pc?.addEventListener?.('iceconnectionstatechange', () => { if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') fire(); });
   return {
+    peer: typeof conn.peer === 'string' ? conn.peer : null,
     send: (s) => { if (conn.open) conn.send(s); },
     onData: (fn) => conn.on('data', fn),
     onClose: (fn) => closers.push(fn),
@@ -90,34 +93,85 @@ function channel(conn, peer = null) {
 }
 
 // Host: claim a fresh invite code and hand every guest that connects to onLink.
-// onTrouble(message) reports problems that don't end the session.
+// renew() swaps the code for a new one: the old peer leaves the signalling
+// server, so its code finds nobody, but the guests who came in through it stay
+// connected. onTrouble(message) reports problems that don't end the session.
 export async function listen({ onLink, onTrouble = null }) {
   const Peer = await loadPeerJS();
-  for (let tries = 0; ; tries++) {
-    const code = newCode();
-    const peer = new Peer(PREFIX + code, { debug: 0 });
-    try { await whenOpen(peer); } catch (e) {
-      try { peer.destroy(); } catch {}
-      if (e && e.type === 'unavailable-id' && tries < 4) continue;
-      throw new Error(friendly(e));
+  const retired = new Set();
+  const claim = async () => {
+    for (let tries = 0; ; tries++) {
+      const code = newCode();
+      const peer = new Peer(PREFIX + code, { debug: 0 });
+      try { await whenOpen(peer); } catch (e) {
+        try { peer.destroy(); } catch {}
+        if (e && e.type === 'unavailable-id' && tries < 4) continue;
+        throw new Error(friendly(e));
+      }
+      peer.on('connection', (conn) => {
+        if (retired.has(peer)) { try { conn.close(); } catch {} return; }
+        conn.on('open', () => onLink(channel(conn)));
+      });
+      // already-connected guests carry on without the signalling server; new ones need it back
+      peer.on('disconnected', () => {
+        if (peer.destroyed || retired.has(peer)) return;
+        onTrouble?.('Lost touch with the PeerJS server. Players already here can keep playing; reconnecting so others can join…');
+        setTimeout(() => { try { if (!peer.destroyed && !retired.has(peer) && peer.disconnected) peer.reconnect(); } catch {} }, 2000);
+      });
+      peer.on('error', (e) => { if (e && e.type !== 'peer-unavailable') console.warn('Multiplayer:', e.type, e.message); });
+      return { code, peer };
     }
-    peer.on('connection', (conn) => conn.on('open', () => onLink(channel(conn))));
-    // already-connected guests carry on without the signalling server; new ones need it back
-    peer.on('disconnected', () => {
-      if (peer.destroyed) return;
-      onTrouble?.('Lost touch with the PeerJS server. Players already here can keep playing; reconnecting so others can join…');
-      setTimeout(() => { try { if (!peer.destroyed && peer.disconnected) peer.reconnect(); } catch {} }, 2000);
-    });
-    peer.on('error', (e) => { if (e && e.type !== 'peer-unavailable') console.warn('Multiplayer:', e.type, e.message); });
-    return { code, close: () => { try { peer.destroy(); } catch {} } };
+  };
+  let now = await claim();
+  return {
+    get code() { return now.code; },
+    async renew() {
+      const next = await claim();
+      const old = now;
+      now = next;
+      retired.add(old.peer);
+      try { old.peer.disconnect(); } catch {}
+      return next.code;
+    },
+    close: () => { for (const p of [now.peer, ...retired]) { try { p.destroy(); } catch {} } },
+  };
+}
+
+// A guest keeps one PeerJS id per browser tab (reloads included), so a host
+// that has removed someone recognises them if they knock again.
+const ID_KEY = 'hearthvale.mp.peer';
+function tabPeerId() {
+  try {
+    let id = sessionStorage.getItem(ID_KEY);
+    if (!/^hearthvale-g-[a-z0-9]{16}$/.test(id || '')) {
+      const a = new Uint32Array(16);
+      crypto.getRandomValues(a);
+      id = 'hearthvale-g-' + [...a].map(v => 'abcdefghijklmnopqrstuvwxyz0123456789'[v % 36]).join('');
+      sessionStorage.setItem(ID_KEY, id);
+    }
+    return id;
+  } catch { return null; }
+}
+
+// The tab's own id if the signalling server lets us have it (it may still be
+// holding it for a moment after the last connection closed), otherwise any id.
+async function guestPeer(Peer) {
+  const id = tabPeerId();
+  for (let tries = 0; ; tries++) {
+    const mine = id && tries < 3;
+    const peer = mine ? new Peer(id, { debug: 0 }) : new Peer({ debug: 0 });
+    try { await whenOpen(peer); return peer; } catch (e) {
+      try { peer.destroy(); } catch {}
+      if (!(mine && e && e.type === 'unavailable-id')) throw new Error(friendly(e));
+      await new Promise(r => setTimeout(r, 700));
+    }
   }
 }
 
 // Guest: connect to the town with this invite code.
 export async function connect(code) {
   const Peer = await loadPeerJS();
-  const peer = new Peer({ debug: 0 });
-  try { await whenOpen(peer); } catch (e) { try { peer.destroy(); } catch {} throw new Error(friendly(e)); }
+  const peer = await guestPeer(Peer);
   const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'raw' });
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -130,7 +184,7 @@ export async function connect(code) {
     };
     const t = setTimeout(() => fail(`Couldn't connect to the town ${formatCode(code)}. The host's network may block direct connections; try again in a moment.`), CONNECT_TIMEOUT);
     peer.on('error', (e) => fail(e && e.type === 'peer-unavailable'
-      ? `No town is open with the code ${formatCode(code)}. Check the code, and that the host still has Hearthvale open.`
+      ? `No town is open with the code ${formatCode(code)}. Check the code, and that the host still has Kinstead open.`
       : friendly(e)));
     conn.on('error', (e) => fail(friendly(e)));
     conn.on('open', () => {

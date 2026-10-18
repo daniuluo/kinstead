@@ -11,9 +11,9 @@ import { Agents } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Construction } from '../src/sim/construction.js';
 import { ReplicaSim, ReplicaConstruction } from '../src/net/replica.js';
-import { worldFromSnapshot, makeSnapshot } from '../src/net/sync.js';
-import { HostSession, GuestSession, makeLink } from '../src/net/session.js';
-import { runCommand, packResult } from '../src/commands.js';
+import { worldFromSnapshot, makeSnapshot, PROTOCOL } from '../src/net/sync.js';
+import { HostSession, GuestSession, makeLink, APPROVE_WAIT } from '../src/net/session.js';
+import { runCommand, packResult, VISITOR_REASON } from '../src/commands.js';
 import { BUILDINGS, TECHS } from '../src/defs.js';
 
 let failures = 0;
@@ -75,9 +75,10 @@ function step(g, dt) {
 }
 
 // --------------------------------------------------------- in-memory links
+// The host's end of a pipe carries the guest's peer id, as a PeerJS link does.
 const queue = [];
 let bytes = 0;
-function pipe() {
+function pipe(peer = null) {
   const ends = [{ data: [], close: [] }, { data: [], close: [] }];
   let closed = false;
   const raw = (me, other) => ({
@@ -86,7 +87,7 @@ function pipe() {
     onClose: (f) => me.close.push(f),
     close: () => { if (closed) return; closed = true; queue.push(() => { for (const e of ends) for (const f of e.close) f(); }); },
   });
-  return [raw(ends[0], ends[1]), raw(ends[1], ends[0])];
+  return [{ ...raw(ends[0], ends[1]), peer }, raw(ends[1], ends[0])];
 }
 const pump = () => { for (let i = 0; i < 100000 && queue.length; i++) queue.shift()(); };
 const until = async (pred, ms = 3000) => { const end = Date.now() + ms; while (!pred() && Date.now() < end) { pump(); await new Promise(r => setTimeout(r, 10)); } pump(); return pred(); };
@@ -144,7 +145,9 @@ hw.money = 50000;
   ok(/valid/.test(runCommand(host, { t: 'place', type: 'villa', x: 5, z: 5 }).reason), 'hidden building types cannot be placed directly');
   ok(/valid/.test(runCommand(host, { t: 'roads', tiles: [[0, 0], [999, 3]], level: 1 }).reason), 'tiles off the map are refused');
   ok(/valid/.test(runCommand(host, { t: 'upgrade', id: 1, look: '<script>' }).reason), 'unknown styles are refused');
-  ok(/host/.test(runCommand(host, { t: 'sandbox', opts: { infiniteMoney: true } }, { id: 5, name: 'X' }).reason), 'only the host may flip sandbox switches');
+  ok(/host/.test(runCommand(host, { t: 'sandbox', opts: { infiniteMoney: true } }, { id: 5, name: 'X', role: 'builder' }).reason), 'only the host may flip sandbox switches');
+  ok(runCommand(host, { t: 'tax', rate: 3 }, { id: 5, name: 'V', role: 'visitor' }).reason === VISITOR_REASON && hw.taxRate !== 3, 'a visitor\'s commands are refused, with the reason');
+  ok(runCommand(host, { t: 'tax', rate: 3 }, { id: 5, name: 'X' }).reason === VISITOR_REASON, '…and so are those of a player with no role at all');
   ok(!hw.sandbox.infiniteMoney, '…and a refused switch stays off');
   const spot = freeSpot(hw);
   const before = hw.money;
@@ -161,11 +164,17 @@ host.net = new HostSession(host, { name: 'Ada' });
 const guest = makeGame('guest');
 let ended = null;
 {
-  const [a, b] = pipe();
+  ok(host.net.approve && !host.net.locked, 'a new host is asked before anyone joins');
+  const [a, b] = pipe('peer-bo');
   host.net.addLink(makeLink(a));
-  const gs = new GuestSession(guest, makeLink(b), { name: 'Bo', onEnd: (why) => { ended = why; } });
-  let joined = false;
+  let joined = false, waited = false;
+  const gs = new GuestSession(guest, makeLink(b), { name: 'Bo', onEnd: (why) => { ended = why; }, onWait: () => { waited = true; } });
   gs.join().then(() => { joined = true; }, (e) => console.error(e));
+  await until(() => waited);
+  const ask0 = [...host.net.waiting.values()][0];
+  ok(waited && gs.waiting && !joined && host.net.players.length === 1 && ask0?.name === 'Bo' && host.toasts.some(t => /Bo wants to join/.test(t)),
+    'a newcomer waits while the host is asked ("Bo wants to join")');
+  host.net.letIn(ask0.id);
   await until(() => joined);
   ok(joined && guest.replica && guest.net === gs, 'the guest joined and loaded the town');
   ok(gs.players.length === 2 && gs.players.some(p => p.name === 'Ada' && p.host) && gs.me.name === 'Bo', `both players listed (${gs.players.map(p => p.name).join(', ')})`);
@@ -311,6 +320,8 @@ let ended = null;
 }
 
 // ------------------------------------- 7. a second guest joins later
+// (newcomers come straight in from here; section 7c goes back to asking)
+host.net.setApprove(false);
 {
   const g2 = makeGame('guest2');
   const [a, b] = pipe();
@@ -335,9 +346,258 @@ let ended = null;
   ok(worldFromSnapshot(snap).buildings.size === hw.buildings.size, `a snapshot is plain JSON (${(JSON.stringify(snap).length / 1024).toFixed(0)} KB)`);
 }
 
+// ------------------------------- 7b. a hostile player can't hurt the others
+{
+  // a guest that ignores the rules: odd command names, prototype keys, markup,
+  // floods, and messages far too big
+  const [a, b] = pipe();
+  host.net.addLink(makeLink(a));
+  const evil = makeLink(b);
+  const replies = [];
+  evil.onMessage = (m) => { if (m.t === 'res') replies.push(m); };
+  evil.send({ t: 'hello', proto: PROTOCOL, name: '<img src=x onerror=alert(1)>Mallory' });
+  await until(() => host.net.players.length === 3);
+  const mal = host.net.players[host.net.players.length - 1];
+  ok(mal && !/[<>"]/.test(mal.name), `a player's name loses its markup ("${mal && mal.name}")`);
+  const townBefore = hw.townName, bBefore = hw.buildings.size;
+  const bad = [
+    { t: '__proto__' }, { t: 'constructor' }, { t: 'toString' },
+    { t: 'place', type: '__proto__', x: 5, z: 5 }, { t: 'place', type: 'constructor', x: 5, z: 5 },
+    { t: 'research', id: '__proto__' }, { t: 'research', id: 'constructor' },
+    { t: 'upgrade', id: 1, to: '__proto__' }, { t: 'line', mode: 'toString', stops: [] },
+    { t: 'sandbox', opts: { infiniteMoney: true } },
+  ];
+  bad.forEach((c, i) => evil.send({ t: 'cmd', id: 100 + i, c }));
+  await until(() => replies.length >= bad.length);
+  ok(replies.length === bad.length && replies.every(m => m.r.ok === false), `every rule-bending command is refused (${replies.filter(m => !m.r.ok).length}/${bad.length})`);
+  ok(hw.buildings.size === bBefore && !hw.sandbox.infiniteMoney, 'nothing changed in the town');
+  ok(({}).hidden === undefined && ({}).levels === undefined && Object.keys(Object.prototype).length === 0, 'nothing leaked onto Object.prototype');
+  replies.length = 0;
+  evil.send({ t: 'cmd', id: 200, c: { t: 'rename', name: '<script>alert(1)</script>Evilton' } });
+  await until(() => replies.length >= 1);
+  ok(!/[<>"]/.test(hw.townName) && hw.townName.includes('Evilton'), `a town name loses its markup ("${hw.townName}")`);
+  host.cmd({ t: 'rename', name: townBefore });
+  // a flood of commands is cut short
+  replies.length = 0;
+  for (let i = 0; i < 200; i++) evil.send({ t: 'cmd', id: 300 + i, c: { t: 'tax', rate: 5 } });
+  await until(() => replies.length >= 200);
+  const slowed = replies.filter(m => !m.r.ok && /slow down/i.test(m.r.reason || '')).length;
+  ok(slowed > 100, `a flood of 200 commands is mostly turned away (${slowed} refused)`);
+  // a message announced as enormous is dropped, not buffered
+  const raw = b;
+  const received = host.net.players.length;
+  raw.send('#999999999|' + 'x'.repeat(10));
+  for (let i = 0; i < 5; i++) raw.send('+' + 'x'.repeat(10000));
+  raw.send(JSON.stringify({ t: 'cmd', id: 1, c: { t: 'tax', rate: 5 } }) + ' '.repeat(300 * 1024));
+  pump();
+  ok(host.net.players.length === received && !evil.closed, 'oversized messages are ignored without breaking the link');
+  evil.send({ t: 'bye' });
+  await until(() => host.net.players.length === 2);
+}
+{
+  // a host that sends markup in names and colours: the guest cleans it on arrival
+  const g3 = makeGame('guest3');
+  const [a, b] = pipe();
+  const fakeHost = makeLink(a);
+  const gs3 = new GuestSession(g3, makeLink(b), { name: 'Di' });
+  fakeHost.onMessage = (m) => {
+    if (m.t !== 'hello') return;
+    const snap = JSON.parse(JSON.stringify(makeSnapshot(host)));
+    snap.save.name = '<img src=x onerror=alert(1)>Town';
+    snap.save.residents[0][1] = '<img src=x onerror=alert(2)>';
+    snap.save.residents[0][2] = '"><b>';
+    fakeHost.send({ t: 'welcome', you: { id: 9, name: '<b>Di</b>', color: 'red;background:url(//evil)' },
+      players: [{ id: 0, name: '<i>Boss</i>', color: 'javascript:alert(1)', host: true }, { id: 9, name: 'Di', color: '#4fb84a', extra: { __proto__: { polluted: 1 } } }], snap, cursors: [] });
+  };
+  let joined = false;
+  gs3.join().then(() => { joined = true; }, (e) => console.error(e));
+  await until(() => joined);
+  const r0 = g3.world.residents.get(host.world.residents.values().next().value.id);
+  ok(joined && r0 && !/[<>"]/.test(r0.first + r0.last), `villager names from a host lose their markup ("${r0 && r0.first}" "${r0 && r0.last}")`);
+  ok(!/[<>"]/.test(g3.world.townName), `the town name from a host loses its markup ("${g3.world.townName}")`);
+  ok(gs3.players.every(p => /^#[0-9a-fA-F]{3,8}$/.test(p.color) && !/[<>]/.test(p.name)) && gs3.me.color === '#888888', 'player names and colours from a host are cleaned');
+  ok(({}).polluted === undefined, 'nothing leaked onto Object.prototype');
+  gs3.close();
+  pump();
+}
+
+// --------------------------------- 7c. the host decides who gets in
+{
+  const N = host.net;
+  // a newcomer in a game of their own, knocking with this name from this browser tab (peer id)
+  const knock = async (name, peer) => {
+    const g = makeGame(name);
+    const [a, b] = pipe(peer);
+    N.addLink(makeLink(a));
+    const out = { g, joined: false, waited: false, error: null, ended: null };
+    out.s = new GuestSession(g, makeLink(b), { name, onWait: () => { out.waited = true; }, onEnd: (why) => { out.ended = why; } });
+    out.s.join().then(() => { out.joined = true; }, (e) => { out.error = e.message; });
+    await until(() => out.joined || out.error || out.waited);
+    return out;
+  };
+  const askFor = (name) => [...N.waiting.values()].find(a => a.name === name);
+  N.setApprove(true);
+  const players = () => N.players.length;
+
+  // turned away
+  const mal = await knock('Mallory', 'peer-mal');
+  ok(mal.waited && askFor('Mallory'), 'with asking on, a newcomer waits for the host');
+  N.turnAway(askFor('Mallory').id);
+  await until(() => mal.error);
+  ok(/turned down/.test(mal.error || '') && !N.waiting.size && !mal.g.world, `turned away, they're told so ("${mal.error}")`);
+  const mal2 = await knock('Mallory', 'peer-mal');
+  ok(/moment ago/.test(mal2.error || '') && !N.waiting.size, 'knocking again straight away is refused without asking the host again');
+
+  // nobody answers
+  N.approveWait = 150;
+  const kit = await knock('Kit', 'peer-kit');
+  await until(() => kit.error);
+  ok(kit.waited && /didn't answer/.test(kit.error || '') && !N.waiting.size && host.toasts.some(t => /Kit gave up/.test(t)), `a newcomer nobody answers is told after a while ("${kit.error}")`);
+  N.approveWait = APPROVE_WAIT;
+
+  // a waiting newcomer can't do anything yet, and can give up
+  {
+    const [a, b] = pipe('peer-pat');
+    N.addLink(makeLink(a));
+    const pat = makeLink(b), got = [];
+    pat.onMessage = (m) => got.push(m);
+    pat.send({ t: 'hello', proto: PROTOCOL, name: 'Pat' });
+    await until(() => got.some(m => m.t === 'wait'));
+    const tax = hw.taxRate;
+    pat.send({ t: 'cmd', id: 1, c: { t: 'tax', rate: tax === 1 ? 2 : 1 } });
+    pat.send({ t: 'cur', c: { x: 3, z: 3 } });
+    host.net.flush(true);
+    await until(() => false, 100);
+    ok(got.every(m => m.t === 'wait' || m.t === 'ping') && hw.taxRate === tax && players() === 2, 'someone still waiting gets no town and can\'t change it');
+    pat.send({ t: 'bye' });
+    await until(() => !N.waiting.size);
+    ok(!N.waiting.size && host.toasts.some(t => /Pat stopped waiting/.test(t)), 'if they stop waiting, the question goes away');
+  }
+
+  // only so many can wait at once
+  {
+    const got = [];
+    for (let i = 0; i < 5; i++) {
+      const [a, b] = pipe(`peer-q${i}`);
+      N.addLink(makeLink(a));
+      const l = makeLink(b);
+      got.push({ l, t: null });
+      l.onMessage = (m) => { if (m.t !== 'ping') got[i].t = m.t; };
+      l.send({ t: 'hello', proto: PROTOCOL, name: `Q${i}` });
+    }
+    await until(() => got.every(x => x.t));
+    ok(N.waiting.size === 4 && got.filter(x => x.t === 'refuse').length === 1, `at most four newcomers wait at once (${got.map(x => x.t).join(', ')})`);
+    for (const x of got) x.l.send({ t: 'bye' });
+    await until(() => !N.waiting.size);
+  }
+
+  // a refused connection can't try again on the same link
+  {
+    N.setApprove(false);
+    const [a, b] = pipe('peer-sly');
+    N.addLink(makeLink(a));
+    const sly = makeLink(b), got = [];
+    sly.onMessage = (m) => got.push(m.t);
+    sly.send({ t: 'hello', proto: 0, name: 'Sly' });
+    sly.send({ t: 'hello', proto: PROTOCOL, name: 'Sly' });
+    await until(() => got.includes('refuse'));
+    await until(() => false, 50);
+    ok(!got.includes('welcome') && players() === 2, 'a refused connection gets nowhere with a second hello');
+    N.setApprove(true);
+  }
+
+  // let in, then made a visitor
+  const eve = await knock('Eve', 'peer-eve');
+  N.letIn(askFor('Eve').id);
+  await until(() => eve.joined);
+  ok(eve.joined && players() === 3 && !differences(host, eve.g).length, 'let in, a newcomer gets the town');
+  N.setRole(eve.s.me.id, 'visitor');
+  await until(() => eve.s.me.role === 'visitor' && guest.net.players.find(p => p.id === eve.s.me.id)?.role === 'visitor');
+  ok(eve.s.me.role === 'visitor' && eve.g.toasts.some(t => /made you a visitor/.test(t)), 'a player made a visitor is told, and everyone sees it');
+  const tax = hw.taxRate;
+  const local = await ask(eve.g, { t: 'tax', rate: tax === 2 ? 4 : 2 });
+  ok(!local.ok && local.reason === VISITOR_REASON && eve.g.toasts.some(t => t.includes(VISITOR_REASON)), 'a visitor\'s own game says why it can\'t build');
+  let res = null;
+  eve.s.pending.set(999, (r) => { res = r; });
+  eve.s.link.send({ t: 'cmd', id: 999, c: { t: 'tax', rate: tax === 2 ? 4 : 2 } });
+  await until(() => res);
+  ok(res && !res.ok && res.reason === VISITOR_REASON && hw.taxRate === tax, 'a visitor that skips that check is refused by the host');
+  eve.g.input.hover = { x: 12, z: 9 };
+  step(eve.g, 0.2); pump(); pump();
+  ok(host.cursors.list.get(eve.s.me.id)?.x === 12 && guest.cursors.list.get(eve.s.me.id)?.z === 9, "a visitor's cursor still shows for the others");
+  N.setRole(eve.s.me.id, 'builder');
+  await until(() => eve.s.me.role === 'builder');
+  const back = await ask(eve.g, { t: 'tax', rate: tax === 2 ? 4 : 2 });
+  ok(back.ok && hw.taxRate !== tax && eve.g.toasts.some(t => /made you a builder/.test(t)), 'made a builder again, they can build');
+  host.cmd({ t: 'tax', rate: tax });
+
+  // removed
+  const eveId = eve.s.me.id;
+  N.kick(eveId);
+  await until(() => eve.ended && !guest.net.players.some(p => p.id === eveId));
+  ok(eve.ended === 'kicked' && eve.g.world && eve.g.world.buildings.size === hw.buildings.size, 'a removed player is told why, and keeps the town as it was');
+  ok(!N.players.some(p => p.id === eveId) && !guest.net.players.some(p => p.id === eveId) && !host.cursors.list.has(eveId), 'everyone else sees them go');
+  let late = null;
+  eve.s.request({ t: 'tax', rate: 1 }, (r) => { late = r; });
+  ok(late && !late.ok, 'their commands after that go nowhere');
+  const again = await knock('Eve', 'peer-eve');
+  const renamed = await knock('Evie', 'peer-eve');
+  const sameName = await knock('  EVE ', 'peer-other');
+  ok([again, renamed, sameName].every(x => /removed you/.test(x.error || '')) && !N.waiting.size,
+    'a removed player is turned away for the session: same tab under a new name, or the same name from elsewhere');
+  ok(host.toasts.some(t => /Turned away Eve: you removed them/.test(t)), 'the host hears about it');
+  const other = await knock('Gil', 'peer-gil');
+  ok(other.waited, 'someone else can still ask to join');
+  other.s.close();
+  await until(() => !N.waiting.size);
+  N.forgive(N.removed[0].id);
+  const forgiven = await knock('Eve', 'peer-eve');
+  ok(forgiven.waited && !N.removed.length, 'allowed back, they can ask again');
+  forgiven.s.close();
+  await until(() => !N.waiting.size);
+
+  // locked
+  const hal = await knock('Hal', 'peer-hal');
+  N.setLocked(true);
+  await until(() => hal.error);
+  ok(/locked/.test(hal.error || ''), `locking turns away anyone still waiting ("${hal.error}")`);
+  N.setApprove(false);
+  const ivy = await knock('Ivy', 'peer-ivy');
+  ok(/locked/.test(ivy.error || '') && players() === 2, 'a locked town lets nobody new in, even without asking');
+  N.setLocked(false);
+  const ivy2 = await knock('Ivy', 'peer-ivy');
+  ok(ivy2.joined && players() === 3, 'unlocked, newcomers come in again');
+  ivy2.s.close();
+  await until(() => players() === 2);
+
+  // joining as a visitor
+  N.setJoinRole('visitor');
+  const vic = await knock('Vic', 'peer-vic');
+  const vr = await ask(vic.g, { t: 'place', type: 'house', x: 5, z: 5 });
+  ok(vic.joined && vic.s.me.role === 'visitor' && !vr.ok && vr.reason === VISITOR_REASON, 'newcomers can join as visitors');
+  N.setJoinRole('builder');
+
+  // a new code keeps everyone in
+  N.transport = { renew: async () => 'NEWCDE', close() {} };
+  const before = players();
+  const code = await N.newCode();
+  ok(code === 'NEWCDE' && N.code === 'NEWCDE' && players() === before && !vic.ended, 'a new code keeps everyone who is already in');
+  vic.s.close();
+  await until(() => players() === 2);
+  N.setApprove(true);
+}
+
 // ---------------------------------------- 8. the host closes the town
 {
+  const g4 = makeGame('fay');
+  const [a, b] = pipe('peer-fay');
+  host.net.addLink(makeLink(a));
+  let fay = null, waited = false;
+  new GuestSession(g4, makeLink(b), { name: 'Fay', onWait: () => { waited = true; } }).join().catch((e) => { fay = e.message; });
+  await until(() => waited);
   host.net.close();
+  await until(() => fay);
+  ok(/closed/.test(fay || ''), `someone waiting to join is told the town closed ("${fay}")`);
   await until(() => ended, 2000);
   ok(ended === 'ended', `the guest is told the host closed the town ("${ended}")`);
   let res = null;

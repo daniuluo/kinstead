@@ -21,11 +21,13 @@ const HATS = ['#b89a5a', '#5e3a2a', '#d8cfbf', '#3a4250', '#4e3828'];
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 // Villagers are little abstract figures, sized against the buildings: a
-// storey is about 0.28 units (~3 m), so a grown-up stands about 0.16 tall.
+// storey is about 0.28 units (~3 m), so a grown-up stands about 0.14 tall.
 // Two stubby legs swing from the hip so they really walk on the ground, a
 // trouser-coloured hip, a shirt-coloured body with rounded shoulders, a small
 // head, sometimes a hat, and a soft shadow where they stand.
-const HIP = 0.06, SWING = 0.5;
+// FIG sets the overall size against the buildings: a grown-up comes up to
+// about four fifths of a front door.
+const HIP = 0.06, SWING = 0.5, FIG = 0.88;
 const GEO = {
   leg: flat(new THREE.CylinderGeometry(0.0085, 0.0075, HIP, 6).translate(0, -HIP / 2, 0)),
   base: flat(new THREE.CylinderGeometry(0.018, 0.019, 0.022, 8).translate(0, HIP, 0)),
@@ -42,7 +44,7 @@ const GEO = {
 };
 const HEAD_Y = 0.155, HAT_Y = 0.168;
 // one full stride (two steps) covers this much ground, so feet never slide
-const strideLen = (s) => HIP * s * SWING;
+const strideLen = (s) => HIP * s * FIG * SWING;
 
 export function lookOf(r) {
   const g = new RNG(r.look >>> 0);
@@ -60,12 +62,26 @@ export function lookOf(r) {
   };
 }
 
-// How many villagers an open-air place holds at once: so many per tile,
-// and a little more with each upgrade.
+// The kind of outing a building is for, or null if villagers don't visit it
+// (homes, workplaces and schools count their own people). A full place sends
+// visitors on to another of the same kind.
+export function visitKind(def) {
+  if (def.park) return def.outdoor ? 'park' : null;
+  if (def.shop) return 'shop';
+  if (def.leisure) return 'tavern';
+  const sv = servicesOf(def);
+  if (sv.includes('culture')) return 'chapel';
+  if (sv.includes('health')) return 'clinic';
+  return null;
+}
+
+// How many visitors a place holds at once: so many per tile, and more with
+// each upgrade (open-air places grow a little less).
 export function visitorCap(b) {
-  const def = BUILDINGS[b.type];
-  if (!def.outdoor || !def.park) return Infinity;
-  return Math.max(2, Math.round((def.visitors || 3) * fw(b) * fd(b) * (1 + 0.3 * b.level)));
+  const def = BUILDINGS[b.type], kind = visitKind(def);
+  if (!kind) return Infinity;
+  const base = def.visitors || { park: 3, shop: 4, tavern: 6, chapel: 8, clinic: 3 }[kind];
+  return Math.max(2, Math.round(base * fw(b) * fd(b) * (1 + (kind === 'park' ? 0.3 : 0.5) * b.level)));
 }
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -144,6 +160,7 @@ export class Agents {
     const taverns = this._candidates(d => d.leisure && !d.park);
     const chapels = this._candidates(d => servicesOf(d).includes('culture'));
     const schools = this._candidates(d => servicesOf(d).includes('education'));
+    const clinics = this._candidates(d => visitKind(d) === 'clinic');
     const pick = (list) => this._nearest(r, list);
     const plan = [];
     const home = r.home;
@@ -197,6 +214,15 @@ export class Agents {
       push(8.4 + R() * 2 + shift, has('devout') || R() < 0.6 ? pick(chapels) ?? pick(parks) : pickFar(parks));
       push(11.5 + R(), home);
       if (R() < 0.6 * outK) { push(14 + R() * 2, R() < 0.6 * shopK ? pick(shops) ?? pick(parks) : pickFar(parks)); push(16.6 + R(), home); }
+    }
+    // now and then a visit to the herbalist or the doctor, in the early
+    // afternoon while they're at home anyway (the old go most often)
+    const atSchool = r.school != null && this.world.buildings.get(r.school);
+    const free = r.age === 'elder' || (!atSchool && (r.age === 'child' || (r.age === 'adult' && r.job == null)));
+    if (clinics.length && free && R() < (r.age === 'elder' ? 0.25 : r.age === 'child' ? 0.08 : 0.06)) {
+      const t = r.age === 'elder' ? 12.6 + R() * 0.5 : r.age === 'child' ? 13.6 + R() * 0.3 : 13.1 + R() * 0.4;
+      push(t, pick(clinics));
+      push(t + 0.9 + R() * 0.5, home);
     }
     plan.sort((a, b) => a.t - b.t);
     r.plan = plan.filter((p, i) => i === 0 || p.dest !== plan[i - 1].dest);
@@ -297,6 +323,16 @@ export class Agents {
     const B = w.buildings.get(destId);
     if (!B) { if (r.walk) this._drop(r.walk); r.loc = 'in'; r.at = r.home; return; }
     const def = BUILDINGS[B.type];
+    // a visitor who finds the place full turns round (and doesn't pay)
+    if (this._visiting(r, B) && Number.isFinite(visitorCap(B)) && (this._occupancy().get(B.id) || 0) > visitorCap(B) && r.walk) {
+      this._occ = null;
+      r.at = destId;
+      r.loc = 'out';
+      const next = this._roomFor(r, null, B);
+      this.go(r, next ?? r.home);
+      if (r.loc === 'out') { if (r.walk) this._drop(r.walk); r.loc = 'in'; r.at = r.home; }
+      return;
+    }
     if (def.shop || (def.leisure && !def.park)) {
       const v = this.game.sim.recordVisit(B);
       if (v && r.age !== 'child') r.wealth = Math.round(((r.wealth ?? 60) - v) * 10) / 10;
@@ -315,7 +351,6 @@ export class Agents {
       wk.idle = 0.3;
       wk.target = null;
       r.loc = 'out';
-      if (!wk.working && this._occupancy().get(B.id) > visitorCap(B)) { this._occ = null; this.go(r, r.home); }
     } else {
       if (r.walk) this._drop(r.walk);
       r.loc = 'in';
@@ -323,32 +358,42 @@ export class Agents {
   }
 
   // ------------------------------------------------------------ crowding
-  // Villagers at each open-air place, counting those already on their way.
+  // Is this villager a visitor there (not living, working, studying or building)?
+  _visiting(r, B) { return B.id !== r.home && B.id !== r.job && B.id !== r.school && B.id !== r.site; }
+
+  // Visitors at each place: out in a park, inside a shop, pub, chapel or
+  // clinic, or already on their way there.
   _occupancy() {
     if (this._occ) return this._occ;
     const occ = this._occ = new Map();
+    const add = (id) => occ.set(id, (occ.get(id) || 0) + 1);
     for (const wk of this.walkers) {
       const r = wk.r;
       if (!r || wk.ghost || wk.working) continue;
       const id = wk.mode === 'wander' ? r.at : wk.mode === 'path' ? wk.dest : null;
-      if (id != null) occ.set(id, (occ.get(id) || 0) + 1);
+      if (id != null && id !== r.home && id !== r.job && id !== r.school) add(id);
+    }
+    for (const r of this.world.residents.values()) {
+      if (r.loc === 'in' && r.at != null && r.at !== r.home && r.at !== r.job && r.at !== r.school) add(r.at);
     }
     return occ;
   }
 
   visitorsAt(b) { return { now: this._occupancy().get(b.id) || 0, cap: visitorCap(b) }; }
 
-  // Where a villager actually goes: a park or square that's full sends them
-  // to the nearest one with room, or keeps them at home.
-  _roomFor(r, id) {
-    const w = this.world, B = w.buildings.get(id);
-    if (!B || r.job === id || visitorCap(B) === Infinity) return id;
+  // Where a villager actually goes: a place that's full sends them to the
+  // nearest of the same kind with room, or keeps them at home. (With id null,
+  // just look for somewhere else like `full`.)
+  _roomFor(r, id, full = null) {
+    const w = this.world, B = full || w.buildings.get(id);
+    if (!B || !this._visiting(r, B) || visitorCap(B) === Infinity) return id;
     const occ = this._occupancy();
-    if ((occ.get(id) || 0) < visitorCap(B)) { occ.set(id, (occ.get(id) || 0) + 1); return id; }
+    if (!full && (occ.get(id) || 0) < visitorCap(B)) { occ.set(id, (occ.get(id) || 0) + 1); return id; }
+    const kind = visitKind(BUILDINGS[B.type]);
     const from = w.buildings.get(r.at) || w.buildings.get(r.home) || B;
     let best = null, bd = 14;
     for (const o of w.buildings.values()) {
-      if (o === B || visitorCap(o) === Infinity || !o.access || !o.connected || !isOpen(o)) continue;
+      if (o === B || visitKind(BUILDINGS[o.type]) !== kind || !o.access || !o.connected || !isOpen(o)) continue;
       if ((occ.get(o.id) || 0) >= visitorCap(o)) continue;
       const d = Math.abs(o.x - from.x) + Math.abs(o.z - from.z);
       if (d < bd) { bd = d; best = o; }
@@ -548,7 +593,7 @@ export class Agents {
     for (const wk of this.walkers) {
       if (i >= max) break;
       if (wk.delay > 0) continue;
-      const lk = wk.lk, s = lk.scale;
+      const lk = wk.lk, s = lk.scale * FIG;
       // Legs swing from the hip; the body dips a touch at mid-stride so the
       // planted foot stays on the ground. Workers bend to their task, elders stoop.
       const swing = wk.moving ? Math.sin(wk.phase) * SWING : wk.working ? Math.sin(wk.phase) * 0.12 : 0;

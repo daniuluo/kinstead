@@ -54,7 +54,7 @@ export class ReplicaSim extends Sim {
     let total = 0, filled = 0;
     this.jobsNeedingSkill = 0;
     for (const b of w.buildings.values()) {
-      const j = isOpen(b) ? capOf(b, 'jobs') : 0;
+      const j = this.jobsOf(b);
       if (!j) continue;
       total += j;
       const n = Math.min(j, b.workers.length);
@@ -69,7 +69,7 @@ export class ReplicaSim extends Sim {
     const w = this.world;
     const schools = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].seats);
     for (const s of schools) s.pupils = [];
-    const stats = { kids: 0, placed: 0, seats: schools.filter(s => isOpen(s) && s.connected).reduce((n, s) => n + capOf(s, 'seats'), 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
+    const stats = { kids: 0, placed: 0, seats: schools.filter(s => isOpen(s) && s.connected).reduce((n, s) => n + (this.seatsOf ? this.seatsOf(s) : capOf(s, 'seats')), 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
     for (const r of w.residents.values()) {
       const s = r.school != null ? w.buildings.get(r.school) : null;
       if (r.age === 'child') {

@@ -14,7 +14,7 @@ import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel, STYLES } from '../src/render/buildings.js';
 import { fw, fd } from '../src/world/world.js';
-import { BUILDINGS } from '../src/defs.js';
+import { BUILDINGS, TECHS } from '../src/defs.js';
 
 let failures = 0;
 const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg); } else console.log('ok  ', msg); };
@@ -393,7 +393,7 @@ const runUntil = (pred, days = 6) => {
   const c1 = fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true });
   ok(!c1.ok && /Research/.test(c1.reason), `a bakery needs research first ("${c1.reason}")`);
   ok(fresh.startResearch('commerce') && fresh.research.current === 'commerce', 'research project started');
-  fresh.addResearch(30);
+  fresh.addResearch(TECHS.commerce.cost);
   ok(fresh.research.done.includes('commerce') && fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true }).ok, 'finished research unlocks the bakery');
   ok(!fresh.canResearch('highrise'), 'later projects wait for their prerequisites');
 }
@@ -445,6 +445,8 @@ const runUntil = (pred, days = 6) => {
   const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
   const sim = tg.sim = new Sim(tg);
   sim.seedFounders();
+  // founders are random: make sure of two grown-ups to staff things
+  for (const r of [...tw.residents.values()].slice(0, 2)) { r.age = 'adult'; r.years = 30; r.school = null; }
   const well = [...tw.buildings.values()].find(b => b.type === 'well');
   // cobbled streets get lamps
   const roads = [];
@@ -477,7 +479,7 @@ const runUntil = (pred, days = 6) => {
   ok(!mf.powered && mf.working === 0 && mf.blockers.includes('power') && sim.incomeOf(mf) === 0, `an unpowered Manufactory makes nothing (lacks ${mf.blockers.join(', ')})`);
   ok(rv.lamps.length === 0 && rv.darkLamps === lamps, `street lamps go dark without power (${rv.darkLamps})`);
   const iss = computeIssues(tg).map(i => i.text);
-  ok(iss.some(t => /workshop stopped — no power/.test(t)), `issues list the stopped works ("${iss.find(t => /no power/.test(t))}")`);
+  ok(iss.some(t => /manufactory stopped — no power/.test(t)), `issues list the stopped works ("${iss.find(t => /no power/.test(t))}")`);
   for (let k = 0; k < 8 && (sim.recompute(), sim.powerShare < 1); k++) near('windgen', 16);
   ok(mf.working > 0 && !computeIssues(tg).some(i => /no power/.test(i.text)), 'it starts again once the power is back');
   // water: without it a bakery works at reduced output, a clinic reaches
@@ -499,7 +501,51 @@ const runUntil = (pred, days = 6) => {
   // workers: a school with no teachers has no places
   const sch = near('school');
   sim.recompute();
-  ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /school with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
+  ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /schoolhouse with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
+  // water comes through the mains under the streets: one well anywhere on
+  // the roads waters a bakery right across town, but nothing off the roads
+  const { runCommand } = await import('../src/commands.js');
+  const { townRoadTiles } = await import('../src/ui/working.js');
+  const well2 = near('well', 16);
+  let far = null, fd2 = -1;
+  for (let z = 1; z < tw.N - 1; z++) for (let x = 1; x < tw.N - 1; x++) {
+    const d = Math.abs(x - well2.x) + Math.abs(z - well2.z), c = d > fd2 && tw.checkBuild('bakery', x, z);
+    if (c && c.ok && c.access.some(a => a.conn)) { far = [x, z]; fd2 = d; }
+  }
+  const fb = tw.placeBuilding('bakery', far[0], far[1], { instant: true }).building;
+  let lone = null;
+  for (let z = 2; z < tw.N - 3 && !lone; z++) for (let x = 2; x < tw.N - 4 && !lone; x++) {
+    const row = [[x, z], [x + 1, z], [x + 2, z]];
+    const clear = (tx, tz) => tw.inBounds(tx, tz) && !tw.roadAt(tx, tz) && !tw.buildingOn(tx, tz) && !tw.terrain.isWater(tx, tz);
+    if (![-1, 0, 1, 2, 3].every(dx => [-1, 0, 1, 2].every(dz => clear(x + dx, z + dz)))) continue;
+    if (!row.every(([tx, tz]) => tw.checkRoad(tx, tz, 1).ok)) continue;
+    tw.placeRoads(row, 1);
+    const h = tw.placeBuilding('house', x + 1, z + 1, { instant: true });
+    if (h.ok) lone = h.building;
+  }
+  sim.recompute();
+  ok(fb.connected && fb.wet === 2 && !fb.blockers.includes('water'), `water reaches a bakery ${fd2} tiles from the well, through the mains`);
+  ok(lone && !lone.connected && lone.wet === 0, 'a home on a road that leads nowhere gets no water');
+  // power lines can be buried (Underground Cables): street by street or the
+  // whole town; the poles come down, the street looks better, saves keep it
+  near('windgen', 16);
+  sim.recompute();
+  rv.rebuild();
+  const poles0 = rv.poles, th = [...tw.buildings.values()].find(b => b.type === 'townhall'), a = th.access;
+  const appeal0 = sim.appeal[tw.idx(a.x, a.z)];
+  tw.setSandbox({ unlockAll: false });
+  ok(!runCommand(tg, { t: 'bury', tiles: tw.streetTiles(a.x, a.z) }).ok, 'burying power lines needs Underground Cables');
+  tw.setSandbox({ unlockAll: true });
+  ok(!runCommand(tg, { t: 'bury', tiles: [[-1, 3]] }).ok, 'a bury command with a tile off the map is refused');
+  const r1 = runCommand(tg, { t: 'bury', tiles: tw.streetTiles(a.x, a.z) });
+  sim.recompute();
+  rv.rebuild();
+  ok(r1.ok && r1.n > 0 && rv.poles < poles0 && sim.appeal[tw.idx(a.x, a.z)] > appeal0, `burying one street takes its poles down (${poles0} → ${rv.poles} poles) and makes it prettier`);
+  const r2 = runCommand(tg, { t: 'bury', tiles: townRoadTiles(tw) });
+  rv.rebuild();
+  ok(r2.ok && rv.poles === 0, `burying every line in town leaves no poles (${r2.n} more road tiles)`);
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
+  ok(townRoadTiles(tw).every(([x, z]) => back.buried[back.idx(x, z)] === 1), 'saves keep the buried power lines');
 }
 
 // 3g. road shapes and road selection: corners turn in a curve and junction

@@ -3,7 +3,7 @@
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
-import { fw, fd, isOpen, capOf } from '../world/world.js';
+import { fw, fd, isOpen, capOf, sizeK } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
 import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stageForAge, hasTrait } from './people.js';
 
@@ -28,7 +28,7 @@ export class Sim {
     this.dirty = true;
     this._hourAcc = 0;
     const mark = () => { this.dirty = true; };
-    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails']) this.world.on(e, mark);
+    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
     this.world.on('building:vacate', (b) => { this.dirty = true; this._onRemoved(b); });
   }
@@ -131,8 +131,8 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b) || !b.connected) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.kw) pGen += L.kw * this.staffOf(b);
-      else if (!def.park) pDem += 0.5 + 0.2 * (L.housing || 0) + 0.25 * (L.jobs || 0);
+      if (L.kw) pGen += L.kw * sizeK(b) * this.staffOf(b);
+      else if (!def.park) pDem += 0.5 + 0.2 * capOf(b, 'housing') + 0.25 * capOf(b, 'jobs');
     }
     pGen = Math.round(pGen);
     this.powerShare = pGen ? Math.min(1, pDem ? pGen / pDem : 1) : 0;
@@ -146,15 +146,12 @@ export class Sim {
         if (x >= 0 && z >= 0 && x < N && z < N) P[z * N + x] = 1;
       }
     }
-    // water sources first (some pumps need power and hands), so everything
-    // else can tell whether it has running water
+    // Water: wells, towers and pumps (some need power and hands too) feed
+    // the mains under the streets, which reach every road-connected building
     for (const b of w.buildings.values()) {
       const def = BUILDINGS[b.type];
       if (!servicesOf(def).includes('water') || !isOpen(b) || !b.connected) continue;
-      const L = def.levels[b.level], np = needsOf(b.type, b.level).power;
-      const k = this.staffOf(b) * (np && !b.powered ? np.without : 1);
-      if (L.supply) wSup += L.supply * k;
-      if (k > 0) stamp(b, L.radius, (i) => { this.coverage.water[i] = 1; });
+      wSup += this.supplyOf(b);
     }
     wSup = Math.round(wSup);
     this.utility = { water: { supply: wSup, demand: w.population }, power: { gen: pGen, demand: Math.round(pDem) } };
@@ -162,6 +159,14 @@ export class Sim {
     // what every building can do with what it has, then the services,
     // scenery and smoke that come of it
     for (const b of w.buildings.values()) this._working(b);
+    // the mains (for the water overlay): every connected street, and the
+    // buildings with running water
+    const Wc = this.coverage.water;
+    if (wSup > 0) for (let i = 0; i < N * N; i++) if (w.roads[i] && w.connected[i]) Wc[i] = 1;
+    for (const b of w.buildings.values()) {
+      if (b.wet !== 2) continue;
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) Wc[(b.z + dz) * N + b.x + dx] = 1;
+    }
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
@@ -175,6 +180,15 @@ export class Sim {
       if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += fumes * (1 - d / (L.pollution + 1)); });
     }
     this._lights();
+    // streets with their power lines underground look tidier
+    const buried = w.buried;
+    if (buried) for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!buried[z * N + x] || !w.roads[z * N + x]) continue;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, nz = z + dz;
+        if (nx >= 0 && nz >= 0 && nx < N && nz < N) this.appeal[nz * N + nx] += 0.8;
+      }
+    }
     // trees and water make places pleasant
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const tc = w.treeCount[z * N + x];
@@ -187,17 +201,24 @@ export class Sim {
     }
   }
 
+  // People a well, tower or pump draws water for: less without its crew
+  // (a tower still holds some) or the power its pumps need.
+  supplyOf(b) {
+    const L = BUILDINGS[b.type].levels[b.level], np = needsOf(b.type, b.level).power;
+    return (L.supply || 0) * sizeK(b) * (0.3 + 0.7 * this.staffOf(b)) * (np && !b.powered ? np.without : 1);
+  }
+
   // Share of a workplace's jobs that are filled (1 for buildings with no jobs).
   staffOf(b) {
     const jobs = capOf(b, 'jobs');
     return jobs ? Math.min(1, b.workers.length / jobs) : 1;
   }
 
-  // Running water at a building: 0 out of reach of any well or pump, 1 in
-  // reach but the town's water runs short here, 2 running water.
+  // Running water at a building: 0 not on the mains (not connected to the
+  // town's roads, or no well or pump in town), 1 on the mains but the town's
+  // water runs short here, 2 running water.
   waterAt(b) {
-    const w = this.world;
-    if (!this.coverage.water[b.z * w.N + b.x]) return 0;
+    if (!b.connected || !this.utility || !this.utility.water.supply) return 0;
     return hash2(b.id, 3, 9) < this.waterShare ? 2 : 1;
   }
 
@@ -272,8 +293,9 @@ export class Sim {
       const f = {};
       let h = 42;
       for (const s of SERVICE_KEYS) f[s] = !!this.coverage[s][i];
-      // not enough water to go round: some homes in reach still go dry
-      if (f.water && this.waterAt(b) < 2) { f.water = false; f.dry = true; }
+      // water comes through the mains; when it runs short some homes go dry
+      f.water = b.wet === 2;
+      if (b.wet === 1) f.dry = true;
       f.power = !!b.powered;
       // every contribution is recorded as [key, points, best possible] for the UI
       const parts = f.parts = [['base', 42, 42]];
@@ -320,16 +342,27 @@ export class Sim {
     }
   }
 
-  // Research points per day.
-  researchRate() {
-    const w = this.world;
-    let p = Math.floor(w.population / 30);
+  // Research points per day, and where they come from: town halls, schools,
+  // chapels and the like (by level, and only while working), plus one point
+  // for every 60 villagers.
+  researchSources() {
+    const w = this.world, by = new Map();
     for (const b of w.buildings.values()) {
       const src = RESEARCH_SOURCES[b.type];
-      if (src && isOpen(b) && b.connected) p += Math.round(src[Math.min(b.level, src.length - 1)] * Math.min(1, b.working ?? 1));
+      if (!src || !isOpen(b) || !b.connected) continue;
+      const p = Math.round(src[Math.min(b.level, src.length - 1)] * sizeK(b) * Math.min(1, b.working ?? 1));
+      if (p <= 0) continue;
+      const name = BUILDINGS[b.type].levels[b.level].name;
+      if (!by.has(name)) by.set(name, { name, n: 0, points: 0 });
+      const e = by.get(name);
+      e.n++; e.points += p;
     }
-    return p;
+    const out = [...by.values()].sort((a, b) => b.points - a.points);
+    const v = Math.floor(w.population / 60);
+    if (v) out.push({ name: 'Villagers', n: 0, points: v });
+    return out;
   }
+  researchRate() { return this.researchSources().reduce((n, s) => n + s.points, 0); }
 
   // Pupils fill the nearest schools with room; the oldest children get
   // places first (they're closest to finishing).
@@ -516,8 +549,8 @@ export class Sim {
       const v = this.incomeOf(b);
       if (v) { if (def.cat === 'industry') inc.industry += v; else inc.commerce += v; }
       if (L.upkeep) {
-        if (def.cat === 'services' || def.cat === 'transit') exp.services += L.upkeep;
-        else exp.buildings += L.upkeep;
+        if (def.cat === 'services' || def.cat === 'transit') exp.services += Math.round(L.upkeep * sizeK(b));
+        else exp.buildings += Math.round(L.upkeep * sizeK(b));
       }
     }
     for (let i = 0; i < w.roads.length; i++) {

@@ -173,7 +173,13 @@ export function applyRoadEdit(w, list, op) {
   const plan = planRoadEdit(w, list, op);
   if (!plan.n) return { ok: false, reason: plan.blocked.length ? plan.blocked[0].reason : 'No road there' };
   if (plan.short) return { ok: false, reason: plan.short };
-  for (const t of plan.tiles) if (!t.reason) w.roads[w.idx(t.x, t.z)] = t.to;
+  for (const t of plan.tiles) {
+    if (t.reason) continue;
+    const i = w.idx(t.x, t.z);
+    w.roads[i] = t.to;
+    // anything laid along a road that is taken up goes with it
+    if (!t.to && w.buried) w.buried[i] = 0;
+  }
   w.money += plan.refund - plan.cost;
   w.updateRoadNetwork();
   const skipped = plan.tiles.length - plan.n;

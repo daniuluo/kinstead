@@ -14,7 +14,7 @@ import { Agents } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Construction } from '../src/sim/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
-import { mergeTowns, layoutMerge, besideOffset, reportLines, MERGE_MAX_N } from '../src/save/merge.js';
+import { mergeTowns, layoutMerge, besideOffset, reportLines, MERGE_MAX_N, newVillage } from '../src/save/merge.js';
 import { BUILDINGS, TECHS, LINE_COLORS } from '../src/defs.js';
 import { auditTown } from './audit.js';
 
@@ -200,6 +200,9 @@ const T = {
   b: makeTown(48, 202, 'Bramblewick', { day: 23, research: ['commerce', 'hydraulics'] }),
   c: makeTown(32, 303, 'Cloverdale', { day: 9 }),
   d: makeTown(64, 404, 'Dunmere', { day: 40 }),
+  // brand-new villages, as merged in from the game: an empty valley and a starter town
+  e: newVillage({ seed: 777, N: 48, name: 'Freshby' }),
+  s: newVillage({ starter: 'mill', name: 'Millstead' }),
 };
 log('towns:', Object.entries(T).map(([k, d]) => `${k}=${d.name} ${d.N}×${d.N} (${d.buildings.length} buildings, ${d.residents.length} villagers)`).join(' · '));
 
@@ -214,6 +217,8 @@ runs.push(['apart with a gap', 'a', 'c', { x: 54, z: 10, rot: 3 }, 0]);
 runs.push(['small inside big', 'd', 'c', { x: 4, z: 4, rot: 1 }, 1]);
 runs.push(['big beside, trimmed', 'd', 'a', { ...besideOffset(64, 48, 'below'), rot: 0 }, 0]);
 runs.push(['a town with itself', 'a', 'a', { x: 30, z: 4, rot: 0 }, 0]);
+runs.push(['a brand-new village beside', 'a', 'e', { ...besideOffset(48, 48, 'above'), rot: 0 }, 1]);
+runs.push(['a starter town overlapping', 'a', 's', { x: 20, z: 10, rot: 1 }, 1]);
 
 const t0 = Date.now();
 let rivers = 0, moved = 0, refunded = 0;
@@ -265,8 +270,8 @@ if (wi > 0) {
   const fs = await import('node:fs');
   const dir = process.argv[wi + 1] || '.';
   fs.mkdirSync(dir, { recursive: true });
-  for (const [k, d] of Object.entries(T)) fs.writeFileSync(`${dir}/${d.name.toLowerCase()}.hearthvale.json`, JSON.stringify(d));
-  if (sample) fs.writeFileSync(`${dir}/merged.hearthvale.json`, JSON.stringify(sample.data));
+  for (const [k, d] of Object.entries(T)) fs.writeFileSync(`${dir}/${d.name.toLowerCase()}.kinstead.json`, JSON.stringify(d));
+  if (sample) fs.writeFileSync(`${dir}/merged.kinstead.json`, JSON.stringify(sample.data));
   log(`  wrote saves to ${dir}`);
 }
 

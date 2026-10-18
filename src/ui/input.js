@@ -6,7 +6,8 @@ import { fw, fd, capOf } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
-import { fmt } from './ui.js';
+import { fmt, esc } from './ui.js';
+import { householdsIn } from '../sim/people.js';
 import { roadRun, roadsInBox, roadsAt, planRoadEdit } from '../world/roadEdit.js';
 import { selTiles } from './roadSelect.js';
 
@@ -344,14 +345,16 @@ export class Input {
         const r = g.agents.pick(e.clientX, e.clientY);
         const an = r ? null : g.animals.pick(e.clientX, e.clientY);
         const b = r || an ? null : (this.pickBuilding(e) || w.buildingOn(h.x, h.z));
-        if (r) tip = `<b>${r.first} ${r.last}</b><br>${g.agents.activity(r)}`;
+        if (r) tip = `<b>${esc(r.first)} ${esc(r.last)}</b><br>${esc(g.agents.activity(r))}`;
         else if (an) tip = g.animals.describe(an);
         else if (b) {
           const def = BUILDINGS[b.type], L = def.levels[b.level];
           tip = `<b>${L.name}</b>`;
           if (b.con) tip += `<br>🏗️ ${b.con.kind === 'dismantle' || b.con.kind === 'demolish' ? 'coming down' : 'being built'} · ${Math.round(Math.min(1, b.con.done / b.con.work) * 100)}%`;
-          else if (L.housing) tip += `<br>${b.residents.length}/${capOf(b, 'housing')} residents · ${b.happiness}% happy`;
+          else if (L.housing) { const hh = householdsIn(this.world, b); tip += `<br>${b.residents.length}/${capOf(b, 'housing')} residents · ${hh} household${hh === 1 ? '' : 's'} · ${b.happiness}% happy`; }
           else if (L.jobs) tip += `<br>${b.workers.length}/${capOf(b, 'jobs')} workers`;
+          const v = !b.con && g.agents.visitorsAt(b);
+          if (v && Number.isFinite(v.cap)) tip += `<br>${v.now}/${v.cap} visitors${v.now >= v.cap ? ' · <span class="bad">full</span>' : ''}`;
           if (!b.connected && (!def.park || b.access)) tip += `<br><span class="bad">Not connected</span>`;
           for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: SOFT, alpha: 0.14, border: false });
         } else tiles.push({ x: h.x, z: h.z, color: SOFT, alpha: 0.12 });
@@ -415,7 +418,7 @@ export class Input {
           if (Math.hypot(x + 0.5 - cx, z + 0.5 - cz) <= radius) tiles.push({ x, z, color: def.service ? '#8fd0ff' : '#b8f08f', alpha: 0.13, border: false });
         }
       }
-      tip = `<b>${def.name}</b> · $${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
+      tip = `<b>${def.levels[0].name}</b> <span class="muted">${def.name}</span> · $${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
       if (c.trees) tip += `<br>Clears ${c.trees} tree${c.trees > 1 ? 's' : ''}`;
       ghost = { type: t.type, x: o.x, z: o.z, ok: c.ok, chk: c };
     } else if (t.kind === 'move' && h) {

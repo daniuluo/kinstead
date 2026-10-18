@@ -4,10 +4,12 @@
 // host, which checks it with the same World rules as its own actions and
 // applies it for everyone (see src/net/). Commands carry only what a player
 // chose, never rule-bending options, and each one is checked before it runs.
+// A guest the host has made a visitor can't run any.
 
 import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
+import { cleanText, hasKey } from './util/text.js';
 
 const SPEEDS = [0, 1, 2, 4, 8, 16, 32];
 const LOOKS = new Set(STYLES.map(s => s.id));
@@ -19,11 +21,12 @@ const tile = (w, c) => int(c.x, 0, w.N - 1) && int(c.z, 0, w.N - 1);
 const tiles = (w, list, max = 4096) => Array.isArray(list) && list.length > 0 && list.length <= max
   && list.every(p => Array.isArray(p) && p.length === 2 && int(p[0], 0, w.N - 1) && int(p[1], 0, w.N - 1));
 const ok = (v, reason) => (v ? { ok: true } : { ok: false, reason });
+export const VISITOR_REASON = "You're a visitor in this town: you can look around and point things out, but only builders can change it.";
 
 // t → { check(world, cmd), run(game, cmd), host: only the host may do it }
 export const COMMANDS = {
   place: {
-    check: (w, c) => !!BUILDINGS[c.type] && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6),
+    check: (w, c) => hasKey(BUILDINGS, c.type) && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6),
     run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0 }),
   },
   roads: {
@@ -65,7 +68,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.plantTree(c.x, c.z),
   },
   upgrade: {
-    check: (w, c) => int(c.id) && (c.to == null || !!BUILDINGS[c.to]) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
+    check: (w, c) => int(c.id) && (c.to == null || hasKey(BUILDINGS, c.to)) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
     run: (g, c) => g.world.upgradeBuilding(c.id, c.to || null, c.look),
   },
   expand: {
@@ -85,7 +88,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.demolishBuilding(c.id),
   },
   research: {
-    check: (w, c) => typeof c.id === 'string' && !!TECHS[c.id],
+    check: (w, c) => hasKey(TECHS, c.id),
     run: (g, c) => ok(g.world.startResearch(c.id), "That project can't be started yet"),
   },
   tax: {
@@ -93,11 +96,11 @@ export const COMMANDS = {
     run: (g, c) => { g.world.taxRate = c.rate; g.sim.recompute(); return { ok: true }; },
   },
   rename: {
-    check: (w, c) => typeof c.name === 'string' && c.name.trim().length > 0 && c.name.trim().length <= 40,
-    run: (g, c) => { g.world.townName = c.name.trim(); return { ok: true }; },
+    check: (w, c) => typeof c.name === 'string' && c.name.length <= 200 && cleanText(c.name).length > 0,
+    run: (g, c) => { g.world.townName = cleanText(c.name, 40); return { ok: true }; },
   },
   line: {
-    check: (w, c) => !!TRANSIT[c.mode] && Array.isArray(c.stops) && c.stops.length <= 64 && c.stops.every(s => int(s)),
+    check: (w, c) => hasKey(TRANSIT, c.mode) && Array.isArray(c.stops) && c.stops.length <= 64 && c.stops.every(s => int(s)),
     run: (g, c) => g.transit.createLine(c.mode, c.stops),
   },
   unline: {
@@ -113,6 +116,11 @@ export const COMMANDS = {
     run: (g, c) => { g.applySpeed(c.s); return { ok: true }; },
   },
   // the sandbox switches belong to whoever's town it is
+  // lay power lines underground along these streets (Underground Cables)
+  bury: {
+    check: (w, c) => tiles(w, c.tiles, w.N * w.N),
+    run: (g, c) => g.world.buryLines(c.tiles),
+  },
   sandbox: {
     host: true,
     check: (w, c) => !!c.opts && typeof c.opts === 'object' && Object.keys(c.opts).every(k => SANDBOX.includes(k) && typeof c.opts[k] === 'boolean'),
@@ -123,7 +131,8 @@ export const COMMANDS = {
 // Check and apply one command. `from` is the remote player who sent it
 // (null for the local player). Returns the World's own result object.
 export function runCommand(game, cmd, from = null) {
-  const def = cmd && typeof cmd === 'object' ? COMMANDS[cmd.t] : null;
+  if (from && from.role !== 'builder') return { ok: false, reason: VISITOR_REASON };
+  const def = cmd && typeof cmd === 'object' && hasKey(COMMANDS, cmd.t) ? COMMANDS[cmd.t] : null;
   if (!def) return { ok: false, reason: 'Unknown action' };
   if (!game.world || game.demo) return { ok: false, reason: 'No town is open' };
   if (from && def.host) return { ok: false, reason: 'Only the host can change that' };
@@ -168,6 +177,7 @@ export function describeCommand(cmd, r, world) {
     case 'line': return r.line ? `opened ${r.line.name}` : null;
     case 'unline': return 'closed a transit line';
     case 'sandbox': return 'changed the sandbox switches';
+    case 'bury': return r.n ? `put the power lines underground along ${r.n} stretch${r.n === 1 ? '' : 'es'} of road` : null;
     default: return null;
   }
 }
