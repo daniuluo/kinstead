@@ -31,6 +31,7 @@ export class Sim {
     for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines', 'dress']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
     this.world.on('building:vacate', (b) => { this.dirty = true; this._onRemoved(b); });
+    this.world.on('building:shrink', (b) => this._onShrunk(b));
   }
 
   get speed() { return this.game.speed; }
@@ -719,16 +720,31 @@ export class Sim {
       if (r.home === b.id) homeless.push(r);
     }
     if (!homeless.length) return;
-    // try to rehouse, otherwise they leave town
     this._links();
+    this._rehouse(homeless, b);
+  }
+
+  // A home now holds fewer people than live there: the households that moved
+  // in last move out until the rest fit.
+  _onShrunk(b) {
+    const out = this.world.movingOut(b, capOf(b, 'housing'));
+    if (!out.length) return;
+    this._links();
+    const gone = new Set(out.map(r => r.id));
+    b.residents = b.residents.filter(id => !gone.has(id));
+    this._rehouse(out, b);
+  }
+
+  // Find each person a home with room, otherwise they leave town.
+  _rehouse(people, from) {
     const vac = this.vacantHomes();
     const leaving = [];
-    for (const r of homeless) {
-      const h = vac.find(v => v.residents.length < capOf(v, 'housing'));
-      if (h) { r.home = h.id; h.residents.push(r.id); this.game.agents.relocate(r, b); }
+    for (const r of people) {
+      const h = vac.find(v => v !== from && v.residents.length < capOf(v, 'housing'));
+      if (h) { r.home = h.id; h.residents.push(r.id); this.game.agents.relocate(r, from); }
       else leaving.push(r.id);
     }
-    if (leaving.length) this.game.agents.depart(leaving, b);
+    if (leaving.length) this.game.agents.depart(leaving, from);
     this.dirty = true;
   }
 
