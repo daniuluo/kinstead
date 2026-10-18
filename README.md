@@ -174,6 +174,7 @@ src/net/                  multiplayer: sessions, sync, guests' replica sim, Peer
 scripts/check.js          headless smoke test
 scripts/net-check.js      headless multiplayer test
 scripts/playtest.js       headless playtest bot
+scripts/economy.js        price/upkeep vs value audit of every building
 scripts/starters.js       headless test of the starter towns
 scripts/merge-test.js     headless test for merging villages
 scripts/audit.js          town invariants shared by the headless tests

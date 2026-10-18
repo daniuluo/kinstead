@@ -154,16 +154,16 @@ export const BUILDINGS = {
     name: 'Joinery', cat: 'industry', size: 2, merged: true, hidden: true, tech: 'woodwork', icon: '🪚', branch: 'Joinery', accent: '#6e5034', pathIcon: 'carpenter',
     desc: 'Timber in, furniture and doors out.',
     levels: [
-      { name: 'Joinery Works', cost: 400, jobs: 8, income: 15 },
-      { name: 'Furniture Works', cost: 1100, jobs: 13, income: 16, pollution: 2, unlock: 60 },
+      { name: 'Joinery Works', cost: 700, jobs: 8, income: 15 },
+      { name: 'Furniture Works', cost: 1700, jobs: 13, income: 16, pollution: 2, unlock: 60 },
     ],
   },
   parishschool: {
     name: 'Church School', cat: 'services', size: 2, merged: true, hidden: true, service: 'education', services: ['education', 'culture'], tech: 'parish', icon: '📚', branch: 'Parish school', accent: '#5a3a6a', pathIcon: 'church',
     desc: 'Chapel and schoolroom together: teaches children and gives the parish a place to gather.',
     levels: [
-      { name: 'Parish School', cost: 500, upkeep: 10, jobs: 4, radius: 9, seats: 40, teaches: 2, edu: 3 },
-      { name: 'Cathedral School', tech: 'academies', cost: 1400, upkeep: 20, jobs: 8, radius: 13, seats: 80, teaches: 3, edu: 4, unlock: 120 },
+      { name: 'Parish School', cost: 700, upkeep: 14, jobs: 4, radius: 9, seats: 40, teaches: 2, edu: 3 },
+      { name: 'Cathedral School', tech: 'academies', cost: 1800, upkeep: 26, jobs: 8, radius: 13, seats: 80, teaches: 3, edu: 4, unlock: 120 },
     ],
   },
   almshouse: {
@@ -186,16 +186,16 @@ export const BUILDINGS = {
     name: 'Parkland', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, tech: 'gardening', icon: '🌳', branch: 'Park', accent: '#3f6a2f', pathIcon: 'park',
     desc: 'Lawns, a pond and a bandstand.',
     levels: [
-      { name: 'Town Park', cost: 200, upkeep: 3, appeal: 18, radius: 6 },
-      { name: 'Pleasure Gardens', cost: 600, upkeep: 6, appeal: 28, radius: 8, unlock: 60 },
+      { name: 'Town Park', cost: 450, upkeep: 5, appeal: 18, radius: 6 },
+      { name: 'Pleasure Gardens', cost: 1100, upkeep: 9, appeal: 28, radius: 8, unlock: 60 },
     ],
   },
   mansion: {
     name: 'Country House', cat: 'residential', size: 2, merged: true, hidden: true, tech: 'architecture', icon: '🏡', branch: 'Country mansion', accent: '#6a3f8a', pathIcon: 'villa',
     desc: 'A great house in its own grounds, for the town\'s wealthiest families.',
     levels: [
-      { name: 'Country Mansion', cost: 1200, housing: 14, tax: 3, appeal: 8, radius: 3, unlock: 60, req: { happiness: 62, water: true, health: true } },
-      { name: 'Stately Home', tech: 'grandarch', cost: 3000, housing: 20, tax: 3.6, appeal: 12, radius: 4, unlock: 200, req: { happiness: 72, water: true, health: true, education: true, power: true } },
+      { name: 'Country Mansion', cost: 2000, housing: 14, tax: 3, appeal: 8, radius: 3, unlock: 60, req: { happiness: 62, water: true, health: true } },
+      { name: 'Stately Home', tech: 'grandarch', cost: 3800, housing: 20, tax: 3.6, appeal: 12, radius: 4, unlock: 200, req: { happiness: 72, water: true, health: true, education: true, power: true } },
     ],
   },
   apartments: {
@@ -212,8 +212,8 @@ export const BUILDINGS = {
     name: 'Ironworks', cat: 'industry', size: 1, hidden: true, tech: 'metallurgy', icon: '🔨', branch: 'Foundry', accent: '#5a3a2a', pathIcon: 'local_fire_department',
     desc: 'Casts iron for the whole region: very profitable, very smoky.',
     levels: [
-      { name: 'Iron Foundry', cost: 900, jobs: 12, income: 19, pollution: 6, edu: 2 },
-      { name: 'Steelworks', cost: 2000, jobs: 18, income: 21, pollution: 7, edu: 3, unlock: 120, req: { power: true } },
+      { name: 'Iron Foundry', cost: 1600, jobs: 12, income: 19, pollution: 6, edu: 2 },
+      { name: 'Steelworks', cost: 3200, jobs: 18, income: 21, pollution: 7, edu: 3, unlock: 120, req: { power: true } },
     ],
   },
   orchard: {
@@ -294,9 +294,9 @@ export const BUILDINGS = {
     desc: 'Lucrative, but its smoke makes neighbours unhappy.',
     paths: { 1: ['foundry'] },
     levels: [
-      { name: 'Workshop', cost: 300, jobs: 4, income: 14, pollution: 3 },
-      { name: 'Smithy', tech: 'brickmaking', cost: 620, jobs: 7, income: 15, pollution: 4, unlock: 25 },
-      { name: 'Manufactory', tech: 'steam', cost: 1300, jobs: 14, income: 16, pollution: 5, unlock: 120, req: { power: true } },
+      { name: 'Workshop', cost: 400, jobs: 4, income: 14, pollution: 3 },
+      { name: 'Smithy', tech: 'brickmaking', cost: 800, jobs: 7, income: 15, pollution: 4, unlock: 25 },
+      { name: 'Manufactory', tech: 'steam', cost: 1800, jobs: 14, income: 16, pollution: 5, unlock: 120, req: { power: true } },
     ],
   },
 
@@ -306,7 +306,7 @@ export const BUILDINGS = {
     desc: 'Draws water into the mains under the streets, for every building on the roads — but only for so many people.',
     levels: [
       { name: 'Well', cost: 80, upkeep: 2, supply: 30 },
-      { name: 'Water Tower', tech: 'hydraulics', cost: 420, upkeep: 6, supply: 120, unlock: 60 },
+      { name: 'Water Tower', tech: 'hydraulics', cost: 360, upkeep: 5, supply: 120, unlock: 60 },
       { name: 'Waterworks', tech: 'steam', cost: 900, upkeep: 10, jobs: 3, supply: 300, unlock: 120, req: { power: true } },
     ],
   },
@@ -346,9 +346,9 @@ export const BUILDINGS = {
     name: 'Health Care', cat: 'services', size: 1, service: 'health', icon: '🩺',
     desc: 'Keeps villagers healthy.',
     levels: [
-      { name: 'Herbalist', cost: 300, upkeep: 8, jobs: 2, radius: 6, edu: 1 },
-      { name: 'Clinic', tech: 'medicine', cost: 650, upkeep: 15, jobs: 5, radius: 9, edu: 3, unlock: 60 },
-      { name: 'Hospital', tech: 'hospitals', cost: 1400, upkeep: 24, jobs: 9, radius: 13, edu: 4, unlock: 120, req: { power: true } },
+      { name: 'Herbalist', cost: 300, upkeep: 6, jobs: 2, radius: 6, edu: 1 },
+      { name: 'Clinic', tech: 'medicine', cost: 650, upkeep: 12, jobs: 5, radius: 9, edu: 3, unlock: 60 },
+      { name: 'Hospital', tech: 'hospitals', cost: 1400, upkeep: 20, jobs: 9, radius: 13, edu: 4, unlock: 120, req: { power: true } },
     ],
   },
   school: {
@@ -408,9 +408,9 @@ export const BUILDINGS = {
     name: 'Worship', cat: 'services', size: 1, service: 'culture', unlock: 25, icon: '🔔',
     desc: 'A place for gatherings, weddings and quiet.',
     levels: [
-      { name: 'Chapel', cost: 420, upkeep: 5, jobs: 1, radius: 8 },
-      { name: 'Church', tech: 'masonry', cost: 950, upkeep: 10, jobs: 3, radius: 12, unlock: 60 },
-      { name: 'Minster', cost: 2200, upkeep: 16, jobs: 5, radius: 16, unlock: 200 },
+      { name: 'Chapel', cost: 420, upkeep: 6, jobs: 1, radius: 8 },
+      { name: 'Church', tech: 'masonry', cost: 950, upkeep: 12, jobs: 3, radius: 12, unlock: 60 },
+      { name: 'Minster', cost: 2200, upkeep: 20, jobs: 5, radius: 16, unlock: 200 },
     ],
   },
   townhall: {
@@ -437,7 +437,7 @@ export const BUILDINGS = {
     name: 'Public Square', cat: 'parks', size: 2, park: true, outdoor: true, visitors: 4, unlock: 25, tech: 'architecture', icon: '⛲',
     desc: 'A cobbled square where villagers meet.',
     levels: [
-      { name: 'Plaza', cost: 420, upkeep: 4, appeal: 12, radius: 5 },
+      { name: 'Plaza', cost: 300, upkeep: 4, appeal: 12, radius: 5 },
       { name: 'Fountain Square', cost: 850, upkeep: 7, appeal: 20, radius: 7, unlock: 60 },
       { name: 'Grand Square', tech: 'civic', cost: 1500, upkeep: 10, appeal: 28, radius: 9, unlock: 120 },
     ],
