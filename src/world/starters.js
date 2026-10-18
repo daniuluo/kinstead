@@ -15,7 +15,7 @@ import { generateTerrain } from './terrain.js';
 import { Sim } from '../sim/sim.js';
 import { PathFinder } from '../sim/path.js';
 import { Transit } from '../sim/transit.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, TECHS } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { serialize, deserialize } from '../save/saves.js';
 
@@ -187,6 +187,11 @@ function headlessGame(w) {
 export function growStarter(def, { onDay } = {}) {
   const { N, seed } = def;
   const w = World.createNew({ N, seed, name: def.town });
+  // The founders' research: a town a few weeks along has already worked
+  // through its research list, so those points are banked from the start and
+  // each project completes as soon as it can begin (in order, prerequisites
+  // first). The town's own research then carries on from there.
+  w.research.bank += (def.research || []).reduce((n, id) => n + (TECHS[id] ? TECHS[id].cost : 0), 0);
   const rng = new RNG(seed ^ 0x2f6b1d3);
   // the founding buildings were given random looks: make them fixed
   for (const b of w.buildings.values()) b.variant = (rng.next() * 1e9) | 0;
@@ -334,9 +339,12 @@ export function growStarter(def, { onDay } = {}) {
   };
   const queue = [...(def.research || [])];
   const nextResearch = () => {
-    if (w.research.current) return;
-    while (queue.length && w.research.done.includes(queue[0])) queue.shift();
-    if (queue.length && w.canResearch(queue[0])) w.startResearch(queue.shift());
+    for (;;) {
+      if (w.research.current) return;
+      while (queue.length && w.research.done.includes(queue[0])) queue.shift();
+      if (!queue.length || !w.canResearch(queue[0])) return;
+      w.startResearch(queue.shift());
+    }
   };
 
   // Villagers spend money in shops and taverns as they go about their day;

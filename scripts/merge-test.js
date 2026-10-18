@@ -250,6 +250,27 @@ for (const [label, a, b, arr, days] of runs) {
     ok(za != null && zb != null && w.terrain.isWater(...from) && seen[to[1] * N + to[0]], `the river flows on across the join (z ${za} → ${zb}, ${r.rep.rivers} carried across)`);
   }
 }
+// buried power lines and street dressings stay with their streets
+{
+  const wA = deserialize(T.a);
+  let k = 0;
+  for (let i = 0; i < wA.N * wA.N; i++) if (wA.roads[i]) { wA.buried[i] = k & 1; wA.dress[i] = 1 + (k % 2); k++; }
+  const dA = JSON.parse(JSON.stringify(serialize(wA)));
+  const arr = { ...besideOffset(48, 48, 'right'), rot: 0 };
+  const r = checkMerge('dressed streets beside', dA, T.b, arr);
+  if (r) {
+    const w = r.w, L = layoutMerge(wA, deserialize(T.b), arr);
+    let kept = 0, wrong = 0, stray = 0;
+    for (let z = 0; z < wA.N; z++) for (let x = 0; x < wA.N; x++) {
+      const i = z * wA.N + x, X = L.ax + x, Z = L.az + z;
+      if (!wA.roads[i] || !w.inBounds(X, Z) || !w.roads[Z * w.N + X]) continue;
+      const j = Z * w.N + X;
+      if (w.buried[j] === wA.buried[i] && w.dress[j] === wA.dress[i]) kept++; else wrong++;
+    }
+    for (let j = 0; j < w.N * w.N; j++) if (!w.roads[j] && (w.buried[j] || w.dress[j])) stray++;
+    ok(kept > 20 && !wrong && !stray, `buried lines and dressings go with their streets (${kept} kept, ${wrong} changed, ${stray} off-street)`);
+  }
+}
 // something must actually have been settled across all those arrangements
 ok(moved > 0 && refunded >= 0, `overlapping plots were moved (${moved}) or refunded (${refunded})`);
 ok(runs.some(([l]) => l.startsWith('beside')), 'every side was tried');

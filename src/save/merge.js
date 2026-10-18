@@ -267,6 +267,8 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
 
   // ---- roads and track (the other town's buildings win over them)
   const roads = new Uint8Array(N * N), rails = new Uint8Array(N * N);
+  // buried power lines and street dressings go with their street
+  const buried = new Uint8Array(N * N), dress = new Uint8Array(N * N);
   const roadSeeds = [], dryWay = new Uint8Array(N * N);
   for (const s of [A, B]) {
     const sN = s.N;
@@ -279,6 +281,9 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
       if (o >= 0 && recs[o].s !== s) { if (v) rep.roadsDropped++; if (rv) rep.railsDropped++; continue; }
       if (v > roads[i]) roads[i] = v;
       if (rv) rails[i] = 1;
+      const k = z * sN + x;
+      if (v && s.w.buried && s.w.buried[k]) buried[i] = 1;
+      if (v && s.w.dress && s.w.dress[k] && !dress[i]) dress[i] = s.w.dress[k];
       // remember which streets and tracks ran on dry ground (not bridges)
       if (!s.w.terrain.isWater(x, z)) dryWay[i] = 1;
       roadSeeds.push(i, s.tag);
@@ -346,6 +351,8 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   w.townName = (arr.name || '').trim() || wA.townName;
   w.roads.set(roads);
   w.rails.set(rails);
+  w.buried.set(buried);
+  w.dress.set(dress);
   for (let i = 0; i < N * N; i++) {
     if (!roads[i] && !rails[i]) continue;
     const x = i % N, z = (i / N) | 0;
@@ -449,6 +456,8 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   w.nextId = Math.max(w.nextId, wA.nextId, wB.nextId + off, ...[...w.buildings.keys(), ...w.residents.keys(), ...w.lines.map(l => l.id)].map(i => i + 1));
   w.updateRoadNetwork();
   w.updateRailLinks();
+  // streets that were taken up keep no buried line or dressing
+  for (let i = 0; i < N * N; i++) if (!w.roads[i]) { w.buried[i] = 0; w.dress[i] = 0; }
 
   const data = serialize(w);
   if (opts.preview) return { data, world: w, report: rep, layout: L };
