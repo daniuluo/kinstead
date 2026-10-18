@@ -57,6 +57,39 @@ ok(true, `all building models build (${verts} verts total)`);
   }
   ok(true, `a shop with homes above builds for every trade it is joined from (${flavors.join(', ')})`);
 }
+// ...and depends only on the building, not on what the page built before it
+// (the title screen's random demo town): every model built in a fresh
+// process, and again in one that has built a different town first
+{
+  const { execFileSync } = await import('node:child_process');
+  const src = (p) => JSON.stringify(new URL(`../src/${p}`, import.meta.url).href);
+  const hashes = (warm) => execFileSync(process.execPath, ['--input-type=module', '-e', `
+    const { World } = await import(${src('world/world.js')});
+    const { growDemoTown } = await import(${src('world/demo.js')});
+    const { buildModel } = await import(${src('render/buildings.js')});
+    const { BUILDINGS } = await import(${src('defs.js')});
+    if (${warm}) {
+      const w = World.createNew({ N: 44, seed: ${warm}, name: 'T' });
+      growDemoTown(w, ${warm}, 1);
+      for (const b of w.buildings.values()) buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z) });
+    }
+    const ground = (x, z) => 0.5 + 0.08 * Math.sin(x * 1.7) + 0.06 * Math.cos(z * 1.3), out = [];
+    for (const [type, def] of Object.entries(BUILDINGS)) def.levels.forEach((_, level) => {
+      for (const variant of [21, 22]) {
+        const W = def.merged ? 2 : def.size, D = def.merged ? 1 : def.size;
+        const b = { type, level, variant, x: 3, z: 5, size: Math.max(W, D), w: W, d: D, baseY: 0.6, minY: 0.4, rot: variant % 4, rail: def.needsRail ? { x: 0, z: 0, dir: 0 } : null };
+        const at = buildModel(b, { ground }).geo.attributes;
+        let h = 2166136261;
+        for (const a of [at.position.array, at.color.array]) for (const x of new Uint8Array(a.buffer, a.byteOffset, a.byteLength)) h = Math.imul(h ^ x, 16777619);
+        out.push(type + ' L' + level + ':' + (h >>> 0).toString(16));
+      }
+    });
+    process.stdout.write(out.join('\\n'));
+  `]).toString().split('\n');
+  const cold = hashes(0), changed = [];
+  for (const warm of [101, 202]) hashes(warm).forEach((h, i) => { if (h !== cold[i]) changed.push(h.split(':')[0]); });
+  ok(cold.length > 100 && !changed.length, `building models are the same whatever was built before them (${cold.length} models${changed.length ? `; changed: ${[...new Set(changed)].slice(0, 6).join(', ')}` : ''})`);
+}
 
 // 1b. shops: on a street corner (b.corner) the shopfront turns the corner,
 // the model stays inside its plot and the villagers' way in stays the shop

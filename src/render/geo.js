@@ -18,8 +18,15 @@ const PRIM = {
   ico1: prep(new THREE.IcosahedronGeometry(1, 1)),
   dodec: prep(new THREE.DodecahedronGeometry(1, 0)),
 };
+// Cached shapes are keyed by their sizes to 3 decimals, and built from those
+// rounded sizes too: built from the exact sizes of whichever model asked first
+// (the title screen's random demo town, say), every later model sharing the
+// key would get that one's shape, and look a little different each page load.
+const q3 = (v) => Math.round(v * 1000) / 1000;
+
 const cylCache = new Map();
 function cylGeo(rt, rb, seg) {
+  rt = q3(rt); rb = q3(rb);
   const key = `${rt.toFixed(3)}|${rb.toFixed(3)}|${seg}`;
   let g = cylCache.get(key);
   if (!g) { g = prep(new THREE.CylinderGeometry(rt, rb, 1, seg, 1).translate(0, 0.5, 0)); cylCache.set(key, g); }
@@ -65,7 +72,8 @@ function wedgeGeo(w, d, h) {
 // "blocky" than a plain box while staying low-poly.
 const bevelCache = new Map();
 function bevelBoxGeo(w, h, d, b) {
-  b = Math.min(b, w * 0.3, d * 0.3);
+  w = q3(w); h = q3(h); d = q3(d);
+  b = q3(Math.min(b, w * 0.3, d * 0.3));
   const tb = Math.min(b * 0.8, h * 0.25);
   const key = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}|${b.toFixed(3)}`;
   const hit = bevelCache.get(key);
