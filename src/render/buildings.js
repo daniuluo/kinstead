@@ -376,6 +376,17 @@ function bay(c, x, z, h, wall, roof) {
   gb.noGlow();
 }
 
+// Something drawn only when `skip` is false: when it is, the drawing goes
+// to a builder that keeps nothing, so the random picks run as before and the
+// rest of the building comes out the same.
+const NO_GB = new Proxy({}, { get: () => () => NO_GB });
+function unseen(c, skip, draw) {
+  if (!skip) return draw();
+  const g = c.gb;
+  c.gb = NO_GB;
+  try { return draw(); } finally { c.gb = g; }
+}
+
 // A generic house body with roof, windows, door and optional chimney.
 // Style comes from the palette: material (plaster, painted, brick, stone,
 // timber-frame, clapboard or a stone/brick ground floor), roof shape and
@@ -454,12 +465,21 @@ function house(c, o) {
       const shop = f === 0 && o.shopWindow;
       // bareFront: the ground-floor front (or that many floors) is left for a shopfront
       if (f >= (o.bareFront === true ? 1 : o.bareFront || 0)) win(c, u, wy - (shop ? 0.02 : 0), hd + jz, shop ? ww * 1.6 : ww, shop ? wh * 1.3 : wh, 'f', o.lit);
-      if (!o.noBack && rng.chance(0.7)) win(c, u, wy, -hd - jz, ww, wh, 'b', o.lit);
+      if (!o.noBack && rng.chance(0.7)) {
+        // o.backClear: stretches of the back wall kept for a door, a sign or
+        // the like; o.backBars: the ground-floor windows barred
+        const clear = o.backClear && o.backClear.some(([x0, x1, y0, y1]) => u >= x0 && u <= x1 && wy >= y0 && wy <= y1);
+        unseen(c, clear, () => win(c, u, wy, -hd - jz, ww, wh, 'b', o.lit));
+        if (!clear && o.backBars && f === 0) for (let k = 1; k < 4; k++) gb.box(u - ww / 2 + (k * ww) / 4, wy, -hd - 0.014, 0.006, wh * (c.winH || 1), 0.006, IRON_D);
+      }
     }
     for (let i = 0; i < nS; i++) {
       const u = -hd + (i + 0.5) * (d / nS);
-      if (rng.chance(0.8)) win(c, hw + jz, wy, u, ww, wh, 'r', o.lit);
-      if (rng.chance(0.8)) win(c, -hw - jz, wy, u, ww, wh, 'l', o.lit);
+      // o.bareSide: the ground floor of the left (1) or right (2) side kept
+      // for a shopfront round the corner
+      const bare = (k) => f === 0 && o.bareSide & k;
+      if (rng.chance(0.8)) unseen(c, bare(2), () => win(c, hw + jz, wy, u, ww, wh, 'r', o.lit));
+      if (rng.chance(0.8)) unseen(c, bare(1), () => win(c, -hw - jz, wy, u, ww, wh, 'l', o.lit));
     }
   }
   if (alongZ && roofType !== 'hip' && roofType !== 'flat' && rh > 0.16) win(c, 0, h + rh * 0.22, rd / 2, 0.06, 0.07, 'f', o.lit);
@@ -879,15 +899,19 @@ MODELS.market = (c, L) => {
     crate(c, 0.26, 0.3); crate(c, 0.35, 0.22, 0.8, '#a88458'); barrel(c, -0.4, -0.32);
     if (rng.chance(0.6)) bench(c, -0.3, -0.28, Math.PI / 2);
   } else if (L === 1) {
+    const body = { z: -0.09, w: 0.72, d: 0.56, h: 0.5, floors: 2, nFront: 3, timber: pal.timber, alongZ: pal.alongZ }, P = backPlan(c, body, { hoist: true });
     house(c, {
-      z: -0.09, w: 0.72, d: 0.56, h: 0.5, floors: 2, wall: pal.wall, roof: pal.roof, roofType: 'gable',
-      rh: 0.28, alongZ: pal.alongZ, chimney: rng.chance(0.5), shopWindow: true, nFront: 3, doorX: 0, lit: 0.9,
-      timber: pal.timber,
+      ...body, wall: pal.wall, roof: pal.roof, roofType: 'gable',
+      rh: 0.28, chimney: rng.chance(0.5), shopWindow: true, doorX: 0, lit: 0.9, backClear: P.clear, bareSide: c.corner,
     });
     for (let i = 0; i < 7; i++) gb.boxC(-0.3 + i * 0.1, 0.28, 0.24, 0.1, 0.014, 0.15, i % 2 ? awnB : awnA, 0.45);
     // the shop sign is a fascia over the shopfront, between the awning and the windows above
     sign(c, 0, 0.288, 0.2, 0.26, 0.05, '#5e432c');
     crate(c, -0.34, 0.36); crate(c, -0.25, 0.38, 0.9, '#a88458'); barrel(c, 0.36, 0.36);
+    cornerShop(c, 'market', L, { x0: 0, w: body.w, fz: body.z + body.d / 2, d: body.d }, { fascia: '#5e432c', letter: '#e9dfc9', lit: true, awning: awnA });
+    // round the back: a crate on the hoist to the store, more by the door
+    shopBack(c, P, { fascia: '#5e432c', letter: '#e9dfc9', load: 'crate' });
+    backSpots(c, P, 2).forEach((p, i) => (i ? barrel(c, p.x, p.z, 0.8) : backCrate(c, p.x, p.z, '#a88458')));
   } else if (L >= 3) {
     // Market Hall: open arcade below, hall above, clock lantern on the roof
     footing(c, 0, -0.04, 0.9, 0.76);
@@ -909,25 +933,30 @@ MODELS.market = (c, L) => {
     }
     lamp(c, -0.44, 0.44, 0.3); lamp(c, 0.44, 0.44, 0.3);
   } else {
+    const body = { z: -0.09, w: 0.88, d: 0.68, h: 0.8, floors: 3, nFront: 4 }, P = backPlan(c, body, { hoist: true });
     house(c, {
-      z: -0.09, w: 0.88, d: 0.68, h: 0.8, floors: 3, wall: rng.chance(0.5) ? pal.stoneWall : pal.wall, roof: pal.slate,
-      roofType: 'hip', rh: 0.28, chimney: true, shopWindow: true, nFront: 4, doorX: 0, lit: 0.9, plinth: STONE_D, doorW: 0.13,
+      ...body, wall: rng.chance(0.5) ? pal.stoneWall : pal.wall, roof: pal.slate,
+      roofType: 'hip', rh: 0.28, chimney: true, shopWindow: true, doorX: 0, lit: 0.9, plinth: STONE_D, doorW: 0.13, backClear: P.clear, bareSide: c.corner,
     });
+    shopBack(c, P, { fascia: '#3b2f2a', load: 'crate' });
     for (let i = 0; i < 9; i++) gb.boxC(-0.4 + i * 0.1, 0.29, 0.3, 0.1, 0.014, 0.15, i % 2 ? awnB : awnA, 0.45);
     sign(c, 0, 0.298, 0.26, 0.42, 0.06, '#3b2f2a');
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, 0.312, 0.268, 0.34, 0.03, 0.01, '#e0c070'); gb.noGlow();
     lamp(c, -0.4, 0.42, 0.3); lamp(c, 0.4, 0.42, 0.3);
     crate(c, -0.27, 0.42); barrel(c, 0.27, 0.42);
+    cornerShop(c, 'market', L, { x0: 0, w: body.w, fz: body.z + body.d / 2, d: body.d }, { fascia: '#3b2f2a', lit: true, len: 0.44 });
   }
 };
 
 MODELS.bakery = (c, L) => {
   const { gb, rng, pal } = c;
   const H = [0.34, 0.52, 0.62][Math.min(L, 2)];
+  // the back door at the left end, the oven at the right under its stack
+  const body = { z: -0.07, w: [0.64, 0.76, 0.88][Math.min(L, 2)], d: [0.52, 0.58, 0.64][Math.min(L, 2)], h: H, floors: L ? 2 : 1, nFront: 3, timber: pal.timber };
+  const P = backPlan(c, body, { side: -1, yard: true });
   house(c, {
-    z: -0.07, w: [0.64, 0.76, 0.88][Math.min(L, 2)], d: [0.52, 0.58, 0.64][Math.min(L, 2)], h: H, floors: L ? 2 : 1,
-    wall: pal.forced || rng.chance(0.5) ? pal.wall : '#e2cfa8', roof: pal.thatched ? pal.thatch : pal.tile, roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.26, alongZ: false,
-    shopWindow: true, nFront: 3, doorX: 0, lit: 0.85, timber: pal.timber,
+    ...body, wall: pal.forced || rng.chance(0.5) ? pal.wall : '#e2cfa8', roof: pal.thatched ? pal.thatch : pal.tile, roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.26, alongZ: false,
+    shopWindow: true, doorX: 0, lit: 0.85, backClear: P.clear, bareSide: c.corner,
   });
   chimney(c, 0.2, 0.1, H + 0.36, -0.24, 'work', '#8f4f3a');
   // bread sign on a post
@@ -949,20 +978,37 @@ MODELS.bakery = (c, L) => {
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H - 0.065, 0.268, 0.28, 0.035, 0.01, '#e0c070'); gb.noGlow();
     lamp(c, 0.42, 0.44, 0.3);
   }
+  cornerShop(c, 'bakery', L, { x0: 0, w: body.w, fz: body.z + body.d / 2, d: body.d }, { fascia: '#5e432c', letter: '#e9dfc9', lit: L >= 1, awning: L ? pal.awning : null });
+  // round the back: the bread oven built out from the wall under its stack,
+  // and sacks of flour by the back door
+  shopBack(c, P, { fascia: '#5e432c', letter: '#e9dfc9' });
+  breadOven(c, 0.2, P.zb, '#9a5a42');
+  for (const p of backSpots(c, P, 3)) sack(c, p.x, p.z, '#ece6da');
 };
+
+// A bread oven built out from a back wall at (x, zb): a brick base with the
+// ash door in it and the dome of the oven over it.
+function breadOven(c, x, zb, brick) {
+  const { gb } = c;
+  const od = Math.max(0.045, Math.min(0.065, zb + 0.47)), z = zb - od / 2 + 0.01;
+  footing(c, x, z, 0.18, od);
+  gb.cbox(x, 0, z, 0.18, 0.09, od, brick, 0, 0.01);
+  gb.sphere(x, 0.09, zb, od, shade(brick, 1.06), 1, 0.9);
+  gb.box(x, 0.022, zb - od + 0.008, 0.06, 0.04, 0.006, '#2a2018');
+}
 
 MODELS.tavern = (c, L) => {
   const { gb, rng, pal } = c;
   if (L === 0) {
     house(c, {
       z: -0.09, w: 0.74, d: 0.56, h: 0.58, floors: 2, wall: pal.wall, roof: pal.thatched ? pal.thatch : pal.tile,
-      roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.3, timber: true, chimney: true, lit: 0.95, plinth: STONE,
+      roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.3, timber: true, chimney: true, lit: 0.95, plinth: STONE, bareSide: c.corner,
     });
   } else if (L >= 2) {
     // Coaching Inn: tall inn, a stable wing with a carriage arch, and a coach waiting outside
     house(c, {
       x: -0.17, z: -0.12, w: 0.6, d: 0.66, h: 0.86, floors: 3, wall: pal.wall, roof: pal.slate,
-      roofType: 'gable', rh: 0.32, timber: true, chimney: true, lit: 0.95, plinth: STONE, dormers: 1, nFront: 3,
+      roofType: 'gable', rh: 0.32, timber: true, chimney: true, lit: 0.95, plinth: STONE, dormers: 1, nFront: 3, bareSide: c.corner & 1,
     });
     footing(c, 0.3, -0.12, 0.34, 0.66);
     gb.cbox(0.3, 0, -0.12, 0.34, 0.5, 0.66, pal.wall, 0, 0.016);
@@ -979,7 +1025,7 @@ MODELS.tavern = (c, L) => {
   } else {
     house(c, {
       x: -0.07, z: -0.1, w: 0.8, d: 0.62, h: 0.84, floors: 3, wall: pal.wall, roof: pal.slate,
-      roofType: 'gable', rh: 0.32, timber: true, chimney: true, lit: 0.95, plinth: STONE, dormers: 2,
+      roofType: 'gable', rh: 0.32, timber: true, chimney: true, lit: 0.95, plinth: STONE, dormers: 2, bareSide: c.corner & 1,
     });
     footing(c, 0.4, -0.14, 0.18, 0.44);
     gb.cbox(0.4, 0, -0.14, 0.18, 0.27, 0.44, pal.wood, 0, 0.012);
@@ -997,6 +1043,22 @@ MODELS.tavern = (c, L) => {
   gb.box(tx, ty, tz, 0.016, 0.065, 0.016, '#3f342c');
   gb.cyl(tx, ty + 0.065, tz, 0.055, 0.055, 0.01, 8, '#7a5636');
   lamp(c, 0.14, 0.42, 0.26);
+  // a pub on a street corner: the bar's windows down the side street under
+  // a painted fascia, and a lantern on the corner (the inn's wings take the
+  // right-hand side)
+  if (c.corner) {
+    const B = [{ x0: 0, w: 0.74, fz: 0.19, d: 0.56 }, { x0: -0.07, w: 0.8, fz: 0.21, d: 0.62 }, { x0: -0.17, w: 0.6, fz: 0.21, d: 0.66 }][Math.min(L, 2)];
+    const paint = ownPick(c, ['#2f4a3a', '#5a2a2a', '#2a2f4a', '#3a2a1f'], 13);
+    cornerFronts(c, B, { fascia: paint, riser: shade(paint, 0.8), trim: shade(paint, 1.5), facing: paint, lit: true, skip: L ? 1 : 0, len: 0.34 });
+    for (const s of [-1, 1]) {
+      if (!(c.corner & (s < 0 ? 1 : 2)) || (L && s > 0)) continue;
+      const x = B.x0 + s * (B.w / 2 + 0.03), z = B.fz + 0.03;
+      gb.box(B.x0 + s * (B.w / 2 + 0.012), 0.34, B.fz + 0.012, 0.05, 0.008, 0.008, IRON_D, s * Math.PI / 4);
+      gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(x, 0.29, z, 0.03, 0.045, 0.03, '#ffe2a0'); gb.noGlow();
+      gb.cone(x, 0.335, z, 0.024, 0.02, 4, IRON_D);
+      c.addGlow(x, 0.31, z);
+    }
+  }
 };
 
 // ----------------------------------------------------------- the high street
@@ -1015,9 +1077,376 @@ const ownPick = (c, list, salt = 0) => new RNG(((c.variant || 0) ^ (0x9e3779 + s
 // The body of a shop: a house with the front of its ground floor (or of
 // `bare` floors) left bare for the shopfront. Its stack stands on the ridge
 // (one built up the outside of a gable wall would stand off the plot).
-function shopBody(c, o, bare = 1) {
+// `back` plans the back of it (see backPlan), which the shop draws when it
+// has set out its front (shopBack).
+function shopBody(c, o, bare = 1, back = null) {
   const p = c.pal.chimneyPos || (c.pal.extChimney ? 'outside' : c.pal.chimneys > 1 ? 'ends' : 'side');
-  return house(c, { nFront: 3, doorX: 0, lit: 0.9, chimneyPos: p === 'outside' ? 'side' : p, ...o, shopWindow: true, bareFront: bare, noDoor: true });
+  const P = back ? backPlan(c, { nFront: 3, ...o }, back) : null;
+  house(c, { nFront: 3, doorX: 0, lit: 0.9, chimneyPos: p === 'outside' ? 'side' : p, bareSide: c.corner, ...o, shopWindow: true, bareFront: bare, noDoor: true, backClear: P && P.clear, backBars: back && back.bars });
+  return P;
+}
+
+// ----------------------------------------------------------- corner shops
+// A shop on a street corner (c.corner: 1 its left side, 2 its right; see
+// World._cornerOf) carries its shopfront round onto the side street: from
+// the front corner back, windows on a riser under the fascia with the
+// trade's goods in them (o.wares, called with the windows as at the front),
+// an awning over them if the front has one (o.awning) and the pavement
+// allows, and some of its goods out on the side pavement (o.out, called in
+// the side wall's frame, x along the wall and z out into the street, with
+// the length and the room there). A pilaster stands on the corner where the
+// two fronts meet. B is the body ({ x0, w, fz, d }); o.skip: a side (-1 or
+// 1) kept plain. Nothing goes further out than 0.07 inside the plot's side
+// (o.lim, its half-width), so a corner shop is the same size as any other.
+function cornerFronts(c, B, o = {}) {
+  const { gb } = c;
+  const h = o.h || 0.26, trim = o.trim || '#e3dccd', lim = (o.lim || 0.5) - 0.07;
+  for (const s of [-1, 1]) {
+    if (!(c.corner & (s < 0 ? 1 : 2)) || o.skip === s) continue;
+    const xw = B.x0 + s * B.w / 2, len = Math.min(B.d - 0.1, o.len || 0.36), room = lim - Math.abs(xw);
+    gb.push(xw, 0, B.fz - 0.02 - len / 2, s * Math.PI / 2);
+    if (o.facing) gb.box(0, 0, 0.003, len + 0.03, h, 0.006, o.facing);
+    const sf = shopfront(c, 0, 0, len, h, { fascia: o.fascia, trim, riser: o.riser, letter: o.letter, lit: o.lit, bow: o.bow && room >= 0.07, noDoor: true });
+    if (o.wares) o.wares(sf);
+    if (o.awning && room >= 0.05) awning(c, 0, sf.top - 0.004, 0, len + 0.01, o.awning, undefined, Math.min(0.15, room - 0.005));
+    if (o.out && room >= 0.09) o.out(len, room);
+    gb.pop();
+    // the corner itself: a pilaster up to the fascias, and their return
+    gb.box(xw, 0, B.fz - 0.004, 0.034, h, 0.034, trim);
+    gb.box(xw, h - 0.06, B.fz - 0.004, 0.044, 0.06, 0.044, o.fascia || '#3b2f2a');
+  }
+}
+
+// cornerFronts for a trade: its goods in the windows and on the pavement.
+function cornerShop(c, trade, L, B, o = {}) {
+  if (!c.corner) return;
+  cornerFronts(c, B, { ...o, wares: WARES[trade] && ((sf) => WARES[trade](c, sf, L)), out: SIDE_OUT[trade] && ((len, room) => SIDE_OUT[trade](c, len, room)) });
+}
+
+// What each trade sets out in a shop window (sf, from shopfront), for a
+// shopfront round a corner or a shop with homes over it.
+const WARES = {
+  grocer(c, sf) {
+    for (const p of sf.panes) fruitTray(c, p.m, 0.05, p.z + 0.022, p.w - 0.02);
+  },
+  market(c, sf) { WARES.grocer(c, sf); },
+  butcher(c, sf, L) {
+    for (const p of sf.panes) {
+      if (L) c.gb.box(p.m, 0.05, p.z + 0.012, p.w, 0.014, 0.04, '#e8e4dc');
+      meatRail(c, p.m, sf.top - 0.014, p.z + 0.02, p.w - 0.02);
+    }
+  },
+  cobbler(c, sf, L) {
+    const BOOT = ['#2a2420', '#5e3a2a', '#3a2a20', '#7a4a2a', '#8a2f2f'];
+    for (const p of sf.panes) for (const y of L ? [0.05, 0.11] : [0.05]) {
+      if (y > 0.05) c.gb.box(p.m, y - 0.006, p.z + 0.006, p.w, 0.006, 0.02, '#5e432c');
+      const n = Math.max(2, Math.floor(p.w / 0.032));
+      for (let i = 0; i < n; i++) boot(c, p.m - p.w / 2 + (i + 0.5) * (p.w / n), y, p.z + 0.008, c.rng.pick(BOOT), 0.85);
+    }
+  },
+  draper(c, sf) {
+    for (const p of sf.panes) {
+      const n = Math.max(1, Math.round(p.w / 0.11));
+      for (let i = 0; i < n; i++) dummyAt(c, p.m - p.w / 2 + (i + 0.5) * (p.w / n), p.z + 0.02, c.rng.pick(PAINTED));
+    }
+  },
+  ironmonger(c, sf) {
+    for (const p of sf.panes) {
+      const n = Math.max(2, Math.floor(p.w / 0.05));
+      for (let i = 0; i < n; i++) pail(c, p.m - p.w / 2 + (i + 0.5) * (p.w / n), 0.05, p.z + 0.02, 0.8);
+    }
+  },
+  chemist(c, sf, L) {
+    let k = c.rng.int(0, 3);
+    for (const p of sf.panes) {
+      const n = Math.max(1, Math.round(p.w / 0.16)), u = p.w / n;
+      for (let i = 0; i < n; i++) {
+        const x = p.m - p.w / 2 + (i + 0.5) * u;
+        if (L) for (const y of [0.075, 0.13]) { bottleShelf(c, x - u / 2 + 0.01, x - 0.04, y, p.z + 0.01); bottleShelf(c, x + 0.04, x + u / 2 - 0.01, y, p.z + 0.01); }
+        carboy(c, x, 0.05, p.z + 0.032, k++, L ? 1.3 : 1);
+      }
+    }
+  },
+  stationer(c, sf) {
+    for (const p of sf.panes) for (const y of [0.05, 0.1]) bookShelf(c, p.m - p.w / 2 + 0.006, p.m + p.w / 2 - 0.006, y, p.z + 0.01);
+  },
+  coffeehouse(c, sf) {
+    for (const p of sf.panes) {
+      const n = Math.max(2, Math.round(p.w / 0.07));
+      for (let i = 0; i < n; i++) c.gb.cyl(p.m - p.w / 2 + (i + 0.5) * (p.w / n), 0.05, p.z + 0.02, 0.018, 0.012, 0.03, 8, i % 2 ? '#e8d8c0' : '#8a5a3a');
+    }
+  },
+  postoffice(c, sf) {
+    for (const p of sf.panes) {
+      const n = Math.max(3, Math.round(p.w / 0.055));
+      for (let i = 0; i < n; i++) c.gb.box(p.m - p.w / 2 + (i + 0.5) * (p.w / n), 0.07 + (i % 2) * 0.03, p.z + 0.004, 0.028, 0.02, 0.003, i % 3 === 1 ? '#c8a878' : '#ece6d6');
+    }
+  },
+  bakery(c, sf) {
+    for (const p of sf.panes) for (const y of [0.05, 0.1]) {
+      c.gb.box(p.m, y, p.z + 0.012, p.w - 0.01, 0.006, 0.026, '#5e432c');
+      const n = Math.max(2, Math.floor(p.w / 0.034));
+      for (let i = 0; i < n; i++) c.gb.sphere(p.m - p.w / 2 + (i + 0.5) * (p.w / n), y + 0.016, p.z + 0.012, 0.014, i % 3 ? '#c9944a' : '#e2c48a', 0, 0.75);
+    }
+  },
+};
+
+// A tilted tray of fruit and greens in a window, w long, its foot at y.
+function fruitTray(c, x, y, z, w) {
+  const { gb, rng } = c;
+  const COL = ['#c8402f', '#e08a2f', '#7aa34a', '#d9c050', '#8a3a6a', '#a8c060'];
+  gb.boxC(x, y + 0.03, z, w, 0.008, 0.05, '#86613e', 0.6);
+  const n = Math.max(2, Math.round(w / 0.03));
+  for (let row = 0; row < 2; row++) {
+    const col = rng.pick(COL);
+    for (let i = 0; i < n; i++) gb.sphere(x - w / 2 + (i + 0.5) * (w / n), y + 0.044 + row * 0.022, z + 0.012 - row * 0.02, 0.013, col, 0);
+  }
+}
+
+// What each trade puts out on the pavement of a side street (in the frame
+// cornerFronts calls it in: x along the wall, z out into the street).
+const SIDE_OUT = {
+  grocer(c, len, room) { const z = room / 2; sack(c, -len * 0.28, z); basket(c, -len * 0.05, z, c.rng.pick(['#c8402f', '#e0b030', '#9ab830'])); sack(c, len * 0.2, z, '#b8a070'); },
+  market(c, len, room) { const z = room / 2; backCrate(c, -len * 0.25, z, '#a88458'); barrel(c, len * 0.15, z, 0.8); },
+  cobbler(c, len, room) { const z = room / 2; boot(c, -len * 0.15, c.gy(-len * 0.15, z), z, '#2a2420', 1.3); },
+  draper(c, len, room) { clothStand(c, -len * 0.12, room / 2 + 0.02); },
+  ironmonger(c, len, room) { const z = room / 2; pail(c, -len * 0.25, c.gy(-len * 0.25, z), z); ropeCoil(c, -len * 0.02, z); pail(c, len * 0.2, c.gy(len * 0.2, z), z, 0.9); },
+  chemist(c, len, room) { const z = room / 2; for (const x of [-len * 0.25, len * 0.2]) { c.gb.cyl(x, c.gy(x, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, x, z, 3, 0.012); } },
+  stationer(c, len, room) { newsBoard(c, -len * 0.15, room / 2, Math.PI / 2 + 0.2); },
+  coffeehouse(c, len, room) { if (room >= 0.1) cafeTable(c, -len * 0.08, room / 2 + 0.005); },
+  bakery(c, len, room) { const z = room / 2, x = -len * 0.15, y = c.gy(x, z); c.gb.cyl(x, y, z, 0.034, 0.026, 0.035, 8, '#a8804e'); for (let k = 0; k < 4; k++) c.gb.sphere(x + Math.cos(k * 1.6) * 0.014, y + 0.04, z + Math.sin(k * 1.6) * 0.014, 0.014, '#c9944a', 0); },
+};
+
+
+// ------------------------------------------------------------- shop backs
+// From the yard a shop still shows its trade: the back door at one end bay,
+// the name painted along the wall between the floors in the fascia's
+// colours, a hoist up the other end bay for the stock at the bigger shops,
+// and the trade's own things by the door (see each shop).
+
+// Plans the back of a house body `o` before it's built, so its back windows
+// keep clear (o.backClear) of what goes on the wall. k.hoist: loading doors
+// up the far end bay; k.stack: that bay kept for a stack up the wall;
+// k.yard: its ground floor kept; k.wide: the ground floor of the bay next to
+// the door kept for a wide window; k.side: which end the door goes (else
+// the building's own pick); k.sign: false for no painted name.
+function backPlan(c, o, k = {}) {
+  const { pal } = c;
+  const w = o.w, d = o.d, h = o.h, floors = o.floors || 1, fh = h / floors, nF = o.nFront || 3, bw = w / nF;
+  const timber = o.timber ?? (pal.forced && pal.timber);
+  const jetty = o.fancy !== false && timber && pal.jetty && floors >= 2 ? 0.035 : 0;
+  const side = k.side || ownPick(c, [-1, 1], 11);
+  const bay = (i) => -w / 2 + (i + 0.5) * bw, di = side > 0 ? nF - 1 : 0;
+  const door = bay(di), far = bay(nF - 1 - di), next = bay(nF > 1 ? di - side : di);
+  const hoist = k.hoist && floors > 1 && nF > 1 ? far : null, stack = k.stack && nF > 1 ? far : null;
+  const clear = [[door - bw / 2, door + bw / 2, 0, fh]];
+  const keep = (x, y0, y1) => clear.push([x - bw / 2, x + bw / 2, y0, y1]);
+  if (hoist !== null) keep(far, fh, h);
+  if (stack !== null) keep(far, 0, h);
+  if (k.yard && nF > 1) keep(far, 0, fh);
+  if (k.escape && nF > 1) keep(far, fh, h);
+  if (k.wide && nF > 1) keep(next, 0, fh);
+  // the name goes on a board along the wall over the ground-floor windows
+  // (on the jetty over them); a single storey has it in place of the window
+  // next to the door, as its eaves come down over the wall
+  const wtop = fh * 0.38 + Math.min(0.11, fh * 0.4) * (c.winH || 1) + 0.014;
+  let sign = null;
+  if (k.sign !== false) {
+    const sw = Math.min(w - 0.1, 0.52);
+    if (floors === 1) { if (!k.wide) { sign = { x: next, w: bw * 0.86, y: fh * 0.38, h: 0.07, z: 0 }; keep(next, 0, fh); } }
+    else if (jetty) sign = { x: 0, w: sw, y: fh + 0.016, h: 0.055, z: jetty };
+    else sign = { x: 0, w: sw, y: Math.max(fh + 0.004, wtop), h: 0.06, z: 0 };
+  }
+  return { x0: o.x || 0, zb: (o.z || 0) - d / 2, w, d, h, floors, fh, nF, bw, side, door, far, next, hoist, sign, jetty, clear };
+}
+
+// Draws the back planned by backPlan: the door (o.door, o.doorW, o.studs),
+// the painted name (o.fascia, o.letter) and the hoist with o.load hanging
+// on it ('sack', 'crate' or 'bolt'). A bay's x in the model: P.x0 + P.door.
+function shopBack(c, P, o = {}) {
+  const { gb, pal } = c;
+  const zb = P.zb, x = P.x0 + P.door, dw = o.doorW || 0.08, dh = Math.min(0.17, P.fh * 0.66);
+  gb.box(x, 0, zb - 0.004, dw + 0.026, dh + 0.018, 0.014, '#5a4330');
+  gb.box(x, 0, zb - 0.01, dw, dh, 0.014, o.door || pal.door);
+  if (o.studs) for (const u of [-0.25, 0.25]) for (let y = 0.03; y < dh - 0.01; y += 0.035) gb.box(x + u * dw, y, zb - 0.018, 0.006, 0.006, 0.004, '#8a8a84');
+  const sd = Math.max(0.012, Math.min(0.04, zb + 0.465)), g = Math.min(c.gy(x, zb - sd / 2), 0.02);
+  gb.cbox(x, g - 0.03, zb - sd / 2, dw + 0.05, 0.02 - g + 0.03, sd, STONE, 0, 0.008);
+  if (P.sign && o.fascia) {
+    const S = P.sign, z = zb - S.z;
+    gb.box(P.x0 + S.x, S.y, z - 0.012, S.w, S.h, 0.012, o.fascia);
+    gb.box(P.x0 + S.x, S.y + S.h * 0.3, z - 0.019, S.w * 0.74, S.h * 0.4, 0.004, o.letter || '#e0c070');
+  }
+  if (P.hoist !== null) {
+    const hx = P.x0 + P.hoist, zw = zb - P.jetty;
+    // boarded loading doors one over another, in white-painted frames
+    for (let f = 1; f < P.floors; f++) {
+      const y = f * P.fh + 0.02, hh = Math.min(0.17, P.fh - 0.07);
+      gb.box(hx, y - 0.01, zw - 0.004, 0.094, hh + 0.02, 0.014, '#e3dccd');
+      gb.box(hx, y, zw - 0.011, 0.076, hh, 0.012, o.hoistDoor || '#7a5232');
+      gb.box(hx, y, zw - 0.018, 0.004, hh, 0.004, '#3a2f28');
+      gb.boxC(hx, y + hh / 2, zw - 0.018, 0.005, hh * 1.05, 0.003, '#5e3e26', 0, 0, 0.42);
+    }
+    // a beam out under the eaves with its pulley, and the rope down to a load
+    // (as far out as the yard behind allows)
+    const by = P.h - 0.05, out = Math.max(0.025, Math.min(0.055, zw + 0.45)), rz = zw - out + 0.008;
+    gb.box(hx, by, zw - out / 2, 0.022, 0.022, out, TIMBER);
+    gb.cyl(hx + 0.004, by - 0.012, rz, 0.013, 0.013, 0.008, 8, IRON_D, 0, 0, Math.PI / 2);
+    const r = Math.max(0.014, Math.min(0.03, (out - 0.01) / 0.85)), ly = by - 0.15;
+    if (o.load) {
+      gb.box(hx, ly + r, rz, 0.004, by - 0.024 - ly - r, 0.004, '#b89a5a');
+      if (o.load === 'crate') gb.cbox(hx, ly - r * 0.6, rz, r * 1.7, r * 1.6, r * 1.6, '#94714a', 0, 0.004);
+      else if (o.load === 'bolt') gb.cyl(hx + 0.04, ly + r * 0.3, rz, r * 0.6, r * 0.6, 0.08, 8, o.boltColor || '#7a3a5a', 0, 0, Math.PI / 2);
+      else gb.blob(hx, ly, rz, r * 0.9, r * 1.3, r * 0.85, '#c8b088');
+    } else gb.box(hx, by - 0.06, rz, 0.004, 0.036, 0.004, '#b89a5a');
+  }
+}
+
+// Spots for the trade's things by the back door ({ x, z } on the ground),
+// up to n of them along the wall beside it. They stand close in under the
+// eaves (each no more than 0.05 deep), so the building takes no more room on
+// its plot than it did; behind the tallest, which come right to the back of
+// their plots, there is no room for them.
+function backSpots(c, P, n = 3) {
+  const out = [], dx = P.x0 + P.door, z = P.zb - 0.025;
+  if (P.zb < -0.433) return out;
+  for (const u of [0.1, -0.1, 0.17, -0.17]) {
+    const x = dx + P.side * u;
+    if (Math.abs(x - P.x0) <= P.w / 2 - 0.035 && out.length < n) out.push({ x, z });
+  }
+  return out;
+}
+
+// A stack built up the back wall (at x, zb) from the ground to over the
+// eaves, smoking while the shop works: brick for a smoke-house or an oven,
+// or a tin flue (o.tin) on brackets for a still or a kitchen range.
+function backFlue(c, x, zb, top, o = {}) {
+  const { gb } = c;
+  if (o.tin) {
+    const z = zb - 0.022, col = o.color || '#5a5a5e', y0 = o.y0 || 0.08;
+    gb.cyl(x, y0, z, 0.011, 0.011, top - y0, 6, col);
+    for (let y = y0 + 0.08; y < top - 0.05; y += 0.16) gb.box(x, y, zb - 0.012, 0.008, 0.008, 0.022, IRON_D);
+    gb.cone(x, top, z, 0.024, 0.03, 6, col);
+    c.addSmoke(x, top + 0.04, z, 'work');
+    return;
+  }
+  const dd = Math.max(0.04, Math.min(0.055, zb + 0.48)), col = o.color || '#8f4f3a';
+  gb.cbox(x, 0, zb - dd / 2 + 0.01, 0.08, top, dd, col, 0, 0.008);
+  gb.cbox(x, top, zb - dd / 2 + 0.01, 0.095, 0.026, dd + 0.012, shade(col, 0.8), 0, 0.006);
+  c.addSmoke(x, top + 0.05, zb - dd / 2 + 0.01, 'work');
+}
+
+// A wide window on the back wall (at x, y, zb), lit while the trade works
+// at it: a cobbler's bench, a dispensary (tinted, glow [r, g, b]).
+function backWindow(c, x, y, zb, w, h, glow = WARM) {
+  const { gb } = c;
+  const fr = c.frame || '#5a4330';
+  gb.box(x, y - 0.012, zb - 0.002, w + 0.024, h + 0.024, 0.018, fr);
+  gb.glow(glow[0], glow[1], glow[2], 1.4);
+  gb.box(x, y, zb - 0.007, w, h, 0.018, GLASS);
+  gb.noGlow();
+  const n = Math.max(2, Math.round(w / 0.05));
+  for (let i = 1; i < n; i++) gb.box(x - w / 2 + (i * w) / n, y, zb - 0.017, 0.006, h, 0.004, fr);
+  gb.box(x, y + h * 0.55, zb - 0.017, w, 0.006, 0.004, fr);
+}
+
+// An iron fire escape down the far bay of the back wall: a landing and a
+// door out at every floor over the ground, flights between the landings
+// and a ladder let down towards the yard.
+function fireEscape(c, P) {
+  const { gb } = c;
+  const x = P.x0 + P.far, zb = P.zb, ed = Math.max(0.016, Math.min(0.045, zb + 0.478)), lw = Math.min(0.17, P.bw * 0.85), z = zb - ed / 2;
+  for (let f = 1; f < P.floors; f++) {
+    const y = f * P.fh, s = (f % 2 ? 1 : -1) * P.side;
+    gb.box(x, y + 0.004, zb - 0.004, 0.07, Math.min(0.16, P.fh - 0.07), 0.012, '#3a3a3e');
+    gb.box(x, y, z, lw + 0.02, 0.006, ed, IRON_D);
+    gb.box(x, y + 0.05, zb - ed + 0.002, lw + 0.02, 0.005, 0.004, IRON_D);
+    for (const e of [-1, 1]) gb.box(x + e * (lw / 2 + 0.008), y, zb - ed + 0.002, 0.004, 0.05, 0.004, IRON_D);
+    if (f > 1) {
+      // the flight up from the landing below, and its handrail
+      const len = Math.hypot(lw, P.fh), a = Math.atan2(P.fh, lw) * s;
+      gb.boxC(x, y - P.fh / 2, z, len, 0.008, ed * 0.7, IRON_D, 0, 0, a);
+      gb.boxC(x, y - P.fh / 2 + 0.045, zb - ed + 0.002, len, 0.004, 0.004, IRON_D, 0, 0, a);
+    }
+  }
+  // the ladder down from the first landing, drawn up out of reach
+  const lx = x + P.side * (lw / 2 - 0.02), y0 = 0.1;
+  for (const e of [-1, 1]) gb.box(lx + e * 0.014, y0, zb - ed + 0.006, 0.004, P.fh - y0, 0.004, IRON_D);
+  for (let y = y0 + 0.02; y < P.fh - 0.01; y += 0.03) gb.box(lx, y, zb - ed + 0.006, 0.03, 0.004, 0.004, IRON_D);
+}
+
+// Skylights in the back slope of a roof (one solidRoof would draw: its
+// eaves 0.05 out, the ridge over the middle of the house at z = zc), at
+// each of xs: a frame with lit glass in it.
+function roofLights(c, x0, h, zc, rd, rh, xs) {
+  const { gb } = c;
+  const hd = rd / 2 + 0.05, a = Math.atan2(rh, hd), t = 0.42;
+  const ys = h + rh * t, zs = zc - hd * (1 - t), ny = Math.cos(a), nz = -Math.sin(a);
+  for (const x of xs) {
+    gb.boxC(x0 + x, ys + ny * 0.004, zs + nz * 0.004, 0.09, 0.012, 0.13, '#4a4a4e', -a);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3);
+    gb.boxC(x0 + x, ys + ny * 0.009, zs + nz * 0.009, 0.074, 0.008, 0.112, GLASS, -a);
+    gb.noGlow();
+    gb.boxC(x0 + x, ys + ny * 0.014, zs + nz * 0.014, 0.004, 0.004, 0.112, '#4a4a4e', -a);
+  }
+}
+
+// Things by a shop's back door.
+function backCrate(c, x, z, color = '#94714a') {
+  c.gb.cbox(x, c.gy(x, z), z, 0.058, 0.05, 0.044, color, 0, 0.005);
+}
+function greensCrate(c, x, z) {
+  backCrate(c, x, z, '#a88458');
+  const y = c.gy(x, z) + 0.05;
+  for (let i = 0; i < 4; i++) c.gb.sphere(x + ((i % 2) - 0.5) * 0.026, y + 0.008, z + ((i >> 1) - 0.5) * 0.018, 0.015, i % 3 ? '#6a9a3a' : '#8ab04a', 0);
+}
+function meatSafe(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  for (const sx of [-1, 1]) gb.box(x + sx * 0.026, y, z, 0.008, 0.05, 0.008, '#5e432c');
+  gb.cbox(x, y + 0.05, z, 0.064, 0.07, 0.05, '#8a6a48', 0, 0.004);
+  gb.box(x, y + 0.06, z - 0.026, 0.046, 0.05, 0.004, '#3a3a3e');
+}
+function hideFrame(c, x, z, ry = 0) {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const s of [-1, 1]) gb.box(s * 0.05, 0, 0, 0.01, 0.13, 0.01, '#5e432c');
+  gb.box(0, 0.125, 0, 0.11, 0.01, 0.01, '#5e432c');
+  gb.box(0, 0.045, 0, 0.08, 0.08, 0.005, '#8a5a32');
+  gb.pop();
+}
+function bale(c, x, z, color = '#c8b088') {
+  const y = c.gy(x, z);
+  c.gb.cbox(x, y, z, 0.07, 0.05, 0.042, color, 0, 0.012);
+  c.gb.box(x, y + 0.049, z, 0.006, 0.004, 0.044, '#7a6a4a');
+}
+function drum(c, x, z, color = '#a8382a') {
+  const y = c.gy(x, z);
+  c.gb.cyl(x, y, z, 0.026, 0.026, 0.075, 9, color);
+  for (const k of [0.02, 0.055]) c.gb.cyl(x, y + k, z, 0.028, 0.028, 0.005, 9, shade(color, 0.75));
+}
+function leaningBars(c, x, zb, n = 5) {
+  for (let i = 0; i < n; i++) c.gb.boxC(x - 0.04 + i * 0.02, 0.1, zb - 0.02, 0.006, 0.2, 0.006, i % 2 ? '#4a4a4e' : '#3a3634', 0.18);
+}
+function wickerCarboy(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.026, 0.024, 0.05, 8, '#a8804e');
+  gb.sphere(x, y + 0.05, z, 0.022, '#7aa88a', 0, 0.7);
+  gb.cyl(x, y + 0.058, z, 0.007, 0.008, 0.022, 6, '#9ab8a8');
+}
+function paperBundles(c, x, z, n = 3) {
+  const y = c.gy(x, z);
+  for (let i = 0; i < n; i++) {
+    c.gb.box(x, y + i * 0.024, z, 0.06, 0.022, 0.036, i % 2 ? '#ece6d6' : '#ddd5c2', (i - 1) * 0.12);
+    c.gb.box(x, y + i * 0.024 + 0.0225, z, 0.004, 0.002, 0.038, '#8a6a48', (i - 1) * 0.12);
+  }
+}
+function churn(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.022, 0.024, 0.05, 8, '#b8c0c4');
+  gb.cyl(x, y + 0.05, z, 0.012, 0.022, 0.018, 8, '#b8c0c4');
+  gb.cyl(x, y + 0.068, z, 0.014, 0.014, 0.008, 8, '#8a9296');
 }
 
 // A shopfront across the wall face at z (facing +z), w wide and h tall:
@@ -1053,7 +1482,7 @@ function shopfront(c, x, z, w, h, o = {}) {
   gb.box(x, top + 0.016, z + 0.028, w * 0.6, 0.026, 0.006, o.letter || '#e0c070');
   gb.noGlow();
   if (!o.noDoor) door(c, dx, z, dw, Math.min(0.17, top), o.door || pal.door);
-  return { panes, top };
+  return { panes, top, fascia, letter: o.letter || '#e0c070' };
 }
 
 // A bowed window standing out from the wall at z, sw wide: a front pane and
@@ -1349,13 +1778,14 @@ MODELS.grocer = (c, L) => {
   const { rng, pal } = c;
   const W = [0.62, 0.74, 0.84][L], D = [0.46, 0.54, 0.58][L], H = [0.36, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
   const thatch = !L && pal.thatched;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall,
     roof: thatch ? pal.thatch : L === 2 ? pal.slate : pal.roof, roofType: thatch ? 'thatch' : L === 2 ? 'hip' : 'gable', rh: L === 2 ? 0.26 : 0.27,
     chimney: true, timber: L < 2 && pal.timber,
-  });
+  }, 1, { hoist: true });
   const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: rng.pick(['#2f4a2a', '#3a4a2a', '#2a3a2a']), lit: L >= 1 });
-  awning(c, 0, sf.top - 0.004, fz, W - 0.02, rng.pick(['#4f7a45', '#3f6a3a', '#6a8a2a']));
+  const awn = rng.pick(['#4f7a45', '#3f6a3a', '#6a8a2a']);
+  awning(c, 0, sf.top - 0.004, fz, W - 0.02, awn);
   const pz = fz + 0.21;
   produce(c, -W * 0.26, pz, W * 0.34);
   produce(c, W * 0.26, pz, W * 0.34);
@@ -1366,6 +1796,11 @@ MODELS.grocer = (c, L) => {
     if (L === 1) basket(c, -W / 2 + 0.02, pz + 0.04, '#e08a2f');
   }
   if (L === 2) { teaChest(c, -W / 2 + 0.02, pz + 0.06); teaChest(c, -W / 2 + 0.02, pz + 0.06 - 0.075, 0.9); handcart(c, 0.32, 0.42); }
+  cornerShop(c, 'grocer', L, { x0: 0, w: W, fz, d: D }, { fascia: sf.fascia, lit: L >= 1, awning: awn });
+  // round the back: sacks hoisted to the store over the shop, and crates of
+  // greens and potatoes by the back door
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter, load: 'sack' });
+  backSpots(c, P, 3).forEach((p, i) => (i === 1 ? sack(c, p.x, p.z) : greensCrate(c, p.x, p.z)));
 };
 
 // A butcher's: joints hung on a rail across the window, a blind rolled up
@@ -1378,10 +1813,10 @@ MODELS.butcher = (c, L) => {
   const W = [0.64, 0.74, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.5, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
   // brick under a tiled roof (slate at the top), unless the town chose a style
   const own = !pal.forced;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? pal.brick : pal.wall,
     roof: L === 2 ? pal.slate : own ? pal.tile : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber,
-  });
+  }, 1, { stack: true });
   const tile = '#ece8de', sh = 0.26, sw = W - 0.04;
   if (!L) gb.box(0, 0, fz + 0.003, W, sh, 0.006, '#6a2a24');
   else {
@@ -1402,6 +1837,12 @@ MODELS.butcher = (c, L) => {
   choppingBlock(c, -W * 0.22, fz + 0.24);
   crate(c, W * 0.12, fz + 0.26, 0.9, L ? '#e8e4dc' : '#94714a');
   if (L) { barrel(c, -W / 2 + 0.02, fz + 0.3); lamp(c, W / 2 - 0.02, 0.42, 0.28); }
+  cornerShop(c, 'butcher', L, { x0: 0, w: W, fz, d: D }, { fascia: sf.fascia, trim: L ? tile : '#e3dccd', riser: L ? '#2f5a4a' : '#7a5a3c', facing: L ? tile : '#6a2a24', lit: L >= 1 });
+  // round the back: the smoke-house flue up the wall, a meat safe and the
+  // scrubbing pails by the door
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter });
+  backFlue(c, P.x0 + P.far, P.zb, H + 0.14, { color: own ? shade(pal.brick, 0.9) : '#8f4f3a' });
+  backSpots(c, P, 3).forEach((p, i) => (i ? pail(c, p.x, c.gy(p.x, p.z), p.z) : meatSafe(c, p.x, p.z)));
 };
 
 // A cobbler's: a narrow little shop with a bow window full of boots, a boot
@@ -1412,10 +1853,10 @@ MODELS.cobbler = (c, L) => {
   const { gb, rng, pal } = c;
   const W = L ? 0.68 : 0.52, D = L ? 0.52 : 0.44, H = L ? 0.54 : 0.34, fz = L ? 0.12 : 0.1;
   const thatch = !L && pal.thatched;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall, roof: thatch ? pal.thatch : pal.roof, roofType: thatch ? 'thatch' : 'gable',
     rh: L ? 0.3 : 0.28, chimney: true, timber: pal.timber, nFront: L ? 3 : 2, alongZ: true,
-  });
+  }, 1, { wide: true });
   const sw = W - 0.04, dx = L ? 0 : sw / 2 - 0.07;
   const sf = shopfront(c, 0, fz, sw, 0.25, { bow: !L, doorX: dx, fascia: rng.pick(['#3b2f2a', '#2a2420', '#4a2a2a']), lit: L >= 1 });
   const BOOT = ['#2a2420', '#5e3a2a', '#3a2a20', '#7a4a2a', '#8a2f2f'];
@@ -1433,6 +1874,14 @@ MODELS.cobbler = (c, L) => {
   boot(c, -W * 0.2 - 0.04, ly + 0.08, fz + 0.2, '#5e3a2a');
   boot(c, W * 0.22, c.gy(W * 0.22, fz + 0.24), fz + 0.24, '#2a2420', 1.3);
   if (L) { crate(c, W / 2 - 0.02, fz + 0.24, 0.9, '#7a5a3c'); lamp(c, -W / 2 + 0.01, 0.42, 0.28); }
+  cornerShop(c, 'cobbler', L, { x0: 0, w: W, fz, d: D }, { fascia: sf.fascia, lit: L >= 1, bow: !L, h: 0.25, len: L ? 0.34 : 0.26 });
+  // round the back: the workshop window over the bench, lit while he works,
+  // and a hide drying on a frame
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter });
+  backWindow(c, P.x0 + P.next, 0.07, P.zb, P.bw * 0.78, Math.min(0.12, P.fh * 0.42));
+  const hs = backSpots(c, P, 2);
+  if (hs[0]) hideFrame(c, hs[0].x, hs[0].z - 0.005);
+  if (hs[1]) backCrate(c, hs[1].x, hs[1].z, '#7a5a3c');
 };
 
 // A tailor's: a tall narrow shop with a dummy at the door, bolts of cloth on
@@ -1446,10 +1895,10 @@ MODELS.draper = (c, L) => {
   const trim = '#e3dccd';
   // painted stucco under slate (stone at the top), dormers in the roof
   const own = !pal.forced;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : ownPick(c, PAINTED, 3)) : pal.wall, roof: own ? pal.slate : pal.roof,
     roofType: L === 1 ? 'hip' : 'gable', rh: L === 2 ? 0.3 : 0.26, chimney: true, timber: !own && pal.timber, dormers: L === 2 ? 3 : 2, plinth: L === 2 ? STONE : null,
-  }, L === 2 ? 2 : 1);
+  }, L === 2 ? 2 : 1, { hoist: true });
   const sw = W - 0.04, fascia = rng.pick(['#2a2a4a', '#3a1f2a', '#1f3a3a', '#3b2f2a']);
   const sf = shopfront(c, 0, fz, sw, 0.26, { fascia, lit: L >= 1, doorW: L === 2 ? 0.11 : 0.085 });
   // dummies in the windows, in the latest colours
@@ -1478,6 +1927,11 @@ MODELS.draper = (c, L) => {
   clothStand(c, -W * 0.24, fz + 0.24);
   if (L < 2) dummy(c, W * 0.2, fz + 0.24, rng.pick(PAINTED));
   if (L === 1) clothStand(c, W * 0.24 + 0.06, fz + 0.29);
+  cornerShop(c, 'draper', L, { x0: 0, w: W, fz, d: D }, { fascia, lit: L >= 1, awning: L === 1 ? pal.awning : null });
+  // round the back: bolts of cloth hoisted up to the stock room, and bales
+  // in sacking by the back door
+  shopBack(c, P, { fascia, letter: sf.letter, load: 'bolt', boltColor: ownPick(c, PAINTED, 12) });
+  for (const p of backSpots(c, P, 2)) bale(c, p.x, p.z);
 };
 // A dummy in a shop window: just the bodice, showing over the riser.
 function dummyAt(c, x, z, color) {
@@ -1497,10 +1951,10 @@ MODELS.ironmonger = (c, L) => {
   const own = !pal.forced;
   // tarred weatherboards, with an open-fronted store at the side at first
   const W = L ? 0.84 : 0.56, D = L ? 0.58 : 0.52, H = L ? 0.8 : 0.54, fz = L ? 0.14 : 0.11, bx = L ? 0 : -0.13;
-  shopBody(c, {
+  const P = shopBody(c, {
     x: bx, z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? ownPick(c, ['#4f5a52', '#5a5048', '#46525a'], 5) : pal.wall,
     roof: own ? pal.slate : pal.roof, roofType: 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber, siding: own, plinth: L ? STONE : null,
-  });
+  }, 1, { hoist: L >= 1, yard: true });
   const sw = W - 0.04, dx = L ? 0 : -sw / 2 + 0.08;
   const sf = shopfront(c, bx, fz, sw, 0.26, { fascia: rng.pick(['#2a3a2a', '#2f2f3a', '#3a2a1f']), doorX: dx, lit: L >= 1 });
   if (!L) {
@@ -1541,6 +1995,12 @@ MODELS.ironmonger = (c, L) => {
     dustbin(c, -W * 0.3, pz + 0.04); dustbin(c, -W * 0.3 + 0.07, pz + 0.05);
     lamp(c, W / 2 - 0.01, 0.43, 0.28);
   } else { crate(c, bx - W / 2 + 0.04, pz + 0.04, 0.9); dustbin(c, 0.3, pz + 0.04); }
+  cornerShop(c, 'ironmonger', L, { x0: bx, w: W, fz, d: D }, { fascia: sf.fascia, lit: L >= 1, skip: L ? 0 : 1 });
+  // round the back: bar iron leant against the wall, a crate hoisted up to
+  // the store and drums of paraffin by the door
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter, load: 'crate' });
+  leaningBars(c, P.x0 + P.far, P.zb, L ? 6 : 5);
+  backSpots(c, P, L ? 2 : 1).forEach((p, i) => drum(c, p.x, p.z, i ? '#3f5a7a' : '#a8382a'));
 };
 
 // An apothecary's: bow windows either side of the door with great coloured
@@ -1553,10 +2013,10 @@ MODELS.chemist = (c, L) => {
   const W = [0.58, 0.72, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.52, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
   // cream stucco under a hipped slate roof (stone at the top)
   const own = !pal.forced;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : STUCCO) : pal.wall, roof: own ? pal.slate : pal.roof,
     roofType: 'hip', rh: 0.24, chimney: true, timber: !own && pal.timber, plinth: L ? STONE : null,
-  });
+  }, 1, { wide: true });
   const sw = W - 0.04, k0 = rng.int(0, 3);
   const sf = shopfront(c, 0, fz, sw, 0.26, { bow: !L, fascia: rng.pick(['#1f3a3a', '#2a2a4a', '#3a1f2a']), lit: L >= 1, letter: L === 2 ? '#ece6d6' : null });
   sf.panes.forEach((p, i) => {
@@ -1567,6 +2027,13 @@ MODELS.chemist = (c, L) => {
   for (const s of [-1, 1]) { const x = s * 0.09, z = fz + 0.12; gb.cyl(x, c.gy(x, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, x, z, 3, 0.012); }
   if (L === 2) { weighingMachine(c, -W * 0.3, fz + 0.26); lamp(c, W / 2 - 0.01, 0.42, 0.3); }
   else if (L) bench(c, -W * 0.24, fz + 0.26, Math.PI);
+  cornerShop(c, 'chemist', L, { x0: 0, w: W, fz, d: D }, { fascia: sf.fascia, letter: sf.letter, lit: L >= 1, bow: !L });
+  // round the back: the dispensary window, tinted green, the tin flue of
+  // the still up the wall and carboys in wicker by the door
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter });
+  backWindow(c, P.x0 + P.next, 0.07, P.zb, P.bw * 0.74, Math.min(0.12, P.fh * 0.42), [0.6, 1.9, 1.0]);
+  backFlue(c, P.x0 + (P.next + P.far) / 2, P.zb, H + 0.12, { tin: true, y0: 0.06 });
+  for (const p of backSpots(c, P, 2)) wickerCarboy(c, p.x, p.z);
 };
 
 // A stationer's: books on shelves in the window, the day's bills on a board
@@ -1576,10 +2043,10 @@ MODELS.chemist = (c, L) => {
 MODELS.stationer = (c, L) => {
   const { gb, rng, pal } = c;
   const W = L ? 0.76 : 0.6, D = L ? 0.54 : 0.5, H = L ? 0.8 : 0.54, fz = L ? 0.12 : 0.1;
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.wall, roof: L ? pal.slate : pal.forced ? pal.roof : pal.tile, roofType: 'halfhip', rh: 0.3,
     chimney: true, timber: pal.timber, nFront: L ? 3 : 2, dormers: 2,
-  });
+  }, 1, {});
   const sw = W - 0.04;
   const sf = shopfront(c, 0, fz, sw, 0.26, { fascia: rng.pick(['#2a3a4a', '#3b2f2a', '#4a2a2a', '#2f3e2a']), lit: L >= 1 });
   for (const p of sf.panes) for (const y of [0.05, 0.1]) bookShelf(c, p.m - p.w / 2 + 0.006, p.m + p.w / 2 - 0.006, y, p.z + 0.01);
@@ -1600,6 +2067,12 @@ MODELS.stationer = (c, L) => {
     bookBarrow(c, W * 0.12, fz + 0.27);
     lamp(c, -W / 2 + 0.01, 0.42, 0.28);
   }
+  cornerShop(c, 'stationer', L, { x0: 0, w: W, fz, d: D }, { fascia: sf.fascia, lit: L >= 1 });
+  // round the back: skylights in the roof over the bindery and bundles of
+  // paper by the back door
+  shopBack(c, P, { fascia: sf.fascia, letter: sf.letter });
+  roofLights(c, 0, H, fz - D / 2, D + P.jetty * 2, 0.3 * pal.pitch, L ? [-0.16, 0, 0.16] : [-0.09, 0.09]);
+  for (const p of backSpots(c, P, 2)) paperBundles(c, p.x, p.z, 3);
 };
 
 // A coffee house: a bow window either side of the door, a coffee pot on
@@ -1611,13 +2084,15 @@ MODELS.coffeehouse = (c, L) => {
   const { gb, rng, pal } = c;
   const W = [0.66, 0.76, 0.86][L], D = [0.5, 0.54, 0.5][L], H = [0.54, 0.56, 0.82][L], fz = [0.1, 0.11, 0.06][L];
   const wall = pal.forced ? pal.wall : L === 2 ? STUCCO : ownPick(c, PAINTED, 8);
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall, roof: L ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26,
     chimney: true, timber: !L && pal.timber,
-  });
+  }, 1, {});
   const sw = W - 0.04, pastel = ownPick(c, ['#c87a8a', '#7a9ac8', '#8ab08a', '#c8a050'], 9);
+  let fascia = '#2a2a30';
   if (L < 2) {
     const sf = shopfront(c, 0, fz, sw, 0.26, { bow: !L, fascia: L ? shade(pastel, 0.6) : rng.pick(['#3b2f2a', '#2f3e2a', '#4a2a2a']), lit: L >= 1 });
+    fascia = sf.fascia;
     for (const p of sf.panes) for (let i = 0; i < 2; i++) gb.cyl(p.m + (i - 0.5) * p.w * 0.45, 0.05, p.z + 0.02, 0.018, 0.012, 0.03, 8, i ? '#e8d8c0' : '#8a5a3a');
     if (L) awning(c, 0, sf.top - 0.004, fz, W - 0.02, pastel);
     else hangSign(c, sw / 2 - 0.03, 0.31, fz, 'pot', GOLD);
@@ -1652,6 +2127,12 @@ MODELS.coffeehouse = (c, L) => {
     tubPlant(c, -0.08, fz + 0.1); tubPlant(c, 0.08, fz + 0.1);
     barrel(c, W * 0.24, tz + 0.02, 0.9);
   }
+  cornerShop(c, 'coffeehouse', L, { x0: 0, w: W, fz, d: D }, { fascia, lit: L >= 1, bow: !L, awning: L === 1 ? pastel : null });
+  // round the back: the kitchen range's stovepipe up the wall, sacks of
+  // coffee and the milk churns by the back door
+  shopBack(c, P, { fascia });
+  backFlue(c, P.x0 + (P.next + P.far) / 2, P.zb, H + 0.1, { tin: true, color: '#2a2a2e', y0: 0.04 });
+  backSpots(c, P, 3).forEach((p, i) => (i === 1 ? sack(c, p.x, p.z, '#9a7a4a') : churn(c, p.x, p.z)));
 };
 
 // A savings bank: a solid stone block under a hipped slate roof, rusticated
@@ -1662,9 +2143,10 @@ MODELS.bank = (c, L) => {
   const { gb, pal } = c;
   const wall = pal.stoneWall, trim = '#ece6da';
   const W = L ? 0.86 : 0.76, D = L ? 0.56 : 0.54, H = L ? 0.84 : 0.58, floors = L ? 3 : 2, fz = L ? 0.11 : 0.1, fh = H / floors;
+  const body = { z: fz - D / 2, w: W, d: D, h: H, floors, nFront: L ? 5 : 3, fancy: false }, P = backPlan(c, body, { sign: false });
   house(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: L ? 'flat' : 'hip', rh: 0.2, nFront: L ? 5 : 3, doorX: 0,
-    noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8,
+    ...body, wall, roof: pal.slate, roofType: L ? 'flat' : 'hip', rh: 0.2, doorX: 0,
+    noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear, backBars: true, bareSide: c.corner,
   });
   // rusticated stone on the ground floor, tall windows either side of the door
   for (let y = 0.05; y < fh - 0.02; y += 0.045) gb.box(0, y, fz + 0.002, W, 0.006, 0.006, shade(wall, 0.84));
@@ -1699,6 +2181,19 @@ MODELS.bank = (c, L) => {
   }
   frontage(c, -W / 2 - 0.02, W / 2 + 0.02, fz + 0.3, [0], 'railings');
   lamp(c, -0.11, fz + 0.32, 0.3); lamp(c, 0.11, fz + 0.32, 0.3);
+  // on a street corner the banking hall shows down the side street too:
+  // rusticated, with its tall windows and the name in gilt over them
+  for (const s of [-1, 1]) {
+    if (!(c.corner & (s < 0 ? 1 : 2))) continue;
+    gb.push(s * W / 2, 0, fz - D / 2, s * Math.PI / 2);
+    for (let y = 0.05; y < fh - 0.02; y += 0.045) gb.box(0, y, 0.002, D, 0.006, 0.006, shade(wall, 0.84));
+    for (const x of L ? [-0.16, 0, 0.16] : [-0.12, 0.12]) win(c, x, 0.06, 0.004, 0.075, 0.15, 'f', 0.8);
+    gb.box(0, fh - 0.05, 0.012, D * 0.7, 0.04, 0.016, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh - 0.039, 0.022, D * 0.56, 0.02, 0.006, GOLD); gb.noGlow();
+    gb.pop();
+  }
+  // round the back: bars on the ground-floor windows and a studded iron door
+  shopBack(c, P, { door: '#3a3a3e', studs: true, doorW: 0.085 });
 };
 
 // The sign each high-street trade hangs out, and what it sets out on the
@@ -1734,10 +2229,10 @@ function wallClock(c, x, y, z, r = 0.04) {
 MODELS.postoffice = (c, L) => {
   const { gb, pal } = c;
   const W = L ? 0.86 : 0.66, D = L ? 0.56 : 0.52, H = L ? 0.84 : 0.54, fz = L ? 0.11 : 0.11, red = '#a8282a';
-  shopBody(c, {
+  const P = shopBody(c, {
     z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.forced ? pal.wall : L ? pal.stoneWall : '#efe9dc', roof: pal.slate, roofType: L ? 'hip' : 'gable',
     rh: 0.24, chimney: true, plinth: L ? STONE : null, timber: !L && pal.timber, nFront: L ? 4 : 2,
-  });
+  }, 1, {});
   const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: red, riser: '#6a1a1c', letter: '#ece6d6', lit: true, door: red, doorW: L ? 0.11 : 0.085 });
   // postcards and parcels in the windows
   for (const p of sf.panes) for (let i = 0; i < 3; i++) gb.box(p.m + (i - 1) * p.w * 0.3, 0.07 + (i % 2) * 0.03, p.z + 0.004, 0.028, 0.02, 0.003, i === 1 ? '#c8a878' : '#ece6d6');
@@ -1765,6 +2260,14 @@ MODELS.postoffice = (c, L) => {
   }
   pillarBox(c, W / 2 - 0.05, fz + 0.29);
   lamp(c, -W / 2 + 0.01, 0.43, 0.28);
+  cornerShop(c, 'postoffice', L, { x0: 0, w: W, fz, d: D }, { fascia: red, riser: '#6a1a1c', letter: '#ece6d6', lit: true });
+  // round the back: the red loading doors for the mail under a canopy, and
+  // mail sacks waiting for the van
+  shopBack(c, P, { fascia: red, letter: '#ece6d6', door: red, doorW: 0.12 });
+  const dx = P.x0 + P.door, cd = Math.max(0.025, Math.min(0.05, P.zb + 0.46)), cy = Math.min(0.17, P.fh * 0.66) + 0.03;
+  gb.box(dx, cy, P.zb - cd / 2, 0.18, 0.012, cd, pal.slate);
+  for (const s of [-1, 1]) gb.boxC(dx + s * 0.07, cy - 0.02, P.zb - cd / 2, 0.006, 0.006, cd, IRON_D, 0.6);
+  for (const p of backSpots(c, P, 3)) { sack(c, p.x, p.z, '#d8d4c8'); gb.box(p.x + 0.012, c.gy(p.x, p.z) + 0.05, p.z - 0.02, 0.012, 0.016, 0.003, red); }
 };
 
 // Counting House: a Georgian front of brick five windows wide, dead
@@ -1780,7 +2283,11 @@ MODELS.offices = (c, L) => {
   if (L === 0) {
     const W = 0.78, D = 0.52, H = 0.56, fz = 0.08, fh = H / 2;
     const wall = pal.forced ? pal.wall : pal.brick;
-    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors: 2, wall, roof: pal.slate, roofType: 'hip', rh: 0.22, nFront: 5, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8 });
+    const body = { z: fz - D / 2, w: W, d: D, h: H, floors: 2, nFront: 5, fancy: false }, P = backPlan(c, body, { sign: false });
+    house(c, { ...body, wall, roof: pal.slate, roofType: 'hip', rh: 0.22, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
+    // the clerks' way in at the back, its brass plates polished
+    shopBack(c, P, { door: '#2a2a30' });
+    for (let i = 0; i < 2; i++) gb.box(P.x0 + P.door - P.side * 0.07, 0.07 + i * 0.026, P.zb - 0.004, 0.024, 0.018, 0.004, GOLD);
     for (let i = 0; i < 5; i++) if (i !== 2) win(c, -W / 2 + (i + 0.5) * (W / 5), fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
     // the door case: pilasters, a cornice and a fanlight
     for (const s of [-1, 1]) gb.box(s * 0.065, 0, fz + 0.008, 0.02, 0.22, 0.02, trim);
@@ -1795,7 +2302,10 @@ MODELS.offices = (c, L) => {
   } else if (L === 1) {
     const W = 0.82, D = 0.54, H = 0.84, fz = 0.09, fh = H / 3;
     const wall = pal.forced ? pal.wall : pal.brick, band = pal.style === 'stone' ? shade(pal.wall, 1.15) : STONE;
-    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors: 3, wall, roof: pal.slate, roofType: 'gable', rh: 0.34, nFront: 2, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8 });
+    const body = { z: fz - D / 2, w: W, d: D, h: H, floors: 3, nFront: 2, fancy: false }, P = backPlan(c, body, { sign: false, escape: true });
+    house(c, { ...body, wall, roof: pal.slate, roofType: 'gable', rh: 0.34, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
+    shopBack(c, P, { door: '#2a2a30' });
+    fireEscape(c, P);
     for (const s of [-1, 1]) win(c, s * W / 4, fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
     for (let k = 1; k < 3; k++) gb.box(0, k * fh - 0.012, fz + 0.002, W + 0.006, 0.018, 0.008, band);
     // the gabled centre bay, its windows arched, a porch at its foot
@@ -1818,7 +2328,10 @@ MODELS.offices = (c, L) => {
   } else {
     const W = 0.84, D = 0.56, floors = 5, fh = 0.25, H = floors * fh, fz = 0.1;
     const wall = pal.forced ? pal.wall : pal.stoneWall;
-    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: 'flat', rh: 0.2, nFront: 4, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.85 });
+    const body = { z: fz - D / 2, w: W, d: D, h: H, floors, nFront: 4, fancy: false }, P = backPlan(c, body, { sign: false, escape: true });
+    house(c, { ...body, wall, roof: pal.slate, roofType: 'flat', rh: 0.2, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.85, backClear: P.clear });
+    shopBack(c, P, { door: '#2a2a30' });
+    fireEscape(c, P);
     // a giant order of pilasters up the front, a cornice, the name over the door
     for (const s of [-1, 0, 1]) gb.box(s * (W / 2 - 0.012), fh, fz + 0.008, s ? 0.03 : 0.024, H - fh - 0.04, 0.02, shade(wall, 1.12));
     gb.box(0, H - 0.05, fz + 0.012, W + 0.04, 0.05, 0.04, trim);
@@ -3172,85 +3685,119 @@ MODELS.terrace = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// A shop with homes over it, joined from a cottage and a shop (b.flavor: the
+// trade the shop sold). It keeps that trade's character: its walls and roof,
+// its shopfront with the goods in the windows, its sign on a bracket and its
+// wares on the pavement, and from the yard its back door, hoist and the
+// trade's own things (see shKit). At one end a door leads up to the homes;
+// the party walls carry the chimney stacks. A Market Row has two shopfronts,
+// a Merchant Block a third storey. On a street corner the end shop carries
+// its front round the corner, the stair door going to the other end.
+function shKit(c, flavor, L) {
+  const { pal, rng } = c;
+  const own = !pal.forced;
+  const K = {
+    wall: pal.wall, roof: L === 2 ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26, timber: pal.timber && L < 2, siding: false, dormers: 0,
+    fascia: '#5e432c', trim: '#e3dccd', riser: null, letter: '#e0c070', door: pal.accent, bow: false, awning: null, facing: null, lit: L >= 1,
+    plan: { hoist: true }, load: 'crate',
+  };
+  const pick = (list) => rng.pick(list);
+  if (flavor === 'market') K.awning = pal.awning;
+  else if (flavor === 'bakery') Object.assign(K, { wall: own ? '#e2cfa8' : pal.wall, timber: !own && pal.timber && L < 2, roof: L === 2 ? pal.slate : pal.tile, letter: '#e9dfc9', door: '#5e432c', awning: ownPick(c, ['#c8823a', '#b8503a', '#a86a3a'], 22), plan: { yard: true }, load: null });
+  else if (flavor === 'tavern') {
+    const paint = ownPick(c, ['#2f4a3a', '#5a2a2a', '#2a2f4a', '#3a2a1f'], 13);
+    Object.assign(K, { timber: L < 2, roof: L === 2 ? pal.slate : pal.tile, fascia: paint, riser: shade(paint, 0.8), trim: shade(paint, 1.5), facing: paint, door: paint, lit: true, plan: {}, load: null });
+  } else if (flavor === 'grocer') Object.assign(K, { fascia: pick(['#2f4a2a', '#3a4a2a', '#2a3a2a']), awning: pick(['#4f7a45', '#3f6a3a', '#6a8a2a']), load: 'sack' });
+  else if (flavor === 'butcher') Object.assign(K, {
+    wall: own ? pal.brick : pal.wall, roof: L === 2 ? pal.slate : own ? pal.tile : pal.roof, timber: !own && pal.timber && L < 2,
+    facing: L ? '#ece8de' : '#6a2a24', fascia: L ? '#1f3a3a' : '#5a2a22', trim: L ? '#ece8de' : '#e3dccd', riser: L ? '#2f5a4a' : '#7a5a3c', door: '#3a2a22', plan: { stack: true }, load: null,
+  });
+  else if (flavor === 'cobbler') Object.assign(K, { bow: L < 2, fascia: pick(['#3b2f2a', '#2a2420', '#4a2a2a']), plan: { wide: true }, load: null });
+  else if (flavor === 'draper') Object.assign(K, {
+    wall: own ? (L === 2 ? pal.stoneWall : ownPick(c, PAINTED, 3)) : pal.wall, roof: own ? pal.slate : pal.roof, roofType: L === 1 ? 'hip' : 'gable', timber: !own && pal.timber && L < 2,
+    dormers: L === 2 ? 4 : 3, fascia: pick(['#2a2a4a', '#3a1f2a', '#1f3a3a', '#3b2f2a']), awning: L === 1 ? pal.awning : null, load: 'bolt',
+  });
+  else if (flavor === 'ironmonger') Object.assign(K, { wall: own ? ownPick(c, ['#4f5a52', '#5a5048', '#46525a'], 5) : pal.wall, siding: own, roof: own ? pal.slate : pal.roof, timber: !own && pal.timber && L < 2, fascia: pick(['#2a3a2a', '#2f2f3a', '#3a2a1f']), plan: { hoist: true, yard: true } });
+  else if (flavor === 'chemist') Object.assign(K, {
+    wall: own ? (L === 2 ? pal.stoneWall : STUCCO) : pal.wall, roof: own ? pal.slate : pal.roof, roofType: 'hip', rh: 0.24, timber: !own && pal.timber && L < 2,
+    bow: L === 0, fascia: pick(['#1f3a3a', '#2a2a4a', '#3a1f2a']), letter: L === 2 ? '#ece6d6' : '#e0c070', plan: { wide: true }, load: null,
+  });
+  else if (flavor === 'stationer') Object.assign(K, { roof: L ? pal.slate : pal.forced ? pal.roof : pal.tile, roofType: 'halfhip', rh: 0.3, dormers: 3, fascia: pick(['#2a3a4a', '#3b2f2a', '#4a2a2a', '#2f3e2a']), plan: {}, load: null });
+  else if (flavor === 'coffeehouse') {
+    const pastel = ownPick(c, ['#c87a8a', '#7a9ac8', '#8ab08a', '#c8a050'], 9);
+    Object.assign(K, { wall: own ? ownPick(c, PAINTED, 8) : pal.wall, roof: L ? pal.slate : pal.roof, timber: !own && !L && pal.timber, bow: L < 2, fascia: L ? shade(pastel, 0.6) : pick(['#3b2f2a', '#2f3e2a', '#4a2a2a']), awning: L ? pastel : null, plan: {}, load: null });
+  } else if (flavor === 'postoffice') Object.assign(K, { wall: pal.forced ? pal.wall : L ? pal.stoneWall : '#efe9dc', roof: pal.slate, timber: !L && pal.timber, fascia: '#a8282a', riser: '#6a1a1c', letter: '#ece6d6', door: '#a8282a', lit: true, plan: {}, load: null });
+  return K;
+}
+
 MODELS.shophouse = (c, L) => {
   const { gb, rng, pal } = c;
   const f = rowFrame(c);
   const flavor = c.flavor || 'market';
-  const n = L === 0 ? 2 : 3;
-  const floors = L === 2 ? 3 : 2;
-  const fh = 0.27, h = floors * fh;
+  const K = shKit(c, flavor, L);
+  const n = L === 0 ? 2 : 3, floors = L === 2 ? 3 : 2, fh = 0.27, h = floors * fh;
   const W = f.len - 0.12, D = [0.54, 0.58, 0.62][L];
-  const z0 = -f.dep / 2 + D / 2 + 0.05, fz = z0 + D / 2;
-  const lower = L === 2 ? pal.stoneWall : pal.style === 'brick' ? pal.brick : pal.style === 'stone' ? pal.stoneWall : shade(pal.wall, 0.9);
-  const upper = L === 2 ? shade(pal.stoneWall, 1.08) : pal.wall;
-  const jet = pal.timber && L < 2 ? 0.03 : 0;
-  const roof = L === 2 ? pal.slate : pal.roof;
-  footing(c, 0, z0, W, D);
-  gb.cbox(0, 0, z0, W, fh, D, lower, 0, 0.02);
-  gb.cbox(0, fh, z0, W + jet * 2, h - fh, D + jet * 2, upper, 0, 0.018);
-  gb.box(0, fh - 0.012, z0, W + jet * 2 + 0.012, 0.024, D + jet * 2 + 0.012, jet ? TIMBER : shade(lower, 0.85));
-  const uw = W / n;
-  const awnA = pal.awning, awnB = '#e9dfc9';
-  for (let i = 0; i < n; i++) {
-    const ux = -W / 2 + (i + 0.5) * uw;
-    const shop = i < n - 1;
-    if (shop) {
-      // shopfront: a wide window, the shop door and a striped awning
-      win(c, ux - uw * 0.1, 0.04, fz, uw * 0.48, 0.13, 'f', 0.95);
-      door(c, ux + uw * 0.31, fz, 0.085, 0.17, pal.accent);
-      const k = Math.max(3, Math.round(uw / 0.1));
-      for (let a = 0; a < k; a++) gb.boxC(ux - uw / 2 + (a + 0.5) * (uw / k), fh - 0.03, fz + 0.065, uw / k, 0.014, 0.14, a % 2 ? awnB : awnA, 0.45);
-    } else {
-      // the stair door up to the homes above
-      door(c, ux - uw * 0.15, fz, 0.08, 0.17, pal.door);
-      win(c, ux + uw * 0.2, fh * 0.36, fz, 0.075, 0.1, 'f');
+  const z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2;
+  const jet = K.timber && pal.jetty ? 0.035 : 0, rh = K.rh * pal.pitch;
+  // a row that runs back from the street (turned) has no corner of its own
+  const corner = f.turned ? 0 : c.corner;
+  // the stair door up to the homes at one end (away from a street corner)
+  // and the shops along the rest
+  const st = corner === 2 ? -1 : 1, sw0 = 0.34, uw = (W - sw0) / (n - 1);
+  const shopX = (i) => (st > 0 ? -W / 2 : -W / 2 + sw0) + (i + 0.5) * uw, stairX = st * (W / 2 - sw0 / 2);
+  const body = { z: z0, w: W, d: D, h, floors, nFront: n * 2, timber: K.timber };
+  const P = backPlan(c, body, K.plan);
+  house(c, {
+    ...body, wall: K.wall, roof: K.roof, roofType: K.roofType, rh: K.rh, siding: K.siding, dormers: K.dormers, noDoor: true, bareFront: 1, shopWindow: true,
+    chimney: false, lit: 0.9, bareSide: corner, backClear: P.clear,
+  });
+  // the stacks on the party walls
+  const wallX = (i) => (st > 0 ? -W / 2 + i * uw : -W / 2 + sw0 + (i - 1) * uw);
+  for (let i = 1; i < n; i++) chimney(c, wallX(i), h - 0.05, h + (K.roofType === 'hip' ? 0.3 : rh + 0.08), z0 - 0.06, flavor === 'bakery' && i === 1 ? 'work' : 'home', flavor === 'bakery' && i === 1 ? '#8f4f3a' : STONE);
+  // the shops: the trade's shopfront, its goods in the windows, and its awning
+  let sf = null;
+  for (let i = 0; i < n - 1; i++) {
+    const ux = shopX(i);
+    if (K.facing) gb.box(ux, 0, fz + 0.003, uw, 0.26, 0.006, K.facing);
+    sf = shopfront(c, ux, fz + (K.facing ? 0.006 : 0), uw - 0.04, 0.26, { fascia: K.fascia, trim: K.trim, riser: K.riser, letter: K.letter, lit: K.lit, bow: K.bow, door: K.door });
+    if (WARES[flavor]) WARES[flavor](c, sf, L);
+    if (K.awning) awning(c, ux, sf.top - 0.004, fz, uw - 0.02, K.awning);
+    if (flavor === 'butcher') gb.cyl(ux + uw / 2 - 0.01, sf.top - 0.004, fz + 0.042, 0.011, 0.011, uw - 0.02, 8, ownPick(c, ['#2f5a8a', '#3a4a7a'], 14), 0, 0, Math.PI / 2);
+    if (flavor === 'postoffice') wallClock(c, ux, fh + 0.05, fz + jet + 0.002, 0.034);
+    if (flavor === 'ironmonger') {
+      // pails, lanterns and a kettle hung along a rail over the shop
+      const ry = 0.37, rz = fz + jet + 0.05, k = Math.round((uw - 0.1) / 0.07);
+      gb.box(ux, ry, rz, uw - 0.06, 0.008, 0.008, IRON_D);
+      for (const s of [-1, 1]) gb.box(ux + s * (uw / 2 - 0.04), ry - 0.003, fz + jet + 0.025, 0.008, 0.008, 0.05, IRON_D);
+      for (let j = 0; j < k; j++) {
+        const x = ux - uw / 2 + 0.05 + (j + 0.5) * ((uw - 0.1) / k);
+        gb.box(x, ry - 0.012, rz, 0.003, 0.012, 0.003, IRON_D);
+        if (j % 3 === 1) { gb.cyl(x, ry - 0.05, rz, 0.016, 0.02, 0.034, 6, '#3a3a3e'); gb.cone(x, ry - 0.016, rz, 0.016, 0.012, 6, '#3a3a3e'); }
+        else pail(c, x, ry - 0.06, rz, 0.85);
+      }
     }
-    for (let k = 1; k < floors; k++) {
-      for (const sx of [-1, 1]) win(c, ux + sx * uw * 0.22, k * fh + fh * 0.32, fz + jet, 0.075, 0.1, 'f');
-      win(c, ux, k * fh + fh * 0.34, z0 - D / 2 - jet, 0.075, 0.09, 'b');
-    }
-    win(c, ux, fh * 0.36, z0 - D / 2, 0.07, 0.09, 'b');
   }
-  for (const sx of [-1, 1]) for (let k = 1; k < floors; k++) win(c, sx * (W / 2 + jet), k * fh + fh * 0.34, z0, 0.07, 0.09, sx > 0 ? 'r' : 'l');
-  if (pal.timber && L < 2) {
-    for (let i = 0; i <= n * 2; i++) gb.box(-W / 2 - jet + i * (W + jet * 2) / (n * 2), fh, fz + jet + 0.004, 0.016, h - fh, 0.01, TIMBER);
-  }
-  const rh = 0.26;
-  if (L === 2) {
-    gb.hip(0, h, z0, W + 0.02, D + 0.02, 0.3, roof, 0.05);
-    for (let i = 0; i < n; i++) {
-      const x = -W / 2 + (i + 0.5) * uw;
-      gb.cbox(x, h + 0.02, z0 + D * 0.24, 0.1, 0.12, 0.1, upper, 0, 0.01);
-      gb.gable(x, h + 0.14, z0 + D * 0.24, 0.1, 0.12, 0.06, upper, roof, 0.02, true, 0.02);
-      win(c, x, h + 0.045, z0 + D * 0.24 + 0.05, 0.05, 0.06, 'f');
-    }
-  } else gb.gable(0, h, z0, W + jet * 2 + 0.02, D + jet * 2, rh, upper, roof, 0.05, false, 0.035);
-  for (let i = 1; i < n; i++) chimney(c, -W / 2 + i * uw, h - 0.05, h + (L === 2 ? 0.34 : rh + 0.08), z0 - 0.06, 'home', STONE);
-  // shop sign, lit at night once the business grows
-  const sw = (n - 1) * uw * 0.7;
-  const sx = -W / 2 + (n - 1) * uw / 2;
-  sign(c, sx, fh + 0.015, fz + jet + 0.006, sw, 0.06, '#3b2f2a');
-  if (L >= 1) { gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(sx, fh + 0.03, fz + jet + 0.014, sw * 0.85, 0.03, 0.008, '#e0c070'); gb.noGlow(); }
-  // the trade spills onto the pavement
-  const pz = fz + 0.2;
+  // the stair door up to the homes, with a window beside it
+  door(c, stairX - st * 0.07, fz, 0.08, 0.17, pal.door);
+  win(c, stairX + st * 0.08, fh * 0.36, fz, 0.075, 0.1, 'f');
+  // the trade's sign at the outer end of the shops, and its goods outside
+  const sx = (shopX(0) + shopX(n - 2)) / 2, pz = fz + 0.2, ex = -st * (W / 2 - 0.08);
   if (flavor === 'bakery') {
-    chimney(c, -W / 2 + uw * 0.3, h - 0.1, h + rh + 0.12, z0 - 0.12, 'work', '#8f4f3a');
-    const bx = -W / 2 + 0.08, by = c.gy(bx, pz);
+    const bx = -st * (W / 2 - 0.08), by = c.gy(bx, pz);
     gb.box(bx, by, pz, 0.016, 0.3, 0.016, '#3f342c');
-    gb.box(bx + 0.05, by + 0.28, pz, 0.11, 0.016, 0.016, '#3f342c');
-    gb.cyl(bx + 0.08, by + 0.2, pz, 0.045, 0.045, 0.014, 12, '#c9944a', 0, Math.PI / 2);
+    gb.box(bx + st * 0.05, by + 0.28, pz, 0.11, 0.016, 0.016, '#3f342c');
+    gb.cyl(bx + st * 0.08, by + 0.2, pz, 0.045, 0.045, 0.014, 12, '#c9944a', 0, Math.PI / 2);
     for (let i = 0; i < 3; i++) gb.sphere(sx - 0.06 + i * 0.06, c.gy(sx, pz) + 0.025, pz, 0.026, '#e2d4b4', 1, 0.8);
   } else if (flavor === 'tavern') {
-    const bx = -W / 2 + 0.1, by = fh + 0.06;
-    gb.box(bx, by, fz + 0.05, 0.012, 0.012, 0.1, '#2f2c2a');
-    sign(c, bx, by - 0.11, fz + 0.09, 0.1, 0.1, rng.pick(['#7a3a2a', '#2f4a6a', '#3f5a3a']), Math.PI / 2);
+    const by = fh + 0.06;
+    gb.box(ex, by, fz + jet + 0.05, 0.012, 0.012, 0.1, '#2f2c2a');
+    sign(c, ex, by - 0.11, fz + jet + 0.09, 0.1, 0.1, rng.pick(['#7a3a2a', '#2f4a6a', '#3f5a3a']), Math.PI / 2);
     barrel(c, sx - 0.12, pz); barrel(c, sx - 0.05, pz + 0.04, 0.9);
     bench(c, sx + 0.12, pz + 0.02, Math.PI);
-    lamp(c, W / 2 - 0.05, pz + 0.06, 0.28);
+    lamp(c, -ex, pz + 0.06, 0.28);
   } else if (SHOP_SIGNS[flavor]) {
-    // the high-street trades: their sign on a bracket and their goods outside
     const [kind, col] = SHOP_SIGNS[flavor];
-    hangSign(c, -W / 2 + 0.08, fh + 0.06, fz + jet, kind, col);
+    hangSign(c, ex, fh + 0.06, fz + jet, kind, col);
     pavementWares(c, flavor, sx, pz);
   } else {
     const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050', '#6f4a8a'];
@@ -3261,6 +3808,23 @@ MODELS.shophouse = (c, L) => {
     }
     crate(c, sx + 0.24, pz + 0.04);
   }
+  if (flavor === 'chemist') for (const s of [-1, 1]) { const x = shopX(0) + s * 0.09, z = fz + 0.12; gb.cyl(x, c.gy(x, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, x, z, 3, 0.012); }
+  // on a street corner the end shop carries its front round it
+  if (corner) {
+    const o = { fascia: K.fascia, trim: K.trim, riser: K.riser, letter: K.letter, lit: K.lit, bow: K.bow, awning: K.awning, facing: K.facing, lim: f.len / 2 };
+    if (flavor === 'tavern') cornerFronts(c, { x0: 0, w: W, fz, d: D }, o);
+    else cornerShop(c, flavor, L, { x0: 0, w: W, fz, d: D }, o);
+  }
+  // round the back: the trade's name, its back door and hoist, and what it
+  // keeps there (a smoke-house flue, an oven, a workshop window...)
+  shopBack(c, P, { fascia: K.fascia, letter: K.letter, door: flavor === 'postoffice' ? '#a8282a' : null, doorW: flavor === 'postoffice' ? 0.12 : 0.08, load: K.load, boltColor: ownPick(c, PAINTED, 12) });
+  if (flavor === 'butcher') backFlue(c, P.x0 + P.far, P.zb, h + 0.14, { color: K.wall === pal.brick ? shade(pal.brick, 0.9) : '#8f4f3a' });
+  else if (flavor === 'bakery') breadOven(c, P.x0 + P.far, P.zb, '#9a5a42');
+  else if (flavor === 'cobbler') backWindow(c, P.x0 + P.next, 0.07, P.zb, P.bw * 0.7, 0.11);
+  else if (flavor === 'chemist') { backWindow(c, P.x0 + P.next, 0.07, P.zb, P.bw * 0.66, 0.11, [0.6, 1.9, 1.0]); backFlue(c, P.x0 + (P.next + P.far) / 2, P.zb, h + 0.12, { tin: true, y0: 0.06 }); }
+  else if (flavor === 'coffeehouse') backFlue(c, P.x0 + (P.next + P.far) / 2, P.zb, h + 0.1, { tin: true, color: '#2a2a2e', y0: 0.04 });
+  else if (flavor === 'ironmonger') leaningBars(c, P.x0 + P.far, P.zb, 6);
+  else if (flavor === 'stationer') roofLights(c, 0, h, z0, D + jet * 2, rh, L ? [-0.6, -0.3, 0, 0.3, 0.6] : [-0.45, -0.15, 0.15, 0.45]);
   if (f.turned) gb.pop();
 };
 
@@ -5655,7 +6219,7 @@ export function buildModel(b, opts = {}) {
   const ground = opts.ground;
   const makeCtx = (gb, rng) => {
   const c = {
-    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
+    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, corner: b.corner || 0, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     houses: [],   // every house() drawn, where it stands (see annexes)
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !BUILDINGS[b.type].fields,
     smoke: [], glows: [], spin: null, work: null, fountain: null,

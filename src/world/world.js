@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, CORNER_SHOPS } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { newTownId } from '../util/text.js';
@@ -406,19 +406,42 @@ export class World {
     return FRONT;
   }
 
+  // A shop on a street corner: the street it faces turns the corner at one
+  // end of its front or both, a road running down that side of it too
+  // (b.corner: 1 its left, 2 its right, 3 both, as seen from the street).
+  // Such a shop carries its shopfront round onto the side street.
+  _cornerOf(b) {
+    if (!b.access || !CORNER_SHOPS.has(b.type)) return 0;
+    const [fx, fz] = DIRS[b.rot], [rx, rz] = DIRS[(b.rot + 1) % 4];
+    let m = 0;
+    for (const [bit, s] of [[1, -1], [2, 1]]) {
+      // the plot's tile at that end of its front: the street ahead of it and the road beside it
+      let at = null, best = -Infinity;
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) {
+        const x = b.x + dx, z = b.z + dz, v = (x * fx + z * fz) * 1000 + s * (x * rx + z * rz);
+        if (v > best) { best = v; at = [x, z]; }
+      }
+      if (this.roadAt(at[0] + fx, at[1] + fz) && this.roadAt(at[0] + s * rx, at[1] + s * rz)) m |= bit;
+    }
+    return m;
+  }
+
   // Re-decide every building's street front (after building, demolishing or
   // re-laying roads). The new building itself, if any, is not refitted.
   // The plot comes forward only where the street runs the whole width of it
   // (b.front). While a building stands on part of a grown plot (b.spare),
   // the building itself comes forward as far as its own part's street
-  // allows, as it did before the plot grew (b.ownFront).
+  // allows, as it did before the plot grew (b.ownFront). A shop on a corner
+  // turns its shopfront round it (b.corner). All of these come from the
+  // roads, so none is saved or sent.
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined;
-      if (f !== (b.front || 0) || own !== b.ownFront) {
+      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b);
+      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0)) {
         b.front = f;
         if (own === undefined) delete b.ownFront; else b.ownFront = own;
+        if (cn) b.corner = cn; else delete b.corner;
         if (b !== except) refit.push(b);
       }
     }

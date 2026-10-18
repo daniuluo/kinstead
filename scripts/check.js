@@ -58,6 +58,84 @@ ok(true, `all building models build (${verts} verts total)`);
   ok(true, `a shop with homes above builds for every trade it is joined from (${flavors.join(', ')})`);
 }
 
+// 1b. shops: on a street corner (b.corner) the shopfront turns the corner,
+// the model stays inside its plot and the villagers' way in stays the shop
+// door at the front (not the back door every shop now has); and a shop with
+// homes above keeps the look of its trade, so no two trades look alike
+{
+  const { CORNER_SHOPS, MERGES } = await import('../src/defs.js');
+  const THREE = await import('three');
+  const bad = [];
+  let shops = 0;
+  for (const type of CORNER_SHOPS) {
+    const def = BUILDINGS[type];
+    def.levels.forEach((_, level) => {
+      const bw = def.merged ? 2 : def.size, bd = def.merged ? 1 : def.size;
+      const base = { type, level, variant: 11 + level, flavor: def.merged ? 'grocer' : null, size: def.size, w: bw, d: bd, baseY: 0, minY: 0, rot: 0 };
+      const plain = buildModel(base, { flat: true });
+      // the open market and the market hall have no shopfront; the inn's
+      // wings and the ironmonger's open store take their right-hand side
+      const none = type === 'market' && (level === 0 || level === 3), right = (type === 'tavern' && level > 0) || (type === 'ironmonger' && level === 0);
+      for (const corner of [1, 2, 3]) {
+        const m = buildModel({ ...base, corner }, { flat: true }), bb = new THREE.Box3().setFromBufferAttribute(m.geo.attributes.position);
+        shops++;
+        if (m.geo.attributes.position.count <= plain.geo.attributes.position.count && !none && !(right && corner === 2)) bad.push(`${type} L${level} corner ${corner}: no side front`);
+        if (bb.min.x < -bw / 2 - 0.005 || bb.max.x > bw / 2 + 0.005 || bb.min.z < -bd / 2 - 0.005 || bb.max.z > bd / 2 + 0.005) bad.push(`${type} L${level} corner ${corner}: off its plot`);
+        if (plain.door && (!m.door || m.door.dz < 0.9)) bad.push(`${type} L${level} corner ${corner}: the way in faces ${m.door && m.door.dz.toFixed(2)}`);
+      }
+    });
+  }
+  ok(!bad.length, `corner shops turn their shopfront round the corner, inside their plots, the door still at the front (${shops} models)${bad.length ? ': ' + bad.join('; ') : ''}`);
+  const flavors = MERGES.find(m => m.to === 'shophouse').b, alike = [];
+  for (let level = 0; level < BUILDINGS.shophouse.levels.length; level++) {
+    const seen = new Map();
+    for (const flavor of flavors) {
+      const g = buildModel({ type: 'shophouse', level, variant: 9, flavor, size: 2, w: 2, d: 1, baseY: 0, minY: 0, rot: 0 }, { flat: true }).geo;
+      const col = g.attributes.color.array;
+      let sum = 0;
+      for (let i = 0; i < col.length; i += 7) sum += col[i];
+      const sig = `${g.attributes.position.count}:${sum.toFixed(2)}`;
+      if (seen.has(sig)) alike.push(`L${level} ${seen.get(sig)} = ${flavor}`);
+      seen.set(sig, flavor);
+    }
+  }
+  ok(!alike.length, `a shop with homes above looks like its own trade at every level${alike.length ? ': ' + alike.join('; ') : ''}`);
+}
+
+// 1c. the world knows a shop stands on a street corner from the roads round
+// it (b.corner: 1 its left, 2 its right), rebuilds it when that changes, and
+// never saves it: a load works it out again
+{
+  const tw = World.createNew({ N: 48, seed: 77, name: 'Cornerby' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  let shop = null, sideRoad = null;
+  const free = (x, z) => tw.inBounds(x, z) && !tw.buildingOn(x, z) && !tw.roadAt(x, z) && !tw.terrain.isWater(x, z) && tw.checkRoad(x, z, 1).ok;
+  for (let z = 4; z < tw.N - 5 && !shop; z++) for (let x = 4; x < tw.N - 5 && !shop; x++) {
+    // a street in front (z - 1) and a side street down the right (x + 1), and nothing else round it
+    const street = [[x - 1, z - 1], [x, z - 1], [x + 1, z - 1]], side = [[x + 1, z], [x + 1, z + 1]];
+    if (![...street, ...side, [x, z], [x - 1, z], [x, z + 1]].every(([a, b]) => free(a, b))) continue;
+    tw.placeRoads(street, 1);
+    const r = tw.placeBuilding('grocer', x, z, { instant: true });
+    if (!r.ok || r.building.rot !== 2) { if (r.ok) tw.removeBuilding(r.building.id, 0); continue; }
+    shop = r.building; sideRoad = side;
+  }
+  ok(!!shop && !shop.corner, 'a shop with only a street in front is not on a corner');
+  if (shop) {
+    const refits = [];
+    tw.on('building:refit', (b) => refits.push(b.id));
+    tw.placeRoads(sideRoad, 1);
+    // facing -z (rot 2), the side street at x + 1 is on its left
+    ok(shop.corner === 1 && refits.includes(shop.id), `a side street turning the corner makes it a corner shop, rebuilt (corner ${shop.corner})`);
+    const saved = JSON.stringify(serialize(tw));
+    ok(!saved.includes('corner'), 'the corner is never saved');
+    const tw2 = deserialize(JSON.parse(saved));
+    ok(tw2.buildings.get(shop.id).corner === 1, 'a loaded town works the corner out again');
+    refits.length = 0;
+    for (const [x, z] of sideRoad) tw.removeRoad(x, z);
+    ok(!shop.corner && refits.includes(shop.id), 'taking the side street up makes it an ordinary shop again');
+  }
+}
+
 // 2. terrain generation over many seeds
 for (let s = 1; s <= 25; s++) {
   const w = World.createNew({ N: 48, seed: s * 7919, name: 'T' });
