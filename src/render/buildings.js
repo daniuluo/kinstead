@@ -365,7 +365,7 @@ function house(c, o) {
     gb.box(0, fh - 0.012, 0, w + jetty * 2 + 0.01, 0.024, d + jetty * 2 + 0.01, TIMBER);
   } else gb.cbox(0, 0, 0, w, h, d, o.wall, 0, 0.024);
   if (o.timber) timber(c, w + jetty * 2, d + jetty * 2, h, floors);
-  if (fancy && pal.style === 'clapboard') siding(c, w, d, 0, h, o.wall);
+  if (fancy && (pal.style === 'clapboard' || o.siding)) siding(c, w, d, 0, h, o.wall);
   if (fancy && (pal.style === 'brick' || pal.style === 'stone') && !o.timber) quoins(c, w, d, h, o.wall);
   if (fancy && pal.ivy && !o.shopWindow) ivy(c, w, d, h);
   const rw = w + jetty * 2, rd = d + jetty * 2;
@@ -373,6 +373,8 @@ function house(c, o) {
   const alongZ = !!o.alongZ;
   let roofType = o.roofType;
   if (fancy && roofType === 'gable' && ['halfhip', 'saltbox', 'crossgable'].includes(pal.roofStyle)) roofType = pal.roofStyle;
+  // a gabled bay would stand in front of a shopfront
+  if (o.bareFront && roofType === 'crossgable') roofType = 'gable';
   if (roofType === 'hip') gb.hip(0, h, 0, rw, rd, rh, o.roof, 0.06, alongZ);
   else if (roofType === 'thatch') thatchRoof(c, 0, h, 0, rw, rd, rh, o.wall, o.roof, alongZ);
   else if (roofType === 'flat') gb.cbox(0, h, 0, rw + 0.03, 0.045, rd + 0.03, o.roof, 0, 0.01);
@@ -406,7 +408,8 @@ function house(c, o) {
       const u = -hw + (i + 0.5) * (w / nF);
       if (f === 0 && !o.noDoor && Math.abs(u - doorX) < 0.08) continue;
       const shop = f === 0 && o.shopWindow;
-      win(c, u, wy - (shop ? 0.02 : 0), hd + jz, shop ? ww * 1.6 : ww, shop ? wh * 1.3 : wh, 'f', o.lit);
+      // bareFront: the ground-floor front (or that many floors) is left for a shopfront
+      if (f >= (o.bareFront === true ? 1 : o.bareFront || 0)) win(c, u, wy - (shop ? 0.02 : 0), hd + jz, shop ? ww * 1.6 : ww, shop ? wh * 1.3 : wh, 'f', o.lit);
       if (!o.noBack && rng.chance(0.7)) win(c, u, wy, -hd - jz, ww, wh, 'b', o.lit);
     }
     for (let i = 0; i < nS; i++) {
@@ -949,6 +952,847 @@ MODELS.tavern = (c, L) => {
   gb.box(tx, ty, tz, 0.016, 0.065, 0.016, '#3f342c');
   gb.cyl(tx, ty + 0.065, tz, 0.055, 0.055, 0.01, 8, '#7a5636');
   lamp(c, 0.14, 0.42, 0.26);
+};
+
+// ----------------------------------------------------------- the high street
+// A shop for each trade (defs TRADES), standing at the front of its plot
+// like the market and the bakery: a house whose ground floor is a
+// shopfront, the trade's sign over the door and its goods out on the
+// pavement. Each sets its front (fz) about the same distance back, so a row
+// of them makes a street.
+
+const FASCIA = ['#2f3e2a', '#3b2f2a', '#2a3a4a', '#4a2a2a', '#2f2f3a', '#1f3a3a'];
+const GOLD = '#d0a03a', IRON_D = '#2f2c2a', STUCCO = '#ebe4d6';
+// A pick of the building's own that stays the same at every level (c.rng
+// changes with the level).
+const ownPick = (c, list, salt = 0) => new RNG(((c.variant || 0) ^ (0x9e3779 + salt * 7919)) >>> 0).pick(list);
+
+// The body of a shop: a house with the front of its ground floor (or of
+// `bare` floors) left bare for the shopfront. Its stack stands on the ridge
+// (one built up the outside of a gable wall would stand off the plot).
+function shopBody(c, o, bare = 1) {
+  const p = c.pal.chimneyPos || (c.pal.extChimney ? 'outside' : c.pal.chimneys > 1 ? 'ends' : 'side');
+  return house(c, { nFront: 3, doorX: 0, lit: 0.9, chimneyPos: p === 'outside' ? 'side' : p, ...o, shopWindow: true, bareFront: bare, noDoor: true });
+}
+
+// A shopfront across the wall face at z (facing +z), w wide and h tall:
+// pilasters at the ends, display windows on a stall riser either side of
+// the shop door (the door villagers use), lit in the evening, and a fascia
+// board along the top with the name in a lighter strip, lit after dark when
+// o.lit. o.bow: bowed windows standing out from the wall. Returns the
+// windows' front panes ({ m: centre, w: width, z: face }) for goods to be
+// set out in, and the height of the window tops.
+function shopfront(c, x, z, w, h, o = {}) {
+  const { gb, rng, pal } = c;
+  const trim = o.trim || '#e3dccd', fascia = o.fascia || rng.pick(FASCIA), riser = o.riser || shade(fascia, 1.3);
+  const dx = x + (o.doorX || 0), dw = o.doorW || 0.085, top = h - 0.06;
+  const a = x - w / 2 + 0.024, b = x + w / 2 - 0.024, gap = dw / 2 + 0.018;
+  const spans = o.noDoor ? [[a, b]] : [[a, dx - gap], [dx + gap, b]].filter(([s, e]) => e - s > 0.05);
+  const panes = [];
+  for (const [s, e] of spans) {
+    const m = (s + e) / 2, sw = e - s;
+    if (o.bow) { panes.push(bowWindow(c, m, z, sw, top, trim, riser)); continue; }
+    gb.box(m, 0, z + 0.008, sw, 0.05, 0.02, riser);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.3));
+    gb.box(m, 0.05, z + 0.006, sw, top - 0.05, 0.012, GLASS);
+    gb.noGlow();
+    const n = Math.max(1, Math.round(sw / 0.075));
+    for (let i = 1; i < n; i++) gb.box(s + (i * sw) / n, 0.05, z + 0.013, 0.007, top - 0.05, 0.006, trim);
+    gb.box(m, top - 0.04, z + 0.013, sw, 0.007, 0.006, trim);
+    panes.push({ m, w: sw, z: z + 0.016 });
+  }
+  for (const sd of [-1, 1]) gb.box(x + sd * (w / 2 - 0.012), 0, z + 0.01, 0.026, h, 0.026, trim);
+  gb.box(x, top, z + 0.012, w, 0.06, 0.03, fascia);
+  gb.box(x, h, z + 0.016, w + 0.03, 0.014, 0.04, shade(trim, 0.9));
+  if (o.lit) gb.glow(1.8, 1.4, 0.6, 3.1);
+  gb.box(x, top + 0.016, z + 0.028, w * 0.6, 0.026, 0.006, o.letter || '#e0c070');
+  gb.noGlow();
+  if (!o.noDoor) door(c, dx, z, dw, Math.min(0.17, top), o.door || pal.door);
+  return { panes, top };
+}
+
+// A bowed window standing out from the wall at z, sw wide: a front pane and
+// two angled side panes on a riser, under a lead top.
+function bowWindow(c, m, z, sw, top, trim, riser) {
+  const { gb, rng } = c;
+  const p = Math.min(0.05, sw * 0.3), fw2 = sw * 0.6, sl = (sw - fw2) / 2, len = Math.hypot(sl, p), ang = Math.atan2(p, sl);
+  const sides = [[m, z + p, fw2, 0], [m - fw2 / 2 - sl / 2, z + p / 2, len, -ang], [m + fw2 / 2 + sl / 2, z + p / 2, len, ang]];
+  for (const [px, pz, pw, ry] of sides) gb.box(px, 0, pz, pw, 0.05, 0.02, riser, ry);
+  gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.3));
+  for (const [px, pz, pw, ry] of sides) gb.box(px, 0.05, pz, pw, top - 0.05, 0.012, GLASS, ry);
+  gb.noGlow();
+  for (const sd of [-1, 0, 1]) gb.box(m + (sd * fw2) / 2, 0.05, z + p + 0.006, sd ? 0.01 : 0.007, top - 0.05, 0.008, trim);
+  gb.box(m, top, z + p / 2, sw + 0.012, 0.02, p + 0.02, shade(trim, 0.85));
+  return { m, w: fw2, z: z + p + 0.01 };
+}
+
+// A striped canvas awning sloping out from the wall at z, its top edge at
+// y, with a scalloped valance along the front.
+function awning(c, x, y, z, w, colA, colB = '#e9dfc9', depth = 0.15) {
+  const { gb } = c;
+  const k = Math.max(3, Math.round(w / 0.1)), sw = w / k, a = 0.45;
+  const cy = y - (Math.sin(a) * depth) / 2, cz = z + (Math.cos(a) * depth) / 2 + 0.006;
+  const fy = y - Math.sin(a) * depth, fzz = z + Math.cos(a) * depth + 0.006;
+  for (let i = 0; i < k; i++) {
+    const sx = x - w / 2 + (i + 0.5) * sw, col = i % 2 ? colB : colA;
+    gb.boxC(sx, cy, cz, sw, 0.012, depth, col, a);
+    gb.box(sx, fy - 0.026, fzz, sw * 0.92, 0.028, 0.006, col);
+  }
+}
+
+// A sign on an iron arm off the wall at (x, y, z), hung side-on so it reads
+// from along the street: a board, or the trade's emblem (a boot, a mortar
+// and pestle, a coffee pot, a key, an open book, a pair of shears).
+function hangSign(c, x, y, z, kind, color = '#3f4f5a') {
+  const { gb } = c;
+  gb.box(x, y, z + 0.065, 0.01, 0.01, 0.13, IRON_D);
+  gb.boxC(x, y - 0.03, z + 0.03, 0.008, 0.008, 0.08, IRON_D, -0.75);
+  const hz = z + 0.1, by = y - 0.02;
+  gb.box(x, by, hz, 0.004, 0.02, 0.004, IRON_D);
+  if (kind === 'boot') {
+    gb.box(x, by - 0.08, hz - 0.012, 0.018, 0.08, 0.034, color);
+    gb.box(x, by - 0.08, hz + 0.02, 0.018, 0.026, 0.046, color);
+  } else if (kind === 'mortar') {
+    gb.cyl(x, by - 0.05, hz, 0.034, 0.024, 0.042, 8, color);
+    gb.cyl(x, by - 0.0085, hz, 0.036, 0.036, 0.006, 8, shade(color, 0.85));
+    gb.boxC(x, by + 0.005, hz + 0.012, 0.009, 0.07, 0.009, '#e8e0d0', 0.5);
+  } else if (kind === 'pot') {
+    gb.cyl(x, by - 0.064, hz, 0.02, 0.028, 0.058, 8, color);
+    gb.cone(x, by - 0.006, hz, 0.02, 0.022, 8, color);
+    gb.boxC(x, by - 0.04, hz + 0.034, 0.008, 0.008, 0.034, color, -0.8);
+    gb.boxC(x, by - 0.035, hz - 0.03, 0.006, 0.04, 0.006, color);
+  } else if (kind === 'key') {
+    gb.cyl(x + 0.006, by - 0.03, hz - 0.034, 0.022, 0.022, 0.012, 10, color, 0, 0, Math.PI / 2);
+    gb.box(x, by - 0.035, hz + 0.018, 0.012, 0.012, 0.08, color);
+    gb.box(x, by - 0.058, hz + 0.046, 0.012, 0.03, 0.014, color);
+  } else if (kind === 'book') {
+    for (const s of [-1, 1]) gb.boxC(x, by - 0.035, hz + s * 0.022, 0.012, 0.05, 0.044, color, s * 0.25);
+    for (const s of [-1, 1]) gb.boxC(x, by - 0.032, hz + s * 0.02, 0.016, 0.042, 0.036, '#ece6d6', s * 0.25);
+  } else if (kind === 'shears') {
+    for (const s of [-1, 1]) gb.boxC(x, by - 0.05, hz, 0.008, 0.1, 0.012, color, s * 0.45);
+    for (const s of [-1, 1]) gb.cyl(x + 0.005, by - 0.095, hz + s * 0.026, 0.014, 0.014, 0.01, 8, color, 0, 0, Math.PI / 2);
+  } else gb.box(x, by - 0.09, hz, 0.012, 0.09, 0.11, color);
+}
+
+// Tiered trestles of produce: rows of apples, carrots, cabbages and the
+// like banked up towards the window.
+function produce(c, x, z, w) {
+  const { gb, rng } = c;
+  const y = c.gy(x, z), a = 0.45, ta = Math.tan(a);
+  const COL = ['#c8402f', '#e08a2f', '#7aa34a', '#5f8a3a', '#d9c050', '#8a3a6a', '#a8c060'];
+  for (const s of [-1, 1]) gb.box(x + s * (w / 2 - 0.012), y, z, 0.016, 0.09, 0.11, '#5e432c');
+  gb.boxC(x, y + 0.08, z, w, 0.012, 0.13, '#86613e', a);
+  const n = Math.max(2, Math.round(w / 0.042));
+  for (let row = 0; row < 3; row++) {
+    const dz = 0.04 - row * 0.04, col = rng.pick(COL);
+    for (let i = 0; i < n; i++) gb.sphere(x - w / 2 + (i + 0.5) * (w / n), y + 0.086 - dz * ta + 0.018, z + dz, 0.019, col, 0);
+  }
+}
+
+function sack(c, x, z, color = '#c8b088') {
+  const y = c.gy(x, z);
+  c.gb.blob(x, y + 0.032, z, 0.03, 0.036, 0.027, color);
+  c.gb.box(x, y + 0.062, z, 0.014, 0.014, 0.014, shade(color, 0.8));
+}
+
+// A wicker basket heaped with fruit.
+function basket(c, x, z, color) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.034, 0.026, 0.035, 8, '#a8804e');
+  for (let k = 0; k < 4; k++) gb.sphere(x + Math.cos(k * 1.6) * 0.014, y + 0.04, z + Math.sin(k * 1.6) * 0.014, 0.014, color, 0);
+}
+
+// A tea chest, banded with tin.
+function teaChest(c, x, z, s = 1) {
+  const y = c.gy(x, z);
+  c.gb.cbox(x, y, z, 0.07 * s, 0.07 * s, 0.07 * s, '#9a6a40', 0, 0.004);
+  c.gb.box(x, y + 0.03 * s, z, 0.074 * s, 0.008, 0.074 * s, '#8a8a84');
+}
+
+// The butcher's block on the pavement, a cleaver left in it.
+function choppingBlock(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.042, 0.048, 0.085, 9, '#8a6a48');
+  gb.cyl(x, y + 0.085, z, 0.043, 0.043, 0.006, 9, '#c8a888');
+  gb.box(x + 0.01, y + 0.088, z, 0.004, 0.03, 0.03, '#b8bcc0');
+  gb.box(x + 0.01, y + 0.118, z, 0.007, 0.007, 0.045, '#5e432c');
+}
+
+// An iron rail along a shopfront (at z, height y, w long) hung with joints
+// of meat, with birds and game between them at a poulterer's.
+function meatRail(c, x, y, z, w, birds = false) {
+  const { gb, rng } = c;
+  gb.box(x, y, z, w, 0.008, 0.008, IRON_D);
+  const n = Math.max(2, Math.round(w / 0.06));
+  for (let i = 0; i < n; i++) {
+    const jx = x - w / 2 + (i + 0.5) * (w / n);
+    gb.box(jx, y - 0.014, z, 0.003, 0.014, 0.003, '#8a8a84');
+    if (birds && i % 2) {
+      gb.blob(jx, y - 0.038, z, 0.017, 0.026, 0.016, rng.pick(['#f2ede0', '#c8a070', '#8a6a48']));
+      gb.box(jx, y - 0.016, z, 0.012, 0.008, 0.004, '#d9a030');
+    } else {
+      gb.blob(jx, y - 0.046, z, 0.021, 0.033, 0.019, rng.pick(['#a8352e', '#b84a3a', '#8a2a26', '#c0604a']), rng.float(-0.5, 0.5));
+      gb.sphere(jx, y - 0.02, z, 0.012, '#e8d0b8');
+    }
+  }
+}
+
+// A boot or shoe seen side-on, toe to +x.
+function boot(c, x, y, z, color, s = 1) {
+  c.gb.box(x - 0.005 * s, y, z, 0.01 * s, 0.03 * s, 0.012 * s, color);
+  c.gb.box(x + 0.004 * s, y, z, 0.024 * s, 0.011 * s, 0.012 * s, color);
+}
+
+// Bolts of cloth stood in a rack, in every colour.
+function clothStand(c, x, z) {
+  const { gb, rng } = c;
+  const y = c.gy(x, z);
+  gb.box(x, y, z, 0.15, 0.012, 0.06, '#5e432c');
+  gb.box(x, y + 0.08, z - 0.03, 0.15, 0.012, 0.012, '#5e432c');
+  for (const s of [-1, 1]) gb.box(x + s * 0.07, y, z - 0.03, 0.012, 0.09, 0.012, '#5e432c');
+  for (let i = 0; i < 5; i++) gb.cyl(x - 0.056 + i * 0.028, y + 0.012, z - 0.006, 0.012, 0.012, 0.085, 6, rng.pick(PAINTED.concat(ACCENT)), 0, -0.25);
+}
+
+// A tailor's dummy on its stand.
+function dummy(c, x, z, color) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.022, 0.024, 0.008, 8, IRON_D);
+  gb.cyl(x, y, z, 0.004, 0.004, 0.06, 4, IRON_D);
+  gb.cyl(x, y + 0.055, z, 0.018, 0.034, 0.05, 8, color);
+  gb.cyl(x, y + 0.105, z, 0.02, 0.014, 0.03, 8, color);
+  gb.sphere(x, y + 0.142, z, 0.008, '#c8b088');
+}
+
+// Galvanised ware: a pail, a tin bath, a dustbin; and a coil of rope.
+function pail(c, x, y, z, s = 1) {
+  c.gb.cyl(x, y, z, 0.026 * s, 0.02 * s, 0.048 * s, 8, '#a4acb0');
+  c.gb.box(x, y + 0.048 * s, z, 0.05 * s, 0.004, 0.004, '#5a5a5e');
+}
+function tinBath(c, x, z, ry = 0) {
+  const y = c.gy(x, z);
+  c.gb.cbox(x, y, z, 0.14, 0.05, 0.08, '#9aa4a8', ry, 0.024);
+  c.gb.box(x, y + 0.05, z, 0.11, 0.004, 0.055, '#6a7276', ry);
+}
+function dustbin(c, x, z) {
+  const y = c.gy(x, z);
+  c.gb.cyl(x, y, z, 0.03, 0.027, 0.08, 9, '#9aa4a8');
+  c.gb.cyl(x, y + 0.08, z, 0.033, 0.033, 0.008, 9, '#848e92');
+  c.gb.box(x, y + 0.088, z, 0.02, 0.008, 0.008, '#5a5a5e');
+}
+function ropeCoil(c, x, z) {
+  const y = c.gy(x, z);
+  c.gb.cyl(x, y, z, 0.034, 0.036, 0.022, 10, '#b89a5a');
+  c.gb.cyl(x, y + 0.022, z, 0.016, 0.016, 0.003, 8, '#5e4a36');
+}
+// A box mangle with its rollers and wheel.
+function mangle(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  for (const s of [-1, 1]) gb.box(x + s * 0.04, y, z, 0.01, 0.12, 0.04, '#3a3a3e');
+  for (const k of [0.07, 0.096]) gb.cyl(x - 0.04, y + k, z, 0.012, 0.012, 0.08, 8, '#d8d0c0', 0, 0, -Math.PI / 2);
+  gb.cyl(x + 0.052, y + 0.08, z, 0.03, 0.03, 0.006, 10, '#3a3a3e', 0, 0, Math.PI / 2);
+}
+function wheelbarrow(c, x, z, ry = 0) {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  gb.cbox(0, 0.03, 0, 0.08, 0.04, 0.11, '#4f6a5a', 0, 0.006);
+  gb.cyl(0.006, 0.022, 0.075, 0.022, 0.022, 0.012, 8, '#3a2a1f', 0, 0, Math.PI / 2);
+  for (const s of [-1, 1]) gb.box(s * 0.03, 0.035, -0.09, 0.008, 0.008, 0.08, '#5e432c');
+  gb.pop();
+}
+
+// A carboy: a great glass jar of coloured water, lit from behind at night.
+const CARBOY = [['#c8302a', [2.4, 0.5, 0.45]], ['#2f8a4a', [0.5, 2.0, 0.7]], ['#2f5ab8', [0.55, 0.9, 2.4]], ['#d9a030', [2.2, 1.5, 0.4]]];
+function carboy(c, x, y, z, k, s = 1) {
+  const { gb } = c;
+  const [col, g] = CARBOY[k % CARBOY.length];
+  gb.glow(g[0], g[1], g[2], 3.05);
+  gb.sphere(x, y + 0.026 * s, z, 0.026 * s, col, 1);
+  gb.noGlow();
+  gb.cyl(x, y + 0.046 * s, z, 0.008 * s, 0.01 * s, 0.02 * s, 6, '#cfd8dc');
+  gb.cone(x, y + 0.066 * s, z, 0.012 * s, 0.018 * s, 6, GOLD);
+}
+// A row of little bottles on a shelf in a window.
+function bottleShelf(c, s, e, y, z) {
+  const { gb, rng } = c;
+  gb.box((s + e) / 2, y, z, e - s, 0.006, 0.02, '#5e432c');
+  for (let x = s + 0.01; x < e - 0.006; x += 0.016) gb.cyl(x, y + 0.006, z, 0.005, 0.006, 0.02, 5, rng.pick(['#2f6a4a', '#7a3a2a', '#2f4a7a', '#d8d0b8', '#5a3a6a']));
+}
+// A penny weighing machine.
+function weighingMachine(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.box(x, y, z, 0.06, 0.012, 0.06, '#5a5a5e');
+  gb.cbox(x, y + 0.012, z - 0.022, 0.036, 0.11, 0.022, '#8a2f2f', 0, 0.004);
+  gb.cyl(x, y + 0.1, z - 0.01, 0.017, 0.017, 0.006, 10, '#ece6da', 0, Math.PI / 2);
+}
+
+// Books on a shelf in a shop window, from s to e at height y.
+function bookShelf(c, s, e, y, z) {
+  const { gb, rng } = c;
+  gb.box((s + e) / 2, y, z, e - s, 0.006, 0.022, '#5e432c');
+  for (let x = s + 0.006; x < e - 0.012;) {
+    const bw = rng.float(0.008, 0.013);
+    gb.box(x + bw / 2, y + 0.006, z, bw, rng.float(0.022, 0.032), 0.016, rng.pick(['#8a2f2f', '#2f5a8a', '#2f6a4a', '#c09040', '#5a3a6a', '#e8e0d0', '#3a3a3e']));
+    x += bw + 0.002;
+  }
+}
+// A newsagent's board with the day's bills.
+function newsBoard(c, x, z, ry = 0) {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const s of [-1, 1]) {
+    gb.boxC(0, 0.05, s * 0.014, 0.07, 0.1, 0.006, '#3a3a3e', -s * 0.14);
+    gb.boxC(0, 0.058, s * 0.018, 0.056, 0.06, 0.002, '#ece6d6', -s * 0.14);
+  }
+  gb.pop();
+}
+// A red pillar box at the kerb.
+function pillarBox(c, x, z) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.026, 0.03, 0.11, 10, '#b8302a');
+  gb.cyl(x, y + 0.11, z, 0.033, 0.033, 0.012, 10, '#9a2622');
+  gb.sphere(x, y + 0.122, z, 0.025, '#b8302a', 0, 0.5);
+  gb.box(x, y + 0.084, z + 0.027, 0.026, 0.006, 0.006, '#1a1a1a');
+}
+// A barrow of second-hand books.
+function bookBarrow(c, x, z) {
+  const { gb, rng } = c;
+  gb.push(x, c.gy(x, z), z, 0);
+  gb.cbox(0, 0.05, 0, 0.16, 0.025, 0.08, '#6e5034', 0, 0.006);
+  for (const s of [-1, 1]) gb.cyl(s * 0.06, 0.04, 0.046, 0.04, 0.04, 0.01, 8, '#3a2a1f', 0, Math.PI / 2);
+  for (const s of [-1, 1]) gb.box(s * 0.07, 0, -0.03, 0.01, 0.05, 0.01, '#5e432c');
+  for (let i = 0; i < 7; i++) gb.box(-0.06 + i * 0.02, 0.075, rng.float(-0.015, 0.015), 0.016, 0.012, 0.03, rng.pick(['#8a2f2f', '#2f5a8a', '#2f6a4a', '#c09040', '#5a3a6a']), rng.float(-0.3, 0.3));
+  gb.pop();
+}
+
+// A café table with two chairs, under a parasol if one is given.
+function cafeTable(c, x, z, parasol = null) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.006, 0.012, 0.055, 5, IRON_D);
+  gb.cyl(x, y + 0.055, z, 0.032, 0.032, 0.008, 10, '#ece6da');
+  for (const s of [-1, 1]) {
+    gb.box(x + s * 0.05, y, z, 0.026, 0.032, 0.026, '#5e432c');
+    gb.box(x + s * 0.062, y + 0.032, z, 0.006, 0.035, 0.026, '#5e432c');
+  }
+  if (parasol) {
+    gb.cyl(x, y + 0.063, z, 0.004, 0.004, 0.12, 4, '#ece6da');
+    gb.cone(x, y + 0.16, z, 0.075, 0.035, 8, parasol);
+  }
+}
+// A palm or bay tree in a tub.
+function tubPlant(c, x, z, palm = false) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.028, 0.022, 0.042, 8, palm ? '#a8603a' : '#4e5a4a');
+  gb.cyl(x, y + 0.04, z, 0.006, 0.008, 0.06, 5, '#6e5034');
+  if (palm) for (let k = 0; k < 5; k++) gb.boxC(x + Math.cos(k * 1.26) * 0.028, y + 0.1, z + Math.sin(k * 1.26) * 0.028, 0.06, 0.006, 0.018, '#4f7a3a', 0, -k * 1.26, -0.45);
+  else gb.sphere(x, y + 0.12, z, 0.04, '#3f6a32', 1);
+}
+
+// Greengrocer: a low shop under a green-and-white awning, the produce
+// banked up on trestles out front and sacks of potatoes at the door. The
+// Fruiterer is two storeys with baskets of fruit and its name lit at night;
+// Grocery & Provisions is three, in brick, with tea chests, a barrow and a
+// lamp.
+MODELS.grocer = (c, L) => {
+  const { rng, pal } = c;
+  const W = [0.62, 0.74, 0.84][L], D = [0.46, 0.54, 0.58][L], H = [0.36, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  const thatch = !L && pal.thatched;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall,
+    roof: thatch ? pal.thatch : L === 2 ? pal.slate : pal.roof, roofType: thatch ? 'thatch' : L === 2 ? 'hip' : 'gable', rh: L === 2 ? 0.26 : 0.27,
+    chimney: true, timber: L < 2 && pal.timber,
+  });
+  const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: rng.pick(['#2f4a2a', '#3a4a2a', '#2a3a2a']), lit: L >= 1 });
+  awning(c, 0, sf.top - 0.004, fz, W - 0.02, rng.pick(['#4f7a45', '#3f6a3a', '#6a8a2a']));
+  const pz = fz + 0.21;
+  produce(c, -W * 0.26, pz, W * 0.34);
+  produce(c, W * 0.26, pz, W * 0.34);
+  sack(c, W / 2 - 0.01, pz + 0.02); sack(c, W / 2 - 0.05, pz + 0.07, '#b8a070');
+  if (L === 0) { crate(c, -W / 2 + 0.01, pz + 0.04); crate(c, -W / 2 + 0.05, pz + 0.08, 0.85, '#a88458'); }
+  else {
+    for (let i = 0; i < 3; i++) basket(c, -0.08 + i * 0.08, pz + 0.07 + (i % 2) * 0.02, rng.pick(['#c8402f', '#e0b030', '#9ab830', '#8a3a6a']));
+    if (L === 1) basket(c, -W / 2 + 0.02, pz + 0.04, '#e08a2f');
+  }
+  if (L === 2) { teaChest(c, -W / 2 + 0.02, pz + 0.06); teaChest(c, -W / 2 + 0.02, pz + 0.06 - 0.075, 0.9); handcart(c, 0.32, 0.42); }
+};
+
+// A butcher's: joints hung on a rail across the window, a blind rolled up
+// under the fascia, the door to one side and the block out on the pavement.
+// The Family Butcher has a white-tiled front with a marble slab in the
+// window; the Butcher & Poulterer is three storeys, with birds and game
+// hung along a second rail over the fascia.
+MODELS.butcher = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = [0.64, 0.74, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.5, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  // brick under a tiled roof (slate at the top), unless the town chose a style
+  const own = !pal.forced;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? pal.brick : pal.wall,
+    roof: L === 2 ? pal.slate : own ? pal.tile : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber,
+  });
+  const tile = '#ece8de', sh = 0.26, sw = W - 0.04;
+  if (!L) gb.box(0, 0, fz + 0.003, W, sh, 0.006, '#6a2a24');
+  else {
+    // glazed white tiles up to the fascia, with a green band at the foot
+    gb.box(0, 0, fz + 0.003, W, sh, 0.006, tile);
+    gb.box(0, 0, fz + 0.005, W, 0.05, 0.006, '#2f5a4a');
+  }
+  const z = fz + (L ? 0.006 : 0);
+  const sf = shopfront(c, 0, z, sw, sh, { fascia: L ? '#1f3a3a' : '#5a2a22', trim: L ? tile : '#e3dccd', riser: L ? '#2f5a4a' : '#7a5a3c', lit: L >= 1, doorX: sw / 2 - 0.08 });
+  const p = sf.panes[0];
+  if (L) gb.box(p.m, 0.05, p.z + 0.012, p.w, 0.014, 0.04, '#e8e4dc');
+  meatRail(c, p.m, sf.top - 0.014, p.z + 0.02, p.w - 0.02);
+  // the striped blind, rolled up for the day
+  gb.cyl(sw / 2 + 0.01, sf.top - 0.004, z + 0.036, 0.011, 0.011, W - 0.02, 8, rng.pick(['#2f5a8a', '#3a4a7a']), 0, 0, Math.PI / 2);
+  if (L === 2) meatRail(c, 0, sh + 0.085, z + 0.03, W - 0.1, true);
+  hangSign(c, sw / 2 - 0.02, sh + 0.05, z, 'board', '#7a2a2a');
+  gb.cyl(sw / 2 - 0.014, sh - 0.045, z + 0.1, 0.018, 0.018, 0.004, 8, GOLD, 0, 0, Math.PI / 2);
+  choppingBlock(c, -W * 0.22, fz + 0.24);
+  crate(c, W * 0.12, fz + 0.26, 0.9, L ? '#e8e4dc' : '#94714a');
+  if (L) { barrel(c, -W / 2 + 0.02, fz + 0.3); lamp(c, W / 2 - 0.02, 0.42, 0.28); }
+};
+
+// A cobbler's: a narrow little shop with a bow window full of boots, a boot
+// hung over the door and a bench outside with a last on it. The Boot & Shoe
+// Shop is two storeys with two windows of boots on shelves and a great
+// gilded boot over the door.
+MODELS.cobbler = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = L ? 0.68 : 0.52, D = L ? 0.52 : 0.44, H = L ? 0.54 : 0.34, fz = L ? 0.12 : 0.1;
+  const thatch = !L && pal.thatched;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall, roof: thatch ? pal.thatch : pal.roof, roofType: thatch ? 'thatch' : 'gable',
+    rh: L ? 0.3 : 0.28, chimney: true, timber: pal.timber, nFront: L ? 3 : 2, alongZ: true,
+  });
+  const sw = W - 0.04, dx = L ? 0 : sw / 2 - 0.07;
+  const sf = shopfront(c, 0, fz, sw, 0.25, { bow: !L, doorX: dx, fascia: rng.pick(['#3b2f2a', '#2a2420', '#4a2a2a']), lit: L >= 1 });
+  const BOOT = ['#2a2420', '#5e3a2a', '#3a2a20', '#7a4a2a', '#8a2f2f'];
+  for (const p of sf.panes) {
+    for (const y of L ? [0.05, 0.11] : [0.05]) {
+      if (y > 0.05) gb.box(p.m, y - 0.006, p.z + 0.006, p.w, 0.006, 0.02, '#5e432c');
+      const n = Math.max(2, Math.floor(p.w / 0.032));
+      for (let i = 0; i < n; i++) boot(c, p.m - p.w / 2 + (i + 0.5) * (p.w / n), y, p.z + 0.008, rng.pick(BOOT), 0.85);
+    }
+  }
+  hangSign(c, dx + (L ? 0.1 : -0.075), 0.31, fz, 'boot', L ? GOLD : '#2a2420');
+  bench(c, -W * 0.2, fz + 0.2, Math.PI);
+  const ly = c.gy(-W * 0.2, fz + 0.2);
+  gb.box(-W * 0.2 - 0.04, ly + 0.05, fz + 0.2, 0.016, 0.03, 0.016, '#6e5034');
+  boot(c, -W * 0.2 - 0.04, ly + 0.08, fz + 0.2, '#5e3a2a');
+  boot(c, W * 0.22, c.gy(W * 0.22, fz + 0.24), fz + 0.24, '#2a2420', 1.3);
+  if (L) { crate(c, W / 2 - 0.02, fz + 0.24, 0.9, '#7a5a3c'); lamp(c, -W / 2 + 0.01, 0.42, 0.28); }
+};
+
+// A tailor's: a tall narrow shop with a dummy at the door, bolts of cloth on
+// a stand and shears on the bracket. The Draper & Outfitter is three
+// storeys with a striped awning over two windows; the Drapery Emporium has
+// plate glass up two floors, its name lit over the showroom and a flag on
+// the ridge.
+MODELS.draper = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = [0.6, 0.76, 0.86][L], D = [0.5, 0.56, 0.58][L], H = [0.54, 0.8, 0.84][L], fz = [0.1, 0.12, 0.14][L];
+  const trim = '#e3dccd';
+  // painted stucco under slate (stone at the top), dormers in the roof
+  const own = !pal.forced;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : ownPick(c, PAINTED, 3)) : pal.wall, roof: own ? pal.slate : pal.roof,
+    roofType: L === 1 ? 'hip' : 'gable', rh: L === 2 ? 0.3 : 0.26, chimney: true, timber: !own && pal.timber, dormers: L === 2 ? 3 : 2, plinth: L === 2 ? STONE : null,
+  }, L === 2 ? 2 : 1);
+  const sw = W - 0.04, fascia = rng.pick(['#2a2a4a', '#3a1f2a', '#1f3a3a', '#3b2f2a']);
+  const sf = shopfront(c, 0, fz, sw, 0.26, { fascia, lit: L >= 1, doorW: L === 2 ? 0.11 : 0.085 });
+  // dummies in the windows, in the latest colours
+  for (const p of sf.panes) dummyAt(c, p.m, p.z + 0.02, rng.pick(PAINTED));
+  if (L === 1) awning(c, 0, sf.top - 0.004, fz, W - 0.02, pal.awning);
+  if (L === 2) {
+    // the showroom over the shop: plate glass between piers, the name lit above
+    const y0 = H / 3, fh = H / 3, n = 3, bw = (W - 0.04) / n;
+    for (let i = 0; i < n; i++) {
+      const x = -W / 2 + 0.02 + (i + 0.5) * bw;
+      gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.3));
+      gb.box(x, y0 + 0.03, fz + 0.006, bw - 0.03, fh - 0.09, 0.012, GLASS);
+      gb.noGlow();
+      gb.box(x, y0 + 0.03 + (fh - 0.09) * 0.72, fz + 0.013, bw - 0.03, 0.007, 0.006, trim);
+      gb.box(x, y0 + 0.03, fz + 0.013, 0.007, fh - 0.09, 0.006, trim);
+    }
+    for (let i = 0; i <= n; i++) gb.box(-W / 2 + 0.02 + i * bw, y0, fz + 0.01, 0.026, fh, 0.026, trim);
+    gb.box(0, y0 + fh - 0.06, fz + 0.012, W - 0.02, 0.05, 0.03, fascia);
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, y0 + fh - 0.048, fz + 0.028, W * 0.6, 0.024, 0.006, '#e0c070'); gb.noGlow();
+    // a flag on the ridge
+    gb.box(0, H + 0.28, fz - D / 2, 0.01, 0.24, 0.01, IRON_D);
+    gb.box(0.05, H + 0.44, fz - D / 2, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
+    lamp(c, -W / 2 + 0.01, 0.42, 0.3); lamp(c, W / 2 - 0.01, 0.42, 0.3);
+  }
+  hangSign(c, (L ? sw / 2 : sw / 2 - 0.02) - 0.01, 0.3, fz, 'shears', GOLD);
+  clothStand(c, -W * 0.24, fz + 0.24);
+  if (L < 2) dummy(c, W * 0.2, fz + 0.24, rng.pick(PAINTED));
+  if (L === 1) clothStand(c, W * 0.24 + 0.06, fz + 0.29);
+};
+// A dummy in a shop window: just the bodice, showing over the riser.
+function dummyAt(c, x, z, color) {
+  const { gb } = c;
+  gb.cyl(x, 0.05, z, 0.004, 0.004, 0.03, 4, IRON_D);
+  gb.cyl(x, 0.07, z, 0.016, 0.03, 0.05, 8, color);
+  gb.cyl(x, 0.12, z, 0.018, 0.013, 0.03, 8, color);
+  gb.sphere(x, 0.156, z, 0.007, '#c8b088');
+}
+
+// An ironmonger's: pails hung along a rail over the shop, a tin bath and
+// coils of rope by the door, a ladder leant on the wall and a key on the
+// bracket. The Hardware Merchant is three storeys of brick, with a mangle,
+// a wheelbarrow and galvanised bins out front.
+MODELS.ironmonger = (c, L) => {
+  const { gb, rng, pal } = c;
+  const own = !pal.forced;
+  // tarred weatherboards, with an open-fronted store at the side at first
+  const W = L ? 0.84 : 0.56, D = L ? 0.58 : 0.52, H = L ? 0.8 : 0.54, fz = L ? 0.14 : 0.11, bx = L ? 0 : -0.13;
+  shopBody(c, {
+    x: bx, z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? ownPick(c, ['#4f5a52', '#5a5048', '#46525a'], 5) : pal.wall,
+    roof: own ? pal.slate : pal.roof, roofType: 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber, siding: own, plinth: L ? STONE : null,
+  });
+  const sw = W - 0.04, dx = L ? 0 : -sw / 2 + 0.08;
+  const sf = shopfront(c, bx, fz, sw, 0.26, { fascia: rng.pick(['#2a3a2a', '#2f2f3a', '#3a2a1f']), doorX: dx, lit: L >= 1 });
+  if (!L) {
+    // the store: posts carrying a lean-to roof, ladders, pails and timber inside
+    const lx = bx + W / 2 + 0.12, lz = fz - 0.2, lw = 0.22, ld = 0.4;
+    for (const z of [lz - ld / 2 + 0.02, lz + ld / 2 - 0.02]) gb.box(lx + lw / 2 - 0.02, 0, z, 0.024, 0.25, 0.024, '#4e3a2a');
+    gb.box(lx, 0.25, lz + ld / 2 - 0.02, lw, 0.022, 0.022, '#4e3a2a');
+    gb.cbox(lx, -0.01, lz, lw, 0.02, ld, '#8a7a62', 0, 0.004);
+    gb.wedge(lx, 0.26, lz, ld + 0.04, lw + 0.04, 0.08, pal.slate, Math.PI / 2);
+    ladder(c, lx - 0.02, lz - ld / 2 + 0.05, 0.3, 0, 0.12);
+    plankStack(c, lx + 0.02, lz + 0.02, 3, Math.PI / 2);
+    for (let i = 0; i < 3; i++) pail(c, lx - 0.06 + (i % 2) * 0.05, 0.01 + Math.floor(i / 2) * 0.048, lz + 0.12, 0.9);
+  }
+  // tools and pails in the window
+  for (const p of sf.panes) {
+    const n = Math.max(2, Math.floor(p.w / 0.05));
+    for (let i = 0; i < n; i++) pail(c, p.m - p.w / 2 + (i + 0.5) * (p.w / n), 0.05, p.z + 0.02, 0.8);
+  }
+  // pails, lanterns and a kettle hung along a rail over the shop
+  const ry = 0.37, rz = fz + 0.05;
+  gb.box(bx, ry, rz, W - 0.06, 0.008, 0.008, IRON_D);
+  for (const s of [-1, 1]) gb.box(bx + s * (W / 2 - 0.04), ry - 0.003, fz + 0.025, 0.008, 0.008, 0.05, IRON_D);
+  const n = Math.round((W - 0.1) / 0.07);
+  for (let i = 0; i < n; i++) {
+    const x = bx - W / 2 + 0.05 + (i + 0.5) * ((W - 0.1) / n);
+    gb.box(x, ry - 0.012, rz, 0.003, 0.012, 0.003, IRON_D);
+    if (i % 3 === 1) { gb.cyl(x, ry - 0.05, rz, 0.016, 0.02, 0.034, 6, '#3a3a3e'); gb.cone(x, ry - 0.016, rz, 0.016, 0.012, 6, '#3a3a3e'); }
+    else pail(c, x, ry - 0.06, rz, 0.85);
+  }
+  hangSign(c, bx + dx + 0.1, 0.32, fz, 'key', GOLD);
+  if (L) ladder(c, W / 2 - 0.04, fz + 0.06, 0.4, 0, 0.18);
+  const pz = fz + 0.24;
+  tinBath(c, bx - W * 0.12, pz, 0.2);
+  ropeCoil(c, bx + W * 0.16, pz); pail(c, bx + W * 0.16 + 0.06, c.gy(bx + W * 0.16 + 0.06, pz), pz);
+  if (L) {
+    mangle(c, -W / 2 + 0.06, pz + 0.04);
+    wheelbarrow(c, W * 0.28, pz + 0.04, Math.PI / 2);
+    dustbin(c, -W * 0.3, pz + 0.04); dustbin(c, -W * 0.3 + 0.07, pz + 0.05);
+    lamp(c, W / 2 - 0.01, 0.43, 0.28);
+  } else { crate(c, bx - W / 2 + 0.04, pz + 0.04, 0.9); dustbin(c, 0.3, pz + 0.04); }
+};
+
+// An apothecary's: bow windows either side of the door with great coloured
+// carboys in them, lit at night, herbs in pots on the step and a mortar and
+// pestle on the bracket. The Chemist & Druggist has a flat shopfront with
+// shelves of bottles round the carboys; the Dispensing Chemist is three
+// storeys of stone, with a penny weighing machine on the pavement.
+MODELS.chemist = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = [0.58, 0.72, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.52, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  // cream stucco under a hipped slate roof (stone at the top)
+  const own = !pal.forced;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : STUCCO) : pal.wall, roof: own ? pal.slate : pal.roof,
+    roofType: 'hip', rh: 0.24, chimney: true, timber: !own && pal.timber, plinth: L ? STONE : null,
+  });
+  const sw = W - 0.04, k0 = rng.int(0, 3);
+  const sf = shopfront(c, 0, fz, sw, 0.26, { bow: !L, fascia: rng.pick(['#1f3a3a', '#2a2a4a', '#3a1f2a']), lit: L >= 1, letter: L === 2 ? '#ece6d6' : null });
+  sf.panes.forEach((p, i) => {
+    if (L) for (const y of [0.075, 0.13]) { bottleShelf(c, p.m - p.w / 2 + 0.01, p.m - 0.04, y, p.z + 0.01); bottleShelf(c, p.m + 0.04, p.m + p.w / 2 - 0.01, y, p.z + 0.01); }
+    carboy(c, p.m, 0.05, p.z + 0.032, k0 + i, L ? 1.3 : 1);
+  });
+  hangSign(c, sw / 2 - 0.03, 0.31, fz, 'mortar', GOLD);
+  for (const s of [-1, 1]) { const x = s * 0.09, z = fz + 0.12; gb.cyl(x, c.gy(x, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, x, z, 3, 0.012); }
+  if (L === 2) { weighingMachine(c, -W * 0.3, fz + 0.26); lamp(c, W / 2 - 0.01, 0.42, 0.3); }
+  else if (L) bench(c, -W * 0.24, fz + 0.26, Math.PI);
+};
+
+// A stationer's: books on shelves in the window, the day's bills on a board
+// by the door, a pillar box at the kerb and an open book on the bracket.
+// The Bookseller & Library is three storeys with an oriel window over the
+// shop and a barrow of second-hand books out front.
+MODELS.stationer = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = L ? 0.76 : 0.6, D = L ? 0.54 : 0.5, H = L ? 0.8 : 0.54, fz = L ? 0.12 : 0.1;
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.wall, roof: L ? pal.slate : pal.forced ? pal.roof : pal.tile, roofType: 'halfhip', rh: 0.3,
+    chimney: true, timber: pal.timber, nFront: L ? 3 : 2, dormers: 2,
+  });
+  const sw = W - 0.04;
+  const sf = shopfront(c, 0, fz, sw, 0.26, { fascia: rng.pick(['#2a3a4a', '#3b2f2a', '#4a2a2a', '#2f3e2a']), lit: L >= 1 });
+  for (const p of sf.panes) for (const y of [0.05, 0.1]) bookShelf(c, p.m - p.w / 2 + 0.006, p.m + p.w / 2 - 0.006, y, p.z + 0.01);
+  hangSign(c, sw / 2 - 0.02, 0.31, fz, 'book', rng.pick(['#8a2f2f', '#2f5a8a', '#2f6a4a']));
+  newsBoard(c, -W * 0.18, fz + 0.2, 0.2);
+  pillarBox(c, W / 2 - 0.06, fz + 0.27);
+  if (L) {
+    // an oriel window over the shop door
+    const oy = H / 3 + 0.02, oz = fz + 0.035;
+    gb.cbox(0, oy, oz, 0.24, 0.17, 0.07, pal.wall, 0, 0.008);
+    gb.wedge(0, oy - 0.04, oz, 0.24, 0.07, 0.04, shade(pal.wall, 0.85), Math.PI);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.4));
+    gb.box(0, oy + 0.03, oz + 0.036, 0.2, 0.11, 0.008, GLASS);
+    for (const s of [-1, 1]) gb.box(s * 0.121, oy + 0.03, oz, 0.008, 0.11, 0.05, GLASS);
+    gb.noGlow();
+    for (const s of [-1, 0, 1]) gb.box(s * 0.066, oy + 0.03, oz + 0.04, 0.007, 0.11, 0.006, '#e3dccd');
+    gb.hip(0, oy + 0.17, oz, 0.24, 0.07, 0.04, pal.roof, 0.01);
+    bookBarrow(c, W * 0.12, fz + 0.27);
+    lamp(c, -W / 2 + 0.01, 0.42, 0.28);
+  }
+};
+
+// A coffee house: a bow window either side of the door, a coffee pot on
+// the bracket, a bench and bay trees in tubs. The Tea Rooms are painted,
+// with a striped awning and tables out on the pavement; the Grand Café has a
+// glazed winter garden across its front, parasols over the tables and palms
+// in tubs.
+MODELS.coffeehouse = (c, L) => {
+  const { gb, rng, pal } = c;
+  const W = [0.66, 0.76, 0.86][L], D = [0.5, 0.54, 0.5][L], H = [0.54, 0.56, 0.82][L], fz = [0.1, 0.11, 0.06][L];
+  const wall = pal.forced ? pal.wall : L === 2 ? STUCCO : ownPick(c, PAINTED, 8);
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall, roof: L ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26,
+    chimney: true, timber: !L && pal.timber,
+  });
+  const sw = W - 0.04, pastel = ownPick(c, ['#c87a8a', '#7a9ac8', '#8ab08a', '#c8a050'], 9);
+  if (L < 2) {
+    const sf = shopfront(c, 0, fz, sw, 0.26, { bow: !L, fascia: L ? shade(pastel, 0.6) : rng.pick(['#3b2f2a', '#2f3e2a', '#4a2a2a']), lit: L >= 1 });
+    for (const p of sf.panes) for (let i = 0; i < 2; i++) gb.cyl(p.m + (i - 0.5) * p.w * 0.45, 0.05, p.z + 0.02, 0.018, 0.012, 0.03, 8, i ? '#e8d8c0' : '#8a5a3a');
+    if (L) awning(c, 0, sf.top - 0.004, fz, W - 0.02, pastel);
+    else hangSign(c, sw / 2 - 0.03, 0.31, fz, 'pot', GOLD);
+  } else {
+    // the winter garden: a glasshouse across the front with its doors in
+    // the middle, and a canopy over them
+    const gw = W - 0.06, gd = 0.14, gh = 0.27, gz = fz + gd / 2;
+    footing(c, 0, gz, gw, gd);
+    gb.cbox(0, 0, gz, gw, 0.04, gd, STONE, 0, 0.008);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.05 + rng.float(0, 0.2));
+    gb.box(0, 0.04, fz + gd - 0.006, gw, gh - 0.06, 0.012, GLASS);
+    for (const s of [-1, 1]) gb.box(s * (gw / 2 - 0.006), 0.04, gz, 0.012, gh - 0.06, gd, GLASS);
+    gb.noGlow();
+    const n = 6;
+    for (let i = 0; i <= n; i++) gb.box(-gw / 2 + (i * gw) / n, 0.04, fz + gd, 0.01, gh - 0.06, 0.01, '#ece6da');
+    gb.box(0, gh - 0.02, gz, gw + 0.02, 0.02, gd + 0.02, '#ece6da');
+    glassRoof(c, 0, gh, gz, gw, gd, 0.04, false, 6);
+    door(c, 0, fz + gd, 0.1, 0.17, '#3f4f5a');
+    gb.box(0, 0.22, fz + gd + 0.05, 0.22, 0.012, 0.1, '#3a3a3e');
+    for (const s of [-1, 1]) gb.box(s * 0.1, 0.22 - 0.06, fz + gd + 0.09, 0.008, 0.06, 0.008, '#3a3a3e');
+    gb.box(0, H / 3 + 0.05, fz + 0.012, W * 0.6, 0.05, 0.02, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H / 3 + 0.062, fz + 0.024, W * 0.5, 0.026, 0.006, '#e0c070'); gb.noGlow();
+  }
+  const tz = L === 2 ? fz + 0.3 : fz + 0.24;
+  if (L) {
+    cafeTable(c, -W * 0.26, tz, L === 2 ? pastel : null);
+    cafeTable(c, W * 0.26, tz, L === 2 ? '#e9dfc9' : null);
+    tubPlant(c, -W / 2 + 0.01, tz + 0.08, L === 2); tubPlant(c, W / 2 - 0.01, tz + 0.08, L === 2);
+    if (L === 2) lamp(c, 0, 0.44, 0.28);
+  } else {
+    bench(c, -W * 0.22, tz, Math.PI);
+    tubPlant(c, -0.08, fz + 0.1); tubPlant(c, 0.08, fz + 0.1);
+    barrel(c, W * 0.24, tz + 0.02, 0.9);
+  }
+};
+
+// A savings bank: a solid stone block under a hipped slate roof, rusticated
+// below with tall windows, a pedimented door case and railings along the
+// pavement. The Town Bank is three storeys behind a balustrade, with a
+// portico of four columns and lamps at the gate.
+MODELS.bank = (c, L) => {
+  const { gb, pal } = c;
+  const wall = pal.stoneWall, trim = '#ece6da';
+  const W = L ? 0.86 : 0.76, D = L ? 0.56 : 0.54, H = L ? 0.84 : 0.58, floors = L ? 3 : 2, fz = L ? 0.11 : 0.1, fh = H / floors;
+  house(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: L ? 'flat' : 'hip', rh: 0.2, nFront: L ? 5 : 3, doorX: 0,
+    noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8,
+  });
+  // rusticated stone on the ground floor, tall windows either side of the door
+  for (let y = 0.05; y < fh - 0.02; y += 0.045) gb.box(0, y, fz + 0.002, W, 0.006, 0.006, shade(wall, 0.84));
+  const wx = L ? [0.22, 0.36] : [0.24];
+  for (const s of [-1, 1]) for (const x of wx) win(c, s * x, 0.06, fz + 0.004, 0.075, 0.15, 'f', 0.8);
+  if (L) {
+    portico(c, 0, fz, 0.36, fh + 0.01, 4, pal.slate, trim);
+    // a balustrade round the roof, urns on the corners, the roof low behind it
+    gb.hip(0, H + 0.045, fz - D / 2, W - 0.12, D - 0.12, 0.13, pal.slate, 0);
+    const bal = (x, z, len, alongZ) => {
+      gb.box(x, H + 0.04, z, alongZ ? 0.03 : len, 0.012, alongZ ? len : 0.03, trim);
+      gb.box(x, H + 0.09, z, alongZ ? 0.034 : len + 0.004, 0.014, alongZ ? len + 0.004 : 0.034, trim);
+      const n = Math.round(len / 0.03);
+      for (let i = 0; i < n; i++) { const u = -len / 2 + (i + 0.5) * (len / n); gb.cyl(alongZ ? x : x + u, H + 0.052, alongZ ? z + u : z, 0.006, 0.007, 0.038, 5, trim); }
+    };
+    const zf = fz - 0.01, zb = fz - D + 0.01;
+    bal(0, zf, W, false); bal(0, zb, W, false);
+    for (const s of [-1, 1]) bal(s * (W / 2 - 0.01), fz - D / 2, D - 0.02, true);
+    for (const s of [-1, 1]) for (const z of [zf, zb]) { gb.cyl(s * (W / 2 - 0.01), H + 0.104, z, 0.012, 0.018, 0.03, 7, trim); gb.sphere(s * (W / 2 - 0.01), H + 0.14, z, 0.014, trim, 0); }
+  } else {
+    portico(c, 0, fz, 0.2, 0.22, 2, pal.slate, trim);
+    gb.cbox(0, H - 0.03, fz - 0.11, 0.34, 0.12, 0.22, wall, 0, 0.006);
+    gb.gable(0, H + 0.09, fz - 0.11, 0.34, 0.22, 0.09, wall, pal.slate, 0.02, true, 0.025);
+    gb.box(0, H + 0.0, fz + 0.002, 0.26, 0.05, 0.008, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H + 0.014, fz + 0.007, 0.2, 0.02, 0.006, GOLD); gb.noGlow();
+  }
+  door(c, 0, fz, L ? 0.12 : 0.1, L ? 0.2 : 0.19, '#3a2f28');
+  if (L) {
+    // the name in gilt letters along the first floor
+    gb.box(0, fh - 0.045, fz + 0.012, W * 0.62, 0.04, 0.016, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh - 0.034, fz + 0.022, W * 0.5, 0.02, 0.006, GOLD); gb.noGlow();
+  }
+  frontage(c, -W / 2 - 0.02, W / 2 + 0.02, fz + 0.3, [0], 'railings');
+  lamp(c, -0.11, fz + 0.32, 0.3); lamp(c, 0.11, fz + 0.32, 0.3);
+};
+
+// The sign each high-street trade hangs out, and what it sets out on the
+// pavement in front of a shop with homes above (see MODELS.shophouse).
+const SHOP_SIGNS = {
+  grocer: ['board', '#2f4a2a'], butcher: ['board', '#7a2a2a'], cobbler: ['boot', '#2a2420'], draper: ['shears', GOLD], ironmonger: ['key', GOLD],
+  chemist: ['mortar', GOLD], stationer: ['book', '#2f5a8a'], coffeehouse: ['pot', GOLD], postoffice: ['board', '#a8282a'],
+};
+function pavementWares(c, flavor, x, z) {
+  const { rng } = c;
+  if (flavor === 'grocer') { produce(c, x - 0.08, z, 0.22); sack(c, x + 0.1, z); sack(c, x + 0.16, z + 0.03, '#b8a070'); }
+  else if (flavor === 'butcher') { choppingBlock(c, x - 0.08, z); crate(c, x + 0.08, z, 0.9, '#e8e4dc'); }
+  else if (flavor === 'cobbler') { bench(c, x - 0.06, z + 0.02, Math.PI); boot(c, x + 0.12, c.gy(x + 0.12, z), z, '#2a2420', 1.4); }
+  else if (flavor === 'draper') { clothStand(c, x - 0.08, z + 0.02); dummy(c, x + 0.12, z, rng.pick(PAINTED)); }
+  else if (flavor === 'ironmonger') { tinBath(c, x - 0.08, z, 0.2); pail(c, x + 0.06, c.gy(x + 0.06, z), z); ropeCoil(c, x + 0.13, z); }
+  else if (flavor === 'chemist') { for (let i = 0; i < 3; i++) { const px = x - 0.08 + i * 0.08; c.gb.cyl(px, c.gy(px, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, px, z, 3, 0.012); } }
+  else if (flavor === 'stationer') { newsBoard(c, x - 0.06, z, 0.2); pillarBox(c, x + 0.12, z + 0.02); }
+  else if (flavor === 'coffeehouse') { cafeTable(c, x - 0.1, z); cafeTable(c, x + 0.12, z); }
+  else if (flavor === 'postoffice') pillarBox(c, x + 0.08, z + 0.02);
+}
+
+// A clock face on a wall facing +z, lit at night.
+function wallClock(c, x, y, z, r = 0.04) {
+  const { gb } = c;
+  gb.cyl(x, y, z, r, r, 0.014, 12, '#3a3a3e', 0, Math.PI / 2);
+  gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(x, y, z + 0.006, r * 0.8, r * 0.8, 0.012, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+}
+
+// A post office: a red fascia with its name lit, a red door, a clock over
+// the shop, a pillar box at the kerb and the postman's red handcart. The
+// General Post Office is three storeys of stone with the clock in a
+// pediment, a telegraph pole on the roof and the red mail van outside.
+MODELS.postoffice = (c, L) => {
+  const { gb, pal } = c;
+  const W = L ? 0.86 : 0.66, D = L ? 0.56 : 0.52, H = L ? 0.84 : 0.54, fz = L ? 0.11 : 0.11, red = '#a8282a';
+  shopBody(c, {
+    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.forced ? pal.wall : L ? pal.stoneWall : '#efe9dc', roof: pal.slate, roofType: L ? 'hip' : 'gable',
+    rh: 0.24, chimney: true, plinth: L ? STONE : null, timber: !L && pal.timber, nFront: L ? 4 : 2,
+  });
+  const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: red, riser: '#6a1a1c', letter: '#ece6d6', lit: true, door: red, doorW: L ? 0.11 : 0.085 });
+  // postcards and parcels in the windows
+  for (const p of sf.panes) for (let i = 0; i < 3; i++) gb.box(p.m + (i - 1) * p.w * 0.3, 0.07 + (i % 2) * 0.03, p.z + 0.004, 0.028, 0.02, 0.003, i === 1 ? '#c8a878' : '#ece6d6');
+  if (L) {
+    // the clock in a pediment over the middle, a telegraph pole on the roof
+    gb.cbox(0, H - 0.04, fz - 0.03, 0.26, 0.14, 0.06, pal.stoneWall, 0, 0.008);
+    gb.gable(0, H + 0.1, fz - 0.03, 0.28, 0.07, 0.07, pal.stoneWall, '#ece6da', 0.015);
+    wallClock(c, 0, H + 0.04, fz + 0.002, 0.042);
+    const px = W * 0.25, pz = fz - 0.3;
+    gb.cyl(px, H, pz, 0.008, 0.01, 0.42, 5, '#5e432c');
+    for (const k of [0.3, 0.38]) {
+      gb.box(px, H + k, pz, 0.16, 0.01, 0.012, '#5e432c');
+      for (const u of [-0.06, -0.02, 0.02, 0.06]) gb.cyl(px + u, H + k + 0.01, pz, 0.005, 0.006, 0.014, 5, '#e8e2d4');
+    }
+    coach(c, -0.14, fz + 0.25, Math.PI / 2, red, true);
+  } else {
+    wallClock(c, 0, 0.34, fz + 0.002, 0.036);
+    // the postman's handcart
+    const hx = -W * 0.26, hz = fz + 0.25;
+    gb.push(hx, c.gy(hx, hz), hz, 0.15);
+    gb.cbox(0, 0.045, 0, 0.12, 0.07, 0.08, red, 0, 0.006);
+    for (const s of [-1, 1]) gb.cyl(s * 0.065, 0.04, 0, 0.04, 0.04, 0.01, 8, '#2a2420', 0, 0, Math.PI / 2);
+    gb.box(0.11, 0.07, 0, 0.1, 0.008, 0.008, '#5e432c');
+    gb.pop();
+  }
+  pillarBox(c, W / 2 - 0.05, fz + 0.29);
+  lamp(c, -W / 2 + 0.01, 0.43, 0.28);
+};
+
+// Counting House: a Georgian front of brick five windows wide, dead
+// symmetrical under a hipped roof, a door case with a fanlight, brass
+// plates by the door and railings along the area. Chambers is three
+// storeys of brick banded with stone, with a gabled centre bay of arched
+// windows over a porch; the Office Building five storeys of stone, flat
+// topped behind a cornice, with a lift house and a flag on the roof.
+MODELS.offices = (c, L) => {
+  const { gb, rng, pal } = c;
+  const trim = '#ece6da';
+  const plates = (x, z, n) => { for (let i = 0; i < n; i++) gb.box(x, 0.06 + i * 0.026, z + 0.004, 0.024, 0.018, 0.004, GOLD); };
+  if (L === 0) {
+    const W = 0.78, D = 0.52, H = 0.56, fz = 0.08, fh = H / 2;
+    const wall = pal.forced ? pal.wall : pal.brick;
+    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors: 2, wall, roof: pal.slate, roofType: 'hip', rh: 0.22, nFront: 5, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8 });
+    for (let i = 0; i < 5; i++) if (i !== 2) win(c, -W / 2 + (i + 0.5) * (W / 5), fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
+    // the door case: pilasters, a cornice and a fanlight
+    for (const s of [-1, 1]) gb.box(s * 0.065, 0, fz + 0.008, 0.02, 0.22, 0.02, trim);
+    gb.box(0, 0.22, fz + 0.01, 0.16, 0.022, 0.03, trim);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.1); gb.arch(0, 0.18, fz + 0.002, 0.042, 0.01, 8, GLASS); gb.noGlow();
+    door(c, 0, fz, 0.085, 0.17, rng.pick(['#2f3e2a', '#2a2a30', '#4a2a2a']));
+    plates(0.1, fz, 3);
+    frontage(c, -W / 2, W / 2, fz + 0.12, [0], 'railings');
+    gb.box(0, 0.3, fz + 0.05, 0.01, 0.01, 0.1, IRON_D);
+    gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(0, 0.25, fz + 0.1, 0.03, 0.04, 0.03, '#ffe2a0'); gb.noGlow();
+    c.addGlow(0, 0.27, fz + 0.1);
+  } else if (L === 1) {
+    const W = 0.82, D = 0.54, H = 0.84, fz = 0.09, fh = H / 3;
+    const wall = pal.forced ? pal.wall : pal.brick, band = pal.style === 'stone' ? shade(pal.wall, 1.15) : STONE;
+    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors: 3, wall, roof: pal.slate, roofType: 'gable', rh: 0.34, nFront: 2, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.8 });
+    for (const s of [-1, 1]) win(c, s * W / 4, fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
+    for (let k = 1; k < 3; k++) gb.box(0, k * fh - 0.012, fz + 0.002, W + 0.006, 0.018, 0.008, band);
+    // the gabled centre bay, its windows arched, a porch at its foot
+    const bw = 0.26, bz = fz + 0.03;
+    footing(c, 0, bz, bw, 0.06);
+    gb.cbox(0, 0, bz, bw, H, 0.06, wall, 0, 0.008);
+    gb.gable(0, H, bz - 0.02, bw, 0.1, 0.22, wall, pal.slate, 0.025, true, 0.025);
+    const arched = c.arched; c.arched = true;
+    for (let k = 1; k < 3; k++) for (const s of [-1, 1]) win(c, s * 0.055, k * fh + fh * 0.3, bz + 0.03, 0.06, 0.13, 'f', 0.85);
+    win(c, 0, H + 0.04, bz + 0.03, 0.05, 0.09, 'f', 0.6);
+    c.arched = arched;
+    for (const s of [-1, 1]) gb.box(s * 0.06, 0, bz + 0.07, 0.014, 0.21, 0.014, trim);
+    gb.gable(0, 0.21, bz + 0.06, 0.16, 0.08, 0.06, trim, pal.slate, 0.015);
+    door(c, 0, bz + 0.03, 0.09, 0.18, rng.pick(['#2f3e2a', '#2a2a30', '#4a2a2a']));
+    plates(0.1, bz + 0.03, 4);
+    // iron cresting along the ridge
+    for (let i = 0; i < 9; i++) gb.box(-W / 2 + 0.06 + i * ((W - 0.12) / 8), H + 0.34, fz - D / 2, 0.006, 0.04, 0.006, IRON_D);
+    frontage(c, -W / 2, W / 2, fz + 0.2, [0], 'railings');
+    lamp(c, -0.16, fz + 0.22, 0.28); lamp(c, 0.16, fz + 0.22, 0.28);
+  } else {
+    const W = 0.84, D = 0.56, floors = 5, fh = 0.25, H = floors * fh, fz = 0.1;
+    const wall = pal.forced ? pal.wall : pal.stoneWall;
+    house(c, { z: fz - D / 2, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: 'flat', rh: 0.2, nFront: 4, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', fancy: false, plinth: STONE, lit: 0.85 });
+    // a giant order of pilasters up the front, a cornice, the name over the door
+    for (const s of [-1, 0, 1]) gb.box(s * (W / 2 - 0.012), fh, fz + 0.008, s ? 0.03 : 0.024, H - fh - 0.04, 0.02, shade(wall, 1.12));
+    gb.box(0, H - 0.05, fz + 0.012, W + 0.04, 0.05, 0.04, trim);
+    gb.box(0, fh - 0.02, fz + 0.01, W, 0.02, 0.03, trim);
+    for (const s of [-1, 1]) for (const x of [0.16, 0.32]) win(c, s * x, 0.07, fz, 0.1, 0.13, 'f', 0.85);
+    gb.cbox(0, -0.02, fz + 0.05, 0.22, 0.04, 0.1, STONE, 0, 0.008);
+    for (const s of [-1, 1]) gb.box(s * 0.075, 0.02, fz + 0.01, 0.03, 0.2, 0.03, shade(wall, 1.15));
+    gb.box(0, 0.22, fz + 0.012, 0.18, 0.025, 0.035, shade(wall, 1.15));
+    door(c, 0, fz, 0.11, 0.18, '#3a2f28');
+    gb.box(0, fh * 1.1, fz + 0.012, 0.3, 0.04, 0.016, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh * 1.1 + 0.01, fz + 0.022, 0.24, 0.02, 0.006, GOLD); gb.noGlow();
+    plates(0.1, fz + 0.02, 5);
+    // the lift house and a flag on the roof
+    gb.cbox(-0.18, H + 0.04, fz - D / 2 - 0.06, 0.18, 0.13, 0.16, wall, 0, 0.008);
+    gb.box(-0.18, H + 0.17, fz - D / 2 - 0.06, 0.2, 0.02, 0.18, trim);
+    gb.box(0.25, H + 0.04, fz - 0.06, 0.01, 0.26, 0.01, IRON_D);
+    gb.box(0.3, H + 0.24, fz - 0.06, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#2f6a4a']));
+    lamp(c, -W / 2 + 0.02, 0.43, 0.3); lamp(c, W / 2 - 0.02, 0.43, 0.3);
+  }
 };
 
 MODELS.farm = (c, L) => {
@@ -1945,6 +2789,11 @@ MODELS.shophouse = (c, L) => {
     barrel(c, sx - 0.12, pz); barrel(c, sx - 0.05, pz + 0.04, 0.9);
     bench(c, sx + 0.12, pz + 0.02, Math.PI);
     lamp(c, W / 2 - 0.05, pz + 0.06, 0.28);
+  } else if (SHOP_SIGNS[flavor]) {
+    // the high-street trades: their sign on a bracket and their goods outside
+    const [kind, col] = SHOP_SIGNS[flavor];
+    hangSign(c, -W / 2 + 0.08, fh + 0.06, fz + jet, kind, col);
+    pavementWares(c, flavor, sx, pz);
   } else {
     const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050', '#6f4a8a'];
     for (let i = 0; i < 3; i++) {
@@ -2434,6 +3283,166 @@ MODELS.fishmarket = (c, L) => {
   gb.box(0, 0.05, 0, 0.11, 0.035, 0.24, '#7d5b3b');
   gb.pop();
   lamp(c, mx + mw / 2 - 0.02, front - 0.05, 0.28);
+  if (f.turned) gb.pop();
+};
+
+// A department store: three storeys the length of the double plot, plate
+// glass in every bay of the shop floor under striped awnings, showroom
+// windows on the first floor, its name lit on the parapet and a corner
+// tower with a copper cupola and a flag. The Grand Department Store is a
+// storey taller under a mansard with dormers, with a domed entrance bay and
+// a clock, a glazed canopy the length of the front and its van at the kerb.
+MODELS.deptstore = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, D = L ? 0.64 : 0.6, floors = L ? 4 : 3, fh = 0.27, H = floors * fh;
+  const z0 = -f.dep / 2 + D / 2 + 0.04, fz = z0 + D / 2;
+  const wall = pal.forced ? pal.wall : L ? '#e6dccb' : pal.style === 'brick' ? pal.brick : pal.stoneWall;
+  const trim = '#ece6da', fascia = rng.pick(['#2a2a4a', '#3a1f2a', '#1f3a3a']), copper = '#5f8a7a';
+  footing(c, 0, z0, W, D);
+  gb.cbox(0, 0, z0, W, H, D, wall, 0, 0.02);
+  const n = 5, bw = W / n, mid = 2;
+  // the shop floor: plate glass in every bay, the doors in the middle one,
+  // and the goods set out in the windows
+  for (let i = 0; i < n; i++) {
+    const x = -W / 2 + (i + 0.5) * bw;
+    const sf = shopfront(c, x, fz, bw - 0.006, 0.27, { fascia, trim, lit: true, noDoor: i !== mid, doorW: 0.13 });
+    for (const p of sf.panes) {
+      if (i % 2) for (let k = 0; k < 2; k++) dummyAt(c, p.m + (k - 0.5) * p.w * 0.5, p.z + 0.02, rng.pick(PAINTED));
+      else for (let k = 0; k < 5; k++) gb.cyl(p.m - p.w * 0.36 + k * p.w * 0.18, 0.05, p.z + 0.014, 0.011, 0.011, 0.07, 6, rng.pick(PAINTED.concat(ACCENT)));
+    }
+    if (!L && i !== mid) awning(c, x, sf.top - 0.004, fz, bw - 0.012, i % 2 ? pal.awning : '#3f5a3a');
+  }
+  // showroom windows on the first floor, pairs of sashes above, piers between the bays
+  for (let i = 0; i < n; i++) {
+    const x = -W / 2 + (i + 0.5) * bw;
+    gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.3));
+    gb.box(x, fh + 0.03, fz + 0.006, bw - 0.08, fh - 0.08, 0.012, GLASS);
+    gb.noGlow();
+    gb.box(x, fh + 0.03 + (fh - 0.08) * 0.7, fz + 0.013, bw - 0.08, 0.007, 0.006, trim);
+    gb.box(x, fh + 0.03, fz + 0.013, 0.007, fh - 0.08, 0.006, trim);
+    for (let k = 2; k < floors; k++) for (const s of [-1, 1]) win(c, x + s * bw * 0.2, k * fh + fh * 0.32, fz, 0.075, 0.11, 'f', 0.85);
+    for (let k = 1; k < floors; k++) win(c, x, k * fh + fh * 0.34, z0 - D / 2, 0.08, 0.1, 'b', 0.6);
+  }
+  for (let i = 0; i <= n; i++) gb.box(-W / 2 + i * bw, fh, fz + 0.008, 0.03, H - fh, 0.02, trim);
+  for (let k = 1; k < floors; k++) for (const s of [-1, 1]) for (const v of [-0.25, 0.25]) win(c, (s * W) / 2, k * fh + fh * 0.32, z0 + v * D, 0.075, 0.1, s > 0 ? 'r' : 'l', 0.7);
+  gb.box(0, fh - 0.004, fz + 0.012, W, 0.014, 0.03, trim);
+  gb.box(0, H - 0.03, z0, W + 0.035, 0.035, D + 0.035, trim);
+  if (L) {
+    // a mansard storey of slate with dormers, a low hip over it
+    gb.cbox(0, H, z0, W - 0.04, 0.2, D - 0.04, pal.slate, 0, 0.03);
+    gb.hip(0, H + 0.2, z0, W - 0.04, D - 0.04, 0.1, pal.slate, 0.02);
+    for (let i = 0; i < n; i++) {
+      if (i === mid) continue;
+      const x = -W / 2 + (i + 0.5) * bw, dz = fz - 0.02;
+      for (const s of [-1, 1]) {
+        win(c, x + s * bw * 0.2, H + 0.05, dz, 0.06, 0.08, 'f', 0.7);
+        gb.gable(x + s * bw * 0.2, H + 0.05 + 0.08 * (c.winH || 1) + 0.01, dz + 0.01, 0.09, 0.03, 0.035, trim, trim, 0.008);
+      }
+    }
+    // the domed entrance bay with a clock, and the name over the doors
+    const bx = 0, bz = fz - 0.06;
+    gb.cbox(bx, H - 0.03, bz, bw - 0.02, 0.3, 0.13, wall, 0, 0.012);
+    gb.box(bx, H + 0.27, bz, bw, 0.03, 0.15, trim);
+    gb.cyl(bx, H + 0.3, bz - 0.04, 0.12, 0.13, 0.06, 12, trim);
+    gb.sphere(bx, H + 0.36, bz - 0.04, 0.12, copper, 1, 0.8);
+    gb.cyl(bx, H + 0.45, bz - 0.04, 0.008, 0.012, 0.12, 5, GOLD);
+    gb.cyl(bx, H + 0.14, bz + 0.066, 0.06, 0.06, 0.008, 14, '#3a3a3e', 0, Math.PI / 2);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(bx, H + 0.14, bz + 0.07, 0.048, 0.048, 0.008, 14, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+    gb.box(bx, H + 0.03, bz + 0.067, bw * 0.8, 0.05, 0.012, fascia);
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(bx, H + 0.043, bz + 0.075, bw * 0.66, 0.024, 0.006, '#e0c070'); gb.noGlow();
+    // a glazed canopy on iron brackets the length of the front
+    gb.box(0, 0.3, fz + 0.075, W - 0.04, 0.012, 0.15, IRON_D);
+    gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, 0.312, fz + 0.075, W - 0.06, 0.008, 0.13, GLASS_ROOF); gb.noGlow();
+    for (let i = 0; i <= n; i++) gb.boxC(-W / 2 + 0.02 + i * ((W - 0.04) / n), 0.27, fz + 0.06, 0.008, 0.008, 0.12, IRON_D, 0.45);
+    coach(c, -W / 2 + 0.4, fz + 0.2, Math.PI / 2, rng.pick(['#5a2a4a', '#2a3a5a', '#2f4a3a']), true);
+  } else {
+    gb.hip(0, H, z0, W + 0.02, D + 0.02, 0.24, pal.slate, 0.04);
+    // the name on the parapet over the doors
+    gb.box(0, H, fz - 0.01, bw * 1.2, 0.09, 0.03, wall);
+    gb.box(0, H + 0.09, fz - 0.01, bw * 1.2 + 0.02, 0.014, 0.04, trim);
+    gb.box(0, H + 0.02, fz + 0.007, bw * 1.0, 0.05, 0.008, fascia);
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H + 0.033, fz + 0.012, bw * 0.86, 0.024, 0.006, '#e0c070'); gb.noGlow();
+  }
+  // the corner tower with a copper cupola and a flag
+  const tx = W / 2 - 0.15, tz = z0 + 0.04, th = H + (L ? 0.3 : 0.22);
+  gb.cbox(tx, H - 0.03, tz, 0.26, th - H + 0.03, 0.26, wall, 0, 0.012);
+  for (const [dx, dz, face] of [[0, 0.13, 'f'], [0.13, 0, 'r'], [-0.13, 0, 'l']]) win(c, tx + dx, th - 0.16, tz + dz, 0.06, 0.1, face, 0.8);
+  gb.box(tx, th, tz, 0.29, 0.025, 0.29, trim);
+  gb.cyl(tx, th + 0.025, tz, 0.09, 0.1, 0.06, 10, trim);
+  gb.sphere(tx, th + 0.085, tz, 0.09, copper, 1, 0.85);
+  gb.box(tx, th + 0.16, tz, 0.01, 0.22, 0.01, IRON_D);
+  gb.box(tx + 0.05, th + 0.32, tz, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
+  lamp(c, -W / 2 + 0.04, f.dep / 2 - 0.06, 0.3); lamp(c, W / 2 - 0.04, f.dep / 2 - 0.06, 0.3);
+  if (f.turned) gb.pop();
+};
+
+// Exchange Buildings: a long classical front of stone, rusticated below, a
+// portico of six columns up a flight of steps with a clock in its
+// pediment, and rows of office windows either side. The Stock Exchange is
+// a storey taller, its trading floor under a great copper dome on a drum of
+// windows, with statues along the parapet and flags at the ends.
+MODELS.exchange = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, D = L ? 0.62 : 0.58, floors = L ? 3 : 2, fh = L ? 0.28 : 0.3, H = floors * fh;
+  const z0 = -f.dep / 2 + D / 2 + 0.04, fz = z0 + D / 2;
+  const wall = pal.forced ? pal.wall : pal.stoneWall, trim = '#ece6da', copper = '#5f8a7a';
+  footing(c, 0, z0, W, D);
+  gb.cbox(0, 0, z0, W, H, D, wall, 0, 0.02);
+  gb.cbox(0, -0.02, z0, W + 0.03, 0.06, D + 0.03, STONE, 0, 0.01);
+  for (let y = 0.06; y < fh - 0.02; y += 0.045) gb.box(0, y, fz + 0.002, W, 0.006, 0.006, shade(wall, 0.84));
+  const pw = 0.56;
+  // windows along the front either side of the portico, and round the back and ends
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const x = -W / 2 + (i + 0.5) * (W / n);
+    for (let k = 0; k < floors; k++) {
+      if (Math.abs(x) > pw / 2 + 0.04) win(c, x, k * fh + fh * 0.3, fz, 0.08, k ? 0.13 : 0.14, 'f', 0.85);
+      win(c, x, k * fh + fh * 0.3, z0 - D / 2, 0.075, 0.12, 'b', 0.6);
+    }
+  }
+  for (let k = 0; k < floors; k++) for (const s of [-1, 1]) for (const v of [-0.22, 0.22]) win(c, (s * W) / 2, k * fh + fh * 0.3, z0 + v * D, 0.075, 0.12, s > 0 ? 'r' : 'l', 0.7);
+  for (let k = 1; k < floors; k++) gb.box(0, k * fh - 0.01, fz + 0.003, W + 0.006, 0.016, 0.01, trim);
+  gb.box(0, H - 0.035, z0, W + 0.04, 0.035, D + 0.04, trim);
+  // the portico: steps up to six columns, an entablature and a pediment with a clock
+  const ch = L ? fh * 2 : fh * 1.4;
+  for (let s = 0; s < 3; s++) gb.box(0, -0.03 + s * 0.02, fz + 0.2 - s * 0.03, pw + 0.12 - s * 0.03, 0.02 + 0.001, 0.08, STONE);
+  portico(c, 0, fz, pw, ch, 6, pal.slate, trim);
+  wallClock(c, 0, 0.055 + ch + 0.045, fz + 0.15, 0.032);
+  door(c, 0, fz, 0.13, 0.22, '#3a2f28');
+  for (const s of [-1, 1]) win(c, s * 0.15, 0.08, fz, 0.07, 0.15, 'f', 0.8);
+  gb.box(0, fh + 0.02, fz + 0.004, 0.36, 0.035, 0.012, '#2a2a30');
+  gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh + 0.03, fz + 0.012, 0.3, 0.018, 0.006, GOLD); gb.noGlow();
+  if (L) {
+    // a balustrade with statues, the roof low behind it, and the dome
+    gb.hip(0, H, z0, W - 0.1, D - 0.1, 0.12, pal.slate, 0);
+    gb.box(0, H, fz - 0.015, W, 0.05, 0.03, trim);
+    for (let i = 0; i < 7; i++) {
+      const x = -W / 2 + 0.1 + i * ((W - 0.2) / 6);
+      if (Math.abs(x) < 0.2) continue;
+      gb.cbox(x, H + 0.05, fz - 0.015, 0.04, 0.03, 0.04, trim, 0, 0.004);
+      gb.cyl(x, H + 0.08, fz - 0.015, 0.011, 0.014, 0.06, 6, STONE);
+      gb.sphere(x, H + 0.15, fz - 0.015, 0.012, STONE, 0);
+    }
+    const dz = z0 - 0.02;
+    gb.cyl(0, H, dz, 0.2, 0.2, 0.14, 14, wall);
+    for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.42; stainedGlass(c, Math.cos(a) * 0.2, H + 0.03, dz - Math.sin(a) * 0.2, 0.05, 0.08, 2, 'f', a + Math.PI / 2); }
+    gb.box(0, H + 0.14, dz, 0.44, 0.02, 0.44, trim);
+    gb.sphere(0, H + 0.16, dz, 0.2, copper, 1, 0.75);
+    gb.cyl(0, H + 0.3, dz, 0.04, 0.05, 0.07, 8, trim);
+    gb.cone(0, H + 0.37, dz, 0.045, 0.06, 8, copper);
+    for (const s of [-1, 1]) {
+      gb.box(s * (W / 2 - 0.08), H, z0, 0.01, 0.3, 0.01, IRON_D);
+      gb.box(s * (W / 2 - 0.08) + 0.05, H + 0.24, z0, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#2f6a4a']));
+    }
+  } else {
+    gb.hip(0, H, z0, W + 0.02, D + 0.02, 0.2, pal.slate, 0.04);
+    for (const s of [-1, 1]) chimney(c, s * (W / 2 - 0.2), H - 0.05, H + 0.24, z0, 'home', STONE);
+  }
+  frontage(c, -W / 2, -pw / 2 - 0.08, f.dep / 2 - 0.06, [], 'railings');
+  frontage(c, pw / 2 + 0.08, W / 2, f.dep / 2 - 0.06, [], 'railings');
+  lamp(c, -pw / 2 - 0.04, f.dep / 2 - 0.08, 0.32); lamp(c, pw / 2 + 0.04, f.dep / 2 - 0.08, 0.32);
   if (f.turned) gb.pop();
 };
 
@@ -3824,7 +4833,7 @@ export function buildModel(b, opts = {}) {
   const ground = opts.ground;
   const makeCtx = (gb, rng) => {
   const c = {
-    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
+    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
     smoke: [], glows: [], spin: null, work: null, fountain: null,
     season: opts.season ?? 1,

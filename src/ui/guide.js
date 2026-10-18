@@ -2,7 +2,7 @@
 // card, and the full picture (every level, its needs and where it can lead)
 // in the Building guide window when one is picked.
 
-import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, servicesOf, unlockOf, techForLevel, workNeeded } from '../defs.js';
+import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, servicesOf, unlockOf, techForLevel, workNeeded, sellsText } from '../defs.js';
 import { EDU } from '../sim/people.js';
 import { visitorCap, visitKind } from '../sim/agents.js';
 import { thumb } from './thumbs.js';
@@ -24,6 +24,7 @@ function stats(type, level) {
   if (L.seats) out.push(['Pupils', `${L.seats}`]);
   const cap = visitors(type, level);
   if (Number.isFinite(cap)) out.push(['Visitors at once', `${cap} ${WHO[visitKind(def)]}`]);
+  if (def.shop) out.push(['Sells', sellsText({ type })]);
   for (const s of servicesOf(def)) out.push([`${SERVICES[s].name} reach`, `${L.radius} tiles`]);
   if (def.park && L.appeal) out.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
   else if (L.appeal) out.push(['Scenery', `+${L.appeal}`]);

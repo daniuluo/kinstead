@@ -46,6 +46,17 @@ for (const [type, def] of Object.entries(BUILDINGS)) {
   });
 }
 ok(true, `all building models build (${verts} verts total)`);
+// ...and a shop with homes above for every trade it can be joined from
+{
+  const { MERGES } = await import('../src/defs.js');
+  const flavors = MERGES.find(m => m.to === 'shophouse').b;
+  for (const flavor of flavors) for (let level = 0; level < BUILDINGS.shophouse.levels.length; level++) for (const rot of [0, 1]) {
+    const b = { type: 'shophouse', level, variant: 5 + level, flavor, size: 2, w: rot ? 1 : 2, d: rot ? 2 : 1, baseY: 0.5, minY: 0.2, rot };
+    const m = buildModel(b);
+    if (!m.geo || !m.geo.attributes.position.count || !m.door) throw new Error(`shophouse ${flavor} L${level}`);
+  }
+  ok(true, `a shop with homes above builds for every trade it is joined from (${flavors.join(', ')})`);
+}
 
 // 2. terrain generation over many seeds
 for (let s = 1; s <= 25; s++) {
@@ -405,6 +416,42 @@ const placePair = (tw, ta, tb) => {
   opt = tw.mergeOptions(F).find(m => m.other === G);
   ok(opt && opt.name === 'Grand Apartments' && opt.moveOut === 68 - 50, `two full Mansion Blocks joined say ${opt && opt.moveOut} people must move out of the ${opt && opt.name}`);
   F.residents = []; G.residents = [];
+}
+
+// 3d0c. shopping trips spread over the trades the town sells: everyday food
+// most, the town's only draper still gets the clothes shopping, a trade sold
+// only far from home is shopped for less; offices take no shoppers, and a
+// shop with homes above sells its own trade
+{
+  const { tradesOf, TRADES } = await import('../src/defs.js');
+  const { visitKind } = await import('../src/sim/agents.js');
+  const tw = World.createNew({ N: 48, seed: 35, name: 'Shopton' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [home, mk] = placePair(tw, 'house', 'market');
+  const near = ['bakery', 'butcher', 'draper'].map(t => placePair(tw, t, 'garden')[0]);
+  const far = (() => {
+    for (let z = tw.N - 6; z > 3; z--) for (let x = tw.N - 6; x > 3; x--) {
+      const d = Math.abs(x - home.x) + Math.abs(z - home.z);
+      if (d < 18 || d > 26 || !tw.checkRoad(x, z - 1, 1).ok) continue;
+      if (tw.buildingOn(x, z) || tw.roadAt(x, z) || tw.terrain.isWater(x, z)) continue;
+      tw.placeRoads([[x, z - 1]], 1);
+      const r = tw.placeBuilding('bank', x, z, { instant: true });
+      if (r.ok) return r.building;
+    }
+    return null;
+  })();
+  const shops = [mk, ...near, far].filter(Boolean);
+  const A = { world: tw, _nearest: Agents.prototype._nearest };
+  const n = 6000, got = new Map();
+  for (let i = 0; i < n; i++) { const id = Agents.prototype._shopFor.call(A, { home: home.id }, shops); got.set(id, (got.get(id) || 0) + 1); }
+  const share = (b) => (got.get(b.id) || 0) / n;
+  const [bak, but, dra] = near;
+  const pct = (b) => `${Math.round(share(b) * 100)}%`;
+  ok(shops.every(b => share(b) > 0), `every trade gets shoppers (market ${pct(mk)}, bakery ${pct(bak)}, butcher ${pct(but)}, draper ${pct(dra)}${far ? `, a bank ${Math.abs(far.x - home.x) + Math.abs(far.z - home.z)} tiles off ${pct(far)}` : ''})`);
+  ok(share(mk) > share(bak) && share(bak) > share(but) && share(but) > share(dra) && share(dra) > 0.05, 'everyday trades are shopped for most, clothes less, but the lone draper still gets its share');
+  ok(!far || share(far) < 0.5 * TRADES.banking.often / TRADES.clothes.often * share(dra), 'a trade only sold far from home is shopped for less');
+  ok(visitKind(BUILDINGS.offices) === null && !tradesOf({ type: 'offices' }).length, 'offices take no shoppers');
+  ok(tradesOf({ type: 'shophouse', flavor: 'butcher' }).join() === 'meat' && tradesOf({ type: 'deptstore' }).includes('clothes') && !tradesOf({ type: 'deptstore' }).includes('banking'), 'a shophouse sells its own trade, a department store every trade but banking');
 }
 
 // 3d1. taking a neighbouring plot: the land first (no builders, the building

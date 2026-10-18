@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { BUILDINGS, servicesOf } from '../defs.js';
+import { BUILDINGS, TRADES, servicesOf, tradesOf } from '../defs.js';
 import { doorPoint, fw, fd, isOpen } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { curvesAt } from '../world/roadShape.js';
@@ -153,6 +153,27 @@ export class Agents {
     return sorted[Math.min(sorted.length - 1, (Math.random() * k) | 0)][0].id;
   }
 
+  // A shopping trip is for one trade (TRADES): one the town sells, the
+  // everyday ones most often and those only sold far from home less, at one
+  // of the nearer shops selling it. So the town's only draper gets its
+  // clothes shopping, and a street of bakeries doesn't draw every errand.
+  _shopFor(r, shops) {
+    if (!shops.length) return null;
+    const home = this.world.buildings.get(r.home);
+    if (!home) return this._nearest(r, shops);
+    const near = new Map();
+    for (const b of shops) {
+      const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z);
+      for (const t of tradesOf(b)) if (!(near.get(t) <= d)) near.set(t, d);
+    }
+    const odds = [];
+    let sum = 0;
+    for (const [t, d] of near) { const p = (TRADES[t] ? TRADES[t].often : 1) / (1 + Math.max(0, d - 6) / 6); odds.push([t, p]); sum += p; }
+    let x = Math.random() * sum, want = odds[odds.length - 1][0];
+    for (const [t, p] of odds) if ((x -= p) <= 0) { want = t; break; }
+    return this._nearest(r, shops.filter(b => tradesOf(b).includes(want)));
+  }
+
   planDay(r, now) {
     const R = Math.random;
     const shops = this._candidates(d => d.shop);
@@ -161,7 +182,7 @@ export class Agents {
     const chapels = this._candidates(d => servicesOf(d).includes('culture'));
     const schools = this._candidates(d => servicesOf(d).includes('education'));
     const clinics = this._candidates(d => visitKind(d) === 'clinic');
-    const pick = (list) => this._nearest(r, list);
+    const pick = (list) => this._nearest(r, list), shop = () => this._shopFor(r, shops);
     const plan = [];
     const home = r.home;
     const push = (t, dest) => { if (dest != null) plan.push({ t, dest }); };
@@ -185,13 +206,13 @@ export class Agents {
       const end = late ? 21.5 + R() * 1.2 : 16 + R() * 1.8 + shift + (has('diligent') ? 0.8 : 0);
       push(start, r.job);
       const after = R(), pShop = 0.38 * shopK * outK, pOut = pShop + 0.24 * outK;
-      if (!late && after < pShop && shops.length) { push(end, pick(shops)); push(end + 0.7 + R() * 1.2, home); }
+      if (!late && after < pShop && shops.length) { push(end, shop()); push(end + 0.7 + R() * 1.2, home); }
       else if (!late && after < pOut && leisure.length) { push(end, pickFar(leisure)); push(end + 1 + R() * 1.6, home); }
       else push(end, home);
       if (!late && has('devout') && chapels.length && R() < 0.5) { push(18.4 + R() * 0.4, pick(chapels)); push(19.4 + R() * 0.4, home); }
       else if (!late && R() < 0.2 * tavK && taverns.length) { push(19.6 + R() + shift, pick(taverns)); push(22 + R() * 1.4 + shift, home); }
     } else if (r.age === 'adult') {
-      push(8.5 + R() * 2.5 + shift, R() < Math.min(1, 0.75 * shopK) ? pick(shops) ?? pick(parks) : pickFar(parks) ?? pick(shops));
+      push(8.5 + R() * 2.5 + shift, R() < Math.min(1, 0.75 * shopK) ? shop() ?? pick(parks) : pickFar(parks) ?? shop());
       push(12 + R(), home);
       if (R() < 0.55 * outK) { push(14.5 + R() * 2, has('devout') ? pick(chapels) ?? pickFar(leisure) : pickFar(leisure)); push(18 + R(), home); }
       if (R() < 0.12 * tavK && taverns.length) { push(19.8 + R(), pick(taverns)); push(22.2 + R(), home); }
@@ -213,7 +234,7 @@ export class Agents {
     } else {
       push(8.4 + R() * 2 + shift, has('devout') || R() < 0.6 ? pick(chapels) ?? pick(parks) : pickFar(parks));
       push(11.5 + R(), home);
-      if (R() < 0.6 * outK) { push(14 + R() * 2, R() < 0.6 * shopK ? pick(shops) ?? pick(parks) : pickFar(parks)); push(16.6 + R(), home); }
+      if (R() < 0.6 * outK) { push(14 + R() * 2, R() < 0.6 * shopK ? shop() ?? pick(parks) : pickFar(parks)); push(16.6 + R(), home); }
     }
     // now and then a visit to the herbalist or the doctor, in the early
     // afternoon while they're at home anyway (the old go most often)
