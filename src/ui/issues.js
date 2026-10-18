@@ -65,10 +65,11 @@ export function computeIssues(game) {
     else add(g.stop ? 'bad' : 'warn', 'format_color_reset', g.stop ? `${what} stopped — no water` : `${what} without water`, act);
   }
 
-  // services that homes are missing
-  for (const s of ['water', 'health', 'education', 'safety']) {
-    const miss = homes.filter(b => b.factors && !b.factors[s] && !(s === 'water' && b.factors.dry));
-    if (miss.length >= 2) add('warn', { water: 'water_drop', health: 'medical_services', education: 'school', safety: 'shield' }[s], `${plural(miss.length, 'home')} out of reach of ${SERVICES[s].name.toLowerCase()}`, { kind: 'focus', ids: miss.map(b => b.id) });
+  // services that homes are missing (water comes through the mains to every
+  // connected home, so a lack of it shows up above as a shortage)
+  for (const s of ['health', 'education', 'safety']) {
+    const miss = homes.filter(b => b.factors && !b.factors[s]);
+    if (miss.length >= 2) add('warn', { health: 'medical_services', education: 'school', safety: 'shield' }[s], `${plural(miss.length, 'home')} out of reach of ${SERVICES[s].name.toLowerCase()}`, { kind: 'focus', ids: miss.map(b => b.id) });
   }
 
   // schools

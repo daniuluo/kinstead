@@ -108,6 +108,11 @@ export const COMMANDS = {
     run: (g, c) => { g.applySpeed(c.s); return { ok: true }; },
   },
   // the sandbox switches belong to whoever's town it is
+  // lay power lines underground along these streets (Underground Cables)
+  bury: {
+    check: (w, c) => tiles(w, c.tiles, w.N * w.N),
+    run: (g, c) => g.world.buryLines(c.tiles),
+  },
   sandbox: {
     host: true,
     check: (w, c) => !!c.opts && typeof c.opts === 'object' && Object.keys(c.opts).every(k => SANDBOX.includes(k) && typeof c.opts[k] === 'boolean'),
@@ -163,6 +168,7 @@ export function describeCommand(cmd, r, world) {
     case 'line': return r.line ? `opened ${r.line.name}` : null;
     case 'unline': return 'closed a transit line';
     case 'sandbox': return 'changed the sandbox switches';
+    case 'bury': return r.n ? `put the power lines underground along ${r.n} stretch${r.n === 1 ? '' : 'es'} of road` : null;
     default: return null;
   }
 }

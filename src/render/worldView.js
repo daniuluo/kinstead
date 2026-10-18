@@ -71,6 +71,8 @@ export class WorldView {
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
       // the street lamps follow the town's power supply
       power: (sim) => { this.roads.lit = (x, z) => sim.lampLit(x, z); this.dirty.roads = true; },
+      // power lines laid underground: their poles come down
+      lines: () => { this.dirty.roads = true; },
     };
     world.on('building:add', this._h.add);
     world.on('building:remove', this._h.remove);
@@ -81,6 +83,7 @@ export class WorldView {
     world.on('trees', this._h.trees);
     world.on('terrain', this._h.terrain);
     world.on('power', this._h.power);
+    world.on('lines', this._h.lines);
     this.fireflyTimer = 0;
     this.time = 0;
   }
