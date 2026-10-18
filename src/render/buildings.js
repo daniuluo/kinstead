@@ -9,6 +9,7 @@ import { GeoBuilder, shade, mix } from './geo.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, produceOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
+import { CONFIG } from '../config.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
 
@@ -550,9 +551,8 @@ function bench(c, x, z, ry = 0) {
   gb.pop();
 }
 
-function lamp(c, x, z, h = 0.32) {
+function lamp(c, x, z, h = 0.32, y = c.gy(x, z)) {
   const { gb } = c;
-  const y = c.gy(x, z);
   gb.cyl(x, y, z, 0.011, 0.016, h, 6, '#2f2c2a');
   gb.glow(2.2, 1.6, 0.8, 3.0);
   gb.box(x, y + h, z, 0.036, 0.046, 0.036, '#ffe2a0');
@@ -1982,7 +1982,7 @@ MODELS.fishery = (c, L) => {
     gb.pop();
   };
   boat(-0.32, 0.32, 0.3);
-  if (L) boat(0.34, 0.4, -0.2);
+  if (L === 1) boat(0.34, 0.4, -0.2);
   barrel(c, 0.4, -0.34); crate(c, 0.33, -0.22);
   if (L >= 2) {
     // smokehouse and a cargo crane
@@ -1991,14 +1991,89 @@ MODELS.fishery = (c, L) => {
     gb.cbox(hx, 0, hz, 0.2, 0.32, 0.2, '#7a6a58', 0, 0.012);
     gb.roof(hx, 0.32, hz, 0.24, 0.24, 0.12, 0, '#4e463e');
     c.addSmoke(hx, 0.48, hz, 'work');
-    const kx = -0.42, kz = -0.38, ky = c.gy(kx, kz);
-    gb.box(kx, ky, kz, 0.026, 0.42, 0.026, '#4e3a2a');
-    gb.box(kx + 0.1, ky + 0.4, kz, 0.24, 0.022, 0.022, '#4e3a2a');
-    gb.box(kx + 0.2, ky + 0.2, kz, 0.004, 0.2, 0.004, '#2a2620');
-    gb.cbox(kx + 0.2, ky + 0.14, kz, 0.07, 0.06, 0.07, '#a88458', 0, 0.006);
     crate(c, 0.1, 0.42); crate(c, 0.17, 0.4, 0.85);
   }
+  if (L) landing(c, L);
 };
+
+// A fishery's landing stage out over the water beside it: a timber jetty
+// with a boat tied up, or at the Harbour a stone pier with bollards and a
+// lamp at its head, boats moored along it and a crane at its root swinging
+// the catch ashore. It's drawn in a frame turned so the water lies to -z,
+// and goes where its root is clear of the hut and the smokehouse. It reaches
+// beyond the plot, so it's drawn after the model is fitted to its plot.
+function landing(c, L) { c.beyond.push((cc) => landingNow(cc, L)); }
+function landingNow(c, L) {
+  const { gb } = c;
+  const [sx, sz] = waterSide(c);
+  const th = Math.atan2(-sx, -sz), co = Math.cos(th), si = Math.sin(th);
+  const harbour = L >= 2, half = harbour ? 0.1 : 0.065, root = -0.36;
+  const taken = [[-0.42, 0.22, -0.42, 0.1], ...(harbour ? [[0.2, 0.44, -0.42, -0.18]] : [])];
+  const clear = (u) => [-half - 0.04, 0, half + 0.04, harbour ? -half - 0.2 : 0].every((du) => {
+    const x = (u + du) * co + -0.42 * si, z = -(u + du) * si + -0.42 * co;
+    return !taken.some(([x0, x1, z0, z1]) => x > x0 - 0.03 && x < x1 + 0.03 && z > z0 - 0.03 && z < z1 + 0.03);
+  });
+  const jx = [0.24, -0.24, 0.32, -0.32, 0].find(clear) ?? 0.28;
+  gb.push(0, 0, 0, th);
+  const wy = c.waterY();
+  // out across the shore and the shallows (which show as wet sand) until it
+  // stands in open water, however wide the beach (to a point)
+  let tip = -0.5 - (harbour ? 0.62 : 0.4);
+  for (let z = -0.5; z > -2.2; z -= 0.05) if (c.gy(jx, z) < wy - 0.12) { tip = Math.min(tip, z - (harbour ? 0.34 : 0.24)); break; }
+  tip = Math.max(tip, -2.4);
+  const deck = Math.max(wy + 0.07, c.gy(jx, root)), len = root - tip, mz = (root + tip) / 2;
+  if (harbour) {
+    // dressed stone from the bed, a lighter coping along the top
+    const bed = Math.min(c.gy(jx, tip), c.gy(jx, mz), wy) - 0.12;
+    gb.cbox(jx, bed, mz, half * 2, deck - bed - 0.016, len, STONE, 0, 0.012);
+    gb.box(jx, deck - 0.016, mz, half * 2 + 0.014, 0.016, len + 0.014, '#a9a194');
+    for (const s of [-1, 1]) for (const k of [0.3, 0.7]) {
+      const x = jx + s * (half - 0.022), z = root - len * k;
+      gb.cyl(x, deck, z, 0.011, 0.014, 0.028, 7, IRON_D);
+      gb.sphere(x, deck + 0.028, z, 0.012, IRON_D, 0);
+    }
+    lamp(c, jx, tip + 0.05, 0.26, deck);
+    // the crane on the quay beside the pier's root, its jib out over the water
+    const kx = jx + (jx > 0 ? -1 : 1) * (half + 0.09), kz = -0.43, ky = c.gy(kx, kz);
+    gb.box(kx, ky, kz, 0.026, 0.42, 0.026, TIMBER);
+    gb.box(kx, ky + 0.4, kz - 0.1, 0.022, 0.022, 0.24, TIMBER);
+    gb.box(kx, ky + 0.2, kz - 0.2, 0.004, 0.2, 0.004, '#2a2620');
+    gb.cbox(kx, ky + 0.14, kz - 0.2, 0.07, 0.06, 0.07, '#a88458', 0, 0.006);
+  } else {
+    // piles driven into the bed, a deck of planks across them
+    for (let z = root - 0.02; z >= tip + 0.01; z -= 0.14) for (const s of [-1, 1]) {
+      const px = jx + s * (half - 0.012), g = c.gy(px, z);
+      if (g < deck - 0.03) gb.cyl(px, g - 0.04, z, 0.011, 0.013, deck - g + 0.05, 6, '#5e4630');
+    }
+    const n = Math.round(len / 0.045);
+    for (let i = 0; i < n; i++) gb.box(jx, deck - 0.018, root - (i + 0.5) * (len / n), half * 2, 0.018, len / n, i % 2 ? '#8a6a44' : '#7d5f3c');
+    for (const s of [-1, 1]) gb.cyl(jx + s * (half - 0.012), deck, tip + 0.02, 0.011, 0.012, 0.06, 6, '#5e4630');
+  }
+  // boats tied up alongside towards its head, where there's water under them
+  const spots = harbour ? [[1, 0.16, true], [-1, 0.24, false], [1, 0.46, false]] : [[ownSide(c), 0.17, false]];
+  for (const [s, k, sail] of spots) {
+    const x = jx + s * (half + 0.075), z = tip + k;
+    if (c.gy(x, z) < wy - 0.06) mooredBoat(c, x, z, wy, sail);
+  }
+  gb.pop();
+}
+const ownSide = (c) => (((c.variant || 0) >> 3) & 1 ? 1 : -1);
+
+// A boat afloat at y, along z: a clinker hull with a pointed bow, its
+// thwarts, and (sail) a mast with the sail furled half down.
+function mooredBoat(c, x, z, y, sail) {
+  const { gb } = c;
+  gb.push(x, y, z, 0);
+  gb.cbox(0, -0.02, 0, 0.1, 0.05, 0.24, '#6e4a2c', 0, 0.012);
+  gb.cbox(0, -0.02, 0.12, 0.07, 0.05, 0.07, '#6e4a2c', Math.PI / 4, 0.01);
+  gb.box(0, 0.03, 0, 0.082, 0.006, 0.2, '#9a7a54');
+  for (const k of [-0.06, 0.04]) gb.box(0, 0.03, k, 0.086, 0.012, 0.02, '#5e432c');
+  if (sail) {
+    gb.cyl(0, 0.03, 0.04, 0.005, 0.007, 0.32, 5, '#5e432c');
+    gb.box(0.004, 0.12, -0.02, 0.006, 0.18, 0.11, '#e3d6b8');
+  }
+  gb.pop();
+}
 
 MODELS.workshop = (c, L) => {
   const { gb, rng, pal } = c;
@@ -3701,13 +3776,13 @@ MODELS.fishmarket = (c, L) => {
     gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.cyl(mx, 0.26, md / 2 + 0.001, 0.09, 0.09, 0.008, 10, '#e3dccd', 0, Math.PI / 2); gb.noGlow();
     for (const s of [-1, 1]) for (let i = 0; i < 2; i++) win(c, mx + s * mw / 2, 0.12, -0.14 + i * 0.28, 0.12, 0.18, s > 0 ? 'r' : 'l', 0.8);
     gb.gable(mx, h, mz, mw + 0.02, md, 0.24, hw, pal.slate, 0.05, false, 0.035);
-    glassRoof(c, mx, h, mz, mw * 0.55, md, 0.24, false, 5);
+    glassRoof(c, mx, h, mz, mw * 0.55, md, 0.24, false, 5, 0.048);
     sign(c, mx, h - 0.09, md / 2 + 0.012, 0.42, 0.06, '#2f4a5a');
     // a louvred lantern on the ridge with a fish for a vane
-    gb.cbox(mx, h + 0.2, mz, 0.12, 0.08, 0.12, '#e3dccd', 0, 0.006);
-    gb.hip(mx, h + 0.28, mz, 0.16, 0.16, 0.07, pal.slate, 0.02);
-    gb.box(mx, h + 0.35, mz, 0.008, 0.08, 0.008, '#2f2c2a');
-    gb.box(mx, h + 0.42, mz, 0.1, 0.03, 0.006, '#c9a640');
+    gb.cbox(mx, h + 0.21, mz, 0.12, 0.11, 0.12, '#e3dccd', 0, 0.006);
+    gb.hip(mx, h + 0.32, mz, 0.16, 0.16, 0.07, pal.slate, 0.02);
+    gb.box(mx, h + 0.39, mz, 0.008, 0.08, 0.008, '#2f2c2a');
+    gb.box(mx, h + 0.46, mz, 0.1, 0.03, 0.006, '#c9a640');
   } else {
     // posts carrying a long roof, open all round
     const eave = 0.3;
@@ -4311,7 +4386,7 @@ MODELS.library = (c, L) => {
   footing(c, rx, rz, rw, rd);
   gb.cbox(rx, 0, rz, rw, rh, rd, stone, 0, 0.016);
   gb.gable(rx, rh, rz, rw + 0.02, rd, 0.16, stone, pal.slate, 0.04, false, 0.03);
-  glassRoof(c, rx, rh, rz, rw * 0.6, rd, 0.16, false, 4);
+  glassRoof(c, rx, rh, rz, rw * 0.6, rd, 0.16, false, 4, 0.043);
   for (let i = 0; i < 3; i++) {
     const x = rx - rw / 2 + (i + 0.5) * (rw / 3);
     win(c, x, 0.08, rz + rd / 2, 0.09, 0.2, 'f', 0.9);
@@ -4586,11 +4661,13 @@ function basin(c, x, z, r, jet = 0.12) {
 
 // Glazed panes over a gable roof's slopes (iron ribs show between them),
 // lit from within at night. Same frame as GeoBuilder.gable.
-function glassRoof(c, x, y, z, w, d, h, alongZ, n = 6) {
+// lift: how far the panes stand off the slope (more than the slates' thickness
+// when they're laid over a roof).
+function glassRoof(c, x, y, z, w, d, h, alongZ, n = 6, lift = 0.03) {
   const { gb } = c;
   gb.push(x, y, z, alongZ ? Math.PI / 2 : 0);
   if (alongZ) [w, d] = [d, w];
-  const hd = d / 2, a = Math.atan2(h, hd), L = Math.hypot(hd, h), lift = 0.03;
+  const hd = d / 2, a = Math.atan2(h, hd), L = Math.hypot(hd, h);
   const cz = hd / 2 + Math.sin(a) * lift, cy = h / 2 + Math.cos(a) * lift, pw = w / n;
   gb.glow(1.6, 1.4, 1.0, 1.5);
   for (let i = 0; i < n; i++) for (const s of [-1, 1]) gb.boxC(-w / 2 + (i + 0.5) * pw, cy, s * cz, pw - 0.022, 0.01, L - 0.03, GLASS_ROOF, s * a);
@@ -5659,6 +5736,7 @@ export function buildModel(b, opts = {}) {
     houses: [],   // every house() drawn, where it stands (see annexes)
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !BUILDINGS[b.type].fields,
     smoke: [], glows: [], spin: null, work: null, fountain: null,
+    beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
@@ -5669,6 +5747,8 @@ export function buildModel(b, opts = {}) {
       const wx = cx + lx * co + lz * si, wz = cz - lx * si + lz * co;
       return ground(wx, wz) - b.baseY - e[13];
     },
+    // the surface of the water (as drawn), relative to the current frame
+    waterY() { return ground ? CONFIG.WATER_LEVEL - 0.02 - b.baseY - gb.M.elements[13] : -0.03; },
     addSmoke(x, y, z, kind = 'home') { const v = new THREE.Vector3(x, y, z).applyMatrix4(gb.M); c.smoke.push({ x: v.x, y: v.y, z: v.z, kind }); },
     addGlow(x, y, z, kind = 'lamp') { const v = new THREE.Vector3(x, y, z).applyMatrix4(gb.M); c.glows.push({ x: v.x, y: v.y, z: v.z, kind }); },
   };
@@ -5735,6 +5815,17 @@ export function buildModel(b, opts = {}) {
     for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y, !!b.spare, main);
     const g2 = gb2.build();
     if (g2) { weather(g2); tint(g2, pal.tint); geo = mergeGeometries([geo, g2], false); geo.computeBoundingSphere(); }
+  }
+  // what reaches out beyond the plot on purpose (a harbour's pier over the
+  // water) is drawn after the fit, so it doesn't shrink the building
+  if (c.beyond.length && geo) {
+    const gb3 = new GeoBuilder();
+    gb3.vary = 0.09;
+    const c3 = makeCtx(gb3, new RNG((b.variant * 2654435761 + 13) >>> 0));
+    c3.smoke = c.smoke; c3.glows = c.glows;
+    for (const draw of c.beyond) draw(c3);
+    const g3 = gb3.build();
+    if (g3) { weather(g3); tint(g3, pal.tint); geo = mergeGeometries([geo, g3], false); geo.computeBoundingSphere(); }
   }
   return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null };
 }
