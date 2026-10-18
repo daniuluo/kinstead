@@ -19,7 +19,9 @@ const SNOW = `
 }
 `;
 
-const EMIT = `
+// light: null for electric light, 'candle' for a building without power
+// (dim, warmer windows and lanterns), 'off' for one that has stopped work.
+const EMIT = (light) => `
 {
   float m = vEmit.w;
   float on = 0.0;
@@ -29,7 +31,8 @@ const EMIT = `
     float r = m - 1.0;
     on = smoothstep(r * 0.6, r * 0.6 + 0.25, uNight) * (1.0 - step(r, uLate * 0.8));
   }
-  totalEmissiveRadiance += vEmit.rgb * on;
+  ${light === 'candle' ? 'on *= m >= 2.0 && m < 3.0 ? 1.0 : 0.3;\n  vec3 tint = vec3(1.0, 0.7, 0.42);' : light === 'off' ? 'on = 0.0;\n  vec3 tint = vec3(1.0);' : 'vec3 tint = vec3(1.0);'}
+  totalEmissiveRadiance += vEmit.rgb * tint * on;
 }
 `;
 
@@ -93,7 +96,7 @@ const PATTERN_TERRAIN = `
 }
 `;
 
-export function patch(material, { snow = false, snowMask = false, emit = false, wind = false, waves = false, pattern = null }, key) {
+export function patch(material, { snow = false, snowMask = false, emit = false, light = null, wind = false, waves = false, pattern = null }, key) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
     let vs = HEAD + shader.vertexShader;
@@ -102,7 +105,7 @@ export function patch(material, { snow = false, snowMask = false, emit = false, 
       vs = vs.replace('#include <common>', '#include <common>\nattribute vec4 emit;\nvarying vec4 vEmit;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmit = emit;');
       fs = fs.replace('#include <common>', '#include <common>\nvarying vec4 vEmit;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + EMIT);
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + EMIT(light));
     }
     if (pattern) {
       vs = vs.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
@@ -127,6 +130,9 @@ export function patch(material, { snow = false, snowMask = false, emit = false, 
 
 export const MAT = {
   building: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, pattern: 'building' }, 'bld'),
+  // the same, lit by candles and lanterns (no power), or dark (work stopped)
+  buildingCandle: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, light: 'candle', pattern: 'building' }, 'bldC'),
+  buildingOff: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, light: 'off', pattern: 'building' }, 'bldO'),
   // building sites are open-topped shells, so their insides must show
   site: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide }), { snow: true, emit: true, pattern: 'building' }, 'site'),
   terrain: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }), { snowMask: true, pattern: 'terrain' }, 'ter'),

@@ -1,7 +1,7 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
-import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf } from '../defs.js';
+import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
@@ -86,10 +86,11 @@ export class Sim {
   // ------------------------------------------------------------ recompute
   recompute() {
     this.dirty = false;
-    this._coverage();
     this._links();
     this.assignSchools();
     this.assignJobs();
+    // after the jobs: what works depends on who is there to work it
+    this._coverage();
     this._happiness();
     this._budget();
     this._demand();
@@ -122,26 +123,18 @@ export class Sim {
         }
       }
     };
-    for (const b of w.buildings.values()) {
-      if (!isOpen(b)) continue;
-      const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (b.connected) for (const s of servicesOf(def)) stamp(b, L.radius, (i) => { this.coverage[s][i] = 1; });
-      if (def.park || L.appeal) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * (1 - d / (L.radius + 1)); });
-      if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += 16 * (1 - d / (L.pollution + 1)); });
-    }
-    // Utilities. Water: wells and pumps can only draw for so many people.
-    // Power: generators feed every road-connected building through the
-    // street wires. Short on either and some buildings go without.
+    // Utilities. Power: generators (and their crews) feed every
+    // road-connected building through the street wires. Water: wells and
+    // pumps can only draw for so many people. Short on either and some
+    // buildings go without.
     let wSup = 0, pGen = 0, pDem = 0;
     for (const b of w.buildings.values()) {
       if (!isOpen(b) || !b.connected) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.supply && servicesOf(def).includes('water')) wSup += L.supply;
-      if (L.kw) pGen += L.kw;
+      if (L.kw) pGen += L.kw * this.staffOf(b);
       else if (!def.park) pDem += 0.5 + 0.2 * (L.housing || 0) + 0.25 * (L.jobs || 0);
     }
-    this.utility = { water: { supply: wSup, demand: w.population }, power: { gen: pGen, demand: Math.round(pDem) } };
-    this.waterShare = w.population ? Math.min(1, wSup / w.population) : 1;
+    pGen = Math.round(pGen);
     this.powerShare = pGen ? Math.min(1, pDem ? pGen / pDem : 1) : 0;
     const P = this.coverage.power;
     for (const b of w.buildings.values()) {
@@ -153,6 +146,35 @@ export class Sim {
         if (x >= 0 && z >= 0 && x < N && z < N) P[z * N + x] = 1;
       }
     }
+    // water sources first (some pumps need power and hands), so everything
+    // else can tell whether it has running water
+    for (const b of w.buildings.values()) {
+      const def = BUILDINGS[b.type];
+      if (!servicesOf(def).includes('water') || !isOpen(b) || !b.connected) continue;
+      const L = def.levels[b.level], np = needsOf(b.type, b.level).power;
+      const k = this.staffOf(b) * (np && !b.powered ? np.without : 1);
+      if (L.supply) wSup += L.supply * k;
+      if (k > 0) stamp(b, L.radius, (i) => { this.coverage.water[i] = 1; });
+    }
+    wSup = Math.round(wSup);
+    this.utility = { water: { supply: wSup, demand: w.population }, power: { gen: pGen, demand: Math.round(pDem) } };
+    this.waterShare = w.population ? Math.min(1, wSup / w.population) : 1;
+    // what every building can do with what it has, then the services,
+    // scenery and smoke that come of it
+    for (const b of w.buildings.values()) this._working(b);
+    for (const b of w.buildings.values()) {
+      if (!isOpen(b)) continue;
+      const def = BUILDINGS[b.type], L = def.levels[b.level];
+      const reach = this.reachOf(b);
+      if (b.connected && reach) for (const s of servicesOf(def)) if (s !== 'water') stamp(b, reach, (i) => { this.coverage[s][i] = 1; });
+      // a park's fountain may be off; homes and orchards keep their looks
+      const look = def.park ? b.working : 1;
+      if ((def.park || L.appeal) && look > 0) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * look * (1 - d / (L.radius + 1)); });
+      // stopped works smoke far less
+      const fumes = 16 * (0.3 + 0.7 * Math.min(1, b.working));
+      if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += fumes * (1 - d / (L.pollution + 1)); });
+    }
+    this._lights();
     // trees and water make places pleasant
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const tc = w.treeCount[z * N + x];
@@ -163,6 +185,71 @@ export class Sim {
         }
       }
     }
+  }
+
+  // Share of a workplace's jobs that are filled (1 for buildings with no jobs).
+  staffOf(b) {
+    const jobs = capOf(b, 'jobs');
+    return jobs ? Math.min(1, b.workers.length / jobs) : 1;
+  }
+
+  // Running water at a building: 0 out of reach of any well or pump, 1 in
+  // reach but the town's water runs short here, 2 running water.
+  waterAt(b) {
+    const w = this.world;
+    if (!this.coverage.water[b.z * w.N + b.x]) return 0;
+    return hash2(b.id, 3, 9) < this.waterShare ? 2 : 1;
+  }
+
+  // How well a building can do its job, b.working (1 fully, 0 stopped), and
+  // what holds it back, b.blockers: 'road', 'workers', 'power', 'water'.
+  // Production, income, service reach, school places, utility output,
+  // upgrades and the lights in the world all go by this (see NEEDS).
+  _working(b) {
+    const def = BUILDINGS[b.type], L = def.levels[b.level];
+    const bl = b.blockers = [];
+    b.staff = this.staffOf(b);
+    b.wet = this.waterAt(b);
+    if (!isOpen(b)) { b.working = 0; return; }
+    if (!b.connected && (b.access || !def.park)) { b.working = 0; bl.push('road'); return; }
+    let k = 1;
+    const need = needsOf(b.type, b.level);
+    if (capOf(b, 'jobs') && need.staff) {
+      if (b.staff < 0.5) bl.push('workers');
+      k *= b.staff;
+    }
+    if (need.power && !b.powered) { bl.push('power'); k *= need.power.without; }
+    // homes need running water to grow; some trades and services to work
+    if ((need.water || L.housing) && b.wet < 2) { bl.push('water'); if (need.water) k *= need.water.without; }
+    b.working = k;
+  }
+
+  // How far a service reaches: all of its radius when it is fully staffed
+  // and supplied, down to half as it struggles, nothing once it stops.
+  reachOf(b) {
+    const L = BUILDINGS[b.type].levels[b.level], k = b.working ?? 1;
+    return L.radius && k > 0 ? L.radius * (0.5 + 0.5 * Math.min(1, k)) : 0;
+  }
+
+  // School places: as many as its teachers can manage (and a university
+  // without power has fewer laboratories to offer).
+  seatsOf(b) {
+    const np = needsOf(b.type, b.level).power;
+    return Math.ceil(capOf(b, 'seats') * this.staffOf(b) * (np && b.powered === false ? np.without : 1));
+  }
+
+  // Street lamps run on electricity: all lit when the town has enough, some
+  // when it is short, none without. Tells the view when that changes.
+  _lights() {
+    const share = Math.round(this.powerShare * 20) / 20;
+    if (share === this.lampShare) return;
+    this.lampShare = share;
+    this.world.emit('power', this);
+  }
+
+  lampLit(x, z) {
+    const s = this.lampShare ?? 0;
+    return s >= 1 || (s > 0 && hash2(Math.floor(x * 4), Math.floor(z * 4), 13) < s);
   }
 
   _near(b, pred, radius) {
@@ -186,7 +273,7 @@ export class Sim {
       let h = 42;
       for (const s of SERVICE_KEYS) f[s] = !!this.coverage[s][i];
       // not enough water to go round: some homes in reach still go dry
-      if (f.water && hash2(b.id, 3, 9) >= this.waterShare) { f.water = false; f.dry = true; }
+      if (f.water && this.waterAt(b) < 2) { f.water = false; f.dry = true; }
       f.power = !!b.powered;
       // every contribution is recorded as [key, points, best possible] for the UI
       const parts = f.parts = [['base', 42, 42]];
@@ -239,7 +326,7 @@ export class Sim {
     let p = Math.floor(w.population / 30);
     for (const b of w.buildings.values()) {
       const src = RESEARCH_SOURCES[b.type];
-      if (src && isOpen(b) && b.connected) p += src[Math.min(b.level, src.length - 1)];
+      if (src && isOpen(b) && b.connected) p += Math.round(src[Math.min(b.level, src.length - 1)] * Math.min(1, b.working ?? 1));
     }
     return p;
   }
@@ -249,7 +336,8 @@ export class Sim {
   assignSchools() {
     const w = this.world;
     const schools = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].seats && isOpen(b) && b.connected);
-    const left = new Map(schools.map(s => [s.id, capOf(s, 'seats')]));
+    // places for as many as the teachers can manage
+    const left = new Map(schools.map(s => [s.id, this.seatsOf(s)]));
     for (const s of schools) s.pupils = [];
     const teaches = (s) => BUILDINGS[s.type].levels[s.level].teaches || 1;
     // children go to the stage that fits their age; some young adults go on
@@ -268,7 +356,7 @@ export class Sim {
     }
     // students who already have a place keep it; then the oldest first
     want.sort((a, b) => (b[0].school != null) - (a[0].school != null) || yearsOf(b[0]) - yearsOf(a[0]));
-    const stats = { kids: 0, placed: 0, seats: schools.reduce((n, s) => n + capOf(s, 'seats'), 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
+    const stats = { kids: 0, placed: 0, seats: schools.reduce((n, s) => n + left.get(s.id), 0), short: [0, 0, 0, 0, 0, 0], students: 0 };
     for (const [r, st] of want) {
       if (r.age === 'child') stats.kids++;
       const home = r.home != null ? w.buildings.get(r.home) : null;
@@ -336,8 +424,9 @@ export class Sim {
         else if (y >= 20 && y <= 42 && r.home != null) {
           const home = w.buildings.get(r.home);
           const fam = [...w.residents.values()].filter(o => (o.fam ?? o.id) === (r.fam ?? r.id));
-          // a growing family can squeeze one more in (crowded homes are less happy)
-          const room = home && isOpen(home) && home.residents.length < capOf(home, 'housing') + 1;
+          // a growing family can squeeze one more in (crowded homes are less
+          // happy), but not without running water
+          const room = home && isOpen(home) && home.residents.length < capOf(home, 'housing') + 1 && (home.wet ?? 2) === 2;
           // one chance a year per household, taken by its youngest grown-up
           const youngest = fam.filter(o => o.age === 'adult').sort((a, b) => yearsOf(a) - yearsOf(b))[0];
           if (room && youngest === r && fam.length < 6 && rng.chance(0.16)) {
@@ -393,8 +482,9 @@ export class Sim {
         for (const b of open) {
           if (b.workers.length >= this.jobsOf(b)) continue;
           if (eduOf(r) < (BUILDINGS[b.type].levels[b.level].edu || 0)) continue;
-          // builders are hired first: nothing gets built without them
-          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (BUILDINGS[b.type].builders ? 1000 : 0);
+          // builders are hired first: nothing gets built without them; then
+          // places with nobody at all, so as few as possible stand idle
+          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (BUILDINGS[b.type].builders ? 1000 : 0) - (b.workers.length ? 0 : 12);
           if (d < bd) { bd = d; best = b; }
         }
         if (!best) continue;
@@ -423,12 +513,8 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      const workers = b.workers.length;
-      if (L.income && workers) {
-        let v = workers * L.income * (b.powered ? 1.15 : 1);
-        if (def.nearTrees) v *= 0.6 + Math.min(1, this._treesNear(b, 3) / 18) * 0.8;
-        if (def.cat === 'industry') inc.industry += v; else inc.commerce += v;
-      }
+      const v = this.incomeOf(b);
+      if (v) { if (def.cat === 'industry') inc.industry += v; else inc.commerce += v; }
       if (L.upkeep) {
         if (def.cat === 'services' || def.cat === 'transit') exp.services += L.upkeep;
         else exp.buildings += L.upkeep;
@@ -441,6 +527,16 @@ export class Sim {
     for (const line of w.lines) exp.transit += TRANSIT[line.mode].upkeep * line.vehicles;
     const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
     this.budget = { income: inc, expense: exp, net: sum(inc) - sum(exp), totalIn: sum(inc), totalOut: sum(exp) };
+  }
+
+  // A workplace's takings per day: jobs × pay × how well it works (its
+  // staff, power and water), a little more with electric light and tools.
+  incomeOf(b) {
+    const def = BUILDINGS[b.type], L = def.levels[b.level];
+    if (!L.income || !isOpen(b)) return 0;
+    let v = capOf(b, 'jobs') * Math.min(1, b.working ?? 1) * L.income * (b.powered ? 1.15 : 1);
+    if (def.nearTrees && v) v *= 0.6 + Math.min(1, this._treesNear(b, 3) / 18) * 0.8;
+    return v;
   }
 
   _treesNear(b, r) {
@@ -591,9 +687,22 @@ export class Sim {
     this.dirty = true;
   }
 
+  // What a shop or tavern takes from a visit, as a share of its full price:
+  // nothing with nobody serving, less without water, and much less after
+  // dark when it needs electric light and has none.
+  visitShare(b) {
+    if (b.working === 0) return 0;
+    const need = needsOf(b.type, b.level), h = this.world.hours;
+    let k = 1;
+    if (need.water && b.wet < 2) k *= need.water.without;
+    if (need.power && need.power.use === 'lights' && b.powered === false && (h >= 18.5 || h < 6)) k *= 0.4;
+    return k;
+  }
+
   recordVisit(b, fare = null) {
     const w = this.world;
-    const v = fare ?? (BUILDINGS[b.type].levels[b.level].visit || 0);
+    let v = fare ?? (BUILDINGS[b.type].levels[b.level].visit || 0);
+    if (fare == null && v) v = Math.round(v * this.visitShare(b));
     if (!v) return 0;
     w.money += v;
     w.stats.visits++;

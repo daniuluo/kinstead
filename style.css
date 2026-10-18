@@ -173,6 +173,15 @@ body.pixel #app canvas { image-rendering: pixelated; }
 .req .ok::before { content: '✓ '; color: var(--good); font-weight: 700; }
 .req .no::before { content: '✗ '; color: var(--bad); font-weight: 700; }
 .req .no { color: var(--ink-2); }
+.req .no.warn::before { content: '! '; color: #8a5a00; }
+/* building panel: what it needs to work and what it lacks */
+.sec.working { padding: 4px 6px 6px; background: #f3efe2; box-shadow: var(--field); }
+.sec.working.stop { background: #f7dcd4; }
+.sec.working.part { background: #f7ecc8; }
+.sec.working h5 .ms { font-size: 14px; vertical-align: -2px; }
+.sec.working.stop h5 { color: var(--bad); }
+.needs-note { font-size: 12px; margin-top: 6px; color: #5a4300; }
+.needs-note .ms { font-size: 14px; vertical-align: -2px; }
 
 /* -------------------------------------------------------------- toasts */
 #toasts { position: absolute; left: 8px; top: 104px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; max-width: 340px; }
@@ -189,6 +198,10 @@ body.pixel #app canvas { image-rendering: pixelated; }
 .coin .ms { color: #ffe066; }
 @keyframes coinUp { 0% { opacity: 1; margin-top: 4px; } 100% { opacity: 0; margin-top: -30px; } }
 .label3d { position: absolute; transform: translate(-50%, -100%); background: var(--tip); color: #000; border: 1px solid #000; padding: 1px 6px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+/* warning badges over buildings with no power, water, workers or road */
+.blocked { position: absolute; transform: translate(-50%, -100%); width: 19px; height: 19px; display: flex; align-items: center; justify-content: center; background: #ffe7a0; color: #6a4a00; border: 1px solid #000; box-shadow: var(--drop); }
+.blocked.stop { background: #ffc8bc; color: var(--bad); }
+.blocked .ms { font-size: 14px; }
 
 .tooltip { position: fixed; z-index: 30; pointer-events: none; background: var(--tip); color: #000; border: 1px solid #000; padding: 3px 7px; font-size: 12px; max-width: 260px; box-shadow: var(--drop); }
 .tooltip .bad { color: var(--bad); }

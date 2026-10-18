@@ -502,6 +502,7 @@ export class World {
     const opt = b && this.expandOptions(b).find(o => o.dir === dir && o.kind === kind);
     if (!opt) return { ok: false, reason: "Can't expand that way" };
     if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };
+    if ((b.blockers || []).includes('water') && BUILDINGS[b.type].levels[b.level].housing) return { ok: false, reason: 'No running water: homes need it to grow' };
     if (opt.kind === 'strip') {
       const LAND = 0.25;
       this.money -= opt.cost;

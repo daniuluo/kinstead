@@ -577,6 +577,52 @@ export const LARGE = {
 // Every service a building provides (combined buildings can provide two).
 export const servicesOf = (def) => def.services || (def.service ? [def.service] : []);
 
+// What a building needs to work, from a given level up (see Sim._working).
+//   power  use 'machines': powered machinery, or 'lights': electric light
+//          for trade after dark
+//   water  running water: within reach of a well or pump, with enough to
+//          go round
+//   without  how much of its work it still does without it (0: it stops)
+//   what     what the need is for, in the building panel
+// It also needs its workers: services, schools and utilities only work as
+// well as they are staffed, and nothing works with nobody there — unless
+// it says staff: false (the council meets whoever staffs the town hall,
+// and trains run without a station master). Homes need
+// no table entry: without water they can't upgrade, expand or grow a family,
+// and without power their windows fall back to candlelight.
+// Early buildings (cottages, wells, farms, woodcutters, builders) need none.
+export const NEEDS = {
+  market: { power: { from: 2, use: 'lights', without: 0.8, what: 'its gas-lit counters' } },
+  bakery: { water: { from: 0, without: 0.3, what: 'the dough and the ovens' }, power: { from: 2, use: 'lights', without: 0.85, what: 'its shop lights' } },
+  tavern: { water: { from: 0, without: 0.5, what: 'brewing and washing up' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
+  inn: { water: { from: 0, without: 0.5, what: 'brewing, baths and the kitchens' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
+  shophouse: { power: { from: 1, use: 'lights', without: 0.8, what: 'its shop lights' } },
+  arcade: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lights under its roof' } },
+  musichall: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights' } },
+  lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
+  workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
+  joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },
+  foundry: { power: { from: 0, use: 'machines', without: 0.4, what: 'the furnace blowers and rolling mill' } },
+  papermill: { power: { from: 0, use: 'machines', without: 0.4, what: 'the pulpers and presses' }, water: { from: 0, without: 0.5, what: 'the pulp vats' } },
+  orchard: { water: { from: 0, without: 0.6, what: 'the cider mill' } },
+  well: { power: { from: 2, use: 'machines', without: 0.3, what: 'its pumps' } },
+  pump: { power: { from: 1, use: 'machines', without: 0.3, what: 'its pumps' } },
+  clinic: { water: { from: 0, without: 0.5, what: 'washing and medicines' }, power: { from: 2, use: 'machines', without: 0.5, what: 'its wards and equipment' } },
+  almshouse: { water: { from: 0, without: 0.5, what: 'washing and medicines' } },
+  firestation: { water: { from: 0, without: 0.4, what: 'the fire engines' } },
+  university: { power: { from: 0, use: 'machines', without: 0.6, what: 'its laboratories' } },
+  fountaingarden: { water: { from: 0, without: 0.6, what: 'the fountain' } },
+  plaza: { water: { from: 1, without: 0.7, what: 'the fountain' } },
+  townhall: { staff: false },
+  station: { staff: false },
+};
+
+export function needsOf(type, level) {
+  const n = NEEDS[type], out = { staff: !n || n.staff !== false };
+  if (n) for (const k of ['power', 'water']) if (n[k] && level >= n[k].from) out[k] = n[k];
+  return out;
+}
+
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.

@@ -1,0 +1,138 @@
+// What a building needs to work and what it is missing (Sim._working):
+// warning badges over blocked buildings, and the building panel's
+// "Working" section with what to do about each problem.
+
+import { BUILDINGS, needsOf, servicesOf } from '../defs.js';
+import { fw, fd, isOpen, capOf } from '../world/world.js';
+import { EDU } from '../sim/people.js';
+
+export const BLOCKER_ICON = { road: 'link_off', workers: 'person_off', power: 'power_off', water: 'format_color_reset' };
+
+// The main thing holding a building back: no road, nobody at all, then no
+// power or water, and only then being short of staff.
+export function mainBlocker(b) {
+  const bl = b.blockers || [];
+  if (bl.includes('road')) return 'road';
+  if (bl.includes('workers') && !b.workers.length) return 'workers';
+  return ['power', 'water', 'workers'].find(k => bl.includes(k)) || null;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Badges over buildings that can't do their job properly: red when it has
+// stopped, amber when it only works in part (or, for a home, can't grow).
+// One of the pop-ups, so it can be switched off.
+export class BlockedIcons {
+  constructor(game, layer) {
+    this.game = game;
+    this.layer = layer;
+    this.els = new Map();
+    this.v = new game.THREE.Vector3();
+  }
+
+  update() {
+    const g = this.game, w = g.world;
+    const show = w && !g.demo && g.view && g.settings.popBlocked !== false && g.renderer.rig.zoom >= 0.8;
+    const seen = new Set();
+    if (show) {
+      for (const b of w.buildings.values()) {
+        if (!b.blockers || !b.blockers.length) continue;
+        const it = g.view.items.get(b.id);
+        if (!it || it.site) continue;
+        const bb = it.mesh.geometry.boundingBox;
+        const p = g.renderer.worldToScreen(this.v.set(b.x + fw(b) / 2, b.baseY + (bb ? bb.max.y : 0.7) + 0.12, b.z + fd(b) / 2));
+        if (p.behind || p.x < -20 || p.y < -20 || p.x > innerWidth + 20 || p.y > innerHeight + 20) continue;
+        const key = mainBlocker(b);
+        const cls = `blocked ${b.working === 0 ? 'stop' : 'part'}`;
+        let el = this.els.get(b.id);
+        if (!el) { el = document.createElement('div'); this.layer.appendChild(el); this.els.set(b.id, el); }
+        if (el.dataset.key !== key + cls) { el.dataset.key = key + cls; el.className = cls; el.innerHTML = `<span class="ms">${BLOCKER_ICON[key]}</span>`; }
+        el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
+        seen.add(b.id);
+      }
+    }
+    for (const [id, el] of this.els) if (!seen.has(id)) { el.remove(); this.els.delete(id); }
+  }
+}
+
+// What to do about missing power or water, given the state of the town.
+export function powerAdvice(game) {
+  const w = game.world, U = game.sim.utility;
+  if (!w.hasTech('electricity')) return 'Research Electricity, then build a generator';
+  const gens = [...w.buildings.values()].filter(b => BUILDINGS[b.type].generator && isOpen(b));
+  if (!U.power.gen) return gens.length ? 'The generators have nobody to run them' : 'Build a generator (Utilities): a Water Wheel or a Wind Generator';
+  if (U.power.demand > U.power.gen) return `The grid is short by ${U.power.demand - U.power.gen} kW: build more generators`;
+  return 'Connect it to the grid along the roads';
+}
+export function waterAdvice(game, b) {
+  const U = game.sim.utility;
+  return b.wet === 1 ? `The town's water runs short (${U.water.supply} for ${U.water.demand} people): build more wells, a pump or a water tower`
+    : 'Out of reach of any well or pump: build one nearby (Utilities)';
+}
+function workerAdvice(game, b) {
+  const w = game.world, L = BUILDINGS[b.type].levels[b.level];
+  const free = [...w.residents.values()].filter(r => r.age === 'adult' && r.job == null && r.school == null);
+  if (L.edu && free.length) return `It needs workers with ${EDU[L.edu].toLowerCase()} education, and none of the ${free.length} looking for work have it: build schools`;
+  return 'Nobody is free to work here: build homes to bring in more villagers';
+}
+
+// The building panel's "Working" section: how well it works, and for each
+// thing it lacks, what that does and what to do about it.
+export function workingHTML(game, b) {
+  const def = BUILDINGS[b.type], L = def.levels[b.level], sim = game.sim;
+  if (!isOpen(b) || b.working == null) return '';
+  const need = needsOf(b.type, b.level);
+  const bl = b.blockers || [];
+  const home = !!L.housing && !L.jobs;
+  if (home && !bl.length) return '';
+  const lines = [];
+  const k = Math.min(1, b.working);
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  if (bl.includes('road')) lines.push(['no', "Not connected to the town's roads: lay a road to it"]);
+  if (capOf(b, 'jobs') && need.staff && !bl.includes('road')) {
+    const jobs = capOf(b, 'jobs');
+    if (!b.workers.length) lines.push(['no', `No workers, so nothing gets done. ${workerAdvice(game, b)}`]);
+    else if (b.workers.length < jobs) lines.push([bl.includes('workers') ? 'no' : 'warn', `${b.workers.length} of ${jobs} jobs filled. ${workerAdvice(game, b)}`]);
+  }
+  if (need.power) {
+    const n = need.power;
+    const effect = n.use === 'lights' ? `it does little trade after dark (${pct(n.without)} of its takings)`
+      : n.without ? `it works at ${pct(n.without)}` : 'it stops';
+    if (bl.includes('power')) lines.push(['no', `No power for ${n.what}: ${effect}. ${powerAdvice(game)}`]);
+    else if (!bl.includes('road')) lines.push(['ok', `Power for ${n.what}`]);
+  }
+  if (need.water || L.housing) {
+    const what = need.water ? `No water for ${need.water.what}: ${need.water.without ? `it works at ${pct(need.water.without)}` : 'it stops'}`
+      : "No running water: the home can't upgrade, expand or grow its family";
+    if (bl.includes('water')) lines.push([need.water ? 'no' : 'warn', `${what}. ${waterAdvice(game, b)}`]);
+    else if (need.water && !bl.includes('road')) lines.push(['ok', `Running water for ${need.water.what}`]);
+  }
+  if (!lines.length) return '';
+  // what that means for its work
+  const rows = [];
+  if (!home) rows.push(['Working', k >= 1 ? 'Fully' : k > 0 ? `At ${pct(k)}` : 'Stopped']);
+  if (L.radius && servicesOf(def).length && !def.park) rows.push(['Reach now', `${sim.reachOf(b).toFixed(1).replace(/\.0$/, '')} of ${L.radius} tiles`]);
+  if (L.seats) rows.push(['Places now', `${sim.seatsOf(b)} of ${capOf(b, 'seats')}`]);
+  if (L.kw) rows.push(['Making', `${Math.round(L.kw * k)} of ${L.kw} kW`]);
+  if (L.supply) rows.push(['Drawing water for', `${Math.round(L.supply * Math.min(1, sim.staffOf(b) * (need.power && !b.powered ? need.power.without : 1)))} of ${L.supply} people`]);
+  if (def.park && L.appeal) rows.push(['Scenery now', `+${Math.round(L.appeal * k)} of +${L.appeal}`]);
+  const head = home ? 'Running water' : k >= 1 && !bl.length ? 'Working' : k > 0 ? 'Working in part' : 'Stopped';
+  const icon = bl.length ? BLOCKER_ICON[mainBlocker(b)] : 'check_circle';
+  let h = `<div class="sec working ${k > 0 ? (bl.length ? 'part' : 'ok') : 'stop'}"><h5><span class="ms">${icon}</span> ${head}</h5>`;
+  h += rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('');
+  h += `<div class="req">${lines.map(([c, t]) => `<div class="${c === 'warn' ? 'no warn' : c}">${esc(t)}</div>`).join('')}</div></div>`;
+  return h;
+}
+
+// For an upgrade card: what the next level will need that this one doesn't.
+export function needsNoteHTML(b, type, level) {
+  const now = needsOf(b.type, b.level), next = needsOf(type, level);
+  const out = [];
+  for (const k of ['power', 'water']) {
+    const n = next[k];
+    if (!n || (now[k] && now[k].what === n.what && now[k].without === n.without)) continue;
+    const effect = k === 'power' && n.use === 'lights' ? 'trades less after dark without it' : n.without ? `works at ${Math.round(n.without * 100)}% without it` : 'stops without it';
+    out.push(`<div class="needs-note"><span class="ms">${k === 'power' ? 'bolt' : 'water_drop'}</span> Needs ${k === 'power' ? 'electricity' : 'running water'} for ${esc(n.what)}: ${effect}</div>`);
+  }
+  return out.join('');
+}
+

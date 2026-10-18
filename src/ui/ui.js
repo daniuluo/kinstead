@@ -5,6 +5,7 @@ import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, S
 import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
+import { BlockedIcons, workingHTML, needsNoteHTML } from './working.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf } from '../sim/people.js';
 // What feeds a home's happiness, and what to do about each.
@@ -297,6 +298,7 @@ export class UI {
     this._issuesT = (this._issuesT || 0) + dt;
     if (this._issuesT > 1) { this._issuesT = 0; this.renderIssues(); }
     this.updateLabels();
+    (this.blockedIcons ||= new BlockedIcons(this.game, $('popups'))).update();
   }
 
   // ------------------------------------------------------------ inspector
@@ -374,6 +376,7 @@ export class UI {
       c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${BUILDINGS[b.type].name.toLowerCase()}.`)}</div></div></div>`;
       c += `<div class="chain">${chain}</div>`;
       c += this._tilesHTML(cur, n);
+      c += needsNoteHTML(b, o.type, o.level);
       if (styled) {
         const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
         c += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => { const t = STYLE_TECH[s.id], ok = !t || w.hasTech(t); return `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}" ${ok ? '' : `disabled title="Research ${esc(TECHS[t].name)}"`}>${ok ? '' : '🔒'}${s.name}</button>`; }).join('')}</div>`;
@@ -457,6 +460,7 @@ export class UI {
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
     if (def.needsRail) chips.push(b.rail ? '<span class="chip ok">On the railway</span>' : '<span class="chip no">No track alongside</span>');
     h += `<div class="chips">${chips.join('')}</div>`;
+    h += workingHTML(this.game, b);
     const rows = [];
     if (L.housing) {
       rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
@@ -466,7 +470,7 @@ export class UI {
     if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
     if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
     if (L.income) {
-      let v = b.workers.length * L.income;
+      let v = sim.incomeOf(b);
       rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `$${fmt(v)} / day`]);
     }
     if (L.visit) rows.push(['Per visit', `$${L.visit}`]);
@@ -1113,7 +1117,8 @@ export class UI {
         <label class="inline"><input type="checkbox" id="stCoins" ${s.popCoins ? 'checked' : ''}> Coin pop-ups</label>
         <label class="inline"><input type="checkbox" id="stToasts" ${s.popToasts ? 'checked' : ''}> Notices</label>
         <label class="inline"><input type="checkbox" id="stTips" ${s.popTips ? 'checked' : ''}> Hover tips</label>
-        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label></div></div>
+        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label>
+        <label class="inline"><input type="checkbox" id="stBlocked" ${s.popBlocked !== false ? 'checked' : ''}> Warnings over buildings with no power, water or workers</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
       ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited money (this town)</label></div>
@@ -1140,6 +1145,7 @@ export class UI {
         s.popToasts = c.querySelector('#stToasts').checked;
         s.popTips = c.querySelector('#stTips').checked;
         s.popLabels = c.querySelector('#stLabels').checked;
+        s.popBlocked = c.querySelector('#stBlocked').checked;
         this.syncPopButton();
         const id = c.querySelector('#stGcid').value.trim();
         if (id !== g.drive.clientId) g.drive.setClientId(id);
@@ -1332,11 +1338,12 @@ export class UI {
     else if (a.kind === 'budget') this.showBudget();
   }
 
-  // One switch for every pop-up (coins, notices, hover tips, name tags).
+  // One switch for every pop-up (coins, notices, hover tips, name tags,
+  // warnings over blocked buildings).
   togglePopups() {
     const s = this.game.settings;
-    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
-    s.popCoins = s.popToasts = s.popTips = s.popLabels = !any;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels || s.popBlocked !== false;
+    s.popCoins = s.popToasts = s.popTips = s.popLabels = s.popBlocked = !any;
     this.game.applySettings();
     this.syncPopButton();
     if (!any) this.toast('Pop-ups on', 'info', '💡');
@@ -1345,7 +1352,7 @@ export class UI {
   syncPopButton() {
     const s = this.game.settings, b = $('btnPops');
     if (!b) return;
-    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels || s.popBlocked !== false;
     b.innerHTML = `<span class="ms">${any ? 'notifications' : 'notifications_off'}</span>`;
     b.classList.toggle('on', !any);
     b.title = `${any ? 'Hide' : 'Show'} pop-ups: coins, notices, tips (N)`;
@@ -1441,6 +1448,7 @@ export class UI {
         3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
         Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
+        Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
         6. Save to this browser, a file, or Google Drive from 💾.
       </div></div>`);
