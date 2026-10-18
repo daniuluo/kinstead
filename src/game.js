@@ -283,6 +283,11 @@ export class Game {
     this.setSpeed(S[Math.max(0, Math.min(S.length - 1, i + dir))]);
   }
 
+  rotateView(dir) {
+    if (!this.world || this.demo) return;
+    this.renderer.rotate(dir);
+  }
+
   toggleTopDown() {
     this.renderer.setTopDown(!this.renderer.rig.topDown);
     this.ui.syncToolbar();

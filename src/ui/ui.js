@@ -102,6 +102,8 @@ export class UI {
     $('zoomIn').onclick = () => g.renderer.zoomBy(1.35);
     $('zoomOut').onclick = () => g.renderer.zoomBy(1 / 1.35);
     $('btnView').onclick = () => g.toggleTopDown();
+    $('btnRotL').onclick = () => g.rotateView(-1);
+    $('btnRotR').onclick = () => g.rotateView(1);
     $('btnOverlay').onclick = () => this.toggleOverlayMenu();
     $('btnLines').onclick = () => this.showLines();
     $('btnBudget').onclick = () => this.showBudget();
@@ -1423,7 +1425,8 @@ export class UI {
         ${k('Wheel')}<span>Zoom in & out</span>
         ${k('W A S D')}<span>Pan the camera</span>
         ${k('T')}<span>Toggle 2D top-down / isometric</span>
-        ${k('1')}–${k('8')}<span>Tool menus · ${k('R')} roads · ${k('X')} demolish</span>
+        <span>${k('Q')} ${k('E')}</span><span>Rotate the view a quarter turn</span>
+        <span>${k('1')}–${k('8')}</span><span>Tool menus · ${k('R')} roads · ${k('X')} demolish</span>
         ${k('Tab')}<span>Flip a building's entrance</span>
         ${k('Space')}<span>Pause · ${k('[')} ${k(']')} slower / faster (up to 32×)</span>
         ${k('O')}<span>Overlays · ${k('B')} budget · ${k('L')} lines · ${k('P')} villagers</span>

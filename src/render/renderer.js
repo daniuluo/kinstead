@@ -11,7 +11,7 @@ import { PixelPass } from './pixelPass.js';
 // Classic 2:1 pixel-art isometric (dimetric) projection: 26.57° above the ground.
 export const ISO_ELEV = Math.atan(0.5);
 const DIST = 140;
-const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3();
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3();
 
 export class Renderer {
   constructor(container) {
@@ -49,7 +49,10 @@ export class Renderer {
     this.rig = {
       target: new THREE.Vector3(24, 0.5, 24),
       goal: new THREE.Vector3(24, 0.5, 24),
-      angle: Math.PI / 4, angleT: Math.PI / 4,
+      // the camera's compass angle is base (45° isometric, 0° for the 2D map)
+      // plus turn, a quarter turn per press of the rotate buttons
+      angle: Math.PI / 4, base: Math.PI / 4, baseT: Math.PI / 4,
+      view: 0, turn: 0, turnT: 0,
       zoom: 1.6, zoomT: 1.6,
       elev: ISO_ELEV, elevT: ISO_ELEV,
       topDown: false,
@@ -138,13 +141,23 @@ export class Renderer {
     this.rig.goal.set(x, this.rig.goal.y, z);
     if (instant) this.rig.target.copy(this.rig.goal);
   }
-  // The isometric angle is fixed by design; the only view change is the 2D top-down toggle.
   setTopDown(on) {
     this.rig.topDown = on;
     this.rig.elevT = on ? Math.PI / 2 : ISO_ELEV;
-    // the 2D map is grid-aligned; the isometric view always uses its one fixed angle
-    this.rig.angleT = on ? 0 : Math.PI / 4;
+    // the 2D map is grid-aligned; the isometric view sits at 45° to the grid
+    this.rig.baseT = on ? 0 : Math.PI / 4;
   }
+  // Swing the camera a quarter turn around the middle of the screen
+  // (dir = 1 turns the town clockwise on screen, -1 anticlockwise).
+  rotate(dir) {
+    const rig = this.rig;
+    rig.anchor = null;
+    rig.goal.copy(rig.target);
+    rig.view += dir;
+    rig.turnT = rig.view * Math.PI / 2;
+  }
+  // which of the four quarter turns the view is in (0–3)
+  get facing() { return ((this.rig.view % 4) + 4) % 4; }
   zoomBy(factor, clientX = null, clientY = null) {
     const rig = this.rig;
     const z0 = rig.zoomT;
@@ -209,12 +222,14 @@ export class Renderer {
   updateCamera(dt) {
     const rig = this.rig;
     const k = 1 - Math.pow(0.0005, dt);
-    rig.angle += (rig.angleT - rig.angle) * k;
+    rig.base += (rig.baseT - rig.base) * k;
+    rig.turn = Math.abs(rig.turnT - rig.turn) < 1e-4 ? rig.turnT : rig.turn + (rig.turnT - rig.turn) * k;
+    rig.angle = rig.base + rig.turn;
     rig.elev += (rig.elevT - rig.elev) * k;
     // ease zoom in log space so zooming in and out feel the same
     const lz = Math.log(rig.zoom), lzT = Math.log(rig.zoomT);
     rig.zoom = Math.abs(lzT - lz) < 1e-3 ? rig.zoomT : Math.exp(lz + (lzT - lz) * k);
-    const zooming = rig.zoom !== rig.zoomT;
+    const zooming = rig.zoom !== rig.zoomT || rig.turn !== rig.turnT;
     if (rig.anchor) {
       // keep the point under the cursor exactly where it is for the whole animation
       const an = rig.anchor;
@@ -237,8 +252,8 @@ export class Renderer {
     cam.updateProjectionMatrix();
     if (this.post && this.post.pix && !zooming) {
       // Snap the view to whole pixels so pixel art doesn't shimmer while panning.
-      // Not while zooming: the pixel grid itself changes size every frame then,
-      // and snapping to a moving grid makes the whole picture vibrate.
+      // Not while zooming or turning: the pixel grid itself moves every frame
+      // then, and snapping to a moving grid makes the whole picture vibrate.
       cam.updateMatrixWorld();
       const e3 = cam.matrixWorld.elements;
       const right = new THREE.Vector3(e3[0], e3[1], e3[2]), up = new THREE.Vector3(e3[4], e3[5], e3[6]);
@@ -270,7 +285,7 @@ export class Renderer {
     if (sc.right !== r) { sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.updateProjectionMatrix(); }
     // snap the shadow camera to whole shadow-map texels in light space
     const texel = (2 * r) / this.sun.shadow.mapSize.x;
-    const lz = this.sunDir;
+    const lz = this.lightDir;
     const lx = _lx.set(lz.z, 0, -lz.x);
     if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0);
     lx.normalize();
@@ -280,6 +295,12 @@ export class Renderer {
     const c = _c.copy(lx).multiplyScalar(px).addScaledVector(ly, py).addScaledVector(lz, pz);
     this.sun.target.position.copy(c);
     this.sun.position.copy(c).addScaledVector(lz, 100);
+  }
+
+  // The sun's direction as lit: the time-of-day direction, turned with the view.
+  get lightDir() {
+    const d = this.sunDir, t = this.rig.turn, c = Math.cos(t), sn = Math.sin(t);
+    return _lz.set(d.x * c + d.z * sn, d.y, -d.x * sn + d.z * c);
   }
 
   render() {

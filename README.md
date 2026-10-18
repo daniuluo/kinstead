@@ -7,7 +7,8 @@ A little isometric village builder that runs in your browser — pixel-art rende
 ## Features
 
 - **Pixel-art isometric 3D** — the scene is rendered in real 3D (three.js), then drawn at low resolution with depth/normal outlines and crisp pixel upscaling, using a classic 2:1 isometric camera with a single fixed angle. Settings let you choose the pixel size or switch to a smooth, antialiased renderer with ambient occlusion.
-- **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map; zoom in and out with the wheel or the `+`/`−` buttons.
+- **Rotating view** — press `Q` / `E` or the rotate buttons beside `2D` to swing the camera a quarter turn around the middle of the screen and see the town from all four sides. The light turns with you, so every side is lit and shadowed the same way.
+- **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map (it rotates too); zoom in and out with the wheel or the `+`/`−` buttons.
 - **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Pick a size: Small 32×32, Medium 48×48, Large 64×64 or Huge 80×80. Terraform by raising, lowering and levelling land, and plant trees.
 - **Organic village** — no two buildings look the same. Each one is generated from a seed: walls, roofs (thatch, tile, slate, shingle), half-timbering, chimneys, dormers, shutters, flower boxes, gardens and fences. Paths are worn into the grass and meander a little.
 - **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop, builder's yard), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Most buildings have three or four levels, up to a Market Hall, Hospital, Academy or Minster. Upgrades need happiness and service coverage, and each option shows what changes (homes, jobs, earnings, reach, upkeep…) before you commit.
@@ -41,6 +42,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 | Mouse wheel, `+` / `−` | Zoom |
 | `W` `A` `S` `D` / arrow keys | Pan |
 | `T` | Toggle 2D top-down / isometric |
+| `Q` / `E` | Rotate the view a quarter turn anticlockwise / clockwise |
 | `1` – `8`, `R`, `X` | Tool menus: select, homes, commerce, industry, services, parks, transit, terrain · roads · demolish |
 | `Tab` | Flip a building's entrance before placing |
 | `Space` | Pause / resume |

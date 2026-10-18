@@ -421,6 +421,8 @@ export class Input {
       case '[': g.stepSpeed(-1); break;
       case ']': g.stepSpeed(1); break;
       case 't': g.toggleTopDown(); break;
+      case 'q': g.rotateView(-1); break;
+      case 'e': g.rotateView(1); break;
       case '+': case '=': g.renderer.zoomBy(1.3); break;
       case '-': case '_': g.renderer.zoomBy(1 / 1.3); break;
       case '1': ui.pressTool('select'); break;
