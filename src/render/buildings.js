@@ -252,7 +252,42 @@ function footing(c, x, z, w, d, color = STONE) {
   let lo = 0;
   for (const [px, pz] of [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]]) lo = Math.min(lo, c.gy(px, pz));
   if (lo > -0.015) return;
-  c.gb.cbox(x, lo - 0.04, z, w + 0.04, -lo + 0.045, d + 0.04, color, 0, 0.018);
+  const { gb } = c;
+  if (lo > -0.12) { gb.cbox(x, lo - 0.04, z, w + 0.04, -lo + 0.045, d + 0.04, color, 0, 0.018); return; }
+  // where the hill falls away it is a lower floor let into the hillside, not
+  // a bare platform: flush stone walls in a lighter dressed stone, a string
+  // course at the floor line, small lit windows wherever the wall stands
+  // clear of the ground, and a door on the side most open to the slope
+  const stone = shade(color, 1.16);
+  gb.cbox(x, lo - 0.04, z, w + 0.012, -lo + 0.045, d + 0.012, stone, 0, 0.012);
+  gb.box(x, -0.024, z, w + 0.05, 0.024, d + 0.05, shade(color, 1.32));
+  const o = 0.008;
+  const sides = [['f', 0, 1, w], ['b', 0, -1, w], ['r', 1, 0, d], ['l', -1, 0, d]];
+  const wall = (nx, nz) => {
+    const ex = x + (nx * w) / 2, ez = z + (nz * d) / 2;           // the middle of this wall at the floor line
+    return { at: (u) => (nx ? [ex + nx * o, ez + u] : [ex + u, ez + nz * o]), mid: c.gy(ex, ez) };
+  };
+  let door = null;
+  for (const [face, nx, nz] of sides) {
+    const { at, mid } = wall(nx, nz);
+    if (mid < -0.3 && (!door || mid < door.ground)) door = { face, at: at(0), ground: mid };
+  }
+  for (const [face, nx, nz, len] of sides) {
+    const { at } = wall(nx, nz);
+    const n = Math.max(1, Math.floor(len / 0.2));
+    for (let i = 0; i < n; i++) {
+      const u = -len / 2 + ((i + 0.5) * len) / n;
+      const [px, pz] = at(u), ground = c.gy(px, pz);
+      if (ground > -0.17 || (door && door.face === face && Math.abs(u) < 0.06)) continue;
+      const h = Math.min(0.08, -ground * 0.4);
+      win(c, px, ground + (-ground - h) * 0.55, pz, 0.06, h, face, 0.6);
+    }
+  }
+  if (door) {
+    const [px, pz] = door.at, dh = Math.min(0.16, -door.ground * 0.62), along = door.face === 'f' || door.face === 'b';
+    gb.box(px, door.ground, pz, along ? 0.075 : 0.014, dh, along ? 0.014 : 0.075, '#4e3a2a');
+    gb.box(px, door.ground + dh, pz, along ? 0.1 : 0.02, 0.02, along ? 0.02 : 0.1, shade(color, 1.32));
+  }
 }
 
 function timber(c, w, d, h, floors) {
