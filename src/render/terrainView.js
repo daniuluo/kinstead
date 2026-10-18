@@ -64,6 +64,8 @@ export class TerrainView {
     this.scene = scene;
     this.season = 1;
     this.seasonW = 0;
+    this._pending = [];
+    this._areas = new Map();
     this.n1 = makeNoise2D(world.seed + 11);
     this.n2 = makeNoise2D(world.seed + 12);
     this.n3 = makeNoise2D(world.seed + 13);
@@ -123,15 +125,53 @@ export class TerrainView {
     g.computeVertexNormals();
     g.computeBoundingSphere();
     g.computeBoundingBox();
+    this._shapeNoise();
     this.repaint();
     this._buildSides();
   }
 
+  // The parts of the ground colour that only depend on the lie of the land
+  // (its noise, slope and rock), worked out once for each shape of the
+  // terrain, so a repaint (a season step, a new building) only mixes colours.
+  _shapeNoise() {
+    const V = this.V, P = this.pos, n = V * V, step = 1 / SUB;
+    const N1 = this._n1 = new Float64Array(n), MEAD = this._mead = new Float64Array(n);
+    const ROCK = this._rock = new Float64Array(n), FINE = this._fine = new Float64Array(n);
+    for (let j = 0; j < V; j++) {
+      for (let i = 0; i < V; i++) {
+        const vi = j * V + i, o = vi * 3;
+        const x = i * step, z = j * step, h = P[o + 1];
+        const hl = P[(j * V + Math.max(0, i - 1)) * 3 + 1], hr = P[(j * V + Math.min(V - 1, i + 1)) * 3 + 1];
+        const hu = P[(Math.max(0, j - 1) * V + i) * 3 + 1], hd = P[(Math.min(V - 1, j + 1) * V + i) * 3 + 1];
+        const slope = Math.hypot(hr - hl, hd - hu) / (2 * step);
+        N1[vi] = Math.min(1, Math.max(0, fbm(this.n1, x * 0.13, z * 0.13, 3) * 0.75 + 0.5));
+        const n2 = this.n2(x * 0.07, z * 0.07);
+        MEAD[vi] = n2 > 0.3 ? Math.min(0.55, (n2 - 0.3) * 1.8) : 0;
+        ROCK[vi] = Math.max(smoothstep(0.55, 0.95, slope), smoothstep(2.4, 3.2, h));
+        FINE[vi] = 1 + (this.n3(x * 1.7, z * 1.7) * 0.5 + hash2(i, j, 5) - 0.5) * 0.07;
+      }
+    }
+  }
+
   // ------------------------------------------------------------ painting
-  repaint() {
-    const w = this.world, t = w.terrain, N = w.N, V = this.V;
+  // The ground's colour everywhere, or (area: [x0, z0, x1, z1] in tiles)
+  // just there: every layer is worked out per point, so a part repainted
+  // comes out exactly as a whole repaint would.
+  repaint(area = null) {
+    const w = this.world, N = w.N, V = this.V;
     const P = this.pos, col = this.col, snow = this.snow;
     const g = this._grass();
+    const N1 = this._n1, MEAD = this._mead, ROCK = this._rock, FINE = this._fine;
+    const i0 = area ? Math.max(0, Math.floor(area[0] * SUB)) : 0, i1 = area ? Math.min(V - 1, Math.ceil(area[2] * SUB)) : V - 1;
+    const j0 = area ? Math.max(0, Math.floor(area[1] * SUB)) : 0, j1 = area ? Math.min(V - 1, Math.ceil(area[3] * SUB)) : V - 1;
+    if (i0 > i1 || j0 > j1) return;
+    this._clip = area ? [i0, i1, j0, j1] : null;
+    if (!area) {
+      // everything is up to date after this
+      this._pending = [];
+      this._areas = new Map();
+      for (const b of w.buildings.values()) this._areas.set(b.id, TerrainView.areaOf(b));
+    }
     // smooth tree-density field at tile corners
     const forest = new Float32Array((N + 1) * (N + 1));
     for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
@@ -145,31 +185,25 @@ export class TerrainView {
       return (forest[iz * S1 + ix] * (1 - u) + forest[iz * S1 + ix + 1] * u) * (1 - v) + (forest[(iz + 1) * S1 + ix] * (1 - u) + forest[(iz + 1) * S1 + ix + 1] * u) * v;
     };
     const step = 1 / SUB;
-    for (let j = 0; j < V; j++) {
-      for (let i = 0; i < V; i++) {
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
         const vi = j * V + i, o = vi * 3;
         const x = i * step, z = j * step, h = P[o + 1];
-        const hl = P[(j * V + Math.max(0, i - 1)) * 3 + 1], hr = P[(j * V + Math.min(V - 1, i + 1)) * 3 + 1];
-        const hu = P[(Math.max(0, j - 1) * V + i) * 3 + 1], hd = P[(Math.min(V - 1, j + 1) * V + i) * 3 + 1];
-        const slope = Math.hypot(hr - hl, hd - hu) / (2 * step);
-        const n1 = Math.min(1, Math.max(0, fbm(this.n1, x * 0.13, z * 0.13, 3) * 0.75 + 0.5));
-        const n2 = this.n2(x * 0.07, z * 0.07);
-        const fine = this.n3(x * 1.7, z * 1.7) * 0.5 + hash2(i, j, 5) - 0.5;
         // grass
-        _a.copy(g.a).lerp(g.b, n1);
-        if (n2 > 0.3) _a.lerp(g.meadow, Math.min(0.55, (n2 - 0.3) * 1.8));
+        _a.copy(g.a).lerp(g.b, N1[vi]);
+        if (MEAD[vi] > 0) _a.lerp(g.meadow, MEAD[vi]);
         const fo = forestAt(x, z);
         if (fo > 0) _a.lerp(g.b, Math.min(0.45, fo * 0.3)).multiplyScalar(1 - Math.min(0.12, fo * 0.06));
         _a.lerp(g.dry, smoothstep(0.35, 0.0, h) * 0.3);
         // rock on steep or high ground
-        const rock = Math.max(smoothstep(0.55, 0.95, slope), smoothstep(2.4, 3.2, h));
+        const rock = ROCK[vi];
         if (rock > 0) { _b.copy(ROCK_A).lerp(ROCK_B, hash2(i >> 1, j >> 1, 9)); _a.lerp(_b, rock); }
         if (h > 1.9) _a.lerp(ROCK_A, smoothstep(1.9, 3.0, h) * 0.3);
         // shores and lake beds
         const wl = CONFIG.WATER_LEVEL;
         if (h < wl + 0.22) _a.lerp(SAND, smoothstep(wl + 0.22, wl + 0.06, h) * 0.85);
         if (h < wl) { _b.copy(MUD).lerp(DEEP, clamp(-h / 0.8, 0, 1)); _a.lerp(_b, smoothstep(wl, wl - 0.15, h)); }
-        const f = 1 + fine * 0.07;
+        const f = FINE[vi];
         col[o] = _a.r * f; col[o + 1] = _a.g * f; col[o + 2] = _a.b * f;
         snow[vi] = 1;
       }
@@ -178,9 +212,50 @@ export class TerrainView {
     this._paintFields();
     this._paintRoads();
     this._paintRails();
-    const geo = this.surface.geometry;
-    geo.attributes.color.needsUpdate = true;
-    geo.attributes.snowMask.needsUpdate = true;
+    this._clip = null;
+    const geo = this.surface.geometry, C = geo.attributes.color, S = geo.attributes.snowMask;
+    // a part repainted only sends its own rows to the graphics card
+    if (area) { C.addUpdateRange(j0 * V * 3, (j1 - j0 + 1) * V * 3); S.addUpdateRange(j0 * V, (j1 - j0 + 1) * V); }
+    else { C.clearUpdateRanges(); S.clearUpdateRanges(); }
+    C.needsUpdate = true;
+    S.needsUpdate = true;
+  }
+
+  // Where a building paints the ground (its yard and the path from its
+  // door to the street), in tiles, as it stands now.
+  static areaOf(b) { const M = 2; return [b.x - M, b.z - M, b.x + fw(b) + M, b.z + fd(b) + M]; }
+
+  // A building has come, gone or changed: the ground where it stood and
+  // where it stands now wants repainting (see repaintPending).
+  markBuilding(b, gone = false) {
+    const was = this._areas.get(b.id), now = gone ? null : TerrainView.areaOf(b);
+    if (was) this._pending.push(was);
+    if (now) this._pending.push(now);
+    if (gone) this._areas.delete(b.id); else this._areas.set(b.id, now);
+  }
+
+  get pending() { return this._pending.length > 0; }
+
+  // Repaint the ground marked by markBuilding: each patch on its own (those
+  // that overlap as one), or the lot when that's most of the map.
+  repaintPending() {
+    const list = this._pending;
+    if (!list.length) return;
+    this._pending = [];
+    const out = [];
+    for (let a of list) {
+      for (let k = 0; k < out.length; k++) {
+        const o = out[k];
+        if (a[0] > o[2] || o[0] > a[2] || a[1] > o[3] || o[1] > a[3]) continue;
+        a = [Math.min(a[0], o[0]), Math.min(a[1], o[1]), Math.max(a[2], o[2]), Math.max(a[3], o[3])];
+        out.splice(k, 1);
+        k = -1;
+      }
+      out.push(a);
+    }
+    const N = this.world.N;
+    if (out.length > 8 || out.reduce((s, a) => s + (a[2] - a[0]) * (a[3] - a[1]), 0) > N * N * 0.3) { this.repaint(); return; }
+    for (const a of out) this.repaint(a);
   }
 
   // One point of farmland: furrows of a crop (or the season's bare soil), or
@@ -234,9 +309,11 @@ export class TerrainView {
   }
 
   _range(x0, z0, x1, z1, fn) {
-    const V = this.V;
-    const i0 = Math.max(0, Math.floor(x0 * SUB)), i1 = Math.min(V - 1, Math.ceil(x1 * SUB));
-    const j0 = Math.max(0, Math.floor(z0 * SUB)), j1 = Math.min(V - 1, Math.ceil(z1 * SUB));
+    const V = this.V, c = this._clip;
+    let i0 = Math.max(0, Math.floor(x0 * SUB)), i1 = Math.min(V - 1, Math.ceil(x1 * SUB));
+    let j0 = Math.max(0, Math.floor(z0 * SUB)), j1 = Math.min(V - 1, Math.ceil(z1 * SUB));
+    // (only the part being repainted)
+    if (c) { i0 = Math.max(i0, c[0]); i1 = Math.min(i1, c[1]); j0 = Math.max(j0, c[2]); j1 = Math.min(j1, c[3]); }
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) fn(j * V + i, i / SUB, j / SUB, i, j);
   }
 
@@ -336,10 +413,14 @@ export class TerrainView {
 
   _paintRoads() {
     const w = this.world, N = w.N, t = w.terrain;
-    const V = this.V;
-    const cov = new Float32Array(V * V), lvl = new Uint8Array(V * V), dn = new Float32Array(V * V);
+    const V = this.V, clip = this._clip || [0, V - 1, 0, V - 1];
+    if (!this._cov || this._cov.length !== V * V) { this._cov = new Float32Array(V * V); this._lvl = new Uint8Array(V * V); this._dn = new Float32Array(V * V); }
+    const cov = this._cov, lvl = this._lvl, dn = this._dn;
+    for (let j = clip[2]; j <= clip[3]; j++) cov.fill(0, j * V + clip[0], j * V + clip[1] + 1);
     const HW = [0, 0.2, 0.27, 0.32], SOFT = [0, 0.05, 0.035, 0.028];
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+    // the road tiles whose paint reaches the part being repainted
+    const ti0 = Math.floor(clip[0] / SUB - 1.45), ti1 = Math.ceil(clip[1] / SUB + 0.45), tj0 = Math.floor(clip[2] / SUB - 1.45), tj1 = Math.ceil(clip[3] / SUB + 0.45);
+    for (let z = Math.max(0, tj0 - 1); z < Math.min(N, tj1 + 2); z++) for (let x = Math.max(0, ti0 - 1); x < Math.min(N, ti1 + 2); x++) {
       const L = w.roads[z * N + x];
       if (!L) continue;
       // follow the road's own shape: round a bend, and filled in where two
@@ -367,7 +448,7 @@ export class TerrainView {
         if (c > cov[vi]) { cov[vi] = c; lvl[vi] = L; dn[vi] = d / hw; }
       });
     }
-    for (let vi = 0; vi < V * V; vi++) {
+    for (let j = clip[2]; j <= clip[3]; j++) for (let vi = j * V + clip[0], ve = j * V + clip[1]; vi <= ve; vi++) {
       const c = cov[vi];
       if (c <= 0.001) continue;
       const L = lvl[vi], d = dn[vi];

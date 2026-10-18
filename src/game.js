@@ -1,7 +1,7 @@
 // Game orchestrator: owns the renderer, the current world and every system.
 
 import * as THREE from 'three';
-import { CONFIG, SEASONS, TITLES } from './config.js';
+import { CONFIG, SEASONS, TITLES, SHADOW_SIZE, PERF_DEFAULTS } from './config.js';
 import { BUILDINGS, SERVICES, unlockOf, TECHS } from './defs.js';
 import { Renderer } from './render/renderer.js';
 import { Sky } from './render/sky.js';
@@ -38,7 +38,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5 };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, ...PERF_DEFAULTS };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -101,10 +101,15 @@ export class Game {
     // switching away (or a phone locking) may be the last chance to save
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.autosave(); });
     this.clock = performance.now();
+    // the last time the player moved the mouse or pressed a key (see _due)
+    this._inputAt = 0;
+    for (const e of ['pointermove', 'pointerdown', 'wheel', 'keydown']) window.addEventListener(e, () => { this._inputAt = performance.now(); }, { passive: true });
     // one bad frame must never stop the game: log it and carry on
-    const loop = () => {
+    const loop = (ts) => {
       this._raf = performance.now();
-      try { this.frame(); } catch (e) { if (!this._frameErr) { this._frameErr = true; console.error('Frame error (the game keeps running):', e); } }
+      if (this._due(ts)) {
+        try { this.frame(); } catch (e) { if (!this._frameErr) { this._frameErr = true; console.error('Frame error (the game keeps running):', e); } }
+      }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
@@ -119,6 +124,22 @@ export class Game {
         }
       } catch (e) { console.error('Background frame error:', e); }
     }, 250);
+  }
+
+  // Whether to draw this animation frame: every one the screen shows,
+  // unless the Performance settings cap the frame rate, or (pausedSlow) ask
+  // for only a few a second while the game is paused and nothing moves
+  // (not in a multiplayer town: the others' cursors and changes keep coming).
+  _due(ts) {
+    const s = this.settings;
+    let fps = s.fps || 0;
+    if (s.pausedSlow && this.speed === 0 && this.world && !this.demo && !this.net && !this.renderer.moving && ts - this._inputAt > 1000) fps = Math.min(fps || 10, 10);
+    if (!fps) { this._frameAt = ts; return true; }
+    const step = 1000 / fps, since = ts - (this._frameAt ?? -1e9);
+    // (a couple of milliseconds early still counts: animation frames come a little unevenly)
+    if (since < step - 2) return false;
+    this._frameAt = since > step * 2 ? ts : this._frameAt + step;
+    return true;
   }
 
   on(e, fn) { (this._ev[e] ||= []).push(fn); }
@@ -441,13 +462,14 @@ export class Game {
   }
 
   applySettings() {
-    this.renderer.setShadows(this.settings.shadows);
     const s = this.settings;
-    const gf = this.renderer.gfx;
-    if (!this.renderer.post && (s.pixelArt || s.ao) || gf.pixelArt !== s.pixelArt || gf.pixelSize !== s.pixelSize || gf.ao !== s.ao || !this._gfxInit) {
+    this.renderer.setShadows(s.shadows, SHADOW_SIZE[s.shadowQuality] || SHADOW_SIZE.high);
+    const gf = this.renderer.gfx, scale = s.resScale || 1;
+    if (!this.renderer.post && (s.pixelArt || s.ao) || gf.pixelArt !== s.pixelArt || gf.pixelSize !== s.pixelSize || gf.ao !== s.ao || gf.scale !== scale || !this._gfxInit) {
       this._gfxInit = true;
-      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao });
+      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale });
     }
+    this.view?.setEffects(s.effects);
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch {}
   }
 
@@ -537,7 +559,9 @@ export class Game {
       this.animals.update(dt, this.speed);
       this.view.update(dt, gameDt, env);
       // villagers carry little lanterns at night
-      const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.03, y: wk.y + 0.075, z: wk.z - Math.sin(wk.heading) * 0.03, size: 0.12, r: 1, g: 0.75, b: 0.4, a: 0.8 }));
+      // (only those carried by villagers being drawn: see Agents._drawList)
+      const l = [];
+      for (const wk of this.agents.lanterns) if (wk.shown !== false) l.push({ x: wk.x + Math.cos(wk.heading) * 0.03, y: wk.y + 0.075, z: wk.z - Math.sin(wk.heading) * 0.03, size: 0.12, r: 1, g: 0.75, b: 0.4, a: 0.8 });
       this.lantern.setStatics(l);
       this.lantern.update(dt, this.renderer.pixelsPerUnit(), env.night);
       if (this.follow != null) {

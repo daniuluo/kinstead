@@ -590,7 +590,7 @@ const placePair = (tw, ta, tb) => {
   const sim = new Sim(tg);
   const play = (b) => { sim.recompute(); sim._happiness(); const p = b.factors.parts.find(q => q[0] === 'play'); return p ? p[1] : null; };
   ok(play(home) === 4 && play(other) === null, 'a home with a child beside a play area gets +4 for somewhere to play; a home without children isn\'t asked');
-  const A = { world: tw, _nearest: Agents.prototype._nearest, _shopFor: Agents.prototype._shopFor, _candidates: (pred) => [...tw.buildings.values()].filter(b => pred(BUILDINGS[b.type], b)) };
+  const A = { world: tw, _nearest: Agents.prototype._nearest, _shopFor: Agents.prototype._shopFor, _places: Agents.prototype._places, _candidates: (pred) => [...tw.buildings.values()].filter(b => pred(BUILDINGS[b.type], b)) };
   let toPlay = 0, outings = 0;
   for (let i = 0; i < 400; i++) { Agents.prototype.planDay.call(A, kid, null); for (const p of kid.plan) if (p.dest === pg.id || p.dest === gd.id) { outings++; if (p.dest === pg.id) toPlay++; } }
   ok(outings > 100 && toPlay / outings > 0.6, `children mostly head for somewhere to play (${Math.round((toPlay / outings) * 100)}% of ${outings} outings to the play area, the rest to the garden)`);

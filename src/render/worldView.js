@@ -29,13 +29,14 @@ export class WorldView {
     this.fx = new Particles(scene, 1500, { additive: true });
     this.weather = new Particles(scene, 900, { soft: 0.2 });
     this.rain = new Rain(scene, (x, z) => Math.max(world.terrain.heightAt(x, z), 0));
+    this.effectsK = 1;
     this.group = new THREE.Group();
     scene.add(this.group);
     this.groundFn = (x, z) => world.terrain.heightAt(x, z);
     this.items = new Map();
     this.anims = [];
     this.pending = [];
-    this.dirty = { roads: false, nature: false, terrain: false, paint: false, glows: true };
+    this.dirty = { roads: false, doors: false, nature: false, terrain: false, paint: false, glows: true };
     this.season = 1;
     this.seasonW = 0;
     this.poolTex = glowTexture();
@@ -50,9 +51,17 @@ export class WorldView {
     this.dirty.roads = true;   // door paths need the buildings' doors
     this.dirty.paint = true;
 
+    // A building come, gone or changed: the ground it paints and the path
+    // from its door are redrawn there (all of it for a farm, whose fields
+    // reach further; RoadsView says when more of the streets change).
+    const local = (b, gone = false) => {
+      if (BUILDINGS[b.type]?.fields || this.world.fieldTiles?.has(b.id)) this.dirty.paint = true;
+      else this.terrain.markBuilding(b, gone);
+      this.dirty.doors = true;
+    };
     this._h = {
-      add: (b) => { this.addBuilding(b, true); this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      remove: (b) => { this._dropPreview(b); this.removeBuilding(b); this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
+      add: (b) => { this.addBuilding(b, true); local(b); this.dirty.nature = true; },
+      remove: (b) => { this._dropPreview(b); this.removeBuilding(b); local(b, true); this.dirty.nature = true; },
       change: (b) => {
         // a finished site swaps to the real building with a puff of dust and
         // sparkle rather than the pop-up used for instant changes
@@ -61,15 +70,14 @@ export class WorldView {
         const finished = !!(prev && prev.site && !b.con);
         this.removeBuilding(b, true);
         this.addBuilding(b, !finished, true);
-        this.dirty.roads = true;
+        local(b);
         // street trees and hedges leave room for the new front door
         if (this.nature.dressed) this.dirty.nature = true;
         if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
-        this.dirty.paint = true;
       },
       roads: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
       rails: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; this.dirty.roads = true; if (this.nature.dressed) this.dirty.nature = true; },
+      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); local(b); if (this.nature.dressed) this.dirty.nature = true; },
       trees: () => { this.dirty.nature = true; this.dirty.paint = true; },
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
       // the street lamps follow the town's power supply
@@ -95,6 +103,14 @@ export class WorldView {
     world.on('fields', this._h.fields);
     this.fireflyTimer = 0;
     this.time = 0;
+  }
+
+  // The Effects setting: 'full', 'reduced' (about half the smoke, dust,
+  // sparks, fireworks, snow and rain) or 'off'. Lit windows and lamps stay.
+  setEffects(level) {
+    const k = level === 'off' ? 0 : level === 'reduced' ? 0.5 : 1;
+    this.effectsK = k;
+    for (const p of [this.smoke, this.fx, this.weather]) p.keep = k;
   }
 
   // ----------------------------------------------------------- buildings
@@ -361,6 +377,12 @@ export class WorldView {
     U.uTime.value = this.time;
     if (this.dirty.terrain) { this.terrain.rebuild(); this.dirty.terrain = false; this.dirty.paint = false; }
     if (this.dirty.paint) { this.terrain.repaint(); this.dirty.paint = false; }
+    else if (this.terrain.pending) this.terrain.repaintPending();
+    if (this.dirty.doors && !this.dirty.roads) {
+      if (this.roads.needsRebuild()) this.dirty.roads = true;
+      else this.roads.rebuildDoors();
+    }
+    this.dirty.doors = false;
     if (this.dirty.roads) { this.roads.rebuild(); this.dirty.roads = false; this.dirty.glows = true; }
     if (this.dirty.nature) { this.nature.rebuild(); this.dirty.nature = false; }
     if (this.dirty.glows) { this._rebuildGlows(); this.dirty.glows = false; }
@@ -471,7 +493,7 @@ export class WorldView {
     }
 
     // rain
-    this.rain.update(dt, env.rain || 0, this.R.rig.target);
+    this.rain.update(dt, (env.rain || 0) * this.effectsK, this.R.rig.target);
 
     const scale = this.R.pixelsPerUnit();
     const windK = [0.12, 0.05];

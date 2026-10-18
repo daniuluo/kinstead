@@ -26,6 +26,18 @@ export const CONFIG = {
   VIEW_HEIGHT: 22,         // world units visible vertically at zoom 1
 };
 
+// Performance settings (Settings → Performance), as they start, and the
+// Battery saver preset. fps 0 draws every frame the screen shows; resScale is
+// the share of the screen's resolution drawn (pixel art gets chunkier
+// pixels instead); shadowQuality picks the shadow map size (SHADOW_SIZE);
+// effects thins out smoke, dust, sparks, fireworks, snow and rain;
+// villagers 'some' draws about half of them, 'near' only those near the
+// middle of the view; pausedSlow draws a few frames a second while the game
+// is paused and nothing moves.
+export const SHADOW_SIZE = { high: 4096, medium: 2048, low: 1024 };
+export const PERF_DEFAULTS = { fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false };
+export const BATTERY_SAVER = { fps: 30, resScale: 0.75, shadows: true, shadowQuality: 'low', effects: 'reduced', villagers: 'some', pausedSlow: true, ao: false };
+
 export const SEASONS = [
   { name: 'Spring', icon: '🌸' },
   { name: 'Summer', icon: '☀️' },
