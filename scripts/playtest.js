@@ -12,7 +12,7 @@
 import { World, fw, fd, isOpen, capOf } from '../src/world/world.js';
 import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
-import { Agents } from '../src/sim/agents.js';
+import { Agents, visitorCap } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
@@ -220,7 +220,7 @@ let day = w.day, botDone = -1, worstDayMs = 0;
 console.log('day  pop  homes  jobs     money   happy  sites  issues  walkers  ms/day');
 let dayStart = Date.now();
 const startDay = w.day;
-let steps = 0, idleCheck = -1, idleDays = 0;
+let steps = 0, idleCheck = -1, idleDays = 0, crowdCheck = -1, peakVisit = 0;
 while (w.day < startDay + DAYS && steps < 400000) {
   const g = game.sim.update(0.1);
   game.agents.update(0.1, g);
@@ -229,6 +229,18 @@ while (w.day < startDay + DAYS && steps < 400000) {
   game.animals.update(0.1, game.speed);
   steps++;
   if (w.hours >= 9 && botDone !== w.day) { botDone = w.day; botDay(); }
+  // parks and squares never hold more villagers than they have room for
+  if (w.hours >= 15 && crowdCheck !== w.day) {
+    crowdCheck = w.day;
+    const at = new Map();
+    for (const wk of game.agents.walkers) if (wk.r && wk.mode === 'wander' && !wk.working) at.set(wk.r.at, (at.get(wk.r.at) || 0) + 1);
+    for (const [id, n] of at) {
+      const b = w.buildings.get(id);
+      if (!b || visitorCap(b) === Infinity) continue;
+      peakVisit = Math.max(peakVisit, n / visitorCap(b));
+      if (n > visitorCap(b)) problem(w.day, `${n} villagers crowd ${b.type} #${b.id} (room for ${visitorCap(b)})`);
+    }
+  }
   if (w.hours >= 12.5 && idleCheck !== w.day) {
     idleCheck = w.day;
     const C = game.construction;
@@ -265,6 +277,7 @@ const types = {};
 for (const b of w.buildings.values()) types[b.type] = (types[b.type] || 0) + 1;
 console.log(`\n${DAYS} days in ${((Date.now() - t0) / 1000).toFixed(1)} s (worst day ${worstDayMs} ms) · map ${N}×${N} · ${w.buildings.size} buildings · save ${(json.length / 1024).toFixed(0)} KB`);
 console.log('activity:', JSON.stringify(counts));
+console.log(`busiest park at 3pm: ${Math.round(peakVisit * 100)}% full`);
 console.log('research done:', w.research.done.length, '/', Object.keys(TECHS).length, '· education:', [0, 1, 2, 3, 4, 5].map(e => [...w.residents.values()].filter(r => r.age !== 'child' && r.edu === e).length).join('/'));
 console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '));
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');

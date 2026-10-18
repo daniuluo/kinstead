@@ -483,6 +483,7 @@ export class UI {
     }
     const U = sim.utility;
     if (L.kw) rows.push(['Power output', `${L.kw} kW`], ['Town grid', `${U.power.demand} of ${U.power.gen} kW in use`]);
+    if (open && def.park && def.outdoor && this.game.agents) { const v = this.game.agents.visitorsAt(b); rows.push(['Visitors', `${v.now} of ${v.cap} at most`]); }
     if (L.supply) rows.push(['Water supply', `${L.supply} people`], ['Town water', `${U.water.demand} of ${U.water.supply} people`]);
     if (open && !def.park && !L.kw) rows.push(['Electricity', b.powered ? 'Connected' : U.power.gen ? (b.connected ? 'Cut off — not enough power' : 'Not on the grid') : 'No generator in town']);
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
@@ -727,7 +728,7 @@ export class UI {
     const pos = g.agents.positionOf(r);
     if (!pos) return;
     if (!el) { el = document.createElement('div'); el.className = 'label3d'; $('popups').appendChild(el); this.labels.set('sel', el); }
-    const p = g.renderer.worldToScreen(new g.THREE.Vector3(pos.x, pos.y + 0.32, pos.z));
+    const p = g.renderer.worldToScreen(new g.THREE.Vector3(pos.x, pos.y + 0.24, pos.z));
     el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
     el.textContent = `${r.first} · ${g.agents.activity(r)}`;
   }

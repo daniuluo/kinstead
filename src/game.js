@@ -431,7 +431,7 @@ export class Game {
       this.animals.update(dt, this.speed);
       this.view.update(dt, gameDt, env);
       // villagers carry little lanterns at night
-      const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.05, y: wk.y + 0.12, z: wk.z - Math.sin(wk.heading) * 0.05, size: 0.16, r: 1, g: 0.75, b: 0.4, a: 0.8 }));
+      const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.03, y: wk.y + 0.075, z: wk.z - Math.sin(wk.heading) * 0.03, size: 0.12, r: 1, g: 0.75, b: 0.4, a: 0.8 }));
       this.lantern.setStatics(l);
       this.lantern.update(dt, this.renderer.pixelsPerUnit(), env.night);
       if (this.follow != null) {
