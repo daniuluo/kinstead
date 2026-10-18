@@ -783,12 +783,18 @@ export class UI {
   toast(msg, kind = 'info', icon = null) {
     if (!this.game.settings.popToasts && kind !== 'bad') return;
     const box = $('toasts');
+    // the same notice twice in a row just stays up a little longer
+    const top = box.firstElementChild;
+    if (top && top.msg === msg && !top.classList.contains('out')) { top.hold(); return; }
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.innerHTML = (icon ? `<span>${ico(icon)}</span>` : '') + `<span>${ico(esc(msg))}</span>`;
+    el.msg = msg;
+    let t = 0;
+    el.hold = () => { clearTimeout(t); t = setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, kind === 'big' ? 6500 : 4000); };
+    el.hold();
     box.prepend(el);
     while (box.childElementCount > 5) box.lastElementChild.remove();
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, kind === 'big' ? 6500 : 4000);
   }
 
   tooltip(html, x, y) {

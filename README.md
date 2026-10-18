@@ -70,7 +70,9 @@ Build one town together, live, with up to eight players.
 
 **To host:** open the town you want to share and press `M` (or the people button in the top bar), then **Host this town**. On the title screen, **Multiplayer…** offers *New village and host* or *Continue and host*. You get a six-character invite code such as `K7Q-M2P`. Send it to your friends, or use **Copy invite link** to send a link that opens the game with the code filled in. Keep your tab open: your computer runs the town for everyone.
 
-**To join:** open the game, choose **Multiplayer…** on the title screen (or press `M` in a town of your own, which is autosaved first), type your name and the code, and press **Join**. The host's town loads and from then on follows the host's live. Everything you do (building, roads, track, terrain and trees, demolishing, upgrades with a chosen style, expanding, joining and moving buildings, research, taxes, transit lines, the town's name and the game speed) is sent to the host and applied for everyone. The sandbox switches stay with the host.
+**To join:** open the game, choose **Multiplayer…** on the title screen (or press `M` in a town of your own, which is autosaved first), type your name and the code, and press **Join**. You wait on a *Waiting for the host to let you in…* screen until the host says yes; then the host's town loads and from then on follows the host's live. Everything you do (building, roads, track, terrain and trees, demolishing, upgrades with a chosen style, expanding, joining and moving buildings, research, taxes, transit lines, the town's name and the game speed) is sent to the host and applied for everyone. The sandbox switches stay with the host.
+
+**Who's in is up to the host.** Each newcomer asks first: the host sees *Mallory wants to join* under the top bar, with **Let in** and **Turn away**. The Multiplayer window lists the players, with buttons to make one a visitor (who can look but not build) or remove them, and has the switches for asking, locking the town and what newcomers join as, plus **New code**. See [Safety](#safety).
 
 The players box in the top bar shows who is connected. Each player's cursor appears in the others' towns as a ring in their colour with their name and what they are holding, and whatever building they have selected is outlined. If a guest leaves, everyone else carries on. If the host stops hosting or closes the tab, the guests are told and can keep playing the town on their own, save it in their browser or download it.
 
@@ -86,12 +88,16 @@ The players box in the top bar shows who is connected. Each player's cursor appe
 
 Every other player is treated as untrusted.
 
+- **The host lets people in.** *Ask me before anyone joins* is on by default. A newcomer waits while the host gets a prompt (*Mallory wants to join · Let in / Turn away*) and sees nothing of the town until let in. If nobody answers within two minutes they're told so; at most four people can wait at once, and someone turned away can't ask again for 30 seconds. A connection that has been turned away is ignored from then on, even if it says hello again.
+- **Lock and new code.** **Lock the town** turns away every newcomer, and anyone still waiting, without disturbing the players already in. **New code** swaps the invite code for a fresh one: the old code stops working at once (its PeerJS id leaves the signalling server), and everyone already in stays connected.
+- **Removing a player.** **Remove** in the players list disconnects them with *The host removed you from the town*; like guests of a host who leaves, they can keep a copy of the town. For the rest of the session the same browser tab (a guest keeps one PeerJS id per tab, reloads included) and the same name (ignoring case and spacing) are turned away automatically, and the host is told. Someone determined could still come back from a new tab under another name, which is why asking stays on by default; a new code shuts them out unless someone passes it on. **Allow back** undoes a removal.
+- **Builders and visitors.** Builders can do everything a guest can. Visitors can look around and point with their cursor, but the host refuses every command they send, with the reason, and their own game says why straight away. The host can switch any player either way and choose what newcomers join as. A player with no role at all is treated as a visitor.
 - **Guests can only ask.** The host checks every guest command with the same World rules as its own; commands are looked up by their own names only (no `__proto__` or `constructor` tricks), the sandbox switches stay with the host, and a guest can send at most 15 actions and 25 cursor moves a second.
 - **Size limits.** A guest's messages may be 256 KB at most and the host's 64 MB; anything announced as bigger is dropped rather than buffered, and a connection that doesn't introduce itself within 20 seconds is closed.
 - **No markup gets through.** Names of players, villagers, towns and transit lines that arrive from another player, a loaded save or a merged village are stripped of markup and control characters and capped in length ([`src/util/text.js`](src/util/text.js)), colours must be plain `#rrggbb` values, and the UI escapes everything it shows as well.
 - **Joining is always a click.** An invite link only fills in the code; you choose whether to join.
 - **Your address.** As in any peer-to-peer game, players you connect with can see your internet (IP) address. Only share codes with people you trust.
-- `scripts/net-check.js` plays a hostile guest and a hostile host (prototype keys, markup in names, floods, oversized messages) and checks that each is refused or cleaned.
+- `scripts/net-check.js` plays a hostile guest and a hostile host (prototype keys, markup in names, floods, oversized messages) and checks that each is refused or cleaned. It also covers letting in, turning away, nobody answering, the waiting limit, removing (and the same tab or name coming back), locking, a new code and visitors' commands.
 
 ### Why PeerJS
 
@@ -101,7 +107,7 @@ The site is static (GitHub Pages), so players need a public way to find each oth
 - It reports an unknown id explicitly, so a wrong or expired code gets a clear "no town is open with that code" message rather than an empty room.
 - It configures STUN and PeerJS's public TURN relay by default, so players behind awkward home networks can usually still connect.
 
-The signalling server only introduces the browsers. The town itself travels directly between them over a WebRTC data channel, or through the TURN relay when no direct route exists. Problems get a plain message: the library couldn't load, the PeerJS server can't be reached, no town has that code, the connection couldn't be opened (a strict firewall), or the town is full.
+The signalling server only introduces the browsers. The town itself travels directly between them over a WebRTC data channel, or through the TURN relay when no direct route exists. Problems get a plain message: the library couldn't load, the PeerJS server can't be reached, no town has that code, the connection couldn't be opened (a strict firewall), the town is full or locked, or the host turned you away or removed you.
 
 ## How the buildings are made
 

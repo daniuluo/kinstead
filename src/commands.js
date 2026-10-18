@@ -4,6 +4,7 @@
 // host, which checks it with the same World rules as its own actions and
 // applies it for everyone (see src/net/). Commands carry only what a player
 // chose, never rule-bending options, and each one is checked before it runs.
+// A guest the host has made a visitor can't run any.
 
 import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
 import { STYLES } from './render/buildings.js';
@@ -19,6 +20,7 @@ const tile = (w, c) => int(c.x, 0, w.N - 1) && int(c.z, 0, w.N - 1);
 const tiles = (w, list, max = 4096) => Array.isArray(list) && list.length > 0 && list.length <= max
   && list.every(p => Array.isArray(p) && p.length === 2 && int(p[0], 0, w.N - 1) && int(p[1], 0, w.N - 1));
 const ok = (v, reason) => (v ? { ok: true } : { ok: false, reason });
+export const VISITOR_REASON = "You're a visitor in this town: you can look around and point things out, but only builders can change it.";
 
 // t → { check(world, cmd), run(game, cmd), host: only the host may do it }
 export const COMMANDS = {
@@ -118,6 +120,7 @@ export const COMMANDS = {
 // Check and apply one command. `from` is the remote player who sent it
 // (null for the local player). Returns the World's own result object.
 export function runCommand(game, cmd, from = null) {
+  if (from && from.role !== 'builder') return { ok: false, reason: VISITOR_REASON };
   const def = cmd && typeof cmd === 'object' && hasKey(COMMANDS, cmd.t) ? COMMANDS[cmd.t] : null;
   if (!def) return { ok: false, reason: 'Unknown action' };
   if (!game.world || game.demo) return { ok: false, reason: 'No town is open' };

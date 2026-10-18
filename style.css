@@ -517,6 +517,23 @@ table.hap.big td { padding: 4px 8px; }
 .netcur { position: absolute; transform: translate(-50%, -100%); display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 4px; background: #fff; border: 2px solid #000; font-size: 12px; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3); }
 .netcur i { width: 9px; height: 9px; border-radius: 50%; }
 .netcur small { font-weight: 400; color: var(--ink-2); }
+.netbox .mp-lock { font-size: 16px; color: var(--bad); }
+.mp-code.locked { color: var(--ink-2); opacity: 0.6; }
+.mp-flag { display: flex; align-items: center; gap: 6px; margin: 6px 0; padding: 4px 8px; background: var(--tip); box-shadow: var(--field); font-size: 13px; line-height: 1.35; }
+.mp-flag .ms { font-size: 18px; }
+.mp-player .btn.small { margin-left: 4px; }
+.mp-player.mp-ask span { margin-left: 0; font-size: inherit; color: inherit; }
+.mp-small { font-size: 12px; color: var(--ink-2); }
+.mp-opt { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; cursor: pointer; }
+.mp-opt select { font: inherit; font-size: 13px; }
+.mp-wait { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 8px; max-width: 420px; }
+.mp-wait > .ms { font-size: 28px; }
+.mp-wait b { font-size: 16px; }
+.mp-wait .mp-p { margin-top: 6px; }
+.mp-asks { position: absolute; top: 104px; left: 50%; transform: translateX(-50%); display: grid; gap: 4px; z-index: 5; max-width: calc(100vw - 16px); }
+.mp-ask { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 14px; }
+.mp-ask > .ms { font-size: 20px; color: var(--navy); }
+.mp-ask .mp-ask-who { margin-right: auto; }
 @media (max-width: 900px) { .netbox b { display: none; } }
 
 /* ------------------------------------------------------ building guide */
