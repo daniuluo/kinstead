@@ -25,7 +25,8 @@
 // branches: at its top level a type can be rebuilt as one of these types
 // (a Family House becomes either a Villa or a Townhouse of flats).
 // Type flags: hidden types never appear in the build menu (merged buildings);
-// merged types occupy a 2×1 plot made from two neighbouring buildings.
+// merged types occupy a 2×1 plot made from two neighbouring buildings;
+// estate types a 2×2 plot grown from a double plot (see ESTATE).
 
 export const CATEGORIES = [
   { id: 'residential', name: 'Homes', icon: '🏡', key: '2' },
@@ -204,6 +205,85 @@ export const BUILDINGS = {
     levels: [
       { name: 'Apartment Court', cost: 1500, housing: 30, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
       { name: 'Grand Apartments', tech: 'highrise', cost: 3200, housing: 50, tax: 1.35, unlock: 200, req: { happiness: 64, water: true, health: true, education: true, power: true } },
+    ],
+  },
+
+  // 2×2 estates. A double-plot building that has grown onto the two plots
+  // beside it (Great Plots) can be rebuilt as its estate counterpart, at the
+  // level it has reached (see ESTATE). ground: how the plot's ground is laid.
+  manor: {
+    name: 'Manor Estate', cat: 'residential', size: 2, hidden: true, estate: true, ground: 'lawn', tech: 'bigplots', icon: '🏡', branch: 'Manor estate', accent: '#4f2f6a', pathIcon: 'castle',
+    desc: 'A great house in its own grounds: wings round a forecourt, a stable court and formal gardens, for the richest families in the land.',
+    levels: [
+      { name: 'Manor Estate', cost: 5400, housing: 30, tax: 3.6, appeal: 14, radius: 5, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Ducal Seat', tech: 'grandarch', cost: 9200, housing: 42, tax: 4.2, appeal: 20, radius: 6, unlock: 200, req: { power: true, happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+    ],
+  },
+  quadrangle: {
+    name: 'Quadrangle', cat: 'residential', size: 2, hidden: true, estate: true, tech: 'bigplots', icon: '🏘️', branch: 'Quadrangle', accent: '#1f5a5a', pathIcon: 'apartment',
+    desc: 'Four mansion blocks round a garden court: a whole street of households on one estate.',
+    levels: [
+      { name: 'Mansion Quadrangle', cost: 3600, housing: 62, tax: 1.35, unlock: 120, req: { happiness: 60, water: true, health: true, education: true } },
+      { name: 'Grand Mansion Court', tech: 'highrise', cost: 6800, housing: 100, tax: 1.4, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
+    ],
+  },
+  markethall: {
+    name: 'Market Halls', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', shop: true, tech: 'bigplots', icon: '🧺', branch: 'Market hall', accent: '#8a4a1d', pathIcon: 'storefront',
+    desc: 'A great covered market hall over the whole estate, with shops round its walls and stalls down the aisles.',
+    levels: [
+      { name: 'Corn Exchange', cost: 1300, jobs: 14, income: 7, visit: 10, unlock: 60 },
+      { name: 'Covered Market Hall', tech: 'civic', cost: 2600, jobs: 22, income: 8, visit: 13, unlock: 120 },
+      { name: 'Grand Galleria', tech: 'civic', cost: 4600, jobs: 32, income: 9, visit: 17, unlock: 200, req: { power: true } },
+    ],
+  },
+  coachinginn: {
+    name: 'Coaching House', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', leisure: true, tech: 'bigplots', icon: '🍺', branch: 'Coaching inn', accent: '#6a2a1a', pathIcon: 'hotel',
+    desc: 'A grand coaching inn: the inn on the street, and a carriage arch through to a yard ringed by stables and coach houses.',
+    levels: [
+      { name: 'Great Coaching Inn', cost: 1400, jobs: 13, income: 6, visit: 12, unlock: 60 },
+      { name: 'Royal Posting House', tech: 'trade3', cost: 2200, jobs: 18, income: 7, visit: 15, unlock: 120 },
+      { name: 'Palace Hotel', tech: 'civic', cost: 4000, jobs: 27, income: 8, visit: 20, unlock: 200, req: { power: true } },
+    ],
+  },
+  timberworks: {
+    name: 'Timber Works', cat: 'industry', size: 2, hidden: true, estate: true, ground: 'packed', tech: 'bigplots', icon: '🪚', branch: 'Timber works', accent: '#5a3f24', pathIcon: 'carpenter',
+    desc: 'A whole timber yard: a sawmill, drying sheds, a crane and stacks of seasoning planks. Timber in, furniture, doors and beams out.',
+    levels: [
+      { name: 'Timber Works', cost: 1900, jobs: 16, income: 16, pollution: 2, unlock: 60 },
+      { name: 'Steam Sawmills', tech: 'industry3', cost: 3800, jobs: 24, income: 18, pollution: 3, edu: 2, unlock: 120, req: { power: true } },
+    ],
+  },
+  cathedralclose: {
+    name: 'Cathedral Close', cat: 'services', size: 2, hidden: true, estate: true, ground: 'lawn', service: 'education', services: ['education', 'culture'], tech: 'bigplots', icon: '📚', branch: 'Cathedral close', accent: '#4a2a5a', pathIcon: 'church',
+    desc: 'A cathedral and its school round a green close: lessons for the children and a great church for the whole town.',
+    levels: [
+      { name: 'Minster Close', cost: 1900, upkeep: 24, jobs: 8, radius: 13, seats: 90, teaches: 2, edu: 3, unlock: 120 },
+      { name: 'Cathedral Close', tech: 'academies', cost: 3600, upkeep: 40, jobs: 14, radius: 17, seats: 160, teaches: 3, edu: 4, unlock: 200 },
+    ],
+  },
+  infirmary: {
+    name: 'Infirmary Court', cat: 'services', size: 2, hidden: true, estate: true, service: 'health', tech: 'bigplots', icon: '🩺', branch: 'Infirmary court', accent: '#7a2424', pathIcon: 'local_hospital',
+    desc: 'Wards and almshouse rooms round a quiet garden court, with a chapel: care for the sick and homes for the old.',
+    levels: [
+      { name: 'Almshouse Court', cost: 1300, upkeep: 16, jobs: 6, radius: 10, housing: 18, edu: 2, unlock: 60 },
+      { name: 'Infirmary Quadrangle', tech: 'hospitals', cost: 2800, upkeep: 30, jobs: 14, radius: 14, housing: 26, edu: 3, unlock: 120 },
+    ],
+  },
+  collegequad: {
+    name: 'College Quad', cat: 'services', size: 2, hidden: true, estate: true, service: 'education', tech: 'colleges', icon: '🎓', branch: 'College quad', accent: '#6a1f2f', pathIcon: 'school',
+    desc: 'A college round a lawned quadrangle, with a great hall, a chapel and a gate tower. Young adults with a high-school education study here for three years.',
+    stageNext: ['university'],
+    levels: [
+      { name: 'Quadrangle College', cost: 4600, upkeep: 52, jobs: 18, radius: 17, seats: 150, teaches: 4, edu: 4, unlock: 120 },
+      { name: 'Great Quadrangle', tech: 'services3', cost: 6000, upkeep: 70, jobs: 26, radius: 19, seats: 240, teaches: 4, edu: 4, unlock: 200, req: { power: true } },
+    ],
+  },
+  landscapepark: {
+    name: 'Landscape Park', cat: 'parks', size: 2, hidden: true, estate: true, park: true, outdoor: true, visitors: 4, tech: 'bigplots', icon: '🌳', branch: 'Landscape park', accent: '#2f5a24', pathIcon: 'forest',
+    desc: 'Rolling lawns round a lake, an avenue of trees, a temple on the rise and a boathouse: the grandest place in town for a stroll.',
+    levels: [
+      { name: 'Landscape Park', cost: 1500, upkeep: 12, appeal: 30, radius: 9, unlock: 60 },
+      { name: 'Royal Park', tech: 'parks2', cost: 2800, upkeep: 18, appeal: 40, radius: 11, unlock: 120 },
     ],
   },
 
@@ -492,7 +572,7 @@ export const TECHS = {
   joining: { name: 'Joining', cost: 115, tier: 1, branch: 'build', needs: ['carpentry'], desc: 'Knock two neighbouring buildings into one.' },
   surveying: { name: 'Plot Surveying', cost: 210, tier: 2, branch: 'build', needs: ['joining'], desc: 'Grow a building onto the plot next door, and buy strips of garden.' },
   relocation: { name: 'House Moving', cost: 300, tier: 3, branch: 'build', needs: ['surveying'], desc: 'Take buildings down and put them up somewhere else.' },
-  bigplots: { name: 'Great Plots', cost: 810, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates.' },
+  bigplots: { name: 'Great Plots', cost: 810, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates, and rebuild them as manor estates, mansion quadrangles, market halls, coaching inns, timber works, cathedral closes, infirmary courts, college quads and landscape parks.' },
   homes2: { name: 'Better Homes', cost: 45, tier: 0, branch: 'homes', needs: [], desc: 'Second-level home upgrades, like the Family House.' },
   homes3: { name: 'Fine Homes', cost: 180, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
   flats: { name: 'Flats', cost: 300, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
@@ -533,7 +613,7 @@ export const TECHS = {
   schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools and middle schools.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot) and cathedral schools.' },
-  colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working.' },
+  colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
   railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
 };
@@ -553,7 +633,7 @@ export function techForLevel(type, level) {
   return t ? t[Math.min(level, 2) - 1] : null;
 }
 // Abilities that research unlocks (not buildings).
-export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots to 2×2', cables: 'Bury the power lines under the streets' };
+export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots into 2×2 estates', cables: 'Bury the power lines under the streets' };
 
 // Burying the power lines under a street, per road tile.
 export const BURY_COST = 12;
@@ -577,8 +657,14 @@ export const LARGE = {
   market: ['arcade'], bakery: ['arcade'], tavern: ['inn'], workshop: ['joinery'], lumber: ['joinery'],
   school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'],
 };
-// ...and what a double plot can become as a 2×2 estate (nothing needs one yet).
-export const ESTATE = {};
+// ...and what a double-plot building can be rebuilt as once it has grown
+// into a 2×2 estate (Great Plots).
+export const ESTATE = {
+  mansion: ['manor'], apartments: ['quadrangle'], arcade: ['markethall'], inn: ['coachinginn'], joinery: ['timberworks'],
+  parishschool: ['cathedralclose'], almshouse: ['infirmary'], highschool: ['collegequad'], college: ['collegequad'], park: ['landscapepark'],
+};
+// The 2×2 buildings an estate can become.
+export const ESTATE_TYPES = [...new Set(Object.values(ESTATE).flat())];
 // A plot may only grow when the bigger plot opens up a bigger building to
 // upgrade into: these are the options for a plot growing to `area` tiles.
 export const growsInto = (type, area) => (area >= 4 ? ESTATE[type] : LARGE[type]) || [];
@@ -607,10 +693,13 @@ export const NEEDS = {
   inn: { water: { from: 0, without: 0.5, what: 'brewing, baths and the kitchens' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
   shophouse: { power: { from: 1, use: 'lights', without: 0.8, what: 'its shop lights' } },
   arcade: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lights under its roof' } },
+  markethall: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lamps down its aisles' } },
+  coachinginn: { water: { from: 0, without: 0.5, what: 'brewing, baths, the kitchens and the horses' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
   musichall: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights' } },
   lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
   workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
   joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },
+  timberworks: { power: { from: 1, use: 'machines', without: 0.5, what: 'its steam saws and planers' } },
   foundry: { power: { from: 0, use: 'machines', without: 0.4, what: 'the furnace blowers and rolling mill' } },
   papermill: { power: { from: 0, use: 'machines', without: 0.4, what: 'the pulpers and presses' }, water: { from: 0, without: 0.5, what: 'the pulp vats' } },
   orchard: { water: { from: 0, without: 0.6, what: 'the cider mill' } },
@@ -618,6 +707,7 @@ export const NEEDS = {
   pump: { power: { from: 1, use: 'machines', without: 0.3, what: 'its pumps' } },
   clinic: { water: { from: 0, without: 0.5, what: 'washing and medicines' }, power: { from: 2, use: 'machines', without: 0.5, what: 'its wards and equipment' } },
   almshouse: { water: { from: 0, without: 0.5, what: 'washing and medicines' } },
+  infirmary: { water: { from: 0, without: 0.5, what: 'washing and medicines' }, power: { from: 1, use: 'machines', without: 0.5, what: 'its wards and equipment' } },
   firestation: { water: { from: 0, without: 0.4, what: 'the fire engines' } },
   university: { power: { from: 0, use: 'machines', without: 0.6, what: 'its laboratories' } },
   fountaingarden: { water: { from: 0, without: 0.6, what: 'the fountain' } },
@@ -635,7 +725,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], townhall: [3, 5, 8], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6] };
+export const RESEARCH_SOURCES = { papermill: [2, 3], townhall: [3, 5, 8], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 

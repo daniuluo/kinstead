@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, scaledLevel } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -567,8 +567,10 @@ export class UI {
       h += this._upgradeHTML(b);
       const grow = w.expandOptions(b);
       if (grow.length) {
-        const into = growsInto(b.type, (b.w ?? b.size) * (b.d ?? b.size) * 2).map(t => BUILDINGS[t].name);
-        h += `<div class="sec"><h5>⇲ Expand onto a neighbouring plot</h5><div class="note">A double plot holds 50% more ${L.housing ? 'households' : 'workers'} and opens up ${into.length ? esc(into.join(' or ')) : 'bigger buildings'} to upgrade into. Builders extend it while it stays open.</div><div class="actions col">`;
+        const estate = grow[0].kind === 'estate';
+        const into = growsInto(b.type, (b.w ?? b.size) * (b.d ?? b.size) * 2).map(t => BUILDINGS[t].levels[estate ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
+        const who = L.housing ? 'households' : L.seats ? 'students' : def.park ? 'visitors' : 'workers';
+        h += `<div class="sec"><h5>⇲ ${estate ? 'Grow into a 2×2 estate' : 'Expand onto a neighbouring plot'}</h5><div class="note">${estate ? 'A 2×2 estate' : 'A double plot'} holds 50% more ${who} and opens up ${into.length ? `the ${esc(into.join(' or the '))}` : 'bigger buildings'} to upgrade into. Builders extend it while it stays open.</div><div class="actions col">`;
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
           const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · $${fmt(o.cost)}`;
@@ -1278,6 +1280,8 @@ export class UI {
     }
     for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) add(`${STYLES.find(s => s.id === style).name} style`, thumb('house', 1, 4242, null, style));
     if (id === 'railways') add('Railway track and lines');
+    // Great Plots opens every 2×2 estate building, whatever else it needs
+    if (id === 'bigplots') for (const type of ESTATE_TYPES) add(`${BUILDINGS[type].levels[0].name} (new path)`, thumb(type, 0));
     return out;
   }
 

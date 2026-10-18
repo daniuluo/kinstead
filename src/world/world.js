@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel, growsInto, BURY_COST } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
@@ -23,7 +23,9 @@ export const isOpen = (b) => !b.con || b.con.kind === 'upgrade' || b.con.kind ==
 // holds half as many people / jobs again.
 // restyling a building as it is upgraded costs this much of the upgrade on top
 const RESTYLE = 0.3;
-const baseArea = (b) => (BUILDINGS[b.type].merged ? 2 : BUILDINGS[b.type].size ** 2);
+// tiles a type's own footprint covers: 1, 2 (joined, 2×1) or 4 (2×2)
+const baseAreaOf = (type) => (BUILDINGS[type].merged ? 2 : BUILDINGS[type].size ** 2);
+const baseArea = (b) => baseAreaOf(b.type);
 export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 // each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
@@ -715,6 +717,11 @@ export class World {
         out.push({ type, level, large: true });
       }
     }
+    // ...and a double-plot building grown into a 2×2 estate can be rebuilt as
+    // its estate counterpart, at the level it has reached
+    if (fw(b) * fd(b) >= 4 && ESTATE[b.type]) {
+      for (const type of ESTATE[b.type]) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), estate: true });
+    }
     return out;
   }
 
@@ -743,8 +750,13 @@ export class World {
       if (next.req.power) reqs.push({ label: 'Electricity', met: !!b.powered });
     }
     if (tech) reqs.unshift({ label: `Research: ${this.techName(tech)}`, met: this.hasTech(tech), tech });
-    // the bigger stages need a double plot: expand onto the plot next door first
-    if (BUILDINGS[target.type].size > 1 && fw(b) * fd(b) < 2) reqs.unshift({ label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
+    // the bigger stages need a double plot: expand onto the plot next door
+    // first; estates need a 2×2 plot, grown from a double plot
+    if (fw(b) * fd(b) < baseAreaOf(target.type)) {
+      reqs.unshift(BUILDINGS[target.type].estate
+        ? { label: 'A 2×2 estate — grow the double plot onto the two plots beside it first', met: false, space: true }
+        : { label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
+    }
     reqs.push({ label: restyle ? `$${cost} (with $${restyle} for the new style)` : `$${cost}`, met: this.money >= cost });
     const ok = reqs.every(r => r.met);
     return { ok, next, target, cost, restyle, reqs, reason: ok ? null : 'Requirements not met' };

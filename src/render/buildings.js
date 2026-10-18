@@ -823,16 +823,7 @@ MODELS.flats = (c, L) => {
 MODELS.market = (c, L) => {
   const { gb, rng, pal } = c;
   const awnA = pal.awning, awnB = '#e9dfc9';
-  const stall = (x, z, ry, s = 1) => {
-    gb.push(x, c.gy(x, z), z, ry, s);
-    gb.cbox(0, 0, 0, 0.4, 0.13, 0.2, '#86613e', 0, 0.01);
-    gb.box(0, 0.13, 0, 0.42, 0.016, 0.22, '#a07a50');
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.2, 0, sz * 0.1, 0.022, sz < 0 ? 0.38 : 0.33, 0.022, '#5e432c');
-    for (let i = 0; i < 5; i++) gb.boxC(-0.176 + i * 0.088, 0.36, 0.0, 0.088, 0.014, 0.31, i % 2 ? awnB : awnA, -0.2);
-    const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050', '#6f4a8a'];
-    for (let i = 0; i < 7; i++) gb.sphere(-0.16 + i * 0.054, 0.165, rng.float(-0.05, 0.05), 0.022, rng.pick(goods), 1);
-    gb.pop();
-  };
+  const stall = (x, z, ry, s = 1) => marketStall(c, x, z, ry, s, awnA);
   if (L === 0) {
     stall(-0.14, 0.06, 0);
     stall(0.22, -0.22, -Math.PI / 2, 0.85);
@@ -2448,6 +2439,1007 @@ MODELS.university = (c, L) => {
   gb.box(0, c.gy(0, qz) - 0.006, qz, W * 0.75, 0.012, 0.28, '#7fae4f');
   gb.box(0, c.gy(0, qz) - 0.002, qz, 0.1, 0.012, 0.28, '#cdbf9e');
   for (const s of [-1, 1]) { smallTree(c, s * W * 0.3, qz, 1); bench(c, s * 0.14, qz, Math.PI); }
+  if (f.turned) gb.pop();
+};
+
+// ----------------------------------------------------------- 2×2 estates
+// A double-plot building grown onto the two plots beside it can be rebuilt
+// as one of these. Each lays itself out over the whole 2×2 plot (rowFrame:
+// the street at +z, the plot ±1 round the centre), in the building's
+// palette and style.
+
+const GRAVEL = '#cdbf9e', LAWN_G = '#7fae4f', IRON = '#2f2f33', GLASS_ROOF = '#a9c4c8', POOL = '#3f7f9f';
+
+function gravel(c, x, z, w, d, color = GRAVEL) {
+  c.gb.box(x, c.gy(x, z) - 0.008, z, w, 0.012, d, color);
+}
+
+// A door frame and leaf on any face of a wall (door() registers the one
+// villagers use, and only faces the street).
+function plainDoor(c, x, z, w, h, color, face = 'f') {
+  const { gb } = c;
+  const oz = face === 'f' ? 1 : face === 'b' ? -1 : 0, ox = face === 'r' ? 1 : face === 'l' ? -1 : 0, side = ox !== 0;
+  gb.box(x + ox * 0.004, 0, z + oz * 0.004, side ? 0.014 : w + 0.024, h + 0.016, side ? w + 0.024 : 0.014, '#5a4330');
+  gb.box(x + ox * 0.01, 0, z + oz * 0.01, side ? 0.014 : w, h, side ? w : 0.014, color);
+}
+
+// A tall window of coloured glass, glowing at night (ry turns one on a
+// front or back face, to follow a curved wall).
+function stainedGlass(c, x, y, z, w, h, k, face, ry = 0) {
+  const s = [[1.4, 0.5, 0.5], [0.5, 0.7, 1.6], [1.4, 1.1, 0.4]][k % 3];
+  c.gb.glow(s[0], s[1], s[2], 1.05 + c.rng.float(0, 0.2));
+  if (face === 'r' || face === 'l') c.gb.box(x, y, z, 0.016, h, w, '#3f4a6e');
+  else c.gb.box(x, y, z, w, h, 0.016, '#3f4a6e', ry);
+  c.gb.noGlow();
+}
+
+// A round window (rose or wheel) in a wall facing +z (dir 0) or ±x (dir ±1).
+function roseWindow(c, x, y, z, r, dir = 0) {
+  const { gb } = c;
+  const rx = dir ? 0 : Math.PI / 2, rz = dir > 0 ? -Math.PI / 2 : dir < 0 ? Math.PI / 2 : 0;
+  gb.cyl(x, y, z, r + 0.018, r + 0.018, 0.01, 14, STONE_D, 0, rx, rz);
+  gb.glow(1.6, 0.8, 1.6, 1.04);
+  gb.cyl(x + dir * 0.004, y, z + (dir ? 0 : 0.004), r, r, 0.012, 14, '#5a4a8a', 0, rx, rz);
+  gb.noGlow();
+}
+
+// Classical columns carrying an entablature and a pediment, in front of a
+// wall face at z: w wide, columns h tall.
+function portico(c, x, z, w, h, n, roof, trim = '#ece6da') {
+  const { gb } = c;
+  footing(c, x, z + 0.07, w + 0.06, 0.16);
+  gb.cbox(x, -0.03, z + 0.07, w + 0.06, 0.05, 0.16, STONE, 0, 0.008);
+  for (let i = 0; i < n; i++) gb.cyl(x - w / 2 + 0.025 + (i * (w - 0.05)) / (n - 1), 0.02, z + 0.11, 0.015, 0.018, h, 8, trim);
+  gb.cbox(x, 0.02 + h, z + 0.07, w + 0.02, 0.035, 0.15, trim, 0, 0.006);
+  gb.gable(x, 0.055 + h, z + 0.07, w + 0.02, 0.15, Math.min(0.1, w * 0.2), trim, roof, 0.02);
+}
+
+// A crenellated parapet along a wall top: len long, centred on (x, y, z),
+// running along x (or z).
+function battlements(c, x, y, z, len, alongZ, color) {
+  const { gb } = c;
+  const n = Math.max(3, 2 * Math.round(len / 0.12) + 1), s = len / n;
+  gb.box(x, y, z, alongZ ? 0.04 : len, 0.022, alongZ ? len : 0.04, color);
+  for (let i = 0; i < n; i += 2) {
+    const u = -len / 2 + (i + 0.5) * s;
+    gb.box(alongZ ? x : x + u, y + 0.022, alongZ ? z + u : z, alongZ ? 0.04 : s, 0.026, alongZ ? s : 0.04, color);
+  }
+}
+function parapet(c, x, y, z, w, d, color) {
+  battlements(c, x, y, z + d / 2 - 0.02, w, false, color);
+  battlements(c, x, y, z - d / 2 + 0.02, w, false, color);
+  battlements(c, x + w / 2 - 0.02, y, z, d - 0.08, true, color);
+  battlements(c, x - w / 2 + 0.02, y, z, d - 0.08, true, color);
+}
+
+// Gate piers with ball finials either side of a gap at (x, z).
+function gatePiers(c, x, z, gap, color = STONE) {
+  for (const s of [-1, 1]) {
+    const px = x + (s * gap) / 2, y = c.gy(px, z);
+    c.gb.cbox(px, y - 0.01, z, 0.06, 0.17, 0.06, color, 0, 0.008);
+    c.gb.sphere(px, y + 0.19, z, 0.025, shade(color, 1.1), 0);
+  }
+}
+
+function topiary(c, x, z, s = 1) {
+  const y = c.gy(x, z);
+  c.gb.cyl(x, y - 0.01, z, 0.014, 0.014, 0.03, 5, '#5e432c');
+  c.gb.cone(x, y + 0.02, z, 0.04 * s, 0.13 * s, 7, '#3f6a32');
+}
+
+// A formal bed: low clipped hedges round a rectangle with a cross through
+// it, flowers in its quarters and a clipped cone at each corner.
+function parterre(c, x, z, w, d) {
+  const h = 0.035;
+  hedge(c, x, z - d / 2, w, 0.03, h); hedge(c, x, z + d / 2, w, 0.03, h);
+  hedge(c, x - w / 2, z, 0.03, d, h); hedge(c, x + w / 2, z, 0.03, d, h);
+  hedge(c, x, z, w - 0.06, 0.025, h * 0.8); hedge(c, x, z, 0.025, d - 0.06, h * 0.8);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    flowers(c, x + (sx * w) / 4, z + (sz * d) / 4, 4, Math.min(w, d) * 0.12);
+    topiary(c, x + (sx * w) / 2, z + (sz * d) / 2, 0.8);
+  }
+}
+
+// A round stone basin with a jet in the middle (fountain particles at it).
+function basin(c, x, z, r, jet = 0.12) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y - 0.02, z, r, r + 0.01, 0.07, 14, STONE);
+  gb.cyl(x, y + 0.045, z, r - 0.015, r - 0.015, 0.008, 14, POOL);
+  gb.cyl(x, y + 0.04, z, 0.018, 0.024, jet, 8, STONE);
+  c.fountain = [x, y + jet + 0.06, z];
+}
+
+// Glazed panes over a gable roof's slopes (iron ribs show between them),
+// lit from within at night. Same frame as GeoBuilder.gable.
+function glassRoof(c, x, y, z, w, d, h, alongZ, n = 6) {
+  const { gb } = c;
+  gb.push(x, y, z, alongZ ? Math.PI / 2 : 0);
+  if (alongZ) [w, d] = [d, w];
+  const hd = d / 2, a = Math.atan2(h, hd), L = Math.hypot(hd, h), lift = 0.03;
+  const cz = hd / 2 + Math.sin(a) * lift, cy = h / 2 + Math.cos(a) * lift, pw = w / n;
+  gb.glow(1.6, 1.4, 1.0, 1.5);
+  for (let i = 0; i < n; i++) for (const s of [-1, 1]) gb.boxC(-w / 2 + (i + 0.5) * pw, cy, s * cz, pw - 0.022, 0.01, L - 0.03, GLASS_ROOF, s * a);
+  gb.noGlow();
+  gb.pop();
+}
+
+// A plain works building: walls, a gable roof and windows on every face,
+// leaving out the ground-floor front windows where skip(x) says.
+function worksShed(c, x, z, w, d, h, floors, wall, roof, rh, skip = () => false) {
+  const { gb, rng } = c;
+  footing(c, x, z, w, d);
+  gb.cbox(x, 0, z, w, h, d, wall, 0, 0.02);
+  gb.gable(x, h, z, w, d, rh, wall, roof, 0.05, false, 0.035);
+  const fh = h / floors, nF = Math.max(1, Math.round(w / 0.2)), nS = Math.max(1, Math.round(d / 0.24)), wh = Math.min(0.11, fh * 0.4);
+  for (let k = 0; k < floors; k++) {
+    const y = k * fh + fh * 0.36;
+    for (let i = 0; i < nF; i++) {
+      const u = x - w / 2 + (i + 0.5) * (w / nF);
+      if (k || !skip(u)) win(c, u, y, z + d / 2, 0.075, wh, 'f', 0.8);
+      if (rng.chance(0.7)) win(c, u, y, z - d / 2, 0.075, wh, 'b', 0.8);
+    }
+    for (let i = 0; i < nS; i++) {
+      const v = z - d / 2 + (i + 0.5) * (d / nS);
+      win(c, x + w / 2, y, v, 0.075, wh, 'r', 0.8);
+      win(c, x - w / 2, y, v, 0.075, wh, 'l', 0.8);
+    }
+  }
+}
+
+// One range of rooms round a court: walls and a gable roof along its length
+// (alongZ: it runs along z), windows down both long sides and, on the side
+// facing the court (dir: ±1 across the range, 0 for none), a door to each
+// ground-floor room. A stack in the middle of the ridge if asked for.
+function courtRange(c, x, z, len, dep, h, floors, wall, roof, alongZ, dir, rooms, stack = false, rh = 0.2) {
+  const { gb, rng } = c;
+  const w = alongZ ? dep : len, d = alongZ ? len : dep;
+  footing(c, x, z, w, d);
+  gb.cbox(x, 0, z, w, h, d, wall, 0, 0.016);
+  if (rh > 0) gb.gable(x, h, z, w, d, rh, wall, roof, 0.05, alongZ, 0.03);
+  const at = (u, s) => (alongZ ? [x + (s * dep) / 2, z + u] : [x + u, z + (s * dep) / 2]);
+  const face = (s) => (alongZ ? (s > 0 ? 'r' : 'l') : s > 0 ? 'f' : 'b');
+  const fh = h / floors, wh = Math.min(0.1, fh * 0.36);
+  for (let i = 0; i < rooms; i++) {
+    const u = -len / 2 + (i + 0.5) * (len / rooms);
+    for (let k = 0; k < floors; k++) for (const s of [-1, 1]) {
+      const y = k * fh + fh * 0.34;
+      if (k === 0 && s === dir) {
+        const [dx, dz] = at(u - 0.05, s), [wx, wz] = at(u + 0.06, s);
+        plainDoor(c, dx, dz, 0.065, Math.min(0.16, fh * 0.6), rng.pick(DOORS), face(s));
+        win(c, wx, y, wz, 0.065, wh, face(s));
+      } else if (s === dir || rng.chance(0.8)) {
+        const [wx, wz] = at(u, s);
+        win(c, wx, y, wz, 0.07, wh, face(s));
+      }
+    }
+  }
+  if (stack) chimney(c, x, h - 0.05, h + rh + 0.08, z, 'home', stackColor(c));
+}
+const stackColor = (c) => (c.pal.style === 'brick' ? c.pal.brick : STONE);
+
+function coach(c, x, z, ry, body = '#3f5466') {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  gb.cbox(0, 0.05, 0, 0.12, 0.1, 0.2, body, 0, 0.01);
+  gb.box(0, 0.15, 0, 0.13, 0.015, 0.22, '#2a2826');
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.068, 0.035, sz * 0.07, 0.035, 0.035, 0.01, 8, '#2a2018', 0, 0, Math.PI / 2);
+  gb.box(0, 0.02, 0.16, 0.012, 0.012, 0.14, '#5e432c');
+  gb.pop();
+}
+
+function horse(c, x, z, ry, color = '#7a4a2a') {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  gb.boxC(0, 0.075, 0, 0.042, 0.04, 0.11, color);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.014, 0, sz * 0.04, 0.012, 0.06, 0.012, shade(color, 0.8));
+  gb.boxC(0, 0.105, 0.06, 0.026, 0.05, 0.028, color, -0.7);
+  gb.boxC(0, 0.13, 0.085, 0.024, 0.024, 0.045, color, 0.3);
+  gb.boxC(0, 0.075, -0.06, 0.008, 0.04, 0.008, '#2a2018', 0.4);
+  gb.pop();
+}
+
+function hayBale(c, x, z, ry = 0) {
+  c.gb.cyl(x, c.gy(x, z) + 0.03, z, 0.03, 0.03, 0.07, 8, '#d9be6a', ry, 0, Math.PI / 2);
+}
+
+// The market's trestle stall under a striped awning.
+function marketStall(c, x, z, ry, s, awnA) {
+  const { gb, rng } = c;
+  const awnB = '#e9dfc9';
+  gb.push(x, c.gy(x, z), z, ry, s);
+  gb.cbox(0, 0, 0, 0.4, 0.13, 0.2, '#86613e', 0, 0.01);
+  gb.box(0, 0.13, 0, 0.42, 0.016, 0.22, '#a07a50');
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.2, 0, sz * 0.1, 0.022, sz < 0 ? 0.38 : 0.33, 0.022, '#5e432c');
+  for (let i = 0; i < 5; i++) gb.boxC(-0.176 + i * 0.088, 0.36, 0.0, 0.088, 0.014, 0.31, i % 2 ? awnB : awnA, -0.2);
+  const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050', '#6f4a8a'];
+  for (let i = 0; i < 7; i++) gb.sphere(-0.16 + i * 0.054, 0.165, rng.float(-0.05, 0.05), 0.022, rng.pick(goods), 1);
+  gb.pop();
+}
+
+// Manor Estate: the great house across the back of a forecourt, wings
+// reaching forward either side, a drive between formal gardens, and the
+// stables and kitchen garden (an orangery at the Ducal Seat) behind.
+MODELS.manor = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const wall = !pal.forced && (L > 0 || pal.stoneHouse || rng.chance(0.5)) ? pal.stoneWall : pal.wall;
+  const roof = pal.forced ? pal.roof : pal.slate, trim = '#ece6da';
+  // classical and hipped, unless the style calls for gables
+  const hipped = !pal.forced || pal.hip || pal.style === 'brick' || pal.style === 'stone';
+  const H = L ? 0.88 : 0.62, D = 0.46, z0 = -0.39, front = z0 + D / 2;
+  house(c, {
+    x: 0, z: z0, w: 0.96, d: D, h: H, floors: L ? 3 : 2, wall, roof, roofType: hipped ? 'hip' : 'gable', rh: 0.3,
+    plinth: STONE, doorX: 0, doorW: 0.12, nFront: L ? 7 : 5, chimney: true, chimneyPos: 'ends',
+  });
+  portico(c, 0, front, L ? 0.42 : 0.34, L ? 0.5 : 0.36, L ? 6 : 4, roof, trim);
+  const wh = L ? 0.62 : 0.46;
+  for (const s of [-1, 1]) {
+    house(c, {
+      x: s * 0.64, z: -0.13, ry: (-s * Math.PI) / 2, w: 0.74, d: 0.32, h: wh, floors: 2, wall, roof, roofType: hipped ? 'hip' : 'gable', rh: 0.2,
+      noDoor: true, plinth: STONE, nFront: 3, chimney: false,
+    });
+  }
+  if (L) {
+    // a cupola with a flag over the middle of the house
+    const top = H + 0.3 * pal.pitch;
+    gb.cbox(0, top - 0.05, z0, 0.13, 0.12, 0.13, trim, 0, 0.01);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(0, top + 0.0, z0 + 0.066, 0.05, 0.05, 0.006, GLASS); gb.noGlow();
+    gb.sphere(0, top + 0.08, z0, 0.075, '#5f7f86', 1, 0.8);
+    gb.box(0, top + 0.13, z0, 0.01, 0.2, 0.01, '#3a3a3e');
+    gb.box(0.045, top + 0.27, z0, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#4f7a45']));
+  }
+  // the forecourt: gravel round a lawn with a statue (a fountain later)
+  gravel(c, 0, 0.12, 0.92, 0.26);
+  const cy = c.gy(0, 0.13);
+  gb.cyl(0, cy - 0.004, 0.13, 0.1, 0.1, 0.012, 16, LAWN_G);
+  if (L) basin(c, 0, 0.13, 0.08, 0.1);
+  else {
+    gb.cbox(0, cy, 0.13, 0.05, 0.08, 0.05, STONE, 0, 0.008);
+    gb.cyl(0, cy + 0.08, 0.13, 0.014, 0.02, 0.09, 6, '#8a8478');
+    gb.sphere(0, cy + 0.185, 0.13, 0.02, '#8a8478', 0);
+  }
+  // the drive in from the gates, between formal gardens
+  gravel(c, 0, 0.61, 0.14, 0.7);
+  for (const s of [-1, 1]) parterre(c, s * 0.53, 0.6, 0.56, 0.46);
+  frontage(c, -0.97, 0.97, 0.95, [0], L ? 'railings' : 'wall');
+  gatePiers(c, 0, 0.95, 0.15);
+  for (const s of [-1, 1]) {
+    hedge(c, s * 0.94, 0.62, 0.04, 0.6);
+    smallTree(c, s * 0.89, -0.32, 0.7); smallTree(c, s * 0.89, 0.02, 0.65);
+    if (L) { lamp(c, s * 0.11, 0.42, 0.3); lamp(c, s * 0.11, 0.8, 0.3); }
+  }
+  // behind the house: a stable range with a clock, and the kitchen garden
+  const side = rng.chance(0.5) ? 1 : -1, sx = side * 0.68, sz = -0.8;
+  footing(c, sx, sz, 0.52, 0.26);
+  gb.cbox(sx, 0, sz, 0.52, 0.26, 0.26, wall, 0, 0.014);
+  gb.gable(sx, 0.26, sz, 0.52, 0.26, 0.13, wall, roof, 0.04, false, 0.03);
+  for (let i = 0; i < 3; i++) {
+    const x = sx - 0.16 + i * 0.16;
+    plainDoor(c, x, sz + 0.13, 0.06, 0.13, '#5e432c');
+    gb.box(x, 0.065, sz + 0.142, 0.064, 0.008, 0.006, '#3f342c');
+  }
+  gb.cbox(sx, 0.33, sz, 0.08, 0.08, 0.08, trim, 0, 0.006);
+  gb.roof(sx, 0.41, sz, 0.1, 0.1, 0.07, 0, roof);
+  gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(sx, 0.355, sz + 0.04, 0.026, 0.026, 0.006, 10, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+  if (L) {
+    // the orangery: a long glasshouse on a stone base
+    const ox = -side * 0.66, oz = -0.8;
+    footing(c, ox, oz, 0.5, 0.22);
+    gb.cbox(ox, 0, oz, 0.5, 0.05, 0.22, STONE, 0, 0.008);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3);
+    gb.box(ox, 0.05, oz, 0.48, 0.18, 0.2, '#9fbcc0');
+    gb.noGlow();
+    for (let i = 0; i < 6; i++) gb.box(ox - 0.24 + i * 0.096, 0.05, oz + 0.101, 0.008, 0.18, 0.008, trim);
+    gb.box(ox, 0.23, oz, 0.5, 0.012, 0.22, trim);
+    gb.gable(ox, 0.235, oz, 0.5, 0.22, 0.07, '#c8dadc', '#c8dadc', 0.02, false, 0.012);
+    for (let i = 0; i < 4; i++) gb.sphere(ox - 0.18 + i * 0.12, 0.09, oz, 0.03, rng.pick(LEAF), 0);
+  } else {
+    vegPatch(c, -side * 0.56, -0.8); vegPatch(c, -side * 0.8, -0.8);
+    beehives(c, -side * 0.68, -0.64);
+  }
+  smallTree(c, -0.22, -0.84, 1); smallTree(c, 0.2, -0.86, 0.9);
+  bench(c, 0, -0.72, 0);
+  if (f.turned) gb.pop();
+};
+
+// Mansion Quadrangle: four ranges of flats round a garden court, the way in
+// through the middle of the street range.
+MODELS.quadrangle = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const floors = L ? 6 : 4, fh = 0.25, h = floors * fh;
+  const wall = pal.style === 'brick' || (!pal.forced && rng.chance(0.5)) ? pal.brick : pal.stoneWall, trim = '#e3dccd';
+  const RD = 0.42, fz = 0.6, W = 1.84, sl = 2 * fz - RD, ff = fz + RD / 2;
+  const roofType = L ? 'flat' : 'hip', base = { h, floors, wall, roof: pal.slate, roofType, rh: 0.26, plinth: STONE_D, fancy: false };
+  house(c, { ...base, x: 0, z: fz, w: W, d: RD, doorX: 0, doorW: 0.14, nFront: 11, door: '#3a2f28', chimney: true, chimneyPos: 'ends' });
+  house(c, { ...base, x: 0, z: -fz, w: W, d: RD, noDoor: true, nFront: 11, chimney: true, chimneyPos: 'ends' });
+  for (const s of [-1, 1]) house(c, { ...base, x: s * (W / 2 - RD / 2), z: 0, ry: (-s * Math.PI) / 2, w: sl, d: RD, noDoor: true, nFront: 4, chimney: false });
+  // string courses all round, and iron balconies on the street
+  for (let k = 1; k < floors; k++) {
+    const y = k * fh - 0.008;
+    for (const z of [fz, -fz]) gb.box(0, y, z, W + 0.02, 0.014, RD + 0.02, trim);
+    for (const s of [-1, 1]) gb.box(s * (W / 2 - RD / 2), y, 0, RD + 0.02, 0.014, sl, trim);
+    for (const x of [-0.62, -0.28, 0.28, 0.62]) {
+      gb.box(x, k * fh, ff + 0.035, 0.2, 0.012, 0.07, trim);
+      gb.box(x, k * fh + 0.012, ff + 0.068, 0.2, 0.045, 0.006, IRON);
+    }
+  }
+  // a canopy on columns over the entrance
+  for (const s of [-1, 1]) gb.cyl(s * 0.1, 0.02, ff + 0.08, 0.012, 0.014, 0.24, 8, trim);
+  gb.gable(0, 0.26, ff + 0.05, 0.26, 0.11, 0.07, trim, pal.slate, 0.02);
+  if (L) {
+    // a cornice, attic windows and a pavilion roof at each corner
+    for (const z of [fz, -fz]) gb.box(0, h + 0.045, z, W + 0.03, 0.03, RD + 0.03, trim);
+    for (const s of [-1, 1]) gb.box(s * (W / 2 - RD / 2), h + 0.045, 0, RD + 0.03, 0.03, sl, trim);
+    for (const x of [-0.42, -0.14, 0.14, 0.42]) for (const z of [fz, -fz]) {
+      gb.cbox(x, h + 0.04, z, 0.12, 0.1, 0.12, wall, 0, 0.01);
+      win(c, x, h + 0.06, z + Math.sign(z) * 0.06, 0.05, 0.06, z > 0 ? 'f' : 'b');
+    }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const x = sx * 0.73, z = sz * 0.62;
+      gb.cbox(x, h, z, 0.3, 0.2, 0.3, wall, 0, 0.012);
+      gb.box(x, h + 0.2, z, 0.32, 0.02, 0.32, trim);
+      gb.roof(x, h + 0.22, z, 0.32, 0.32, 0.2, 0, pal.slate);
+      win(c, x, h + 0.05, z + sz * 0.15, 0.06, 0.09, sz > 0 ? 'f' : 'b');
+      win(c, x + sx * 0.15, h + 0.05, z, 0.06, 0.09, sx > 0 ? 'r' : 'l');
+    }
+  }
+  // the garden court: a lawn, gravel walks and trees (a fountain later)
+  const cw = W - 2 * RD - 0.04, cd = sl - 0.04, gy = c.gy(0, 0);
+  gb.box(0, gy - 0.008, 0, cw, 0.012, cd, LAWN_G);
+  gb.box(0, gy - 0.004, 0, cw, 0.012, 0.07, GRAVEL);
+  gb.box(0, gy - 0.004, 0, 0.07, 0.012, cd, GRAVEL);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) smallTree(c, sx * 0.25, sz * 0.2, 0.85);
+  if (L) basin(c, 0, 0, 0.09, 0.1);
+  else {
+    gb.cyl(0, gy - 0.01, 0, 0.07, 0.07, 0.02, 12, '#5e432c');
+    flowers(c, 0, 0, 8, 0.05);
+    washingLine(c, 0.32, -0.33);
+  }
+  bench(c, -0.12, 0.3, Math.PI); bench(c, 0.12, -0.3, 0);
+  frontage(c, -0.94, 0.94, 0.94, [0], 'railings');
+  lamp(c, -0.2, 0.92, 0.3); lamp(c, 0.2, 0.92, 0.3);
+  if (f.turned) gb.pop();
+};
+
+// Market Halls: a stone Corn Exchange behind a portico, an iron-and-glass
+// Covered Market Hall, and the Grand Galleria (see galleria).
+MODELS.markethall = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const trim = '#e3dccd';
+  if (L >= 2) galleria(c);
+  else if (L === 0) {
+    // the Corn Exchange: a stone hall under one long roof, a portico on the street
+    const wall = pal.stoneWall, roof = pal.slate, hz = -0.24, hw = 1.16, hd = 1.12, h = 0.5, fz = hz + hd / 2;
+    footing(c, 0, hz, hw, hd);
+    gb.cbox(0, 0, hz, hw, h, hd, wall, 0, 0.02);
+    gb.push(0, 0, hz); quoins(c, hw, hd, h, wall); gb.pop();
+    gb.gable(0, h, hz, hw, hd, 0.34, wall, roof, 0.05, true, 0.035);
+    door(c, 0, fz, 0.14, 0.22, '#4e3424');
+    portico(c, 0, fz, 0.78, 0.4, 6, roof, trim);
+    for (const s of [-1, 1]) win(c, s * 0.46, 0.12, fz, 0.09, 0.2, 'f', 0.9);
+    for (let i = 0; i < 4; i++) {
+      const z = hz - hd / 2 + (i + 0.5) * (hd / 4);
+      win(c, hw / 2, 0.3, z, 0.08, 0.14, 'r', 0.9); win(c, -hw / 2, 0.3, z, 0.08, 0.14, 'l', 0.9);
+    }
+    for (const x of [-0.3, 0.3]) win(c, x, 0.14, hz - hd / 2, 0.09, 0.2, 'b', 0.9);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, 0.66, fz + 0.004, 0.06, 0.06, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+    // a cupola on the ridge with a wheatsheaf vane
+    const top = h + 0.34;
+    gb.cbox(0, top - 0.05, hz, 0.14, 0.14, 0.14, trim, 0, 0.01);
+    gb.roof(0, top + 0.09, hz, 0.17, 0.17, 0.12, 0, roof);
+    gb.box(0, top + 0.21, hz, 0.01, 0.08, 0.01, '#c9a43a');
+    gb.sphere(0, top + 0.3, hz, 0.022, '#d9b84a', 0);
+    // lean-to shops along both sides, their awnings out over the pavement
+    for (const s of [-1, 1]) {
+      const x = s * (hw / 2 + 0.14), sz = hz + 0.02, sd = hd - 0.3, ox = s * (hw / 2 + 0.28);
+      footing(c, x, sz, 0.28, sd);
+      gb.cbox(x, 0, sz, 0.28, 0.26, sd, shade(wall, 0.95), 0, 0.012);
+      gb.wedge(x, 0.26, sz, sd + 0.04, 0.32, 0.08, pal.roof, (s * Math.PI) / 2);
+      for (let i = 0; i < 3; i++) {
+        const z = sz - sd / 2 + (i + 0.5) * (sd / 3);
+        plainDoor(c, ox, z - 0.07, 0.06, 0.15, rng.pick(DOORS), s > 0 ? 'r' : 'l');
+        win(c, ox, 0.05, z + 0.05, 0.1, 0.12, s > 0 ? 'r' : 'l', 0.95);
+        gb.boxC(ox + s * 0.055, 0.21, z, 0.11, 0.012, sd / 3 - 0.03, i % 2 ? '#e9dfc9' : pal.awning, 0, 0, -s * 0.45);
+      }
+    }
+    // market day out front: stalls, sacks of grain, a cart
+    marketStall(c, -0.58, 0.74, 0.15, 0.8, pal.awning);
+    marketStall(c, 0.6, 0.72, -0.2, 0.8, pal.awning2);
+    for (let i = 0; i < 4; i++) { const x = -0.2 + (i % 2) * 0.06, z = 0.82 + Math.floor(i / 2) * 0.05; gb.blob(x, c.gy(x, z) + 0.025, z, 0.03, 0.035, 0.026, '#d8c8a0'); }
+    handcart(c, 0.28, 0.86); barrel(c, -0.36, 0.9); crate(c, 0.38, 0.62);
+    lamp(c, -0.34, 0.58, 0.3); lamp(c, 0.34, 0.58, 0.3);
+    crate(c, -0.3, -0.9); crate(c, -0.22, -0.88, 0.9, '#a88458'); barrel(c, 0.3, -0.9);
+  } else {
+    // the Covered Market Hall: a glazed nave between brick gable walls, lower
+    // aisles either side with shops round the outside
+    const brick = pal.brick, roof = pal.slate, hz = -0.12, hd = 1.56, nw = 0.8, nh = 0.66, aw = 0.36, ah = 0.42, fz = hz + hd / 2;
+    footing(c, 0, hz, nw + 2 * aw, hd);
+    gb.cbox(0, 0, hz, nw, ah, hd, brick, 0, 0.012);
+    gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, ah, hz, nw - 0.02, nh - ah, hd - 0.04, GLASS_ROOF); gb.noGlow();
+    for (let i = 0; i <= 8; i++) for (const s of [-1, 1]) gb.box(s * (nw / 2 - 0.004), ah, hz - hd / 2 + 0.02 + (i * (hd - 0.04)) / 8, 0.014, nh - ah, 0.014, IRON);
+    gb.gable(0, nh, hz, nw + 0.02, hd - 0.02, 0.3, '#5a6268', '#4a5258', 0.03, true, 0.016);
+    glassRoof(c, 0, nh, hz, nw + 0.02, hd - 0.02, 0.3, true, 8);
+    for (const s of [-1, 1]) {
+      const ax = s * (nw / 2 + aw / 2), ox = s * (nw / 2 + aw);
+      gb.cbox(ax, 0, hz, aw, ah, hd - 0.06, brick, 0, 0.014);
+      gb.wedge(ax, ah, hz, hd - 0.02, aw + 0.06, 0.12, roof, (s * Math.PI) / 2);
+      for (let i = 0; i < 5; i++) {
+        const z = hz - hd / 2 + 0.2 + i * ((hd - 0.4) / 4);
+        plainDoor(c, ox, z - 0.07, 0.06, 0.16, rng.pick(DOORS), s > 0 ? 'r' : 'l');
+        win(c, ox, 0.05, z + 0.06, 0.1, 0.14, s > 0 ? 'r' : 'l', 0.95);
+        win(c, ox, 0.28, z, 0.07, 0.08, s > 0 ? 'r' : 'l', 0.8);
+        gb.boxC(ox + s * 0.055, 0.23, z, 0.11, 0.012, (hd - 0.4) / 4 - 0.04, i % 2 ? '#e9dfc9' : pal.awning, 0, 0, -s * 0.45);
+      }
+    }
+    // the brick gable ends, each with a wheel window, the street one with a clock
+    for (const e of [1, -1]) {
+      const z = hz + e * (hd / 2 + 0.02);
+      gb.cbox(0, 0, z, nw + 2 * aw + 0.04, ah + 0.04, 0.06, shade(brick, 0.95), 0, 0.01);
+      gb.cbox(0, 0, z, nw + 0.06, nh, 0.06, brick, 0, 0.01);
+      gb.roof(0, nh, z, 0.06, nw + 0.06, 0.3, 0.06, brick, Math.PI / 2);
+      gb.push(0, 0, z, e > 0 ? 0 : Math.PI);
+      gb.cyl(0, nh - 0.04, 0.03, 0.18, 0.18, 0.008, 16, trim, 0, Math.PI / 2);
+      gb.glow(1.6, 1.4, 1.0, 1.5); gb.cyl(0, nh - 0.04, 0.034, 0.16, 0.16, 0.008, 16, GLASS_ROOF, 0, Math.PI / 2); gb.noGlow();
+      for (let k = 0; k < 4; k++) gb.boxC(0, nh - 0.04, 0.044, 0.32, 0.012, 0.006, IRON, 0, 0, (k * Math.PI) / 4);
+      gb.pop();
+    }
+    door(c, 0, fz + 0.05, 0.2, 0.26, '#3a3230');
+    gb.cyl(0, 0.26, fz + 0.054, 0.1, 0.1, 0.012, 12, '#3a3230', 0, Math.PI / 2);
+    sign(c, 0, ah - 0.06, fz + 0.06, 0.5, 0.06, '#3b2f2a');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, ah - 0.045, fz + 0.068, 0.42, 0.03, 0.008, '#e0c070'); gb.noGlow();
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, nh + 0.22, fz + 0.054, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+    // flower and fruit stalls on the pavement
+    marketStall(c, -0.62, 0.84, 0, 0.55, pal.awning);
+    marketStall(c, 0.62, 0.84, 0, 0.55, pal.awning2);
+    lamp(c, -0.3, 0.86, 0.3); lamp(c, 0.3, 0.86, 0.3);
+  }
+  if (f.turned) gb.pop();
+};
+
+// Grand Galleria: four three-storey blocks of shops round a cross of glazed
+// arcades, a glass dome over the crossing and a triumphal arch on the street.
+function galleria(c) {
+  const { gb, rng, pal } = c;
+  const wall = pal.stoneWall, trim = '#e3dccd', roof = pal.slate, A = 0.25, H = 0.78;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    house(c, {
+      x: sx * 0.6, z: sz * 0.6, w: 0.64, d: 0.62, h: H, floors: 3, wall, roof, roofType: 'hip', rh: 0.2, plinth: STONE_D, noDoor: true,
+      nFront: 3, fancy: false, chimney: true, chimneyPos: 'center', shopWindow: true, lit: 0.9,
+    });
+    for (let k = 1; k < 3; k++) gb.box(sx * 0.6, k * 0.26 - 0.008, sz * 0.6, 0.66, 0.014, 0.64, trim);
+  }
+  // the glazed arcades and the dome where they cross
+  gb.box(0, 0, 0, 2 * A, 0.01, 1.9, '#d8d0c0');
+  gb.box(0, 0, 0, 1.9, 0.01, 2 * A, '#d8d0c0');
+  for (const along of [true, false]) {
+    const w = along ? 2 * A : 1.86, d = along ? 1.86 : 2 * A;
+    gb.gable(0, H, 0, w, d, 0.22, '#5a6268', '#4a5258', 0.02, along, 0.014);
+    glassRoof(c, 0, H, 0, w, d, 0.22, along, 10);
+  }
+  gb.cyl(0, H + 0.12, 0, 0.3, 0.3, 0.14, 16, trim);
+  gb.glow(1.6, 1.4, 1.0, 1.5); gb.sphere(0, H + 0.26, 0, 0.29, GLASS_ROOF, 1, 0.8); gb.noGlow();
+  // iron ribs up the dome, each lying along its curve halfway up
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2, r = 0.29 * Math.SQRT1_2 * 1.04;
+    gb.boxC(Math.cos(a) * r, H + 0.26 + 0.29 * 0.8 * Math.SQRT1_2 * 1.04, Math.sin(a) * r, 0.012, 0.012, 0.2, IRON, -0.675, Math.atan2(-Math.cos(a), -Math.sin(a)));
+  }
+  gb.cyl(0, H + 0.48, 0, 0.05, 0.05, 0.08, 8, trim);
+  gb.cone(0, H + 0.56, 0, 0.06, 0.08, 8, '#5f7f86');
+  // a triumphal arch on the street, smaller glazed screens at the other ends
+  const fz = 0.82;
+  gb.cbox(0, 0, fz, 2 * A + 0.14, H + 0.2, 0.08, trim, 0, 0.012);
+  door(c, 0, fz + 0.04, 0.22, 0.3, '#2a2422');
+  gb.cyl(0, 0.3, fz + 0.044, 0.11, 0.11, 0.012, 12, '#2a2422', 0, Math.PI / 2);
+  gb.glow(1.6, 1.4, 1.0, 1.5); gb.cyl(0, 0.3, fz + 0.05, 0.085, 0.085, 0.008, 12, GLASS_ROOF, 0, Math.PI / 2); gb.noGlow();
+  for (const s of [-1, 1]) gb.cyl(s * 0.19, 0.02, fz + 0.06, 0.018, 0.02, H - 0.05, 8, '#f2ede0');
+  gb.box(0, H + 0.03, fz + 0.045, 2 * A + 0.1, 0.06, 0.012, '#3b2f2a');
+  gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H + 0.045, fz + 0.053, 2 * A, 0.03, 0.006, '#e0c070'); gb.noGlow();
+  for (const [x, z, ry] of [[0, -0.9, Math.PI], [0.9, 0, Math.PI / 2], [-0.9, 0, -Math.PI / 2]]) {
+    gb.push(x, 0, z, ry);
+    gb.cbox(0, 0, 0, 2 * A + 0.06, H, 0.05, trim, 0, 0.01);
+    gb.box(0, 0, 0.026, 0.18, 0.26, 0.01, '#2a2422');
+    gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, 0.32, 0.026, 2 * A - 0.08, H - 0.4, 0.01, GLASS_ROOF); gb.noGlow();
+    gb.pop();
+  }
+  // flags on the dome, lamps and flower stalls in front
+  for (const s of [-1, 1]) { gb.box(s * 0.36, H + 0.2, 0.36, 0.01, 0.3, 0.01, '#3a3a3e'); gb.box(s * 0.36 + 0.05, H + 0.42, 0.36, 0.1, 0.06, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#d9b84a'])); }
+  lamp(c, -0.3, 0.92, 0.32); lamp(c, 0.3, 0.92, 0.32);
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) flowers(c, s * (0.4 + i * 0.14), 0.95, 3, 0.02);
+}
+
+// Coaching House: the inn on the street with a carriage arch through to a
+// cobbled yard, stables down both sides and the coach house across the back.
+MODELS.coachinginn = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const floors = L + 2, fh = 0.26, h = floors * fh, D = 0.46, W = 1.76, fz = 0.6, ff = fz + D / 2, bf = fz - D / 2;
+  const grand = L === 2, wall = grand ? '#ebe4d6' : pal.wall, roof = grand ? pal.slate : pal.roof;
+  const ax = (rng.chance(0.5) ? 1 : -1) * 0.46, aw = 0.16, ah = 0.25, dx = -Math.sign(ax) * 0.12;
+  const jet = !grand && pal.timber && pal.jetty ? 0.03 : 0;
+  footing(c, 0, fz, W, D);
+  gb.cbox(0, 0, fz, W, fh, D, wall, 0, 0.02);
+  gb.cbox(0, fh, fz, W + jet * 2, h - fh, D + jet * 2, wall, 0, 0.018);
+  if (jet) gb.box(0, fh - 0.012, fz, W + jet * 2 + 0.01, 0.024, D + jet * 2 + 0.01, TIMBER);
+  if (!grand && pal.timber) { gb.push(0, 0, fz); timber(c, W + jet * 2, D + jet * 2, h, floors); gb.pop(); }
+  door(c, dx, ff, 0.1, 0.18, pal.door);
+  // the carriage arch, right through to the yard
+  for (const [z, e] of [[ff, 1], [bf, -1]]) {
+    gb.cyl(ax, ah - aw / 2, z + (e > 0 ? 0.002 : -0.012), aw / 2 + 0.025, aw / 2 + 0.025, 0.01, 12, STONE, 0, Math.PI / 2);
+    gb.box(ax, 0, z + e * 0.008, aw + 0.05, ah - aw / 2, 0.01, STONE);
+    gb.box(ax, 0, z + e * 0.012, aw, ah - aw / 2, 0.012, '#2a2018');
+    gb.cyl(ax, ah - aw / 2, z + (e > 0 ? 0.006 : -0.018), aw / 2, aw / 2, 0.012, 12, '#2a2018', 0, Math.PI / 2);
+  }
+  const n = 9, bw = W / n;
+  for (let k = 0; k < floors; k++) for (let i = 0; i < n; i++) {
+    const x = -W / 2 + (i + 0.5) * bw, y = k * fh + fh * 0.36, jz = k ? jet : 0;
+    const hole = k === 0 && Math.abs(x - ax) < aw / 2 + 0.07;
+    if (!hole && !(k === 0 && Math.abs(x - dx) < 0.12)) win(c, x, y, ff + jz, 0.075, 0.1, 'f', 0.95);
+    if (!hole && rng.chance(0.75)) win(c, x, y, bf - jz, 0.075, 0.1, 'b', 0.9);
+  }
+  for (const s of [-1, 1]) for (let k = 0; k < floors; k++) win(c, s * (W / 2 + (k ? jet : 0)), k * fh + fh * 0.36, fz, 0.07, 0.1, s > 0 ? 'r' : 'l', 0.9);
+  const rh = 0.28;
+  if (grand) gb.hip(0, h, fz, W + 0.02, D + 0.02, 0.3, roof, 0.05);
+  else gb.gable(0, h, fz, W + jet * 2 + 0.02, D + jet * 2, rh, wall, roof, 0.05, false, 0.035);
+  for (const s of [-1, 1]) chimney(c, s * W * 0.36, h - 0.05, h + (grand ? 0.38 : rh + 0.08), fz, 'home', stackColor(c));
+  if (L >= 1) {
+    for (const x of [-0.5, 0, 0.5]) {
+      const dz = fz + (D / 2) * 0.42, dy = h + (grand ? 0.3 : rh) * 0.1;
+      gb.cbox(x, dy, dz, 0.1, 0.12, 0.12, wall, 0, 0.012);
+      gb.gable(x, dy + 0.12, dz, 0.1, 0.13, 0.07, wall, roof, 0.025, true, 0.022);
+      win(c, x, dy + 0.025, dz + 0.06, 0.05, 0.065, 'f');
+    }
+  }
+  // the hanging sign, lanterns by the arch, benches and barrels outside
+  const sx = -Math.sign(ax) * 0.84;
+  gb.box(sx, h * 0.5, ff + 0.06, 0.012, 0.012, 0.12, '#2f2c2a');
+  sign(c, sx, h * 0.5 - 0.12, ff + 0.11, 0.11, 0.11, rng.pick(['#7a3a2a', '#2f4a6a', '#3f5a3a']), Math.PI / 2);
+  for (const s of [-1, 1]) { gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(ax + s * 0.12, 0.26, ff + 0.03, 0.04, 0.05, 0.04, '#ffe2a0'); gb.noGlow(); }
+  bench(c, dx - Math.sign(ax) * 0.26, ff + 0.1, Math.PI);
+  barrel(c, -Math.sign(ax) * 0.62, ff + 0.07); barrel(c, -Math.sign(ax) * 0.68, ff + 0.1, 0.9);
+  if (grand) {
+    // a veranda along the street, and flags on the roof
+    for (let i = 0; i < 8; i++) gb.cyl(-W / 2 + 0.1 + (i * (W - 0.2)) / 7, 0, ff + 0.1, 0.012, 0.014, 0.26, 6, '#ece6da');
+    gb.box(0, 0.26, ff + 0.06, W - 0.1, 0.02, 0.14, '#ece6da');
+    for (const x of [-0.3, 0.3]) { gb.box(x, h + 0.12, fz, 0.01, 0.3, 0.01, '#3a3a3e'); gb.box(x + 0.05, h + 0.34, fz, 0.1, 0.06, 0.004, rng.pick(['#a8473a', '#3f6a8f'])); }
+    lamp(c, -0.7, 0.95, 0.3); lamp(c, 0.7, 0.95, 0.3);
+  }
+  // the yard: stables down both sides...
+  const cz = -0.76, cd = 0.32, ch = L ? 0.4 : 0.34;
+  const yz0 = cz + cd / 2, sh = L ? 0.46 : 0.28, sd = bf - yz0 - 0.06, szc = (bf + yz0) / 2 - 0.03, timberSide = L ? shade(wall, 0.95) : pal.wood;
+  for (const s of [-1, 1]) {
+    const x = s * (W / 2 - 0.15), w = 0.3, inner = x - (s * w) / 2, face = s > 0 ? 'l' : 'r';
+    footing(c, x, szc, w, sd);
+    gb.cbox(x, 0, szc, w, sh, sd, timberSide, 0, 0.012);
+    gb.gable(x, sh, szc, w, sd, 0.16, timberSide, pal.roof, 0.04, true, 0.03);
+    for (let i = 0; i < 4; i++) {
+      const z = szc - sd / 2 + (i + 0.5) * (sd / 4);
+      plainDoor(c, inner, z, 0.07, 0.15, '#5e432c', face);
+      gb.box(inner - s * 0.012, 0.075, z, 0.008, 0.008, 0.075, '#3f342c');
+      if (L) win(c, inner, 0.3, z, 0.06, 0.08, face, 0.7);
+      else win(c, x + (s * w) / 2, 0.08, z, 0.05, 0.06, s > 0 ? 'r' : 'l', 0.4);
+    }
+  }
+  // ...and the coach house across the back, open to the yard
+  footing(c, 0, cz, W, cd);
+  gb.box(0, 0, cz - cd / 2 + 0.01, W, ch, 0.02, timberSide);
+  for (const s of [-1, 1]) gb.box(s * (W / 2 - 0.01), 0, cz, 0.02, ch, cd, timberSide);
+  for (let i = 0; i <= 4; i++) gb.box(-W / 2 + 0.02 + (i * (W - 0.04)) / 4, 0, cz + cd / 2 - 0.02, 0.03, ch, 0.03, '#5e432c');
+  gb.box(0, 0.002, cz, W - 0.04, 0.01, cd - 0.04, '#3a3230');
+  gb.gable(0, ch, cz, W + 0.02, cd + 0.02, 0.16, timberSide, pal.roof, 0.04, false, 0.03);
+  coach(c, -0.22, cz + 0.02, Math.PI / 2, rng.pick(['#3f5466', '#5a2a2a', '#2f4a3a']));
+  if (L) {
+    // a clock turret over the coach house
+    gb.cbox(0, ch + 0.08, cz, 0.1, 0.12, 0.1, '#ece6da', 0, 0.008);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, ch + 0.14, cz + 0.051, 0.032, 0.032, 0.006, 10, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+    gb.roof(0, ch + 0.2, cz, 0.12, 0.12, 0.1, 0, pal.slate);
+    gb.box(0, ch + 0.3, cz, 0.008, 0.06, 0.008, '#c9a43a');
+    coach(c, 0.18, -0.12, 0.3, '#3f5466');
+    horse(c, 0.2, 0.08, 0.3);
+  }
+  // in the yard: a trough and pump, hay, barrels and a horse waiting
+  const tx = -Math.sign(ax) * 0.38, ty = c.gy(tx, -0.3);
+  gb.cbox(tx, ty - 0.01, -0.3, 0.16, 0.05, 0.06, STONE, 0, 0.008);
+  gb.box(tx, ty + 0.035, -0.3, 0.14, 0.008, 0.045, POOL);
+  gb.cyl(tx + 0.1, ty, -0.3, 0.014, 0.016, 0.14, 6, '#3a3a3e');
+  gb.box(tx + 0.1, ty + 0.12, -0.28, 0.008, 0.008, 0.05, '#3a3a3e');
+  horse(c, tx, -0.18, Math.PI / 2, rng.pick(['#7a4a2a', '#4a3a30', '#c8b8a0']));
+  for (let i = 0; i < 3; i++) hayBale(c, Math.sign(ax) * 0.5, 0.1 - i * 0.08, 0);
+  barrel(c, Math.sign(ax) * 0.52, 0.22); barrel(c, Math.sign(ax) * 0.46, 0.25, 0.9);
+  if (f.turned) gb.pop();
+};
+
+// Timber Works: the counting house at the gate, a sawmill (with an engine
+// house and a tall stack at Steam Sawmills), drying sheds of planks and a
+// yard of logs with a crane.
+MODELS.timberworks = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  house(c, {
+    x: 0.63, z: 0.67, w: 0.42, d: 0.3, h: 0.3, floors: 1, wall: L ? pal.brick : pal.wall, roof: pal.slate, roofType: 'gable', rh: 0.16,
+    nFront: 2, doorX: -0.08, chimney: true, chimneyPos: 'center', fancy: false, lit: 0.8,
+  });
+  sign(c, 0.63, 0.2, 0.825, 0.24, 0.05, '#3b2f2a');
+  // the sawmill, its big doors open to the yard and a louvre on the ridge
+  const mx = -0.42, mz = -0.5, mw = 0.96, md = 0.66, mh = L ? 0.6 : 0.46, mf = mz + md / 2;
+  worksShed(c, mx, mz, mw, md, mh, 2, L ? pal.brick : pal.wood, pal.slate, 0.24, (u) => Math.abs(u - mx) < 0.2);
+  gb.box(mx, 0, mf + 0.004, 0.25, 0.21, 0.01, '#2a2018');
+  gb.box(mx + 0.2, 0, mf + 0.012, 0.13, 0.22, 0.01, '#6e5034');
+  gb.box(mx + 0.06, 0.225, mf + 0.016, 0.44, 0.012, 0.01, IRON);
+  gb.cbox(mx, mh + 0.2, mz, 0.34, 0.06, 0.12, pal.wood, 0, 0.008);
+  gb.gable(mx, mh + 0.26, mz, 0.38, 0.14, 0.05, pal.wood, pal.slate, 0.02, false, 0.02);
+  if (!L) chimney(c, mx - mw * 0.36, mh - 0.06, mh + 0.34, mz, 'work', '#7f3f2e');
+  else {
+    // the engine house and its tall stack
+    const ex = 0.2, ez = -0.66;
+    footing(c, ex, ez, 0.28, 0.36);
+    gb.cbox(ex, 0, ez, 0.28, 0.46, 0.36, pal.brick, 0, 0.014);
+    gb.hip(ex, 0.46, ez, 0.28, 0.36, 0.12, pal.slate, 0.03);
+    for (const z of [ez - 0.08, ez + 0.08]) { win(c, ex + 0.14, 0.14, z, 0.06, 0.18, 'r', 0.9); win(c, ex - 0.14, 0.14, z, 0.06, 0.18, 'l', 0.9); }
+    win(c, ex, 0.14, ez + 0.18, 0.08, 0.18, 'f', 0.9);
+    gb.cyl(ex, 0, -0.88, 0.05, 0.075, 1.45, 10, '#7f3f2e');
+    gb.cyl(ex, 1.45, -0.88, 0.062, 0.062, 0.04, 10, '#5e2e22');
+    c.addSmoke(ex, 1.52, -0.88, 'heavy');
+  }
+  // the drying sheds, open-fronted and stacked with planks
+  shed(c, 0.66, -0.5, 0.56, 0.68, 0.36, pal.roof);
+  for (const [x, z] of [[0.52, -0.62], [0.8, -0.62], [0.52, -0.38], [0.8, -0.38]]) plankStack(c, x, z, rng.int(3, 5), Math.PI / 2);
+  // the yard: logs waiting for the saw, stacks of sawn timber, sawdust
+  logs(c, -0.86, 0.06, 4, 0); logs(c, -0.86, 0.34, 3, 0); logs(c, -0.56, 0.2, 4, 0.08);
+  for (const [x, z, n] of [[0.0, 0.08, 5], [0.22, 0.08, 4], [0.0, 0.4, 3]]) plankStack(c, x, z, n, Math.PI / 2);
+  gb.blob(-0.08, c.gy(-0.08, -0.08), -0.08, 0.1, 0.05, 0.08, '#d4bc88');
+  gb.blob(0.32, c.gy(0.32, 0.36), 0.36, 0.06, 0.03, 0.05, '#d4bc88');
+  sawhorse(c, -0.3, 0.52, 0.4); sawhorse(c, 0.36, -0.08, -0.2);
+  const by = c.gy(0.4, 0.42);
+  gb.cbox(0.4, by, 0.42, 0.18, 0.06, 0.08, '#7a5a3c', 0, 0.006);
+  gb.cyl(0.4, by + 0.06, 0.42, 0.04, 0.04, 0.006, 12, '#b8b8bc', 0, 0, Math.PI / 2);
+  if (L) {
+    // a gantry crane over the log pile
+    for (const x of [-0.9, -0.36]) {
+      const y = c.gy(x, 0.2);
+      for (const a of [-0.25, 0.25]) gb.boxC(x, y + 0.31, 0.2, 0.016, 0.64, 0.016, '#5e432c', a, 0, 0);
+    }
+    gb.box(-0.63, c.gy(-0.63, 0.2) + 0.6, 0.2, 0.62, 0.03, 0.03, '#3a3a3e');
+    gb.box(-0.6, c.gy(-0.6, 0.2) + 0.58, 0.2, 0.06, 0.03, 0.05, '#c09040');
+    gb.box(-0.6, c.gy(-0.6, 0.2) + 0.36, 0.2, 0.004, 0.22, 0.004, '#d9cfb4');
+    gb.cyl(-0.7, c.gy(-0.6, 0.2) + 0.33, 0.2, 0.024, 0.024, 0.2, 6, '#7d5b3b', 0, 0, Math.PI / 2);
+    lamp(c, 0.12, 0.88, 0.3); lamp(c, 0.38, 0.88, 0.3);
+  } else ginPole(c, -0.66, 0.5, 0.62, Math.PI / 2);
+  // a timber wagon by the gate
+  const wx = 0.06, wz = 0.74, wy = c.gy(wx, wz);
+  gb.push(wx, wy, wz, 0.1);
+  gb.cbox(0, 0.05, 0, 0.1, 0.03, 0.32, '#86663f', 0, 0.006);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.058, 0.036, sz * 0.11, 0.036, 0.036, 0.01, 8, '#4e3a2a', 0, 0, Math.PI / 2);
+  for (const sx of [-0.022, 0.022]) gb.cyl(sx, 0.1, -0.15, 0.022, 0.022, 0.3, 6, '#7d5b3b', 0, Math.PI / 2);
+  gb.pop();
+  fence(c, -0.95, -0.95, 0.95, 0.95, FENCE, { x: 0.25, z: 0.95, w: 0.14 });
+  if (f.turned) gb.pop();
+};
+
+// Cathedral Close: the cathedral down one side of the plot, its west front
+// and towers on the street, and the school and deanery round a green close.
+MODELS.cathedralclose = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const stone = pal.stoneWall, roof = pal.slate, dark = shade(stone, 0.8);
+  const side = rng.chance(0.5) ? 1 : -1, cx = -side * 0.46;
+  const nw = 0.4, nh = L ? 0.62 : 0.52, nd = 1.08, nz = -0.1, wz = nz + nd / 2, zc = nz - nd / 2 + 0.3;
+  // the west door first: it is the way in
+  door(c, cx, wz, 0.12, 0.22, '#4e3424');
+  footing(c, cx, nz, nw + 0.24, nd);
+  gb.cbox(cx, 0, nz, nw, nh, nd, stone, 0, 0.02);
+  gb.gable(cx, nh, nz, nw, nd, 0.32, stone, roof, 0.05, true, 0.035);
+  // aisles under lean-to roofs, coloured glass and buttresses down the sides
+  for (const s of [-1, 1]) {
+    const ax = cx + s * (nw / 2 + 0.06), ah = nh * 0.55;
+    gb.cbox(ax, 0, nz + 0.02, 0.12, ah, nd - 0.16, stone, 0, 0.012);
+    gb.wedge(ax, ah, nz + 0.02, nd - 0.12, 0.16, 0.08, roof, (s * Math.PI) / 2);
+    for (let i = 0; i < 5; i++) {
+      const z = nz - nd / 2 + 0.16 + (i * (nd - 0.3)) / 4;
+      if (Math.abs(z - zc) < 0.16) continue;
+      stainedGlass(c, ax + s * 0.062, 0.08, z, 0.05, ah * 0.6, i + (s > 0 ? 0 : 1), 'r');
+      stainedGlass(c, cx + s * (nw / 2 + 0.007), ah + 0.07, z, 0.05, (nh - ah) * 0.6, i + 2, 'r');
+      gb.cbox(ax + s * 0.07, 0, z + 0.1, 0.04, ah * 0.85, 0.05, dark, 0, 0.008);
+    }
+  }
+  // the transepts and the crossing tower (a spire on the Cathedral Close)
+  const tw = 0.84;
+  footing(c, cx, zc, tw, 0.32);
+  gb.cbox(cx, 0, zc, tw, nh, 0.32, stone, 0, 0.016);
+  gb.gable(cx, nh, zc, tw, 0.32, 0.3, stone, roof, 0.05, false, 0.035);
+  for (const s of [-1, 1]) roseWindow(c, cx + s * (tw / 2 + 0.002), nh * 0.62, zc, 0.07, s);
+  const ct = nh + (L ? 0.62 : 0.36);
+  gb.cbox(cx, nh, zc, 0.26, ct - nh, 0.26, stone, 0, 0.012);
+  for (const [fx, fz] of [[0, 0.131], [0.131, 0], [-0.131, 0], [0, -0.131]]) gb.box(cx + fx, ct - 0.2, zc + fz, Math.abs(fz) ? 0.06 : 0.01, 0.13, Math.abs(fx) ? 0.06 : 0.01, '#2a2826');
+  parapet(c, cx, ct, zc, 0.26, 0.26, stone);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cone(cx + sx * 0.11, ct + 0.02, zc + sz * 0.11, 0.025, 0.14, 6, roof);
+  if (L) { gb.cone(cx, ct, zc, 0.12, 0.72, 8, roof, Math.PI / 8); gb.box(cx, ct + 0.72, zc, 0.01, 0.07, 0.01, '#c9a43a'); }
+  // the choir and its round apse at the east end
+  gb.cbox(cx, 0, -0.7, 0.34, nh * 0.9, 0.18, stone, 0, 0.012);
+  gb.gable(cx, nh * 0.9, -0.7, 0.34, 0.18, 0.24, stone, roof, 0.04, true, 0.03);
+  gb.cyl(cx, 0, -0.79, 0.16, 0.16, nh * 0.85, 10, stone);
+  gb.cone(cx, nh * 0.85, -0.79, 0.18, 0.2, 10, roof);
+  for (const a of [-0.7, 0, 0.7]) stainedGlass(c, cx + Math.sin(a) * 0.165, 0.12, -0.79 - Math.cos(a) * 0.165, 0.04, nh * 0.42, 1, 'b', -a);
+  // the west front: two towers, a rose window over the door
+  const th = L ? 1.3 : 1.06;
+  for (const s of [-1, 1]) {
+    const tx = cx + s * 0.19, tz = wz - 0.04;
+    footing(c, tx, tz, 0.17, 0.17);
+    gb.cbox(tx, 0, tz, 0.17, th, 0.17, stone, 0, 0.014);
+    gb.box(tx, th * 0.7, tz + 0.086, 0.05, 0.13, 0.012, '#2a2826');
+    gb.box(tx + s * 0.086, th * 0.7, tz, 0.012, 0.13, 0.05, '#2a2826');
+    if (L) gb.cone(tx, th, tz, 0.12, 0.42, 8, roof, Math.PI / 8);
+    else { parapet(c, tx, th, tz, 0.17, 0.17, stone); for (const a of [-1, 1]) for (const b2 of [-1, 1]) gb.cone(tx + a * 0.07, th + 0.02, tz + b2 * 0.07, 0.022, 0.12, 6, roof); }
+  }
+  roseWindow(c, cx, nh * 0.66, wz, 0.08);
+  gb.box(cx, 0.22, wz + 0.006, 0.16, 0.05, 0.012, dark);
+  // the school down the far side of the close, a bellcote on its roof
+  const sx = side * 0.76, sh = L ? 0.78 : 0.52;
+  house(c, {
+    x: sx, z: -0.1, ry: (-side * Math.PI) / 2, w: 0.96, d: 0.32, h: sh, floors: L ? 3 : 2, wall: stone, roof, roofType: 'gable', rh: 0.22,
+    nFront: 5, doorX: 0, doorW: 0.1, chimney: true, chimneyPos: 'ends', plinth: STONE, fancy: false, lit: 0.85,
+  });
+  gb.cbox(sx, sh + 0.12, -0.1, 0.08, 0.12, 0.08, stone, 0, 0.006);
+  gb.roof(sx, sh + 0.24, -0.1, 0.11, 0.11, 0.08, 0, roof);
+  gb.box(sx, sh + 0.15, -0.1, 0.03, 0.04, 0.09, '#c9a43a');
+  // the deanery across the back
+  house(c, { x: side * 0.32, z: -0.76, w: 0.44, d: 0.3, h: 0.46, floors: 2, wall: pal.wall, roof: pal.roof, roofType: 'gable', rh: 0.22, nFront: 3, doorX: 0, chimney: true, chimneyPos: 'ends', plinth: STONE });
+  // the green: lawn, paths, trees, the old graves by the church
+  const gx = side * 0.3;
+  gb.box(gx, c.gy(gx, 0.15) - 0.008, 0.15, 0.56, 0.012, 1.4, LAWN_G);
+  gravel(c, gx, 0.62, 0.56, 0.08);
+  gravel(c, gx, 0.79, 0.08, 0.34);
+  gravel(c, side * 0.5, 0.2, 0.08, 0.84);
+  gravel(c, cx, 0.75, 0.42, 0.4, '#b8b0a2');
+  smallTree(c, side * 0.18, 0.3, 1.1); smallTree(c, side * 0.4, -0.38, 1);
+  for (let i = 0; i < 6; i++) { const x = side * (0.06 + (i % 2) * 0.08), z = -0.42 + Math.floor(i / 2) * 0.16; gb.cbox(x, c.gy(x, z) - 0.01, z, 0.05, 0.07, 0.016, '#a39e94', 0, 0.006); }
+  bench(c, side * 0.32, 0.5, Math.PI); bench(c, side * 0.12, -0.1, side > 0 ? -Math.PI / 2 : Math.PI / 2);
+  frontage(c, side > 0 ? 0.0 : -0.95, side > 0 ? 0.95 : 0.0, 0.95, [gx], L ? 'railings' : 'wall');
+  if (L) {
+    // a covered walk along the cathedral where it faces the close
+    const px = cx + side * 0.4;
+    for (let i = 0; i < 6; i++) gb.box(px, 0, nz - 0.4 + i * 0.16, 0.014, 0.2, 0.014, '#cfc6b4');
+    gb.wedge(px - side * 0.04, 0.2, nz, 0.9, 0.12, 0.05, roof, (side * Math.PI) / 2);
+    lamp(c, cx - 0.2, 0.92, 0.3); lamp(c, cx + 0.2, 0.92, 0.3);
+  }
+  if (f.turned) gb.pop();
+};
+
+// Infirmary Court: a gatehouse under a red cross, rooms round a garden court,
+// the ward block and its chapel across the back.
+MODELS.infirmary = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const wall = L ? pal.stoneWall : pal.wall, roof = L ? pal.slate : pal.roof, RD = 0.32, fh = 0.28, floors = L ? 2 : 1, h = floors * fh;
+  const W = 1.84, fz = 0.66, gw = 0.34, gd = RD + 0.08, gh = h + 0.26, gf = fz + gd / 2;
+  const wz = -0.72, wf = wz + 0.18, sz0 = fz - RD / 2;   // the ward block's court face, the street range's
+  footing(c, 0, fz, gw, gd);
+  gb.cbox(0, 0, fz, gw, gh, gd, '#ebe4d6', 0, 0.016);
+  gb.hip(0, gh, fz, gw, gd, 0.16, roof, 0.04);
+  door(c, 0, gf, 0.11, 0.19, '#3f4f5a');
+  plainDoor(c, 0, fz - gd / 2, 0.11, 0.19, '#3f4f5a', 'b');
+  gb.box(0, 0.25, gf + 0.002, 0.09, 0.09, 0.008, '#c8423a');
+  gb.box(0, 0.28, gf + 0.006, 0.006, 0.07, 0.006, '#f2ede0'); gb.box(0, 0.31, gf + 0.006, 0.07, 0.006, 0.006, '#f2ede0');
+  for (const s of [-1, 1]) win(c, s * 0.09, gh - 0.17, gf, 0.065, 0.09, 'f', 0.9);
+  if (L) {
+    gb.cbox(0, gh + 0.12, fz, 0.1, 0.1, 0.1, '#ebe4d6', 0, 0.008);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, gh + 0.17, fz + 0.051, 0.03, 0.03, 0.006, 10, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+    gb.roof(0, gh + 0.22, fz, 0.12, 0.12, 0.09, 0, pal.slate);
+  }
+  // rooms on the street either side of the gate, and down both sides
+  for (const s of [-1, 1]) {
+    const len = W / 2 - gw / 2;
+    courtRange(c, s * (gw / 2 + len / 2), fz, len, RD, h, floors, wall, roof, false, -1, 3, true);
+    courtRange(c, s * (W / 2 - RD / 2), (wf + sz0) / 2, sz0 - wf, RD, h, floors, wall, roof, true, -s, 4, true);
+  }
+  // the ward block across the back, its chapel reaching into the court
+  house(c, {
+    x: 0, z: wz, w: W, d: 0.36, h: L ? 0.84 : 0.56, floors: L ? 3 : 2, wall: L ? pal.stoneWall : '#ebe4d6', roof, roofType: 'hip', rh: 0.22,
+    noDoor: true, nFront: 9, fancy: false, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.85,
+  });
+  const chz = -0.44, chh = L ? 0.5 : 0.42;
+  gb.cbox(0, 0, chz, 0.24, chh, 0.2, '#ebe4d6', 0, 0.012);
+  gb.gable(0, chh, chz, 0.24, 0.2, 0.18, '#ebe4d6', roof, 0.04, true, 0.03);
+  stainedGlass(c, 0, 0.12, chz + 0.102, 0.05, chh * 0.5, 0, 'f');
+  for (const s of [-1, 1]) stainedGlass(c, s * 0.122, 0.12, chz, 0.04, chh * 0.4, 1, 'r');
+  gb.cbox(0, chh + 0.1, chz + 0.06, 0.06, 0.08, 0.04, '#ebe4d6', 0, 0.006);
+  gb.box(0, chh + 0.18, chz + 0.06, 0.008, 0.06, 0.008, '#c9a43a');
+  // the garden court: lawn and walks, beds, benches, a well (a fountain later)
+  const gy = c.gy(0, 0.0), cd = sz0 - wf - 0.04;
+  gb.box(0, gy - 0.008, (wf + sz0) / 2, 1.16, 0.012, cd, LAWN_G);
+  gb.box(0, gy - 0.004, (wf + sz0) / 2, 0.08, 0.012, cd, GRAVEL);
+  gb.box(0, gy - 0.004, 0.1, 1.16, 0.012, 0.08, GRAVEL);
+  if (L) basin(c, 0, 0.1, 0.08, 0.1);
+  else {
+    gb.cyl(0, gy - 0.02, 0.1, 0.06, 0.07, 0.08, 10, STONE);
+    for (const s of [-1, 1]) gb.box(s * 0.05, gy + 0.06, 0.1, 0.012, 0.14, 0.012, '#4e3a2a');
+    gb.gable(0, gy + 0.2, 0.1, 0.14, 0.12, 0.05, '#6e4a2c', '#8a432e', 0.02);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) flowers(c, sx * 0.3, 0.1 + sz * 0.26, 6, 0.08);
+  smallTree(c, -0.42, -0.2, 0.9); smallTree(c, 0.42, 0.4, 0.85);
+  vegPatch(c, 0.38, -0.22);
+  bench(c, -0.18, 0.42, Math.PI); bench(c, 0.18, -0.22, 0);
+  if (L) {
+    lamp(c, -0.24, 0.96, 0.3); lamp(c, 0.24, 0.96, 0.3);
+    // a horse ambulance waiting at the gate
+    const ax = 0.5, az = 0.95 - 0.04;
+    gb.push(ax, c.gy(ax, az), az, Math.PI / 2);
+    gb.cbox(0, 0.05, 0, 0.11, 0.11, 0.2, '#ece6da', 0, 0.01);
+    gb.box(0, 0.09, 0.101, 0.04, 0.04, 0.004, '#c8423a');
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.062, 0.03, sz * 0.07, 0.03, 0.03, 0.01, 8, '#2a2018', 0, 0, Math.PI / 2);
+    gb.pop();
+  }
+  if (f.turned) gb.pop();
+};
+
+// College Quad: a gate tower on the street, battlemented ranges round a
+// lawned quadrangle, the chapel down one side, the library down the other
+// and the great hall across the back.
+MODELS.collegequad = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  c.arched = true;
+  const stone = pal.stoneWall, roof = pal.slate, dark = shade(stone, 0.85);
+  const floors = L ? 3 : 2, fh = 0.26, h = floors * fh, RD = 0.32, W = 1.84, fz = 0.64;
+  // the gate tower, its arch the way into the quad
+  const gw = 0.36, gd = RD + 0.1, gh = h + (L ? 0.48 : 0.34), gf = fz + gd / 2;
+  footing(c, 0, fz, gw, gd);
+  gb.cbox(0, 0, fz, gw, gh, gd, stone, 0, 0.016);
+  gb.cyl(0, 0.2, gf + 0.002, 0.1, 0.1, 0.01, 12, dark, 0, Math.PI / 2);
+  door(c, 0, gf, 0.14, 0.2, '#4e3424');
+  plainDoor(c, 0, fz - gd / 2, 0.14, 0.2, '#4e3424', 'b');
+  gb.cbox(0, 0.32, gf + 0.03, 0.16, 0.16, 0.06, stone, 0, 0.008);
+  gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(0, 0.35, gf + 0.062, 0.12, 0.1, 0.006, GLASS); gb.noGlow();
+  for (let k = 1; k < floors + 1; k++) win(c, 0, k * fh + 0.1, gf, 0.07, 0.1, 'f', 0.85);
+  parapet(c, 0, gh, fz, gw, gd, stone);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const x = sx * (gw / 2), z = fz + sz * (gd / 2);
+    gb.cyl(x, 0, z, 0.05, 0.055, gh + 0.12, 8, stone);
+    gb.cone(x, gh + 0.12, z, 0.06, 0.14, 8, roof);
+  }
+  if (L) {
+    // a lantern and an ogee dome over the gate (the Great Quadrangle's tower)
+    gb.cyl(0, gh, fz, 0.12, 0.12, 0.2, 8, stone);
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(Math.cos(a) * 0.115, gh + 0.06, fz + Math.sin(a) * 0.115, 0.03, 0.09, 0.03, GLASS, -a); gb.noGlow(); }
+    gb.sphere(0, gh + 0.24, fz, 0.13, roof, 1, 1.15);
+    gb.cone(0, gh + 0.36, fz, 0.05, 0.14, 8, roof);
+    gb.sphere(0, gh + 0.51, fz, 0.018, '#d9b84a', 0);
+  }
+  // the ranges on the street, either side of the gate
+  for (const s of [-1, 1]) {
+    const len = W / 2 - gw / 2, x = s * (gw / 2 + len / 2);
+    courtRange(c, x, fz, len, RD, h, floors, stone, roof, false, 0, 4, false, 0.14);
+    battlements(c, x, h, fz + RD / 2 - 0.02, len, false, stone);
+    battlements(c, x, h, fz - RD / 2 + 0.02, len, false, stone);
+  }
+  // the chapel down one side: tall coloured windows, buttresses, a slender spire
+  const side = rng.chance(0.5) ? 1 : -1, qz0 = -0.56, qz1 = fz - RD / 2, sl = qz1 - qz0, szc = (qz0 + qz1) / 2;
+  const chx = side * (W / 2 - RD / 2), chh = L ? 0.74 : 0.62;
+  footing(c, chx, szc, RD, sl);
+  gb.cbox(chx, 0, szc, RD, chh, sl, stone, 0, 0.016);
+  gb.gable(chx, chh, szc, RD, sl, 0.3, stone, roof, 0.05, true, 0.035);
+  for (let i = 0; i < 5; i++) {
+    const z = szc - sl / 2 + (i + 0.5) * (sl / 5);
+    for (const s of [-1, 1]) {
+      stainedGlass(c, chx + s * (RD / 2 + 0.007), 0.14, z, 0.05, chh * 0.6, i + (s > 0 ? 0 : 1), 'r');
+      if (i < 4) gb.cbox(chx + s * (RD / 2 + 0.02), 0, z + sl / 10, 0.04, chh * 0.8, 0.05, dark, 0, 0.008);
+    }
+  }
+  gb.cbox(chx, chh + 0.24, szc, 0.06, 0.1, 0.06, stone, 0, 0.006);
+  gb.cone(chx, chh + 0.34, szc, 0.05, 0.3, 6, roof);
+  // the library down the other side
+  courtRange(c, -side * (W / 2 - RD / 2), szc, sl, RD, h, floors, stone, roof, true, 0, 5, false, 0.14);
+  for (const s of [-1, 1]) battlements(c, -side * (W / 2 - RD / 2) + s * (RD / 2 - 0.02), h, szc, sl, true, stone);
+  // the great hall across the back, a louvre on its ridge and an oriel at the dais
+  const hz = -0.74, hd = 0.36, hh = L ? 0.86 : 0.7, hw = 1.24, hx = side * 0.3;
+  footing(c, hx, hz, hw, hd);
+  gb.cbox(hx, 0, hz, hw, hh, hd, stone, 0, 0.018);
+  gb.gable(hx, hh, hz, hw, hd, 0.32, stone, roof, 0.05, false, 0.035);
+  for (let i = 0; i < 6; i++) {
+    const x = hx - hw / 2 + (i + 0.5) * (hw / 6);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2 + rng.float(0, 0.5));
+    gb.box(x, 0.2, hz + hd / 2 + 0.006, 0.06, hh * 0.55, 0.014, GLASS);
+    gb.box(x, 0.2, hz - hd / 2 - 0.006, 0.06, hh * 0.55, 0.014, GLASS);
+    gb.noGlow();
+    if (i < 5) gb.cbox(x + hw / 12, 0, hz + hd / 2 + 0.02, 0.05, hh * 0.85, 0.04, dark, 0, 0.008);
+  }
+  gb.cbox(hx, hh + 0.24, hz, 0.12, 0.1, 0.12, stone, 0, 0.008);
+  gb.roof(hx, hh + 0.34, hz, 0.15, 0.15, 0.12, 0, roof);
+  gb.cbox(hx - side * (hw / 2 - 0.1), 0.18, hz + hd / 2 + 0.05, 0.14, 0.34, 0.1, stone, 0, 0.008);
+  gb.glow(WARM[0], WARM[1], WARM[2], 1.4); gb.box(hx - side * (hw / 2 - 0.1), 0.22, hz + hd / 2 + 0.102, 0.1, 0.26, 0.006, GLASS); gb.noGlow();
+  // the master's lodge in the last corner, a stack in the middle of its ridge
+  house(c, {
+    x: -side * 0.74, z: hz, w: 0.34, d: hd, h: L ? 0.72 : 0.52, floors: L ? 3 : 2, wall: stone, roof, roofType: 'gable', rh: 0.22, alongZ: true,
+    noDoor: true, nFront: 1, chimney: true, chimneyPos: 'center', fancy: false, lit: 0.85,
+  });
+  // the quad: a lawn not to be walked on, paths round it and across
+  const qw = W - 2 * RD - 0.06, qd = sl - 0.06, qzc = szc + 0.02, gy = c.gy(0, qzc);
+  gb.box(0, gy - 0.008, qzc, qw, 0.012, qd, LAWN_G);
+  gb.box(0, gy - 0.004, qzc, qw, 0.012, 0.06, GRAVEL);
+  gb.box(0, gy - 0.004, qzc, 0.06, 0.012, qd, GRAVEL);
+  if (L) basin(c, 0, qzc, 0.1, 0.12);
+  else {
+    gb.cbox(0, gy - 0.01, qzc, 0.06, 0.12, 0.06, STONE, 0, 0.008);
+    gb.cyl(0, gy + 0.11, qzc, 0.04, 0.04, 0.008, 10, '#c9a43a');
+  }
+  bench(c, -0.32, qzc - 0.4, 0); bench(c, 0.32, qzc + 0.4, Math.PI);
+  lamp(c, -0.3, 0.96, 0.3); lamp(c, 0.3, 0.96, 0.3);
+  if (f.turned) gb.pop();
+};
+
+// Landscape Park: a lake with an island and a boat, an avenue of trees up to
+// a temple on the rise, a winding walk, clumps of trees round the edge (a
+// bandstand, a palm house and a fountain in the lake at the Royal Park).
+MODELS.landscapepark = (c, L) => {
+  const { gb, rng } = c;
+  const f = rowFrame(c);
+  const side = rng.chance(0.5) ? 1 : -1;
+  // the lake: overlapping pools, their water as low as the ground under them
+  const lx = side * 0.36, lz = -0.3;
+  const pools = [[0, 0, 0.3], [side * 0.22, 0.14, 0.2], [-side * 0.2, -0.12, 0.19], [side * 0.06, -0.3, 0.17]];
+  let ly = Infinity;
+  for (const [px, pz, r] of pools) for (const [ox, oz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) ly = Math.min(ly, c.gy(lx + px + ox, lz + pz + oz));
+  for (const [px, pz, r] of pools) gb.cyl(lx + px, ly - 0.05, lz + pz, r + 0.03, r + 0.035, 0.05, 16, '#6f8a4a');
+  for (const [px, pz, r] of pools) gb.cyl(lx + px, ly - 0.03, lz + pz, r, r, 0.035, 16, POOL);
+  gb.blob(lx - side * 0.04, ly - 0.01, lz - 0.02, 0.07, 0.035, 0.06, '#6f8a4a');
+  gb.cyl(lx - side * 0.04, ly, lz - 0.02, 0.012, 0.016, 0.14, 5, '#5e432c');
+  gb.sphere(lx - side * 0.04, ly + 0.17, lz - 0.02, 0.07, rng.pick(LEAF), 1);
+  // a jetty and a rowing boat on the near shore
+  const jz = lz + 0.28, jy = ly + 0.008;
+  gb.box(lx + side * 0.06, jy, jz, 0.06, 0.012, 0.14, '#8a6a48');
+  gb.push(lx + side * 0.15, jy - 0.004, jz - 0.02, 0.3);
+  gb.cbox(0, 0, 0, 0.05, 0.024, 0.14, '#7a5a3c', 0, 0.01);
+  gb.box(0, 0.012, 0, 0.036, 0.014, 0.11, '#4e3a2a');
+  gb.pop();
+  if (L) { c.fountain = [lx, ly + 0.08, lz]; gb.cyl(lx, ly - 0.01, lz, 0.03, 0.04, 0.04, 8, STONE); }
+  // the avenue from the gate up to the temple on the rise
+  const ax = -side * 0.52;
+  gravel(c, ax, 0.28, 0.1, 1.36);
+  const pairs = L ? [0.78, 0.5, 0.22, -0.06] : [0.72, 0.4, 0.08];
+  for (const z of pairs) for (const s of [-1, 1]) smallTree(c, ax + s * 0.15, z, rng.float(0.95, 1.15));
+  if (L) for (const z of [0.64, 0.36]) for (const s of [-1, 1]) { const x = ax + s * 0.1, y = c.gy(x, z); gb.cbox(x, y - 0.01, z, 0.04, 0.06, 0.04, STONE, 0, 0.006); gb.cyl(x, y + 0.05, z, 0.01, 0.014, 0.07, 6, '#d8d2c4'); }
+  const tx = ax, tz = -0.58, ty = c.gy(tx, tz);
+  gb.cyl(tx, ty - 0.03, tz, 0.17, 0.19, 0.06, 12, STONE);
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.cyl(tx + Math.cos(a) * 0.13, ty + 0.03, tz + Math.sin(a) * 0.13, 0.012, 0.014, 0.22, 6, '#ece6da'); }
+  gb.cyl(tx, ty + 0.25, tz, 0.16, 0.16, 0.03, 12, '#ece6da');
+  gb.sphere(tx, ty + 0.28, tz, 0.15, '#8fa89a', 1, 0.6);
+  gb.cyl(tx, ty + 0.36, tz, 0.012, 0.012, 0.05, 6, '#ece6da');
+  gb.cyl(tx, ty + 0.03, tz, 0.025, 0.03, 0.12, 6, '#d8d2c4');
+  // a winding walk from the avenue round the near side of the lake
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8, x = ax + side * (0.12 + t * 0.9), z = 0.3 + Math.sin(t * Math.PI) * 0.12 - t * 0.12;
+    const dz = 0.12 * Math.PI * Math.cos(t * Math.PI) - 0.12;
+    gb.box(x, c.gy(x, z) - 0.006, z, 0.14, 0.012, 0.08, GRAVEL, Math.atan2(-dz, 0.9 * side));
+  }
+  for (const [x, z, ry] of [[lx - side * 0.1, 0.12, Math.PI], [lx + side * 0.3, 0.2, Math.PI], [ax + side * 0.1, -0.3, (-side * Math.PI) / 2]]) bench(c, x, z, ry);
+  // clumps of trees round the edge, a shrub beside each
+  const clumps = [[side * 0.74, -0.76, 1], [side * 0.04, -0.8, 1.1], [-side * 0.78, -0.82, 1], [-side * 0.08, 0.8, 1], [side * 0.78, 0.12, 1]];
+  if (!L) clumps.push([side * 0.76, 0.5, 1.2], [side * 0.56, 0.76, 1.1]);
+  for (const [x, z, s] of clumps) {
+    smallTree(c, x, z, s * rng.float(0.95, 1.1));
+    bush(c, x - Math.sign(x) * 0.13, z - Math.sign(z) * 0.08, rng.float(0.8, 1.1));
+  }
+  flowers(c, ax + side * 0.2, 0.82, 7, 0.07); flowers(c, ax - side * 0.2, 0.84, 6, 0.06);
+  if (L) {
+    // a bandstand on the lawn and a palm house in the corner by the lake
+    const bx = side * 0.15, bz = 0.6, by = c.gy(bx, bz);
+    gb.cyl(bx, by - 0.01, bz, 0.13, 0.14, 0.05, 8, STONE);
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.box(bx + Math.cos(a) * 0.11, by + 0.04, bz + Math.sin(a) * 0.11, 0.01, 0.16, 0.01, '#ece4d4'); }
+    gb.cone(bx, by + 0.2, bz, 0.16, 0.1, 8, '#3f5a46');
+    const px = side * 0.78, pz = 0.64, py = c.gy(px, pz);
+    gb.cbox(px, py - 0.01, pz, 0.2, 0.04, 0.4, STONE, 0, 0.008);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(px, py + 0.03, pz, 0.18, 0.14, 0.38, '#9fbcc0'); gb.noGlow();
+    gb.cyl(px, py + 0.17, pz - 0.19, 0.09, 0.09, 0.38, 10, '#c8dadc', 0, Math.PI / 2);
+    for (let i = 0; i < 3; i++) gb.sphere(px, py + 0.1, pz - 0.12 + i * 0.12, 0.04, rng.pick(LEAF), 0);
+    smallTree(c, side * 0.5, 0.82, 0.9);
+    for (const z of [0.9, 0.08]) for (const s of [-1, 1]) lamp(c, ax + s * 0.08, z, 0.3);
+  }
+  // a hedge round the park, gate piers at the avenue
+  frontage(c, -0.96, 0.96, 0.95, [ax], L ? 'railings' : 'hedge');
+  gatePiers(c, ax, 0.95, 0.16);
+  hedge(c, 0, -0.95, 1.9, 0.05); hedge(c, -0.95, 0, 0.05, 1.86); hedge(c, 0.95, 0, 0.05, 1.86);
   if (f.turned) gb.pop();
 };
 

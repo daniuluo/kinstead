@@ -2,7 +2,7 @@
 // card, and the full picture (every level, its needs and where it can lead)
 // in the Building guide window when one is picked.
 
-import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, servicesOf, unlockOf, techForLevel, workNeeded } from '../defs.js';
+import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, servicesOf, unlockOf, techForLevel, workNeeded } from '../defs.js';
 import { EDU } from '../sim/people.js';
 import { visitorCap, visitKind } from '../sim/agents.js';
 import { thumb } from './thumbs.js';
@@ -51,7 +51,7 @@ function needs(world, type, level) {
 
 function placement(def) {
   const out = [];
-  out.push(def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
+  out.push(def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
   if (!def.park) out.push('needs a road alongside');
   if (def.needsWater) out.push('must be beside water');
   if (def.needsRail) out.push('needs railway track alongside');
@@ -64,6 +64,21 @@ function lockText(world, type) {
   if (world.unlockPop < pop) return `Unlocks at ${pop} villagers`;
   if (!world.hasTech(def.tech)) return `Research ${TECHS[def.tech].name} first`;
   return null;
+}
+
+// The 2×2 estates a building can lead to: every double-plot building it can
+// become (grown, joined, branched or moved on a stage), and what each of
+// those can be rebuilt as on a 2×2 estate. [{ from, to }]
+function estatesFrom(type) {
+  const seen = new Set([type]), queue = [type], out = [];
+  while (queue.length) {
+    const t = queue.shift(), def = BUILDINGS[t];
+    for (const e of ESTATE[t] || []) if (!out.some(o => o.to === e)) out.push({ from: t, to: e });
+    const next = [...(LARGE[t] || []), ...(def.branches || []), ...Object.values(def.paths || {}).flat(), ...(def.stageNext || []),
+      ...MERGES.filter(m => m.a.includes(t) || m.b.includes(t)).map(m => m.to)];
+    for (const n of next) if (!seen.has(n) && !BUILDINGS[n].estate) { seen.add(n); queue.push(n); }
+  }
+  return out;
 }
 
 // The hover summary for a build menu card.
@@ -106,6 +121,20 @@ export function showBuildingGuide(ui, type) {
     if (other) more.push(`Joined with a neighbouring ${other.map(o => esc(BUILDINGS[o].levels[0].name.toLowerCase())).join(' or ')}: <b>${esc(BUILDINGS[m.to].levels[0].name)}</b>`);
   }
   if (more.length) h += `<div class="guide-more"><h5>Other paths</h5>${more.map(t => `<div>${t}</div>`).join('')}</div>`;
+  // and the 2×2 estates further along (Great Plots)
+  const estates = estatesFrom(type);
+  if (estates.length) {
+    h += `<div class="guide-estates"><h5>On a 2×2 estate</h5>`;
+    for (const { from, to } of estates) {
+      const E = BUILDINGS[to], nd = needs(world, to, 0);
+      h += `<div class="guide-level"><img src="${thumb(to, 0)}" alt=""><div><div class="guide-lname"><b>${esc(E.levels[0].name)}</b><span>$${E.levels[0].cost}</span></div>`;
+      h += `<div class="guide-from">A ${esc(BUILDINGS[from].levels[0].name)} grown onto the two plots beside it can be rebuilt as this · ${E.levels.map(l => esc(l.name)).join(' › ')}</div>`;
+      h += `<div class="guide-stats">${stats(to, 0).map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join('')}</div>`;
+      h += `<div class="guide-needs">${[{ text: `Research: ${TECHS.bigplots.name}`, met: world.hasTech('bigplots') }, ...nd].map(n => `<span class="${n.met === false ? 'no' : n.met ? 'ok' : ''}">${esc(n.text)}</span>`).join('')}</div>`;
+      h += '</div></div>';
+    }
+    h += '</div>';
+  }
   const known = ui.windows && ui.windows.has(GUIDE);
   let saved = null;
   try { saved = localStorage.getItem(`hearthvale.win.${GUIDE}`); } catch {}

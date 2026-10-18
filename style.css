@@ -565,7 +565,8 @@ table.hap.big td { padding: 4px 8px; }
 .guide-needs span { font-size: 11px; padding: 0 5px; background: var(--face); box-shadow: var(--raised); }
 .guide-needs span.ok { color: var(--good); }
 .guide-needs span.no { color: var(--bad); }
-.guide-more h5 { margin: 10px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.guide-from { font-size: 12px; color: var(--ink-2); margin-bottom: 2px; }
+.guide-more h5, .guide-estates h5 { margin: 10px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
 .guide-more div { font-size: 12px; margin: 2px 0; }
 
 /* merge villages */
