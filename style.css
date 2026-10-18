@@ -687,3 +687,14 @@ table.hap.big td { padding: 4px 8px; }
   .set-cols { grid-template-columns: 1fr; }
   .set-row { grid-template-columns: 1fr; gap: 3px; }
 }
+
+/* the interface hidden (V): just the town, and the way back in the corner */
+.show-ui { display: none; }
+body.ui-hidden #hud, body.ui-hidden #windows, body.ui-hidden #tooltip, body.ui-hidden .mp-asks, body.ui-hidden .merge-place { display: none !important; }
+body.ui-hidden .show-ui {
+  display: inline-flex; align-items: center; gap: 6px; position: fixed; top: 10px; right: 10px; z-index: 90;
+  border: 0; background: var(--face); box-shadow: var(--raised); padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer;
+  opacity: 0.5; transition: opacity 0.2s;
+}
+body.ui-hidden .show-ui:hover, body.ui-hidden .show-ui:focus-visible { opacity: 1; }
+body.ui-hidden .show-ui:active { box-shadow: var(--sunken); }

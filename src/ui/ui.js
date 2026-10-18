@@ -118,6 +118,8 @@ export class UI {
     $('btnRotR').onclick = () => g.rotateView(1);
     $('btnOverlay').onclick = () => this.toggleOverlayMenu();
     $('btnLines').onclick = () => this.showLines();
+    $('btnHideUI').onclick = () => this.setUIHidden(true);
+    $('showUI').onclick = () => this.setUIHidden(false);
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
     const insp = $('inspector');
@@ -1635,6 +1637,25 @@ export class UI {
 
   // One switch for every pop-up (coins, notices, hover tips, name tags,
   // warnings over blocked buildings).
+  // Hide every panel, button and pop-up to see just the town (for a
+  // picture, or to take it in). The camera and the game speed still answer
+  // to the keys; clicks on the town do nothing until it comes back (V, Esc
+  // or the button in the corner).
+  setUIHidden(on) {
+    const g = this.game;
+    on = !!on && !!g.world && !g.demo;
+    if (on === !!this.uiHidden) return;
+    this.uiHidden = on;
+    document.body.classList.toggle('ui-hidden', on);
+    if (on) {
+      this.closeFlyout();
+      g.input?.setTool({ kind: 'select' });
+      this.inspect(null);
+      this.tooltip(null);
+    }
+    g.input?.refresh();
+  }
+
   togglePopups() {
     const s = this.game.settings;
     const any = s.popCoins || s.popToasts || s.popTips || s.popLabels || s.popBlocked !== false;
@@ -1746,6 +1767,7 @@ export class UI {
         ${k('Wheel')}<span>Zoom in & out</span>
         ${k('W A S D')}<span>Pan the camera</span>
         ${k('T')}<span>Toggle 2D top-down / isometric</span>
+        ${k('V')}<span>Hide the interface to see just the town (V or Esc brings it back)</span>
         <span>${k('Q')} ${k('E')}</span><span>Rotate the view a quarter turn</span>
         <span>${k('1')}–${k('8')}</span><span>Tool menus · ${k('R')} roads · ${k('X')} demolish</span>
         ${k('Tab')}<span>Flip a building's entrance</span>

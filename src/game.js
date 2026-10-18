@@ -160,6 +160,7 @@ export class Game {
 
   // ------------------------------------------------------------ lifecycle
   load(world, { fresh = false, demo = false, replica = false } = {}) {
+    this.ui?.setUIHidden(false);
     this._teardown();
     this.world = world;
     this.demo = demo;

@@ -14,6 +14,10 @@ import { selTiles } from './roadSelect.js';
 
 const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a', WARN = '#ffa64a';
 
+// The keys that still answer with the interface hidden: the game speed and
+// the camera (W A S D and the arrows pan in update()).
+const HIDDEN_KEYS = new Set([' ', ',', '.', '/', '[', ']', 't', 'q', 'e', '+', '=', '-', '_']);
+
 export class Input {
   constructor(game) {
     this.game = game;
@@ -207,6 +211,7 @@ export class Input {
 
   _selectClick(e) {
     const g = this.game;
+    if (this.ui.uiHidden) return;
     const r = g.agents.pick(e.clientX, e.clientY);
     if (r) { this.ui.inspect({ kind: 'resident', id: r.id }); g.sfx('click'); return; }
     const b = this.pickBuilding(e);
@@ -476,6 +481,8 @@ export class Input {
         tiles.push({ x: b.x, z: b.z, color: chosen >= 0 ? OK : GOLD, alpha: chosen >= 0 ? 0.5 : 0.3 });
       }
     }
+    // nothing is picked out while the interface is hidden
+    if (this.ui.uiHidden) { tiles.length = 0; ghost = null; tip = null; }
     ov.setCursor(tiles);
     this._setGhost(ghost);
     if (e) this.ui.tooltip(tip, e.clientX, e.clientY);
@@ -520,6 +527,12 @@ export class Input {
     const g = this.game, ui = this.ui;
     if (!g.world || g.demo) return;
     if (ui.modalOpen) return;
+    // with the interface hidden, only the camera and the speed keys answer;
+    // V or Esc brings it back
+    if (ui.uiHidden) {
+      if (k === 'v' || k === 'escape') { ui.setUIHidden(false); return; }
+      if (!HIDDEN_KEYS.has(k)) return;
+    }
     // Esc closes the front window first
     if (k === 'escape' && ui.anyWindow && ui.closeModal()) return;
     if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); if (e.shiftKey) g.downloadSave(); else g.quickSave(); return; }
@@ -572,6 +585,7 @@ export class Input {
       case 'l': ui.showLines(); break;
       case 'm': ui.showMultiplayer(); break;
       case 'h': ui.showHelp(); break;
+      case 'v': ui.setUIHidden(true); break;
     }
   }
 
