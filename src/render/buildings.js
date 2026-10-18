@@ -4224,6 +4224,108 @@ MODELS.vicarage = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// A tea garden: the coffee house at one end (a bow-windowed shopfront, tea
+// rooms under an awning later), and beside it a lawn of tables under
+// parasols, flower beds, low lanterns, and a hedge along the street with a
+// gate. The Tea Pavilion adds an open pavilion with a domed roof at the far
+// end of the lawn.
+MODELS.teagarden = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, back = -f.dep / 2, front = f.dep / 2;
+  const pastel = ownPick(c, ['#c87a8a', '#7a9ac8', '#8ab08a', '#c8a050'], 9);
+  // the coffee house, its shopfront to the street (the shop door is the way in)
+  const hw = 0.62, hd = 0.5, hx = -W / 2 + hw / 2 + 0.04, fz = back + hd + 0.06, H = L ? 0.6 : 0.54;
+  shopBody(c, { x: hx, z: fz - hd / 2, w: hw, d: hd, h: H, floors: 2, wall: pal.forced ? pal.wall : ownPick(c, PAINTED, 8), roof: L ? pal.slate : pal.roof, roofType: 'gable', rh: 0.26, chimney: true, timber: !L && pal.timber });
+  const sf = shopfront(c, hx, fz, hw - 0.04, 0.26, { bow: !L, fascia: L ? shade(pastel, 0.6) : rng.pick(['#3b2f2a', '#2f3e2a', '#4a2a2a']), lit: true });
+  for (const p of sf.panes) for (let i = 0; i < 2; i++) gb.cyl(p.m + (i - 0.5) * p.w * 0.45, 0.05, p.z + 0.02, 0.018, 0.012, 0.03, 8, i ? '#e8d8c0' : '#8a5a3a');
+  if (L) awning(c, hx, sf.top - 0.004, fz, hw - 0.02, pastel);
+  else hangSign(c, hx + hw / 2 - 0.05, 0.31, fz, 'pot', GOLD);
+  tubPlant(c, hx - hw / 2 + 0.03, fz + 0.08, L > 0); tubPlant(c, hx + hw / 2 - 0.03, fz + 0.08, L > 0);
+  cafeTable(c, hx - 0.14, fz + 0.26); cafeTable(c, hx + 0.14, fz + 0.26);
+  // the garden: hedged round, a gate from the street and a gravel walk
+  const gx0 = hx + hw / 2 + 0.05, gx1 = W / 2, gw = gx1 - gx0, gx = gx0 + gw * 0.3, hz = front - 0.05;
+  hedge(c, (gx0 + gx1) / 2, back + 0.04, gw, 0.05);
+  hedge(c, gx1 - 0.03, 0, 0.05, f.dep - 0.12);
+  hedge(c, (gx0 + gx - 0.08) / 2, hz, gx - 0.08 - gx0, 0.05);
+  hedge(c, (gx + 0.08 + gx1) / 2, hz, gx1 - gx - 0.08, 0.05);
+  gatePiers(c, gx, hz, 0.16, '#e3dccd');
+  gravel(c, gx, hz - 0.13, 0.1, 0.22, '#d8ccb0');
+  // tables under parasols on the lawn, a pavilion at the end of it later
+  const spots = L ? [[0.12, -0.26], [0.12, 0.04], [0.44, 0.04], [0.44, -0.26]] : [[0.2, -0.25], [0.6, -0.25], [0.22, 0.05], [0.62, 0.05]];
+  spots.forEach(([u, z], i) => cafeTable(c, gx0 + u * gw, z, i % 2 ? '#e9dfc9' : pastel));
+  if (L) {
+    const px = gx0 + gw * 0.8, pz = back + 0.27, py = c.gy(px, pz), r = 0.15;
+    gb.cyl(px, py - 0.01, pz, r + 0.03, r + 0.03, 0.03, 12, STONE);
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; gb.cyl(px + Math.cos(a) * r, py + 0.02, pz + Math.sin(a) * r, 0.01, 0.012, 0.22, 6, '#ece6da'); }
+    gb.cyl(px, py + 0.24, pz, r + 0.04, r + 0.04, 0.025, 12, '#ece6da');
+    gb.sphere(px, py + 0.26, pz, r + 0.03, pastel, 1, 0.7);
+    gb.cyl(px, py + 0.37, pz, 0.006, 0.006, 0.06, 4, GOLD);
+    cafeTable(c, px, pz, null);
+  } else flowers(c, gx0 + gw * 0.82, back + 0.2, 7, 0.07);
+  flowers(c, gx0 + 0.1, back + 0.14, 6, 0.06); flowers(c, gx1 - 0.14, hz - 0.12, 5, 0.06);
+  smallTree(c, gx0 + 0.07, hz - 0.14, 0.75); smallTree(c, gx1 - 0.1, 0.06, 0.8);
+  for (const u of [0.38, 0.75]) lamp(c, gx0 + u * gw, -0.11, 0.22);
+  if (f.turned) gb.pop();
+};
+
+// A free library: a classical front with a portico, tall arched windows and
+// a cornice, and beside it the reading room (the stationer's old shop
+// rebuilt) under a glazed roof, behind railings. The Public Library is
+// taller, with a dome on a drum over the middle and a lantern on top.
+MODELS.library = (c, L) => {
+  const { gb, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, back = -f.dep / 2, front = f.dep / 2;
+  const stone = pal.style === 'brick' ? pal.brick : '#d8d0bf', trim = '#ece6da';
+  const mw = 0.9, md = 0.56, mx = -W / 2 + mw / 2 + 0.04, mz = back + md / 2 + 0.06, mf = mz + md / 2, H = L ? 0.66 : 0.5, wh = L ? 0.3 : 0.24;
+  door(c, mx, mf, 0.1, 0.2, '#3f4f5a');
+  footing(c, mx, mz, mw, md);
+  gb.cbox(mx, 0, mz, mw, H, md, stone, 0, 0.02);
+  gb.box(mx, H - 0.04, mz, mw + 0.03, 0.045, md + 0.03, trim);
+  gb.hip(mx, H, mz, mw + 0.02, md + 0.02, 0.2, pal.slate, 0.04);
+  for (const s of [-1, 1]) for (let i = 0; i < 2; i++) {
+    const x = mx + s * (0.23 + i * 0.15);
+    win(c, x, 0.08, mf, 0.08, wh, 'f', 0.9);
+    gb.cyl(x, 0.08 + wh * (c.winH || 1) + 0.012, mf + 0.004, 0.052, 0.052, 0.014, 10, trim, 0, Math.PI / 2);
+  }
+  for (const s of [-1, 1]) for (let i = 0; i < 2; i++) win(c, mx + s * mw / 2, 0.1, mz - 0.12 + i * 0.24, 0.08, wh, s > 0 ? 'r' : 'l', 0.8);
+  portico(c, mx, mf, 0.3, L ? 0.36 : 0.28, 4, pal.slate, trim);
+  if (L) {
+    // a dome on a windowed drum, and a lantern
+    const dy = H + 0.06;
+    gb.cyl(mx, dy, mz, 0.17, 0.17, 0.2, 14, stone);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
+      gb.box(mx + Math.sin(a) * 0.172, dy + 0.06, mz + Math.cos(a) * 0.172, 0.04, 0.09, 0.012, GLASS, a);
+      gb.noGlow();
+    }
+    gb.cyl(mx, dy + 0.2, mz, 0.19, 0.19, 0.025, 14, trim);
+    gb.sphere(mx, dy + 0.22, mz, 0.17, '#5f8f7e', 1, 0.8);
+    gb.cyl(mx, dy + 0.35, mz, 0.03, 0.03, 0.06, 8, trim);
+    gb.cone(mx, dy + 0.41, mz, 0.04, 0.05, 8, '#5f8f7e');
+  }
+  // the reading room, lit from above
+  const rw = W / 2 - (mx + mw / 2) - 0.04, rx = mx + mw / 2 + rw / 2 + 0.02, rd = 0.44, rz = back + rd / 2 + 0.06, rh = L ? 0.42 : 0.36;
+  footing(c, rx, rz, rw, rd);
+  gb.cbox(rx, 0, rz, rw, rh, rd, stone, 0, 0.016);
+  gb.gable(rx, rh, rz, rw + 0.02, rd, 0.16, stone, pal.slate, 0.04, false, 0.03);
+  glassRoof(c, rx, rh, rz, rw * 0.6, rd, 0.16, false, 4);
+  for (let i = 0; i < 3; i++) {
+    const x = rx - rw / 2 + (i + 0.5) * (rw / 3);
+    win(c, x, 0.08, rz + rd / 2, 0.09, 0.2, 'f', 0.9);
+    win(c, x, 0.08, rz - rd / 2, 0.09, 0.2, 'b', 0.8);
+  }
+  sign(c, rx, rh - 0.08, rz + rd / 2 + 0.01, rw * 0.6, 0.05, '#2a3a4a');
+  // railings along the street, lamps by the steps, a bench and a book barrow
+  frontage(c, -W / 2, W / 2, front - 0.05, [mx], 'railings');
+  lamp(c, mx - 0.24, front - 0.12, 0.3); lamp(c, mx + 0.24, front - 0.12, 0.3);
+  bench(c, rx - rw * 0.2, front - 0.16, Math.PI);
+  bookBarrow(c, rx + rw * 0.25, front - 0.17);
+  if (f.turned) gb.pop();
+};
+
 MODELS.park = (c, L) => {
   const { gb, rng } = c;
   const f = rowFrame(c);

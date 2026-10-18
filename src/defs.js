@@ -368,6 +368,24 @@ export const BUILDINGS = {
       { name: 'Church & Rectory', cost: 1400, upkeep: 13, jobs: 3, radius: 13, housing: 6, households: 1, unlock: 60 },
     ],
   },
+  // A coffee house joined with the green next door: tea at tables under the trees.
+  teagarden: {
+    name: 'Tea Garden', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: 'tea', tech: 'hospitality', icon: '☕', branch: 'Tea garden', accent: '#4f7a45', pathIcon: 'local_cafe',
+    desc: 'Tea under the trees: the coffee house with a lawn of tables, flower beds and lanterns. More customers, and a pretty spot for the street.',
+    levels: [
+      { name: 'Tea Garden', cost: 650, jobs: 5, income: 6, visit: 8, appeal: 8, radius: 4 },
+      { name: 'Tea Pavilion', cost: 1500, jobs: 8, income: 7, visit: 11, appeal: 12, radius: 5, unlock: 120 },
+    ],
+  },
+  // A stationer joined with a school or chapel: a free library and reading room.
+  library: {
+    name: 'Library', cat: 'services', size: 2, merged: true, hidden: true, service: 'culture', tech: 'parish', icon: '📖', branch: 'Library', accent: '#4a3a6a', pathIcon: 'local_library',
+    desc: 'A free library with a reading room: villagers come in to read and borrow, and its readers add to research every day.',
+    levels: [
+      { name: 'Free Library', cost: 700, upkeep: 9, jobs: 2, radius: 9, edu: 2 },
+      { name: 'Public Library', tech: 'academies', cost: 1600, upkeep: 16, jobs: 4, radius: 13, edu: 3, unlock: 120 },
+    ],
+  },
   fountaingarden: {
     name: 'Fountains', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, service: 'water', tech: 'fountains', icon: '⛲', branch: 'Fountain garden', accent: '#2f6a8a', pathIcon: 'water_drop',
     desc: 'A walled garden round a fountain: it draws water for the mains, and it is a lovely place to sit.',
@@ -834,7 +852,7 @@ export const TECHS = {
   trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades, savings banks, department stores joined from a draper and the shop next door, and exchanges joined from two offices.' },
   civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, town banks, grand department stores, stock exchanges, the Grand Hall, grand squares and covered markets.' },
   gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks, bowling greens, and recreation grounds joined from play areas and games lawns.' },
-  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, and brewhouses joined from a tavern and a workshop.' },
+  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, brewhouses joined from a tavern and a workshop, and tea gardens joined from a coffee house and a green.' },
   parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, and playing fields.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
   industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), ironmongers to sell their wares, and craftsman's houses joined from a cottage and a workshop." },
@@ -856,7 +874,7 @@ export const TECHS = {
   municipal: { name: 'Municipal Government', cost: 1800, tier: 5, branch: 'public', needs: ['civic', 'services3'], desc: 'The City Hall: council, courts and records under one clock tower, for more tax and research.' },
   metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for the most tax and research.' },
   schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, stationers to sell paper and books, and board schools joined from two schoolhouses.' },
-  parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
+  parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school, or a stationer and a school or chapel into a free library.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
@@ -929,6 +947,8 @@ export const MERGES = [
   { a: ['chapel'], b: ['house'], to: 'vicarage', lead: true },
   { a: ['builder'], b: ['builder', 'lumber', 'ironmonger'], to: 'contractor', lead: true },
   { a: ['workshop'], b: ['house'], to: 'craftshouse' },
+  { a: ['coffeehouse'], b: ['garden', 'flowers'], to: 'teagarden' },
+  { a: ['stationer'], b: ['school', 'chapel'], to: 'library' },
 ];
 
 // What a building on an expanded (double) plot can be rebuilt as.
@@ -937,7 +957,7 @@ export const LARGE = {
   market: ['arcade'], bakery: ['arcade'], grocer: ['arcade'], butcher: ['arcade'], draper: ['deptstore'], offices: ['exchange'],
   tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
   school: ['parishschool', 'boardschool'], clinic: ['almshouse', 'cottagehospital'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
-  chapel: ['vicarage'], builder: ['contractor'], playground: ['recground'], courts: ['recground'],
+  chapel: ['vicarage'], builder: ['contractor'], coffeehouse: ['teagarden'], stationer: ['library'], playground: ['recground'], courts: ['recground'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).
@@ -988,6 +1008,8 @@ export const NEEDS = {
   chemist: { water: { from: 0, without: 0.6, what: 'making up the remedies' }, power: { from: 2, use: 'lights', without: 0.85, what: 'its shop lights' } },
   stationer: { power: { from: 1, use: 'lights', without: 0.85, what: 'its reading lamps' } },
   coffeehouse: { water: { from: 0, without: 0.4, what: 'the urns and the washing up' }, power: { from: 1, use: 'lights', without: 0.75, what: 'its lamps' } },
+  teagarden: { water: { from: 0, without: 0.4, what: 'the urns and the washing up' }, power: { from: 1, use: 'lights', without: 0.8, what: 'the lanterns in the trees' } },
+  library: { power: { from: 1, use: 'lights', without: 0.85, what: 'the reading-room lamps' } },
   bank: { power: { from: 1, use: 'lights', without: 0.8, what: 'its banking hall' } },
   deptstore: { power: { from: 0, use: 'lights', without: 0.8, what: 'its windows and shop floors' } },
   postoffice: { power: { from: 1, use: 'machines', without: 0.8, what: 'its telegraph' } },
@@ -1024,7 +1046,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], library: [3, 5], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 

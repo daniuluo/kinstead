@@ -401,6 +401,37 @@ const placePair = (tw, ta, tb) => {
   ok(!wrong.length, `every pairing in every join recipe makes its building (${pairs.length} pairs, ${MERGES.length} recipes)${wrong.length ? ': ' + wrong.join('; ') : ''}`);
 }
 
+// 3d0d. a tea garden lifts the street round it and sells tea; a free library
+// joined from a stationer and a school adds to research once it's staffed
+{
+  const { RESEARCH_SOURCES, tradesOf } = await import('../src/defs.js');
+  const tw = World.createNew({ N: 48, seed: 35, name: 'Teaby' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  sim.seedFounders();
+  const [Co, Gr] = placePair(tw, 'coffeehouse', 'garden');
+  const i = tw.idx(Co.x, Co.z - 2);
+  sim.recompute();
+  const before = sim.appeal[i];
+  const t = tw.mergeBuildings(Co.id, Gr.id);
+  sim.recompute();
+  ok(t.ok && t.building.type === 'teagarden' && tradesOf(t.building).includes('tea') && sim.appeal[i] > before, `a coffee house and a green make a Tea Garden that sells tea and lifts the street (appeal ${before.toFixed(1)} → ${sim.appeal[i].toFixed(1)})`);
+  // the library goes on the town's own street, so it is connected and staffed
+  let St = null, Sc = null;
+  const conn = (t, x, z) => { const c = tw.checkBuild(t, x, z); return c.ok && c.access.some(a => a.conn); };
+  for (let z = 1; z < tw.N - 1 && !St; z++) for (let x = 1; x < tw.N - 2 && !St; x++) {
+    if (!conn('stationer', x, z) || !conn('school', x + 1, z)) continue;
+    St = tw.placeBuilding('stationer', x, z, { instant: true }).building;
+    Sc = tw.placeBuilding('school', x + 1, z, { instant: true }).building;
+  }
+  const lib = tw.mergeBuildings(St.id, Sc.id).building;
+  for (const r of [...tw.residents.values()].filter(r => r.age === 'adult').slice(0, 2)) { r.job = lib.id; r.edu = 3; }
+  sim.recompute();
+  const src = sim.researchSources().find(s => s.name === 'Free Library');
+  ok(lib.type === 'library' && RESEARCH_SOURCES.library && src && src.points > 0, `a stationer and a school make a Free Library that adds ${src ? src.points : 0} research a day`);
+}
+
 // 3d0c. a builder's yard joined with a woodcutter is still where the builders
 // work from, and they work faster; a chapel keeps its look in its vicarage
 {
