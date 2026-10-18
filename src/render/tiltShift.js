@@ -1,26 +1,38 @@
-// Tilt-shift (the "miniature model" look): a band across the screen stays
-// sharp and the picture blurs more and more above and below it, the way a
-// tilted lens makes a photo of a real town look like a tabletop model. A
-// little extra colour and contrast helps the look.
+// Tilt-shift (the "miniature model" look): the picture is sharp around a
+// point and goes soft by degrees all the way out to every edge, the way a
+// tilted lens makes a photo of a real town look like a tabletop model. The
+// sharp area is a wide oval, stretched across the view; the blur eases in
+// from it, so there's no line where it starts. A little extra colour and
+// contrast helps the look.
 //
 // The blur is done at a fraction of the screen's resolution (half, or the
 // pixel-art grid when that is coarser), across and then down, each a 13-tap
-// Gaussian whose width grows with the distance from the band. A last pass at
+// Gaussian whose width grows with the distance from the focus. A last pass at
 // full size mixes the blur into the sharp picture by that same distance, so
-// the band itself is the untouched picture.
+// the middle of the oval is the untouched picture.
 
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+
+// how much less the blur grows across the view than up and down it
+const WIDE = '0.45';
 
 const VERT = /* glsl */`
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
-// how far out of focus (0 to 1) a row of the screen is: none inside the band,
-// then growing steadily, like a lens's blur with distance from the focal plane
+// How far out of focus (0 to 1) a point of the screen is: by its distance
+// from the focus in screen heights, counted at a little under half across
+// (WIDE) as up and down, so the sharp area is a wide oval. Barely any blur
+// near the middle, easing in and then on to the full blur by the edges.
 const RAMP = /* glsl */`
-uniform float focus, band, spread;
-float ramp(float y) { return clamp((abs(y - focus) - band) / spread, 0.0, 1.0); }`;
+uniform vec2 focus;
+uniform float band, spread, aspect;
+float ramp(vec2 p) {
+  vec2 d = vec2((p.x - focus.x) * aspect * ${WIDE}, p.y - focus.y);
+  float t = clamp((length(d) - band) / spread, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}`;
 
 const BLUR = /* glsl */`
 uniform sampler2D tDiffuse;
@@ -29,7 +41,7 @@ uniform float maxR;      // the widest blur, in those texels either side
 varying vec2 vUv;
 ${RAMP}
 void main() {
-  float r = maxR * ramp(vUv.y);
+  float r = maxR * ramp(vUv);
   if (r < 0.5) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
   vec4 sum = vec4(0.0);
   float ws = 0.0;
@@ -52,8 +64,8 @@ ${RAMP}
 void main() {
   vec2 uv = grid.x > 0.0 ? (floor(vUv * grid) + 0.5) / grid : vUv;
   vec4 c = texture2D(tDiffuse, vUv);
-  // fade in the blur over its first couple of pixels
-  float m = smoothstep(0.6, 2.5, maxR * ramp(uv.y));
+  // fade in the blur over its first pixel or two
+  float m = smoothstep(0.3, 1.8, maxR * ramp(uv));
   if (m > 0.0) c = mix(c, texture2D(tBlur, uv), m);
   // grade the colour as if opaque (the picture's colours are premultiplied)
   float a = max(c.a, 1e-4);
@@ -75,9 +87,11 @@ export class TiltShiftPass extends Pass {
     this.look = look;
     this.div = div;
     this.grid = grid;
-    this.focus = 0.5;
+    this.focus = { x: 0.5, y: 0.5 };
+    // the sharp middle is under half the band (the blur eases in past it), and
+    // the blur reaches its widest a good way out, near the top and bottom edges
     const uniforms = () => ({
-      focus: { value: 0.5 }, band: { value: band }, spread: { value: Math.max(0.12, 0.44 - band) }, maxR: { value: 1 },
+      focus: { value: new THREE.Vector2(0.5, 0.5) }, band: { value: band * 0.45 }, spread: { value: Math.max(0.3, 0.62 - band) }, aspect: { value: 1 }, maxR: { value: 1 },
     });
     const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.rtA = rt();
@@ -105,12 +119,14 @@ export class TiltShiftPass extends Pass {
     // the blur scales with the height of the picture, so it looks the same on any screen
     this.blur.uniforms.maxR.value = this.look.blur * h;
     this.mix.uniforms.maxR.value = this.look.blur * height;
+    this.blur.uniforms.aspect.value = this.mix.uniforms.aspect.value = width / height;
     if (this.grid) this.mix.uniforms.grid.value.set(Math.floor(width / this.grid), Math.floor(height / this.grid));
   }
 
   render(renderer, writeBuffer, readBuffer) {
     const b = this.blur.uniforms, m = this.mix.uniforms;
-    b.focus.value = m.focus.value = this.focus;
+    b.focus.value.set(this.focus.x, this.focus.y);
+    m.focus.value.set(this.focus.x, this.focus.y);
     // across, from the full picture (its linear filtering averages it down)...
     this.fsQuad.material = this.blur;
     b.tDiffuse.value = readBuffer.texture;
