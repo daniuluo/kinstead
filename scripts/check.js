@@ -474,7 +474,7 @@ const placePair = (tw, ta, tb) => {
 // the plot (touching it, up to a limit, priced, blocking building, cleared by
 // the bulldozer and with the farm); what a farm produces; a homestead
 {
-  const { capOf } = await import('../src/world/world.js');
+  const { capOf, homeField, aheadOf } = await import('../src/world/world.js');
   const { CONFIG } = await import('../src/config.js');
   const { PRODUCE } = await import('../src/defs.js');
   const { workArea } = await import('../src/render/buildings.js');
@@ -498,6 +498,10 @@ const placePair = (tw, ta, tb) => {
   for (let z = F.z - 6; z < F.z + 8; z++) for (let x = F.x - 6; x < F.x + 8; x++) ring.push([x, z]);
   const far = tw.planFields(F.id, [[F.x - 6, F.z - 6]], true);
   ok(!far.n && /touch/.test(far.tiles[0].reason || ''), 'a field must touch the farm or its fields');
+  const hf = homeField(F);
+  ok(hf.length === 2 && hf.every(([x, z]) => tw.buildingAt[tw.idx(x, z)] === F.id && front(x + 0.5, z + 0.5) < 0), 'its own field is the back row of its plot, one farmland with the fields beyond');
+  const ahead = ring.find(([x, z]) => aheadOf(F, x, z) > 0 && tw.inBounds(x, z) && !tw.roads[tw.idx(x, z)] && tw.buildingAt[tw.idx(x, z)] < 0 && !tw.terrain.isWater(x, z) && tw.terrain.slope(x, z) <= 0.6);
+  ok(!ahead || /behind and beside/.test(tw._fieldBlock(F, ...ahead) || ''), 'fields go behind and beside a farm, not between it and the road');
   const m0 = tw.money, plan = tw.planFields(F.id, ring, true), r1 = tw.setFields(F.id, ring, true);
   ok(r1.ok && F.fields === CONFIG.FIELD_MAX[0] && tw.money === m0 - plan.cost && plan.cost >= CONFIG.FIELD_MAX[0] * CONFIG.FIELD_COST, `a farmstead ploughs up to ${CONFIG.FIELD_MAX[0]} fields at $${CONFIG.FIELD_COST} each ($${plan.cost})`);
   ok(capOf(F, 'jobs') === Math.round(BUILDINGS.farm.levels[0].jobs + F.fields * CONFIG.FIELD_JOBS), `each field adds work (${capOf(F, 'jobs')} jobs)`);
@@ -534,6 +538,25 @@ const placePair = (tw, ta, tb) => {
     const jr = opt && tw.mergeBuildings(F.id, cot.id);
     ok(jr && jr.ok && F.type === 'homestead' && !tw.buildings.has(cot.id) && people.every(id => tw.residents.get(id).home === F.id) && F.fields > 0 && F.flavor === 'sheep', `a cottage joined on makes it a homestead: the family moves in, the fields and flock stay (${people.length} people)`);
   } else ok(false, 'no room for a cottage beside the farm');
+  // a farm turned orchard keeps its fields, planted with fruit trees
+  {
+    let G = null;
+    for (let r = 6; r < 22 && !G; r++) for (let dz = -r; dz <= r && !G; dz++) for (let dx = -r; dx <= r && !G; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r || Math.max(Math.abs(th.x + dx - F.x), Math.abs(th.z + dz - F.z)) < 10) continue;
+      const c = tw.checkBuild('farm', th.x + dx, th.z + dz);
+      if (!c.ok || !c.access.some(a => a.conn)) continue;
+      const p = tw.placeBuilding('farm', th.x + dx, th.z + dz, { instant: true });
+      if (p.ok) G = p.building;
+    }
+    if (G) {
+      tw.upgradeBuilding(G.id);
+      const near = [];
+      for (let z = G.z - 4; z < G.z + 6; z++) for (let x = G.x - 4; x < G.x + 6; x++) near.push([x, z]);
+      tw.setFields(G.id, near, true);
+      const n0 = G.fields, u = tw.upgradeBuilding(G.id, 'orchard');
+      ok(u.ok && G.type === 'orchard' && n0 > 0 && G.fields === n0 && tw.fieldMax(G) >= n0 && !homeField(G).length && !tw.setProduce(G.id, 'sheep').ok, `a farm turned orchard keeps its ${n0} fields (as fruit trees), and grows only fruit`);
+    } else ok(false, 'no room for a second farm');
+  }
   // gone with the farm
   const id = F.id;
   tw.removeBuilding(id, 0);

@@ -3,10 +3,10 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MAT } from './materials.js';
-import { TREE } from '../world/world.js';
+import { TREE, homeField, farmlandOf, fw, fd } from '../world/world.js';
 import { hash2 } from '../util/rng.js';
 import { dressSpots } from '../world/roadDress.js';
-import { produceOf } from '../defs.js';
+import { BUILDINGS, produceOf } from '../defs.js';
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 
@@ -60,6 +60,9 @@ const GEO = {
 // crop tufts in farm fields, by season (mixed farming), and their fences
 const CROP_TUFT = [['#7fae4f', '#8fbd5a'], ['#c9a640', '#6f9e45'], ['#c08f3e', '#a8823c'], ['#6f5a44', '#6f5a44']];
 const FENCE_COL = '#7a5f42';
+// an orchard's trees: blossom in spring, then leaves, and the fruit on them
+const BLOSSOM = ['#f1dfe3', '#e8c6cf'];
+const FRUIT_COL = ['#c8402f', '#e0b030', '#9ab830'];
 
 const FOLIAGE = {
   pine: [['#2f5236', '#36593b', '#2b4a33'], ['#2c4e33', '#335538', '#294630'], ['#304d34', '#38573b', '#2c4631'], ['#2f4a37', '#36523d', '#2a4231']],
@@ -196,24 +199,57 @@ export class NatureView {
         if (hash2(Math.floor(sh.x * 70), Math.floor(sh.z * 70), 12) < flowering) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
       }
     }
-    // farm fields: rows of crop tufts (none in winter, or on grazing land)
-    // and a post-and-rail fence round their outer edges
-    const N = w.N, F = w.fields;
+    // farmland (a farm's own field behind its yard and its fields beyond, as
+    // one): rows of crop tufts in the farm's frame (none in winter, or on
+    // grazing land) or an orchard's rows of fruit trees, and a post-and-rail
+    // fence round the outside, with a gate from the yard
+    const N = w.N;
     const cropField = new Uint8Array(N * N);
-    if (F && w.fieldTiles) for (const [id, tiles] of w.fieldTiles) {
-      const farm = w.buildings.get(id);
-      if (!farm) continue;
-      const P = produceOf(farm), across = farm.rot & 1;
+    for (const farm of w.buildings.values()) {
+      const def = BUILDINGS[farm.type];
+      if (!def.fields) continue;
+      const land = farmlandOf(w, farm);
+      if (!land.size) continue;
+      const id = farm.id, P = produceOf(farm), fruit = P.kind === 'orchard';
       const cols = P.crop && s < 3 ? P.crop[s] : CROP_TUFT[s];
-      for (const ti of tiles) {
-        const x = ti % N, z = (ti / N) | 0;
-        if (P.kind !== 'livestock') {
+      // the farm's frame: lx across it, lz from back to front (as its model)
+      const th = (farm.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      const cx = farm.x + fw(farm) / 2, cz = farm.z + fd(farm) / 2;
+      const toWorld = (lx, lz) => [cx + lx * co + lz * si, cz - lx * si + lz * co];
+      const mine = (nx, nz) => w.inBounds(nx, nz) && land.has(nz * N + nx);
+      const yard = (nx, nz) => w.inBounds(nx, nz) && w.buildingAt[nz * N + nx] === id && !land.has(nz * N + nx);
+      // points of a lattice in the farm's frame (start + k * step) that fall
+      // in a tile, so rows run on from one tile to the next
+      const lattice = (x0, z0, x1, z1, ax, sx, az, sz, fn) => {
+        const c0 = [(x0 - cx) * co - (z0 - cz) * si, (x0 - cx) * si + (z0 - cz) * co], c1 = [(x1 - cx) * co - (z1 - cz) * si, (x1 - cx) * si + (z1 - cz) * co];
+        const l0 = Math.min(c0[0], c1[0]), l1 = Math.max(c0[0], c1[0]), m0 = Math.min(c0[1], c1[1]), m1 = Math.max(c0[1], c1[1]);
+        for (let lz = az + Math.ceil((m0 - az) / sz) * sz; lz < m1; lz += sz) for (let lx = ax + Math.ceil((l0 - ax) / sx) * sx; lx < l1; lx += sx) fn(lx, lz);
+      };
+      const home = new Set(homeField(farm).map(([x, z]) => z * N + x));
+      // kept clear of what stands in its own field (see MODELS.farm)
+      const clear = (lx, lz) => !((farm.level >= 2 && !fruit && Math.hypot(lx - 0.8, lz + 0.8) < 0.24) || (farm.level >= 3 && lx < -0.72 && lz < 0));
+      const fruitCol = FRUIT_COL[farm.variant % FRUIT_COL.length];
+      for (const ti of land) {
+        const x = ti % N, z = (ti / N) | 0, own = home.has(ti);
+        // inside the fence on its outer edges
+        const pad = 0.07, x0 = x + (mine(x - 1, z) ? 0 : pad), x1 = x + 1 - (mine(x + 1, z) ? 0 : pad), z0 = z + (mine(x, z - 1) ? 0 : pad), z1 = z + 1 - (mine(x, z + 1) ? 0 : pad);
+        if (fruit) {
+          lattice(x0 + 0.06, z0 + 0.06, x1 - 0.06, z1 - 0.06, -0.82, 0.38, -0.75, 0.42, (lx, lz) => {
+            const [px, pz] = toWorld(lx, lz), h = hash2(Math.floor(px * 100), Math.floor(pz * 100), 13);
+            const y = t.heightAt(px, pz) - 0.01, k = turn(h), bare = bareOf(k);
+            const leaf = (q) => (q === 0 && h < 0.4 ? BLOSSOM[h < 0.2 ? 0 : 1] : FOLIAGE.round[q][Math.floor(h * Math.min(3, FOLIAGE.round[q].length))]);
+            put('trunk', px, y, pz, 0.45, h * 6, '#6e4d31');
+            put('round', px, y + 0.02 + bare * 0.03, pz, 0.36 * (1 - bare * 0.3), h * 6, mixC(leaf(s), leaf(n), k));
+            if (s === 1 || s === 2) for (let q = 0; q < 2; q++) put('bloom', px + (hash2(ti, q * 7 + Math.round(lx * 100), 15) - 0.5) * 0.11, y + 0.06 + hash2(ti, q * 7 + Math.round(lz * 100), 16) * 0.04, pz + (hash2(ti, q * 7 + Math.round(lx * 100), 17) - 0.5) * 0.11, 1.1, 0, fruitCol);
+          });
+        } else if (P.kind !== 'livestock') {
           cropField[ti] = 1;
-          if (s < 3) for (let u = 0.1; u < 0.98; u += 0.4) for (let v = 0.06; v < 0.97; v += 0.11) {
-            const k = hash2(x * 31 + Math.round(u * 10), z * 17 + Math.round(v * 100), 9);
-            const px = x + (across ? v : u) + (k - 0.5) * 0.04, pz = z + (across ? u : v) + (hash2(x, z, Math.round(u * 50 + v * 900)) - 0.5) * 0.04;
+          if (s < 3) lattice(x0, z0, x1, z1, 0.055, 0.11, -0.1, 0.4, (lx, lz) => {
+            if (own && !clear(lx, lz)) return;
+            const k = hash2(Math.round(lx * 100) + 977, Math.round(lz * 100) + farm.id * 131, 9);
+            const [qx, qz] = toWorld(lx, lz), px = qx + (k - 0.5) * 0.03, pz = qz + (hash2(Math.round(lx * 100), Math.round(lz * 100), 10) - 0.5) * 0.03;
             put('crop', px, t.heightAt(px, pz), pz, 0.85 + k * 0.35, k * 6, cols[k < 0.5 ? 0 : 1]);
-          }
+          });
         }
         const rail = (x0, z0, x1, z1) => {
           const len = Math.hypot(x1 - x0, z1 - z0), mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, i = counts.rail++;
@@ -223,12 +259,22 @@ export class NatureView {
           }
           for (let q = 0; q <= 2; q++) { const fx = x0 + (x1 - x0) * q / 2, fz = z0 + (z1 - z0) * q / 2; put('post', fx, t.heightAt(fx, fz), fz, 1, 0, FENCE_COL); }
         };
-        const edgeOf = (dx, dz) => { const nx = x + dx, nz = z + dz; return !w.inBounds(nx, nz) || (F[nz * N + nx] !== id && w.buildingAt[nz * N + nx] !== id); };
-        const e = 0.04;
-        if (edgeOf(0, -1)) rail(x + e, z + e, x + 1 - e, z + e);
-        if (edgeOf(0, 1)) rail(x + e, z + 1 - e, x + 1 - e, z + 1 - e);
-        if (edgeOf(-1, 0)) rail(x + e, z + e, x + e, z + 1 - e);
-        if (edgeOf(1, 0)) rail(x + 1 - e, z + e, x + 1 - e, z + 1 - e);
+        // a fence wherever the farmland ends (an orchard's own plot has its
+        // own fence); where its own field meets the yard, a gate in the middle
+        const e = 0.04, g = 0.1;
+        const side = (dx, dz, x0, z0, x1, z1) => {
+          const nx = x + dx, nz = z + dz;
+          if (mine(nx, nz) || (fruit && w.inBounds(nx, nz) && w.buildingAt[nz * N + nx] === id)) return;
+          if (own && yard(nx, nz)) {
+            if (farm.rot & 1) { if (Math.abs(z0 - cz) < 0.1) z0 = cz + Math.sign(z1 - cz) * g; if (Math.abs(z1 - cz) < 0.1) z1 = cz + Math.sign(z0 - cz) * g; }
+            else { if (Math.abs(x0 - cx) < 0.1) x0 = cx + Math.sign(x1 - cx) * g; if (Math.abs(x1 - cx) < 0.1) x1 = cx + Math.sign(x0 - cx) * g; }
+          }
+          rail(x0, z0, x1, z1);
+        };
+        side(0, -1, x + e, z + e, x + 1 - e, z + e);
+        side(0, 1, x + e, z + 1 - e, x + 1 - e, z + 1 - e);
+        side(-1, 0, x + e, z + e, x + e, z + 1 - e);
+        side(1, 0, x + 1 - e, z + e, x + 1 - e, z + 1 - e);
       }
     }
     // grass tufts and wildflowers on open land (not in fields of crops)
