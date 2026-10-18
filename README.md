@@ -2,7 +2,7 @@
 
 A little isometric village builder that runs in your browser — pixel-art rendering in the spirit of *Metropolis 1998* and the late-90s city sims, with a living village of tiny people going about their day.
 
-**Play it:** https://daniuluo.github.io/hearthvale/ (the web address still uses the game's old name, Hearthvale)
+**Play it:** https://daniuluo.github.io/kinstead/
 
 ## Features
 
