@@ -868,6 +868,35 @@ export class World {
     return { ok, next, target, cost, restyle, reqs, moveOut, reason: ok ? null : 'Requirements not met' };
   }
 
+  // A home or shop can take on a new style without being upgraded: builders
+  // rebuild its fronts and roof, for the same share of what it is worth as a
+  // new style costs on an upgrade (RESTYLE).
+  restyleCheck(b, look) {
+    if (!b) return { ok: false, reason: 'That building is gone' };
+    const def = BUILDINGS[b.type];
+    if (def.cat !== 'residential' && def.cat !== 'commercial') return { ok: false, reason: "Only homes and shops come in styles" };
+    const cost = Math.max(30, Math.round(this.buildValue(b) * RESTYLE));
+    if (b.con) return { ok: false, reason: 'Construction under way', cost };
+    if ((look || null) === (b.look || null)) return { ok: false, reason: 'It is in that style already', cost };
+    if (look && !this.hasTech(STYLE_TECH_OF(look))) return { ok: false, reason: 'Research that style first', cost };
+    if (this.money < cost) return { ok: false, reason: 'Not enough money', cost };
+    return { ok: true, cost };
+  }
+
+  restyleBuilding(id, look) {
+    const b = this.buildings.get(id), chk = this.restyleCheck(b, look);
+    if (!chk.ok) return chk;
+    this.money -= chk.cost;
+    if (this.sandbox.instantBuild) {
+      b.look = look || null;
+      this.emit('building:change', b);
+      return { ok: true, building: b, cost: chk.cost, instant: true };
+    }
+    b.con = { kind: 'upgrade', to: b.level, toType: b.type, look: look || null, restyle: true, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
+    this.emit('building:change', b);
+    return { ok: true, building: b, cost: chk.cost };
+  }
+
   upgradeBuilding(id, toType = null, look = undefined) {
     if (look && !this.hasTech(STYLE_TECH_OF(look))) look = undefined;
     const b = this.buildings.get(id);

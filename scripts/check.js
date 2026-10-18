@@ -269,6 +269,14 @@ const runUntil = (pred, days = 6) => {
   ok(up.ok && h.con && h.con.toType === 'villa', 'upgrade to a villa started');
   const res2 = runUntil(() => !h.con);
   ok(res2.ok && h.type === 'villa' && h.level === 0 && h.look === 'stone', `villa finished in stone (${h.type} L${h.level} ${h.look})`);
+  // a new style without an upgrade: paid for, and a job for the builders
+  {
+    const m0 = w.money, chk = w.restyleCheck(h, 'brick');
+    const rr = w.restyleBuilding(h.id, 'brick');
+    ok(chk.ok && rr.ok && w.money === m0 - chk.cost && chk.cost === Math.max(30, Math.round(w.buildValue(h) * 0.3)) && h.con && h.con.restyle && h.type === 'villa' && h.level === 0, `restyling without an upgrade costs $${chk.cost} and starts a job`);
+    ok(runUntil(() => !h.con).ok && h.look === 'brick' && h.type === 'villa' && h.level === 0, 'builders restyle it in brick, same building and level');
+    ok(!w.restyleBuilding(h.id, 'brick').ok, 'restyling to the style it has already is refused');
+  }
 
   // a site the player puts first gets the builders before an older one
   {

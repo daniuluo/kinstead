@@ -882,7 +882,8 @@ MODELS.market = (c, L) => {
       timber: pal.timber,
     });
     for (let i = 0; i < 7; i++) gb.boxC(-0.3 + i * 0.1, 0.28, 0.24, 0.1, 0.014, 0.15, i % 2 ? awnB : awnA, 0.45);
-    sign(c, 0, 0.36, 0.2, 0.24, 0.065, '#5e432c');
+    // the shop sign is a fascia over the shopfront, between the awning and the windows above
+    sign(c, 0, 0.288, 0.2, 0.26, 0.05, '#5e432c');
     crate(c, -0.34, 0.36); crate(c, -0.25, 0.38, 0.9, '#a88458'); barrel(c, 0.36, 0.36);
   } else if (L >= 3) {
     // Market Hall: open arcade below, hall above, clock lantern on the roof
@@ -910,8 +911,8 @@ MODELS.market = (c, L) => {
       roofType: 'hip', rh: 0.28, chimney: true, shopWindow: true, nFront: 4, doorX: 0, lit: 0.9, plinth: STONE_D, doorW: 0.13,
     });
     for (let i = 0; i < 9; i++) gb.boxC(-0.4 + i * 0.1, 0.29, 0.3, 0.1, 0.014, 0.15, i % 2 ? awnB : awnA, 0.45);
-    sign(c, 0, 0.38, 0.26, 0.4, 0.075, '#3b2f2a');
-    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, 0.395, 0.27, 0.34, 0.035, 0.01, '#e0c070'); gb.noGlow();
+    sign(c, 0, 0.298, 0.26, 0.42, 0.06, '#3b2f2a');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, 0.312, 0.268, 0.34, 0.03, 0.01, '#e0c070'); gb.noGlow();
     lamp(c, -0.4, 0.42, 0.3); lamp(c, 0.4, 0.42, 0.3);
     crate(c, -0.27, 0.42); barrel(c, 0.27, 0.42);
   }

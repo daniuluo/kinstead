@@ -87,6 +87,11 @@ export const COMMANDS = {
     check: (w, c) => int(c.id) && (c.to == null || c.to === 'extend' || hasKey(BUILDINGS, c.to)) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
     run: (g, c) => g.world.upgradeBuilding(c.id, c.to || null, c.look),
   },
+  // a new style without an upgrade (null: back to the building's own)
+  restyle: {
+    check: (w, c) => int(c.id) && (c.look === null || LOOKS.has(c.look)),
+    run: (g, c) => g.world.restyleBuilding(c.id, c.look),
+  },
   expand: {
     check: (w, c) => int(c.id) && int(c.dir, 0, 12) && ['land', 'strip', 'takeover', 'estate'].includes(c.kind),
     run: (g, c) => g.world.expandBuilding(c.id, c.dir, c.kind),
