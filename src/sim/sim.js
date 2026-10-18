@@ -344,7 +344,7 @@ export class Sim {
 
   // Research points per day, and where they come from: town halls, schools,
   // chapels and the like (by level, and only while working), plus one point
-  // for every 40 villagers.
+  // for every 60 villagers.
   researchSources() {
     const w = this.world, by = new Map();
     for (const b of w.buildings.values()) {
@@ -358,7 +358,7 @@ export class Sim {
       e.n++; e.points += p;
     }
     const out = [...by.values()].sort((a, b) => b.points - a.points);
-    const v = Math.floor(w.population / 40);
+    const v = Math.floor(w.population / 60);
     if (v) out.push({ name: 'Villagers', n: 0, points: v });
     return out;
   }

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { CONFIG, seasonOf } from '../config.js';
 import { U } from './materials.js';
-import { clamp, smoothstep } from '../util/rng.js';
+import { clamp, smoothstep, hash2 } from '../util/rng.js';
 
 const K = (h, top, bot, sun, sunI, hs, hg, hi, night) => ({ h, top: new THREE.Color(top), bot: new THREE.Color(bot), sun: new THREE.Color(sun), sunI, hs: new THREE.Color(hs), hg: new THREE.Color(hg), hi, night });
 
@@ -23,6 +23,22 @@ const KEYS = [
 ];
 
 const WINTER_TINT = new THREE.Color('#dfe8f5');
+const _grey = new THREE.Color();
+
+// How wet the sky is (0 clear .. 1 pouring), the same for everyone who has
+// the town. Most days are settled; an unsettled one brings cloud in spells of
+// a few hours, and the heaviest spells rain (or snow, in winter).
+export function weatherAt(seed, day, hours) {
+  const unsettled = [0.3, 0.18, 0.34, 0.32];
+  const spell = (d, blk) => {
+    if (hash2(seed, d, 991) > unsettled[seasonOf(d)]) return 0;
+    const v = hash2(seed, d * 8 + blk, 313);
+    return v < 0.35 ? 0 : (v - 0.35) / 0.65;
+  };
+  const t = hours / 3, blk = Math.floor(t), f = t - blk;
+  const a = spell(day, blk), b = blk >= 7 ? spell(day + 1, 0) : spell(day, blk + 1);
+  return a + (b - a) * f * f * (3 - 2 * f);
+}
 
 export class Sky {
   constructor(renderer) {
@@ -33,6 +49,9 @@ export class Sky {
     this.night = 0;
     this.snow = 0;
     this.season = 1;
+    this.wet = 0;
+    this.cloud = 0;
+    this.rain = 0;
     this._drawStars();
     window.addEventListener('resize', () => this._drawStars());
     this.cur = { top: new THREE.Color(), bot: new THREE.Color(), sun: new THREE.Color(), hs: new THREE.Color(), hg: new THREE.Color() };
@@ -52,7 +71,7 @@ export class Sky {
     }
   }
 
-  update(day, hours) {
+  update(day, hours, seed = 0) {
     let a = KEYS[0], b = KEYS[1];
     for (let i = 0; i < KEYS.length - 1; i++) {
       if (hours >= KEYS[i].h && hours <= KEYS[i + 1].h) { a = KEYS[i]; b = KEYS[i + 1]; break; }
@@ -78,6 +97,20 @@ export class Sky {
     this.snow = snow;
     if (snow > 0) { c.hg.lerp(WINTER_TINT, snow * 0.25); c.bot.lerp(WINTER_TINT, snow * 0.15 * (1 - this.night)); }
 
+    // weather: cloud greys the sky and dims the sun; the heaviest spells rain
+    const wet = this.wet = weatherAt(seed, day, hours);
+    const cloud = this.cloud = smoothstep(0.15, 0.75, wet);
+    this.rain = season === 3 ? 0 : clamp((wet - 0.58) / 0.25, 0, 1);
+    let sunK = 1;
+    if (cloud > 0) {
+      for (const col of [c.top, c.bot]) {
+        const L = col.r * 0.3 + col.g * 0.59 + col.b * 0.11;
+        col.lerp(_grey.setRGB(L * 0.82, L * 0.86, L * 0.9), cloud * 0.8);
+      }
+      c.sun.lerp(_grey.setRGB(0.85, 0.88, 0.92), cloud * 0.6);
+      sunK = 1 - 0.6 * cloud;
+    }
+
     // sun / moon direction
     const dir = this.r.sunDir;
     if (hours >= 5.85 && hours <= 20.15) {
@@ -96,10 +129,10 @@ export class Sky {
 
     const R = this.r;
     R.sun.color.copy(c.sun);
-    R.sun.intensity = sunI;
+    R.sun.intensity = sunI * sunK;
     R.hemi.color.copy(c.hs);
     R.hemi.groundColor.copy(c.hg);
-    R.hemi.intensity = hi;
+    R.hemi.intensity = hi * (1 + 0.15 * cloud);
     R.renderer.toneMappingExposure = (R.baseExposure || 1) + this.night * 0.2;
     R.scene.fog.color.copy(c.bot).lerp(c.top, 0.25);
 
@@ -110,6 +143,6 @@ export class Sky {
 
     const bg = `linear-gradient(180deg, #${c.top.getHexString()} 0%, #${c.bot.getHexString()} 100%)`;
     if (bg !== this._lastBg) { this.skyEl.style.background = bg; this._lastBg = bg; }
-    this.starsEl.style.opacity = String(Math.max(0, this.night - 0.3) / 0.7);
+    this.starsEl.style.opacity = String((Math.max(0, this.night - 0.3) / 0.7) * (1 - cloud));
   }
 }

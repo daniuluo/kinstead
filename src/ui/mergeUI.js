@@ -4,9 +4,13 @@
 // will be settled, merge, and read a report of what was moved or refunded.
 
 import { deserialize, serialize, LocalSaves, readJSONFile, downloadJSON, saveFileNameFor } from '../save/saves.js';
-import { mergeWorlds, layoutMerge, besideOffset, reportLines } from '../save/merge.js';
+import { mergeWorlds, layoutMerge, besideOffset, reportLines, newVillage } from '../save/merge.js';
 import { BUILDINGS } from '../defs.js';
 import { fw, fd } from '../world/world.js';
+import { STARTERS } from '../world/starters.js';
+import { townName as genTownName } from '../util/names.js';
+import { RNG, randomSeed } from '../util/rng.js';
+import { MergePlacement } from './mergePlace.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '∞');
@@ -59,16 +63,40 @@ export class MergeDialog {
     this.name = '';
     this.step = 'pick';
     this.result = null;
+    this.fresh = { A: false, B: false };   // the brand-new village form is open
   }
 
   get inGame() { return !!this.game.world && !this.game.demo; }
 
-  open() {
+  // intoTown: merging a village into the town being played (it is town A)
+  open({ intoTown = false } = {}) {
+    if (this.placer && this.placer.active) return;
     this.step = 'pick';
-    if (this.pick.A && this.pick.A.kind === 'current' && !this.inGame) this.pick.A = null;
-    if (this.pick.B && this.pick.B.kind === 'current' && !this.inGame) this.pick.B = null;
-    if (!this.pick.A && this.inGame) this.pick.A = this._current();
+    // the town being played has moved on since it was last picked
+    for (const s of ['A', 'B']) if (this.pick[s] && this.pick[s].kind === 'current') { this.pick[s] = this.inGame ? this._current() : null; this.result = null; }
+    if (this.inGame && (intoTown || !this.pick.A) && (!this.pick.A || this.pick.A.kind !== 'current')) {
+      if (this.pick.B && this.pick.B.kind === 'current') this.pick.B = null;
+      this.pick.A = this._current();
+      this.arr = null;
+      this.result = null;
+    }
     this.render();
+  }
+
+  get canPlace() { return this.inGame && !!this.pick.A && this.pick.A.kind === 'current' && !!this.pick.B; }
+
+  _ensureArr() {
+    if (this.arr) return;
+    const NA = this.pick.A.world.N, NB = this.pick.B.world.N;
+    this.arr = { ...besideOffset(NA, NB, 'right'), rot: 0 };
+    this.name = this.pick.A.world.townName;
+  }
+
+  // arrange it in the game view itself, over the town being played
+  placeInTown() {
+    if (!this.canPlace) return;
+    this._ensureArr();
+    (this.placer ||= new MergePlacement(this, GAP)).start();
   }
 
   render() { if (this.step === 'arrange') this._arrange(); else this._pickStep(); }
@@ -103,23 +131,32 @@ export class MergeDialog {
         : `<div class="merge-chosen"><span class="merge-pic ph">${ms('add_location_alt')}</span><div class="m">Pick a town below.</div></div>`;
       const rows = [];
       if (this.inGame) rows.push(`<button class="${p && p.key === 'current' ? 'on' : ''}" data-cur="${side}">${ms('play_circle')} The town you are playing</button>`);
+      rows.push(`<button class="${p && p.kind === 'new' ? 'on' : ''}" data-fresh="${side}">${ms('add_home')} A brand-new village…</button>`);
       for (const e of slots) {
         rows.push(`<button class="${p && p.key === 'slot:' + e.id ? 'on' : ''}" data-slot="${esc(e.id)}" data-side="${side}">${ms(e.id === 'autosave' ? 'history' : 'save')} ${esc(e.name)} <small>day ${e.day} · ${fmt(e.pop)} villagers</small></button>`);
       }
       return `<div class="merge-side" data-drop="${side}">
         <h3>Town ${side} <small>— ${role}</small></h3>
         ${chosen}
-        <div class="merge-list">${rows.join('') || '<div class="empty">No saves in this browser yet.</div>'}</div>
+        ${this.fresh[side] ? freshForm(side) : `<div class="merge-list">${rows.join('')}</div>`}
         <label class="btn small" title="A Hearthvale .json save file">${ms('upload_file')} Upload a .json save…<input type="file" accept=".json,application/json" hidden data-file="${side}"></label>
         <div class="merge-drop">…or drop a .json save here</div>
       </div>`;
     };
+    const freshForm = (side) => `<div class="merge-new" data-nv="${side}">
+        <div class="field"><label>Start from</label><select data-nv-start><option value="">An empty valley: a town hall, a well and a few cottages</option>${STARTERS.map(st => `<option value="${st.id}">${esc(st.name)} (${st.N}×${st.N})</option>`).join('')}</select></div>
+        <div class="field"><label>Village name</label><input data-nv-name maxlength="40" value="${esc(genTownName(new RNG(randomSeed())))}"></div>
+        <div class="grid2"><div class="field"><label>Map seed</label><div class="inline"><input data-nv-seed style="flex:1;min-width:0" value="${randomSeed() % 1000000}"><button class="btn small" data-nv-dice title="Random seed">${ms('casino')}</button></div></div>
+          <div class="field"><label>Valley size</label><select data-nv-size><option value="32">32×32</option><option value="48" selected>48×48</option><option value="64">64×64</option><option value="80">80×80</option></select></div></div>
+        <div class="inline"><button class="btn small" data-nv-back>${ms('arrow_back')} Back</button><span style="flex:1"></span><button class="btn small primary" data-nv-go>${ms('add_home')} Found it</button></div>
+      </div>`;
     const both = this.pick.A && this.pick.B;
     this.ui.openModal(`<h2>Merge villages</h2>
       <p class="lead">Join two saved towns into one. Town B is set beside, apart from or over town A; the ground is blended where the valleys meet, the roads are joined up, and every clash is settled for you. Neither save is changed — the merged town is a new one.${this.game.net ? ' <b>Merging ends your multiplayer session.</b>' : ''}</p>
       <div class="merge-pick">${col('A')}${col('B')}</div>
       <div class="actions"><button class="btn" id="mgSwap" ${this.pick.A || this.pick.B ? '' : 'disabled'}>${ms('swap_horiz')} Swap A and B</button>
-      <span style="flex:1"></span><button class="btn primary" id="mgNext" ${both ? '' : 'disabled'}>Arrange them ${ms('arrow_forward')}</button></div>`, (c) => {
+      <span style="flex:1"></span><button class="btn${this.canPlace ? '' : ' primary'}" id="mgNext" ${both ? '' : 'disabled'}>${ms('map')} Arrange on a map</button>
+      ${this.canPlace ? `<button class="btn primary" id="mgPlace" title="Drag the village into place in the town view">${ms('add_location_alt')} Place it in the town</button>` : ''}</div>`, (c) => {
       c.classList.add('merge-win');
       for (const el of c.querySelectorAll('[data-pic]')) {
         const p = this.pick[el.dataset.pic];
@@ -147,14 +184,40 @@ export class MergeDialog {
       }
       c.querySelector('#mgSwap').onclick = () => { [this.pick.A, this.pick.B] = [this.pick.B, this.pick.A]; this.arr = null; this.result = null; this._pickStep(); };
       c.querySelector('#mgNext').onclick = () => {
-        if (!this.arr) {
-          const NA = this.pick.A.world.N, NB = this.pick.B.world.N;
-          this.arr = { ...besideOffset(NA, NB, 'right'), rot: 0 };
-          this.name = this.pick.A.world.townName;
-        }
+        this._ensureArr();
         this.step = 'arrange';
         this._arrange();
       };
+      const place = c.querySelector('#mgPlace');
+      if (place) place.onclick = () => this.placeInTown();
+      for (const b of c.querySelectorAll('[data-fresh]')) b.onclick = () => { this.fresh[b.dataset.fresh] = true; this._pickStep(); };
+      for (const form of c.querySelectorAll('[data-nv]')) {
+        const side = form.dataset.nv, q = (sel) => form.querySelector(sel);
+        // a starter town comes with its own valley: the seed and size are its own
+        q('[data-nv-start]').onchange = () => {
+          const st = STARTERS.find(x => x.id === q('[data-nv-start]').value);
+          for (const el of [q('[data-nv-seed]'), q('[data-nv-size]'), q('[data-nv-dice]')]) el.disabled = !!st;
+          if (st) { q('[data-nv-seed]').value = st.seed; q('[data-nv-size]').value = st.N; }
+        };
+        q('[data-nv-dice]').onclick = () => { q('[data-nv-seed]').value = randomSeed() % 1000000; };
+        q('[data-nv-back]').onclick = () => { this.fresh[side] = false; this._pickStep(); };
+        q('[data-nv-go]').onclick = () => {
+          const starter = q('[data-nv-start]').value || null, N = Number(q('[data-nv-size]').value);
+          const seedStr = q('[data-nv-seed]').value.trim(), name = q('[data-nv-name]').value.trim() || 'Newbury';
+          const seed = /^\d+$/.test(seedStr) ? Number(seedStr) : [...seedStr].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+          const go = q('[data-nv-go]');
+          go.disabled = true; go.textContent = 'Founding…';
+          // let the button repaint first: a starter town takes a moment to grow
+          setTimeout(() => {
+            try {
+              const data = newVillage({ starter, seed, N, name });
+              const what = starter ? STARTERS.find(x => x.id === starter).name.toLowerCase() : `an empty valley, seed ${seed}`;
+              this.fresh[side] = false;
+              this._choose(side, this._entry('new', `new:${starter || ''}:${seed}:${N}:${name}`, `A brand-new village (${what})`, data));
+            } catch (err) { this.ui.toast(err.message, 'bad'); go.disabled = false; go.textContent = 'Found it'; }
+          }, 30);
+        };
+      }
     });
   }
 
@@ -181,6 +244,7 @@ export class MergeDialog {
         </div>
       </div>
       <div class="actions"><button class="btn" id="mgBack">${ms('arrow_back')} Pick other towns</button><span style="flex:1"></span>
+        ${this.canPlace ? `<button class="btn" id="mgPlace" title="Drag the village into place in the town view">${ms('add_location_alt')} Place it in the town</button>` : ''}
         <button class="btn primary" id="mgGo">${ms('merge')} Merge villages</button></div>`, (c) => {
       c.classList.add('merge-win');
       this.cv = c.querySelector('#mgCanvas');
@@ -196,6 +260,8 @@ export class MergeDialog {
       c.querySelector('#mgName').oninput = (e) => { this.name = e.target.value; };
       c.querySelector('#mgBack').onclick = () => { this.step = 'pick'; this._pickStep(); };
       c.querySelector('#mgGo').onclick = () => this._merge();
+      const place = c.querySelector('#mgPlace');
+      if (place) place.onclick = () => this.placeInTown();
       this._bindDrag();
       this._changed(true);
     });
@@ -217,7 +283,7 @@ export class MergeDialog {
     let out = null, error = null;
     try { out = mergeWorlds(this.pick.A.world, this.pick.B.world, { ...this.arr, seam: this.seam || undefined, name: this.name }, { preview: true }); } catch (e) { error = e.message; }
     this.result = { key, out, error, pic: out ? townPicture(out.world) : null };
-    if (this.cv && this.cv.isConnected) { this._draw(); this._info(); }
+    if (this.win && this.win.isConnected) { this._draw(); this._info(); }
   }
 
   _layout() { return layoutMerge(this.pick.A.world, this.pick.B.world, this.arr); }

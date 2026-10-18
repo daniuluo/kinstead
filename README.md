@@ -33,11 +33,15 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Windows and issues** — drag any window by its title bar and keep several open at once; `Esc` closes the front one. The **Issues** panel in the lower left (`I`) lists the town's bottlenecks: homes out of reach of health care, schools or safety, school places short, power or water short, workplaces stopped or slowed for want of power, water or workers, sites waiting for builders, skilled jobs nobody can fill. Click an entry to jump to the buildings involved, one after another.
 - **Economy** — money in dollars: taxes, shop visits, production, upkeep, a budget screen with charts, and RCI demand bars. New families arrive from the edge of the map when the village is attractive; unhappy households leave.
 - **Time and seasons** — a day lasts 8 minutes at 1×; sunrise and sunset, lit windows, lamps, lantern-carrying villagers, fireflies, then spring blossom, autumn leaves and winter snow.
+- **Weather** — most days are fair, but now and then clouds roll in for a few hours and the heaviest spells bring rain (snow in winter), with a soft hiss of rain. The weather follows the town's seed and clock, so everyone in a multiplayer town sees the same sky.
+- **Soundtrack** — a gentle folk soundtrack made up as it plays: a lute picking out chords, a flute or bells on top and a warm pad underneath. It slows into a minor key at night and plays quieter in the rain. It is synthesised in the browser, so there are no music files. Turn it off with the note button in the top bar, or set its volume in Settings.
+- **Building guide** — hover over a card in the build menu for a summary of what the building does (cost, jobs, homes, reach, visitors, upkeep, what it grows into). Pick one and the Building guide window shows every level with its needs, and the other paths it can take.
+- **Crowds** — every place villagers visit holds only so many at once: shops, pubs and theatres, chapels, clinics (villagers now go to see the doctor, the old most often) and parks. A full place sends people on to the nearest one of the same kind with room, or they stay home. Hover over a building or open it to see its visitors.
 - **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Four sandbox switches, available for a new game or from Settings: unlimited money, unlock every building, upgrade without meeting needs, and instant construction.
 - **Pop-ups** — money pop-ups, notices, hover tips, the name tag over a followed villager and the warning badges over buildings with no power, water or workers can each be switched off in Settings, or all at once with the bell button or `N`.
 - **Multiplayer** — host your town and send friends a short invite code; they join from their own browsers and build the same town with you, live. Everyone sees each other's cursors and what they are building. See [Multiplayer](#multiplayer).
 - **Saves** — in this browser (with an autosave every day), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
-- **Merge villages** — join two saved towns into one valley, from the Save window or the title menu. See [Merging villages](#merging-villages).
+- **Merge villages** — join two saved towns into one valley, from the Save window or the title menu. While playing, the map-pin button in the top bar merges a village into your town: a saved one, or a brand-new one (an empty valley or a starter town). You drag it into place right in the game view. See [Merging villages](#merging-villages).
 
 ## Controls
 
@@ -78,6 +82,17 @@ The players box in the top bar shows who is connected. Each player's cursor appe
 - **Villagers on guests are simulated locally, for looks.** Who lives and works where, and who arrives, leaves, is born or dies, comes from the host. A guest's own copy of the routines then walks them about, puts builders to work on the scaffolding and runs the coaches and trains, so its streets look alive without streaming hundreds of positions. Individual villagers may therefore be in a different spot on each screen. The money from shop visits and fares is always the host's ([`src/net/replica.js`](src/net/replica.js)).
 - **A tab in the background.** A browser gives a background tab no animation frames, so a host whose tab is hidden keeps the town running for its guests in larger, undrawn steps. Browsers may slow such a tab down further after a while, so a host should keep the game in view.
 
+### Safety
+
+Every other player is treated as untrusted.
+
+- **Guests can only ask.** The host checks every guest command with the same World rules as its own; commands are looked up by their own names only (no `__proto__` or `constructor` tricks), the sandbox switches stay with the host, and a guest can send at most 15 actions and 25 cursor moves a second.
+- **Size limits.** A guest's messages may be 256 KB at most and the host's 64 MB; anything announced as bigger is dropped rather than buffered, and a connection that doesn't introduce itself within 20 seconds is closed.
+- **No markup gets through.** Names of players, villagers, towns and transit lines that arrive from another player, a loaded save or a merged village are stripped of markup and control characters and capped in length ([`src/util/text.js`](src/util/text.js)), colours must be plain `#rrggbb` values, and the UI escapes everything it shows as well.
+- **Joining is always a click.** An invite link only fills in the code; you choose whether to join.
+- **Your address.** As in any peer-to-peer game, players you connect with can see your internet (IP) address. Only share codes with people you trust.
+- `scripts/net-check.js` plays a hostile guest and a hostile host (prototype keys, markup in names, floods, oversized messages) and checks that each is refused or cleaned.
+
 ### Why PeerJS
 
 The site is static (GitHub Pages), so players need a public way to find each other. Hearthvale uses [PeerJS](https://peerjs.com/) 1.5.5, loaded from jsDelivr with a pinned version and a Subresource Integrity checksum, the first time someone hosts or joins. It was picked over Trystero and similar options for three reasons:
@@ -94,10 +109,12 @@ Everything is generated in code — there are no model files, textures or sprite
 
 ## Merging villages
 
-**Save → Merge villages…** (or **Merge villages…** on the title menu) joins two saved towns into a new one. Neither save is changed.
+**Save → Merge villages…** (or **Merge villages…** on the title menu) joins two towns into a new one. While playing, the map-pin button in the top bar (**Merge a village into this town**) opens the same window with your town as town A. Neither save is changed.
 
-1. **Pick town A and town B.** Each can be a save in this browser, the town you are playing, or a `.json` save you upload or drop onto its column. Town A keeps its name, its place and its road out of the valley; town B joins it.
-2. **Arrange them.** A 2D map shows both valleys. Use **Left / Right / Above / Below** to set B beside A (the map grows to fit), drag B anywhere to overlap it or leave a gap, and **Turn B 90°** in quarter turns. B snaps to A's edges and centre as you drag. The picture becomes the actual merged valley a moment after you stop, and the panel shows the merged map size and everything that will be settled. A merged map can be up to 96×96: two big valleys side by side lose some empty countryside from their outer edges, never buildings. An arrangement too wide for that is refused with a reason.
+1. **Pick town A and town B.** Each can be a save in this browser, the town you are playing, a `.json` save you upload or drop onto its column, or **a brand-new village**. A brand-new village is either an empty valley (pick its seed and size; it comes with its founding families, as in a new game) or one of the starter towns. Town A keeps its name, its place and its road out of the valley; town B joins it.
+2. **Arrange them**, in the game view or on a map.
+   - **Place it in the town** (when town A is the town you are playing) pauses the game and sets the incoming village down as a real diorama beside your town. Drag it with the mouse; the blue, orange and dashed outlines show your town, the village and the merged map. **R** turns it a quarter turn, and the panel's buttons set it beside any edge or centre it on your town. The panel also shows what will be settled. **Enter** merges, and **Esc** cancels and carries on with the game as it was. The camera still pans and turns as usual: right-drag, WASD or the arrow keys, Q / E, and T for the top-down view.
+   - **Arrange on a map**: a 2D map shows both valleys. Use **Left / Right / Above / Below** to set B beside A (the map grows to fit), drag B anywhere to overlap it or leave a gap, and **Turn B 90°** in quarter turns. B snaps to A's edges and centre as you drag. The picture becomes the actual merged valley a moment after you stop, and the panel shows the merged map size and everything that will be settled. A merged map can be up to 96×96: two big valleys side by side lose some empty countryside from their outer edges, never buildings. An arrangement too wide for that is refused with a reason.
 3. **Merge.** The merged town loads, and a report lists what was moved, refunded, changed or dropped. If you were playing a town, it is saved in this browser first. The merged town is autosaved straight away and can be downloaded as `.json`.
 
 How the join is made:
@@ -200,7 +217,7 @@ Growing the towns at runtime was chosen over shipping saved `.json` towns becaus
 node scripts/merge-test.js
 ```
 
-This merges grown towns in every kind of arrangement: beside on each side, turned 90°, 180° and 270°, overlapping at several offsets, right on top of each other, apart with a gap, a small valley inside a big one, two big ones trimmed to fit, a town with itself, and two valleys whose rivers meet at the join. After each merge it checks the town invariants the playtest uses (no overlapping plots, no broken references, capacities). It also checks that every id is unique, there is one town hall, there is one road network that reaches the map edge and every building, nothing stands in water or on a cliff, no step on the map is steeper than in either valley, streets weren't flooded, everyone has a home, and buildings and villagers add up with the report. Research, money and the calendar must be combined correctly, and the save must round-trip. Several merges then run the simulation for a day. Add `--write <dir>` to save the test towns and a merged one as `.json` files to try in the browser.
+This merges grown towns in every kind of arrangement: beside on each side, turned 90°, 180° and 270°, overlapping at several offsets, right on top of each other, apart with a gap, a small valley inside a big one, two big ones trimmed to fit, a town with itself, a brand-new village beside one and a starter town overlapping one, and two valleys whose rivers meet at the join. After each merge it checks the town invariants the playtest uses (no overlapping plots, no broken references, capacities). It also checks that every id is unique, there is one town hall, there is one road network that reaches the map edge and every building, nothing stands in water or on a cliff, no step on the map is steeper than in either valley, streets weren't flooded, everyone has a home, and buildings and villagers add up with the report. Research, money and the calendar must be combined correctly, and the save must round-trip. Several merges then run the simulation for a day. Add `--write <dir>` to save the test towns and a merged one as `.json` files to try in the browser.
 
 ## Credits
 

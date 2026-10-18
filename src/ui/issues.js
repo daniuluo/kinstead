@@ -55,7 +55,10 @@ export function computeIssues(game) {
     groups.get(key).ids.push(b.id);
   }
   for (const g of groups.values()) {
-    const n = g.ids.length, name = BUILDINGS[g.type].name.toLowerCase(), names = n === 1 ? name : pluralOf(name);
+    // name what is there: the level they all share, or the first level of the kind
+    const levels = new Set(g.ids.map(id => w.buildings.get(id).level));
+    const L = BUILDINGS[g.type].levels[levels.size === 1 ? [...levels][0] : 0];
+    const n = g.ids.length, name = L.name.toLowerCase(), names = n === 1 ? name : pluralOf(name);
     const what = `${n} ${names}`, act = { kind: 'focus', ids: g.ids };
     if (g.why === 'workers') add(g.stop ? 'warn' : 'info', 'person_off', g.stop ? `${what} with no workers — ${n === 1 ? 'it does' : 'they do'} nothing` : `${what} short of staff`, act);
     else if (g.why === 'power') add(g.stop ? 'bad' : 'warn', 'power_off', g.stop ? `${what} stopped — no power` : g.lights ? `${what} without power — little trade after dark` : `${what} working slowly — no power`, act);

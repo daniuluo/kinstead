@@ -14,7 +14,7 @@ import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel, STYLES } from '../src/render/buildings.js';
 import { fw, fd } from '../src/world/world.js';
-import { BUILDINGS } from '../src/defs.js';
+import { BUILDINGS, TECHS } from '../src/defs.js';
 
 let failures = 0;
 const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg); } else console.log('ok  ', msg); };
@@ -393,7 +393,7 @@ const runUntil = (pred, days = 6) => {
   const c1 = fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true });
   ok(!c1.ok && /Research/.test(c1.reason), `a bakery needs research first ("${c1.reason}")`);
   ok(fresh.startResearch('commerce') && fresh.research.current === 'commerce', 'research project started');
-  fresh.addResearch(30);
+  fresh.addResearch(TECHS.commerce.cost);
   ok(fresh.research.done.includes('commerce') && fresh.checkBuild('bakery', spot[0], spot[1], { ignoreMoney: true }).ok, 'finished research unlocks the bakery');
   ok(!fresh.canResearch('highrise'), 'later projects wait for their prerequisites');
 }
@@ -479,7 +479,7 @@ const runUntil = (pred, days = 6) => {
   ok(!mf.powered && mf.working === 0 && mf.blockers.includes('power') && sim.incomeOf(mf) === 0, `an unpowered Manufactory makes nothing (lacks ${mf.blockers.join(', ')})`);
   ok(rv.lamps.length === 0 && rv.darkLamps === lamps, `street lamps go dark without power (${rv.darkLamps})`);
   const iss = computeIssues(tg).map(i => i.text);
-  ok(iss.some(t => /workshop stopped — no power/.test(t)), `issues list the stopped works ("${iss.find(t => /no power/.test(t))}")`);
+  ok(iss.some(t => /manufactory stopped — no power/.test(t)), `issues list the stopped works ("${iss.find(t => /no power/.test(t))}")`);
   for (let k = 0; k < 8 && (sim.recompute(), sim.powerShare < 1); k++) near('windgen', 16);
   ok(mf.working > 0 && !computeIssues(tg).some(i => /no power/.test(i.text)), 'it starts again once the power is back');
   // water: without it a bakery works at reduced output, a clinic reaches
@@ -501,7 +501,7 @@ const runUntil = (pred, days = 6) => {
   // workers: a school with no teachers has no places
   const sch = near('school');
   sim.recompute();
-  ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /school with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
+  ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /schoolhouse with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
   // water comes through the mains under the streets: one well anywhere on
   // the roads waters a bakery right across town, but nothing off the roads
   const { runCommand } = await import('../src/commands.js');
