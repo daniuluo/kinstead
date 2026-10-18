@@ -568,11 +568,13 @@ export const BUILDINGS = {
   },
   townhall: {
     name: 'Town Council', cat: 'services', size: 2, unique: true, icon: '🏛️',
-    desc: 'The heart of the village. Upgrading boosts tax income.',
+    desc: 'The heart of the town. Every upgrade raises taxes across the whole town, and its research.',
     levels: [
       { name: 'Town Hall', cost: 1000, upkeep: 5, jobs: 3, taxBonus: 0, edu: 2 },
       { name: 'Guild Hall', cost: 1600, upkeep: 10, jobs: 6, taxBonus: 0.1, edu: 3, unlock: 120 },
       { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 18, jobs: 10, taxBonus: 0.2, edu: 3, unlock: 200, req: { power: true } },
+      { name: 'City Hall', tech: 'municipal', cost: 5200, upkeep: 28, jobs: 14, taxBonus: 0.3, edu: 3, appeal: 6, radius: 4, unlock: 350, req: { power: true, happiness: 62 } },
+      { name: 'Civic Palace', tech: 'metropolis', cost: 8800, upkeep: 42, jobs: 18, taxBonus: 0.4, edu: 4, appeal: 10, radius: 5, unlock: 600, req: { power: true, happiness: 68, culture: true } },
     ],
   },
 
@@ -683,6 +685,8 @@ export const TECHS = {
   firefighting: { name: 'Fire Brigades', cost: 270, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
   hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals and infirmaries.' },
   services3: { name: 'Civic Services', cost: 720, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
+  municipal: { name: 'Municipal Government', cost: 1800, tier: 5, branch: 'public', needs: ['civic', 'services3'], desc: 'The City Hall: council, courts and records under one clock tower, for more tax and research.' },
+  metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for the most tax and research.' },
   schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, and board schools joined from two schoolhouses.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
@@ -816,7 +820,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], townhall: [3, 5, 8], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { papermill: [2, 3], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 
