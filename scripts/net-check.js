@@ -224,7 +224,7 @@ let ended = null;
   ok(up.ok && up.building && gw().buildings.get(home.id).look === 'brick' && gw().buildings.get(home.id).type === hw.buildings.get(home.id).type, `a guest upgrades a home in brick (${hw.buildings.get(home.id).type})`);
   // join two neighbours
   let pair = null;
-  for (const a of hw.buildings.values()) { const m = !a.con && hw.mergeOptions(a)[0]; if (m) { pair = [a.id, m.other.id, m.type]; break; } }
+  for (const a of hw.buildings.values()) { const m = !a.con && hw.mergeOptions(a).find(m => !m.farmJoin); if (m) { pair = [a.id, m.other.id, m.type]; break; } }
   if (pair) {
     const mr = await ask(guest, { t: 'merge', a: pair[0], b: pair[1] });
     ok(mr.ok && mr.building && mr.building.type === pair[2] && !gw().buildings.has(pair[0]) && !gw().buildings.has(pair[1]), `a guest joins two neighbours into a ${pair[2]}`);
@@ -237,6 +237,25 @@ let ended = null;
     const gb = gw().buildings.get(grow[0]);
     ok(er.ok && fw(gb) * fd(gb) === 2 && gw().buildingOn(grow[1].x, grow[1].z) === gb, 'a guest expands a house onto the next plot');
   } else ok(false, 'no house could expand');
+  // a guest ploughs fields for a farm and changes what it grows
+  {
+    let farm = null;
+    for (const b of hw.buildings.values()) if (b.type === 'farm' && !b.con) { farm = b; break; }
+    if (!farm) {
+      const s = freeSpot(hw, 'farm');
+      if (s) { const p = hw.placeBuilding('farm', s.x, s.z, { instant: true, ignoreUnlock: true }); if (p.ok) farm = p.building; }
+    }
+    if (farm) {
+      const tiles = [];
+      for (let z = farm.z - 2; z < farm.z + 4; z++) for (let x = farm.x - 2; x < farm.x + 4; x++) tiles.push([x, z]);
+      const fr = await ask(guest, { t: 'fields', id: farm.id, tiles, add: true });
+      const pr = await ask(guest, { t: 'produce', id: farm.id, produce: 'cattle' });
+      await until(() => { const g2 = gw().buildings.get(farm.id); return g2 && g2.fields === farm.fields && g2.flavor === 'cattle'; });
+      const gf = gw().buildings.get(farm.id);
+      ok(fr.ok && fr.n > 0 && pr.ok && gf && gf.fields === farm.fields && gf.flavor === 'cattle' && gw().fields.every((v, i) => v === hw.fields[i]), `a guest ploughs ${fr.n} fields and turns the farm to cattle, and the guest sees it`);
+      ok(!(await ask(guest, { t: 'fields', id: farm.id, tiles: 'lots', add: true })).ok, 'a malformed fields command is refused');
+    } else ok(false, 'no farm for the fields check');
+  }
   // move a building
   const mover = [...hw.buildings.values()].find(b => b.type === 'house' && !b.con && fw(b) === 1 && fd(b) === 1);
   spot = freeSpot(hw);

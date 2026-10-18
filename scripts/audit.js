@@ -38,6 +38,27 @@ export function auditTown(w, problem) {
     const o = w.buildings.get(l.with);
     if (!o || !(o.leases || []).some(m => m.with === b.id)) problem(`${b.type} #${b.id} has a land deal with a missing or unaware neighbour`);
   }
+  // farmland belongs to a farm, on open ground, within its limit, counted right
+  if (w.fields) {
+    const per = new Map();
+    let stray = 0, under = null;
+    for (let i = 0; i < w.fields.length; i++) {
+      const f = w.fields[i];
+      if (f < 0) continue;
+      const b = w.buildings.get(f);
+      if (!b || !BUILDINGS[b.type].fields) { stray++; continue; }
+      if (!under && (w.buildingAt[i] >= 0 || w.roads[i] || w.rails[i])) under = b;
+      per.set(f, (per.get(f) || 0) + 1);
+    }
+    if (stray) problem(`${stray} field(s) belong to no farm`);
+    if (under) problem(`a field of ${under.type} #${under.id} is under a building, road or track`);
+    for (const b of w.buildings.values()) {
+      if (!BUILDINGS[b.type].fields) continue;
+      const n = per.get(b.id) || 0;
+      if ((b.fields || 0) !== n) problem(`${b.type} #${b.id} thinks it has ${b.fields || 0} fields, but has ${n}`);
+      if (n > w.fieldMax(b)) problem(`${b.type} #${b.id} works ${n} fields, more than its ${w.fieldMax(b)}`);
+    }
+  }
   // nobody is over capacity
   for (const b of w.buildings.values()) {
     if (!isOpen(b)) continue;

@@ -407,6 +407,76 @@ const placePair = (tw, ta, tb) => {
   F.residents = []; G.residents = [];
 }
 
+// 3d0f. farms: the farmyard by the road with fields behind; farmland beyond
+// the plot (touching it, up to a limit, priced, blocking building, cleared by
+// the bulldozer and with the farm); what a farm produces; a homestead
+{
+  const { capOf } = await import('../src/world/world.js');
+  const { CONFIG } = await import('../src/config.js');
+  const { PRODUCE } = await import('../src/defs.js');
+  const { workArea } = await import('../src/render/buildings.js');
+  const tw = World.createNew({ N: 48, seed: 61, name: 'Furrowby' });
+  tw.setSandbox({ unlockAll: true, instantBuild: true });
+  tw.money = 1e5;
+  const th = [...tw.buildings.values()].find(b => b.type === 'townhall');
+  let F = null;
+  for (let r = 3; r < 18 && !F; r++) for (let dz = -r; dz <= r && !F; dz++) for (let dx = -r; dx <= r && !F; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    const c = tw.checkBuild('farm', th.x + dx, th.z + dz);
+    if (!c.ok || !c.access.some(a => a.conn)) continue;
+    const p = tw.placeBuilding('farm', th.x + dx, th.z + dz, { instant: true });
+    if (p.ok) F = p.building;
+  }
+  ok(!!F, 'found room for a test farm');
+  const wk = workArea(F), [fx, fz] = [[0, 1], [1, 0], [0, -1], [-1, 0]][F.rot];
+  const cx = F.x + 1, cz = F.z + 1, front = (x, z) => (x - cx) * fx + (z - cz) * fz;
+  ok(front((wk[0] + wk[2]) / 2, (wk[1] + wk[3]) / 2) < 0, 'its fields lie behind the farmyard, away from the road');
+  const ring = [];
+  for (let z = F.z - 6; z < F.z + 8; z++) for (let x = F.x - 6; x < F.x + 8; x++) ring.push([x, z]);
+  const far = tw.planFields(F.id, [[F.x - 6, F.z - 6]], true);
+  ok(!far.n && /touch/.test(far.tiles[0].reason || ''), 'a field must touch the farm or its fields');
+  const m0 = tw.money, plan = tw.planFields(F.id, ring, true), r1 = tw.setFields(F.id, ring, true);
+  ok(r1.ok && F.fields === CONFIG.FIELD_MAX[0] && tw.money === m0 - plan.cost && plan.cost >= CONFIG.FIELD_MAX[0] * CONFIG.FIELD_COST, `a farmstead ploughs up to ${CONFIG.FIELD_MAX[0]} fields at $${CONFIG.FIELD_COST} each ($${plan.cost})`);
+  ok(capOf(F, 'jobs') === Math.round(BUILDINGS.farm.levels[0].jobs + F.fields * CONFIG.FIELD_JOBS), `each field adds work (${capOf(F, 'jobs')} jobs)`);
+  tw.upgradeBuilding(F.id);
+  ok(tw.setFields(F.id, ring, true).ok && F.fields === CONFIG.FIELD_MAX[1], `a farm works more (${F.fields})`);
+  const fi = tw.fieldTiles.get(F.id)[0], fxz = [fi % tw.N, (fi / tw.N) | 0];
+  ok(!tw.checkBuild('house', ...fxz).ok && !tw.checkRoad(...fxz, 1).ok, 'fields block buildings and roads');
+  const n1 = F.fields;
+  ok(tw.bulldoze(...fxz).ok && F.fields === n1 - 1 && tw.fields[fi] === -1, 'the bulldozer takes a field out');
+  // what it produces: jobs and earnings
+  const sim = new Sim({ world: tw, speed: 0, agents: { relocate() {}, depart() {}, arrive() {} }, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } });
+  const j0 = capOf(F, 'jobs');
+  ok(tw.setProduce(F.id, 'sheep').ok && F.flavor === 'sheep' && capOf(F, 'jobs') === Math.round((BUILDINGS.farm.levels[1].jobs + F.fields * CONFIG.FIELD_JOBS) * PRODUCE.sheep.jobs), `sheep take fewer hands (${j0} → ${capOf(F, 'jobs')})`);
+  ok(!tw.setProduce(F.id, 'unicorns').ok && !tw.setProduce(F.id, 'sheep').ok, 'only real produce, and only a change');
+  sim.recompute();
+  F.working = 1;   // fully staffed, for the sum
+  const perWorker = sim.incomeOf(F) / capOf(F, 'jobs');
+  ok(perWorker > BUILDINGS.farm.levels[1].income * 1.4, `each shepherd earns more ($${perWorker.toFixed(1)} a worker)`);
+  // saved and loaded
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
+  const FB = back.buildings.get(F.id);
+  ok(FB.fields === F.fields && back.fields.every((v, i) => v === tw.fields[i]) && FB.flavor === 'sheep', 'saves keep the fields and what the farm keeps');
+  // a homestead: a cottage beside it joined on
+  let cot = null;
+  for (let dz = -1; dz <= 2 && !cot; dz++) for (let dx = -1; dx <= 2 && !cot; dx++) {
+    if ((dx === -1 || dx === 2) === (dz === -1 || dz === 2)) continue;
+    const c = tw.checkBuild('house', F.x + dx, F.z + dz);
+    if (c.ok) { const p = tw.placeBuilding('house', F.x + dx, F.z + dz, { instant: true }); if (p.ok) cot = p.building; }
+  }
+  if (cot) {
+    sim.makeFamily(cot, 3);
+    const people = cot.residents.slice();
+    const opt = tw.mergeOptions(F).find(m => m.farmJoin && m.other === cot);
+    const jr = opt && tw.mergeBuildings(F.id, cot.id);
+    ok(jr && jr.ok && F.type === 'homestead' && !tw.buildings.has(cot.id) && people.every(id => tw.residents.get(id).home === F.id) && F.fields > 0 && F.flavor === 'sheep', `a cottage joined on makes it a homestead: the family moves in, the fields and flock stay (${people.length} people)`);
+  } else ok(false, 'no room for a cottage beside the farm');
+  // gone with the farm
+  const id = F.id;
+  tw.removeBuilding(id, 0);
+  ok(!tw.fields.some(v => v === id), 'its fields go with the farm');
+}
+
 // 3d1. taking a neighbouring plot: the land first (no builders, the building
 // stays its size), then what to build across it
 {

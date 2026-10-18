@@ -54,6 +54,7 @@ export class Input {
     this.variant = (Math.random() * 1e9) | 0;
     // the road selection tool keeps its own panel in the inspector
     if (t.kind === 'roadsel') this.ui.inspect({ kind: 'roadsel' });
+    else if (t.kind === 'fields') this.ui.inspect({ kind: 'building', id: t.id });
     else if (t.kind !== 'select' || (sel && sel.kind === 'roadsel')) this.ui.inspect(null);
     this.ui.syncToolbar();
     this.game.updateRouteOverlay();
@@ -101,6 +102,7 @@ export class Input {
       case 'select': this.drag = { type: 'maybePan', x: e.clientX, y: e.clientY, moved: 0 }; break;
       case 'road': case 'rail': if (tile) this.drag = { type: 'line', start: tile, end: tile }; break;
       case 'bulldoze': if (tile) this.drag = { type: 'rect', start: tile, end: tile }; break;
+      case 'fields': if (tile) this.drag = { type: 'fields', start: tile, end: tile }; break;
       case 'roadsel': if (tile) this.drag = { type: 'pick', start: tile, end: tile, add: e.shiftKey }; break;
       case 'build': if (tile) { this._place(tile); this.drag = { type: 'paint', last: `${tile.x},${tile.z}` }; } break;
       case 'move': if (tile) this._moveTo(tile); break;
@@ -140,7 +142,7 @@ export class Input {
     const prevKey = this.hover ? `${this.hover.x},${this.hover.z}` : '';
     this.hover = tile;
     if (this.tool.kind === 'roadsel' && this.tool.action) { this.tool.action = null; this.refresh(e); }
-    if (d && (d.type === 'line' || d.type === 'rect' || d.type === 'pick') && tile) d.end = tile;
+    if (d && (d.type === 'line' || d.type === 'rect' || d.type === 'pick' || d.type === 'fields') && tile) d.end = tile;
     if (d && d.type === 'paint' && tile && key !== d.last) {
       d.last = key;
       if (this.tool.kind === 'build') { if (BUILDINGS[this.tool.type].size === 1) this._place(tile, true); }
@@ -176,6 +178,18 @@ export class Input {
       this.game.cmd({ t: 'bulldoze', tiles }, (r) => {
         if (r.n) this.game.sfx('demolish');
         else if (r.reason && tiles.length === 1) this.ui.toast(r.reason, 'bad');
+      });
+    } else if (d.type === 'fields') {
+      const t = this.tool, tiles = this._rectTiles(d.start, d.end);
+      this.game.cmd({ t: 'fields', id: t.id, tiles, add: t.add }, (r) => {
+        if (r.ok) {
+          this.game.sfx(t.add ? 'build' : 'demolish');
+          this.ui.toast(t.add ? `Ploughed ${r.n} field${r.n === 1 ? '' : 's'} · $${r.cost}` : `Took out ${r.n} field${r.n === 1 ? '' : 's'} · +$${r.refund}`, 'good', '🌾');
+        } else if (r.reason) this.ui.toast(r.reason, 'bad');
+        if (this.ui.selection) this.ui.renderInspector(true);
+        const b = this.world.buildings.get(t.id);
+        // a farm with no room for more stops the tool
+        if (t.add && b && (b.fields || 0) >= this.world.fieldMax(b)) this.setTool({ kind: 'select' });
       });
     } else if (d.type === 'pick') {
       this.pickRoads(this._pickTiles(d), d.add || e.shiftKey, this._oneTile(d));
@@ -369,6 +383,21 @@ export class Input {
         if (c.ok) cost += c.cost; else bad ||= c.reason;
       }
       tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name} · $${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
+    } else if (t.kind === 'fields') {
+      // the farm and its fields in gold; what a drag would add (green) or
+      // can't (red), or which fields it would take out
+      const farm = w.buildings.get(t.id);
+      if (!farm) { this.setTool({ kind: 'select' }); return; }
+      for (let dz = 0; dz < fd(farm); dz++) for (let dx = 0; dx < fw(farm); dx++) tiles.push({ x: farm.x + dx, z: farm.z + dz, color: GOLD, alpha: 0.2 });
+      for (const i of w.fieldTiles.get(farm.id) || []) tiles.push({ x: i % w.N, z: (i / w.N) | 0, color: GOLD, alpha: 0.18, border: false });
+      const list = d && d.type === 'fields' ? this._rectTiles(d.start, d.end) : h ? [[h.x, h.z]] : [];
+      if (list.length) {
+        const plan = w.planFields(farm.id, list, t.add);
+        for (const p of plan.tiles) tiles.push({ x: p.x, z: p.z, color: p.reason ? BAD : t.add ? OK : WARN, alpha: p.reason ? 0.3 : 0.45 });
+        const why = plan.short || (!plan.n && (plan.tiles.find(p => p.reason) || {}).reason);
+        tip = t.add ? `${plan.n} field${plan.n === 1 ? '' : 's'} · $${fmt(plan.cost)} · ${plan.have + plan.n} of ${plan.max}` : `Take out ${plan.n} field${plan.n === 1 ? '' : 's'} · +$${fmt(plan.refund)}`;
+        if (why) tip += `<br><span class="bad">${why}</span>`;
+      }
     } else if (t.kind === 'roadsel') {
       // picked tiles in gold; while an action is hovered in the panel, the
       // tiles it changes in green, those it leaves alone in red, and the

@@ -167,6 +167,8 @@ export class Animals {
       const f = w.buildings.get(a.farm);
       const r = f && (f.work || (f.work = workArea(f)));
       if (r && x > r[0] + 0.03 && x < r[2] - 0.03 && z > r[1] + 0.03 && z < r[3] - 0.03) return true;
+      // the strip of its own plot round its home field, on the way out to the others
+      if (r && w.buildingAt[i] === a.farm && x > r[0] - 0.16 && x < r[2] + 0.16 && z > r[1] - 0.16 && z < r[3] + 0.16) return true;
       // or out in one of its fields, clear of the fence
       if (!f || !w.fields || w.fields[i] !== f.id) return false;
       const fx = x - tx, fz = z - tz, M = 0.08, mine = (nx, nz) => w.inBounds(nx, nz) && (w.fields[w.idx(nx, nz)] === f.id || w.buildingAt[w.idx(nx, nz)] === f.id);
@@ -335,7 +337,12 @@ export class Animals {
       for (const sp of ['chicken', 'sheep', 'cow']) {
         for (let k = h[sp]; k < wn[sp]; k++) {
           for (let t = 0; t < 6; t++) {
-            if (this._spawn(sp, q[0] + 0.1 + r.next() * (q[2] - q[0] - 0.2), q[1] + 0.1 + r.next() * (q[3] - q[1] - 0.2), { farm: id })) break;
+            // in the farm's own field, or out in one of the others
+            const fields = w.fieldTiles && w.fieldTiles.get(id);
+            if (fields && fields.length && r.next() < 0.6) {
+              const ti = fields[(r.next() * fields.length) | 0];
+              if (this._spawn(sp, (ti % w.N) + 0.15 + r.next() * 0.7, ((ti / w.N) | 0) + 0.15 + r.next() * 0.7, { farm: id })) break;
+            } else if (this._spawn(sp, q[0] + 0.1 + r.next() * (q[2] - q[0] - 0.2), q[1] + 0.1 + r.next() * (q[3] - q[1] - 0.2), { farm: id })) break;
           }
         }
       }

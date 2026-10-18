@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -273,6 +273,7 @@ export class UI {
         break;
       }
       case 'bulldoze': msg = 'Click or drag to demolish · right-click to stop'; break;
+      case 'fields': msg = t.add ? `Drag a box over open land to plough it as fields · they must touch the farm or its fields · $${CONFIG.FIELD_COST} each · right-click to stop` : 'Drag over the farm\'s fields to take them out (a quarter back) · right-click to stop'; break;
       case 'terrain': msg = `Click or drag to ${t.mode === 'flatten' ? 'level' : t.mode} the land · $${TERRAFORM_COST} each`; break;
       case 'trees': msg = `Click or drag to plant trees · $${TREE_COST} each`; break;
       case 'line': msg = `Click ${t.mode === 'rail' ? 'stations on a loop of track' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
@@ -547,7 +548,8 @@ export class UI {
     if (open && !def.park && !L.kw) rows.push(['Electricity', b.powered ? 'Connected' : U.power.gen ? (b.connected ? 'Cut off — not enough power' : 'Not on the grid') : 'No generator in town']);
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
     if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
-    if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
+    if (b.flavor && def.fields) rows.push(['Produce', produceOf(b).name]);
+    else if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
     for (const l of b.leases || []) {
       const o = w.buildings.get(l.with);
       if (!o) continue;
@@ -580,6 +582,16 @@ export class UI {
         return r ? `<span class="chip link" data-act="resident" data-id="${id}">${esc(r.first)} ${esc(r.last[0])}.</span>` : '';
       }).join('')}${b.workers.length > 16 ? `<span class="chip">+${b.workers.length - 16}</span>` : ''}</div></div>`;
     }
+    // a farm: what it grows or raises, and its fields beyond the plot
+    if (!b.con && def.fields) {
+      const P = produceOf(b), cur = b.flavor || 'mixed', max = w.fieldMax(b), n = b.fields || 0;
+      h += `<div class="sec farm"><h5>🌾 Produce</h5><div class="produce">${Object.entries(PRODUCE).map(([k, p]) => `<button class="btn small ${k === cur ? 'on' : ''}" data-act="produce" data-produce="${k}" title="${esc(p.desc)}">${p.icon} ${esc(p.name)}</button>`).join('')}</div>`;
+      h += `<div class="note">${esc(P.desc)} ${P.jobs !== 1 || P.income !== 1 ? `Needs ${P.jobs > 1 ? 'more' : 'fewer'} hands (×${P.jobs}); each earns ×${P.income}.` : ''}</div>`;
+      h += `<h5>Fields · ${n} of ${max}</h5><div class="note">Farmland beyond the plot: $${fmt(CONFIG.FIELD_COST)} a field, touching the farm or its other fields. Each gives work to about ${CONFIG.FIELD_JOBS * P.jobs} more farmhands${n ? ` (${Math.round(n * CONFIG.FIELD_JOBS * P.jobs)} now)` : ''}.${b.level < CONFIG.FIELD_MAX.length - 1 ? ` Upgrading the farm lets it work more.` : ''}</div>`;
+      h += `<div class="actions"><button class="btn" data-act="fields" data-mode="add" ${n < max ? '' : 'disabled'}><span class="ms">add_box</span> Add fields</button><button class="btn" data-act="fields" data-mode="remove" ${n ? '' : 'disabled'}><span class="ms">disabled_by_default</span> Take fields out</button></div>`;
+      if (FARM_JOIN.from.includes(b.type)) h += `<div class="note">No farmhouse yet: join a ${esc(BUILDINGS.house.levels[0].name.toLowerCase())} beside it (below, when there is one) and its family moves into a farmhouse in the yard.</div>`;
+      h += '</div>';
+    }
     // upgrades: one path, or a choice of branches at the top level
     if (!b.con) {
       h += this._upgradeHTML(b);
@@ -599,7 +611,7 @@ export class UI {
       }
       const merges = w.mergeOptions(b);
       if (merges.length) {
-        h += `<div class="sec"><h5>🔗 Join with a neighbour</h5><div class="note">Builders knock the two together into one new building on a double plot. Different pairs make different buildings.</div><div class="actions col">`;
+        h += `<div class="sec"><h5>🔗 Join with a neighbour</h5><div class="note">${merges.every(m => m.farmJoin) ? 'The house becomes the farm\'s farmhouse, in its yard: its family moves in and its own plot is freed.' : 'Builders knock the two together into one new building on a double plot. Different pairs make different buildings.'}</div><div class="actions col">`;
         for (const m of merges) {
           const on = BUILDINGS[m.other.type].levels[m.other.level].name;
           h += `<button class="btn" data-act="merge" data-id="${m.other.id}" ${m.ok ? '' : 'disabled'} title="${esc(BUILDINGS[m.type].desc)}">+ ${esc(on)} → ${esc(m.name)} · $${fmt(m.cost)}</button>`;
@@ -730,6 +742,13 @@ export class UI {
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
       case 'paths': { const pb = w.buildings.get(sel.id); if (pb) showPathMap(this, pb); break; }
+      case 'produce':
+        g.cmd({ t: 'produce', id: sel.id, produce: data.produce }, (r) => {
+          if (r.ok) { g.sfx('click'); this.toast(`Now ${PRODUCE[data.produce].name.toLowerCase()}`, 'good', PRODUCE[data.produce].icon); } else if (r.reason) this.toast(r.reason, 'bad');
+          if (this.selection) this.renderInspector(true);
+        });
+        break;
+      case 'fields': g.input.setTool({ kind: 'fields', id: sel.id, add: data.mode === 'add' }); break;
       case 'expand': {
         const key = `${sel.id}:${data.dir}:${data.kind}`;
         // anything that shrinks or demolishes a neighbour needs a second click

@@ -367,6 +367,9 @@ export class World {
   }
 
   _occupy(b) {
+    const plot = [];
+    for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) plot.push([b.x + dx, b.z + dz]);
+    this._unfield(plot);
     for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
       this.buildingAt[this.idx(b.x + dx, b.z + dz)] = b.id;
       this._clearTrees(b.x + dx, b.z + dz);
@@ -551,7 +554,7 @@ export class World {
       const along = fw(b) === 2;
       for (const s of [-1, 1]) {
         const tiles = along ? [[b.x, s < 0 ? b.z - 1 : b.z + 1], [b.x + 1, s < 0 ? b.z - 1 : b.z + 1]] : [[s < 0 ? b.x - 1 : b.x + 1, b.z], [s < 0 ? b.x - 1 : b.x + 1, b.z + 1]];
-        if (!tiles.every(([x, z]) => this.inBounds(x, z) && !this.roadAt(x, z) && !this.railAt(x, z) && !this.terrain.isWater(x, z) && !this.buildingOn(x, z))) continue;
+        if (!tiles.every(([x, z]) => this.inBounds(x, z) && !this.roadAt(x, z) && !this.railAt(x, z) && !this.terrain.isWater(x, z) && !this.buildingOn(x, z) && this.fields[this.idx(x, z)] < 0)) continue;
         const all = [...tiles, [b.x, b.z], [b.x + fw(b) - 1, b.z + fd(b) - 1]];
         const lo = Math.min(...all.map(([x, z]) => this.terrain.tileMin(x, z))), hi = Math.max(...all.map(([x, z]) => this.terrain.tileMax(x, z)));
         if (hi - lo > 1.2) continue;
@@ -570,7 +573,7 @@ export class World {
     const names = { 0: 'z1', 1: 'x1', 2: 'z0', 3: 'x0' };
     DIRS.forEach(([dx, dz], k) => {
       const x = b.x + dx, z = b.z + dz;
-      if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z)) return;
+      if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return;
       const lo = Math.min(this.terrain.tileMin(x, z), this.terrain.tileMin(b.x, b.z)), hi = Math.max(this.terrain.tileMax(x, z), this.terrain.tileMax(b.x, b.z));
       if (hi - lo > 1.1) return;
       const o = this.buildingOn(x, z);
@@ -623,6 +626,7 @@ export class World {
     this._dissolveLeases(b);
     const tiles = opt.tiles || [[opt.x, opt.z]];
     const spare = b.spare || { w: fw(b), d: fd(b) };   // what the building itself covers
+    this._unfield(tiles);
     for (const [x, z] of tiles) { this._clearTrees(x, z); this.buildingAt[this.idx(x, z)] = b.id; }
     const xs = [b.x, b.x + fw(b) - 1, ...tiles.map(t => t[0])], zs = [b.z, b.z + fd(b) - 1, ...tiles.map(t => t[1])];
     const x0 = Math.min(...xs), z0 = Math.min(...zs);
@@ -1353,6 +1357,18 @@ export class World {
     }
     for (let i = 0; i < this.fields.length; i++) if (this.fields[i] >= 0 && !keep[i]) this.fields[i] = -1;
     this._countFields();
+  }
+
+  // A plot laid over farm fields takes them out of their farms.
+  _unfield(tiles) {
+    let any = false;
+    for (const [x, z] of tiles) {
+      const i = this.idx(x, z);
+      if (this.fields[i] >= 0) { this.fields[i] = -1; any = true; }
+    }
+    if (!any) return;
+    this._countFields();
+    this.emit('fields');
   }
 
   _dropFields(b) {

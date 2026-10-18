@@ -16,7 +16,7 @@ import { Agents, visitorCap } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
-import { BUILDINGS, TECHS } from '../src/defs.js';
+import { BUILDINGS, TECHS, PRODUCE } from '../src/defs.js';
 import { STYLES } from '../src/render/buildings.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { computeIssues } from '../src/ui/issues.js';
@@ -171,6 +171,24 @@ function botDay() {
     const o = rng.pick(opts);
     const look = rng.chance(0.3) ? rng.pick(STYLES).id : undefined;
     if (w.upgradeBuilding(b.id, key(o), look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; if (o.extend) counts.extended = (counts.extended || 0) + 1; }
+  }
+  // farms plough more fields, and now and then change what they grow or raise
+  // (the busy modes keep a farm going to try it on)
+  if (MODE !== 'economy' && ![...w.buildings.values()].some(b => BUILDINGS[b.type].fields) && rng.chance(0.4)) place('farm');
+  if (rng.chance(MODE !== 'economy' ? 0.5 : 0.12)) {
+    const farms = [...w.buildings.values()].filter(b => BUILDINGS[b.type].fields && !b.con && (b.fields || 0) < w.fieldMax(b));
+    const b = farms.length && rng.pick(farms);
+    if (b && (MODE !== 'economy' || w.money > 200)) {
+      const tiles = [];
+      for (let z = b.z - 3; z < b.z + fd(b) + 3; z++) for (let x = b.x - 3; x < b.x + fw(b) + 3; x++) tiles.push([x, z]);
+      const r = w.setFields(b.id, tiles, true);
+      if (r.ok) counts.fields = (counts.fields || 0) + r.n;
+    }
+  }
+  if (rng.chance(MODE !== 'economy' ? 0.15 : 0.03)) {
+    const farms = [...w.buildings.values()].filter(b => BUILDINGS[b.type].fields && !b.con);
+    const b = farms.length && rng.pick(farms);
+    if (b && w.setProduce(b.id, rng.pick(Object.keys(PRODUCE))).ok) counts.produce = (counts.produce || 0) + 1;
   }
   // joins, expansions, moves, demolition
   for (let k = 0; k < busy; k++) if (rng.chance(MODE !== 'economy' ? 0.8 : 0.25)) {
