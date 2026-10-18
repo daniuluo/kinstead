@@ -198,20 +198,22 @@ function win(c, x, y, z, w, h, face, lit = 0.75) {
   const t = 0.018, o = 0.007;
   const fr = c.frame || '#5a4330';
   h *= c.winH || 1;
-  if (face === 'f') gb.box(x, y - 0.012, z + 0.002, w + 0.024, h + 0.024, t, fr);
-  else if (face === 'b') gb.box(x, y - 0.012, z - 0.002, w + 0.024, h + 0.024, t, fr);
+  // an arched window keeps its size: the top of it, frame and glass, is
+  // rounded off rather than capped with a disc over the pane
+  const R = c.arched && (face === 'f' || face === 'b') && h > w * 0.8 ? w / 2 : 0;
+  const hr = h - R;
+  if (face === 'f') gb.box(x, y - 0.012, z + 0.002, w + 0.024, hr + (R ? 0.012 : 0.024), t, fr);
+  else if (face === 'b') gb.box(x, y - 0.012, z - 0.002, w + 0.024, hr + (R ? 0.012 : 0.024), t, fr);
   else if (face === 'r') gb.box(x + 0.002, y - 0.012, z, t, h + 0.024, w + 0.024, fr);
   else gb.box(x - 0.002, y - 0.012, z, t, h + 0.024, w + 0.024, fr);
+  if (R) gb.arch(x, y + hr, face === 'f' ? z - 0.007 : z - 0.011, R + 0.012, t, 8, fr);
   if (rng.chance(lit)) gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.95)); else gb.noGlow();
-  if (face === 'f') gb.box(x, y, z + o, w, h, t, GLASS);
-  else if (face === 'b') gb.box(x, y, z - o, w, h, t, GLASS);
+  if (face === 'f') gb.box(x, y, z + o, w, hr, t, GLASS);
+  else if (face === 'b') gb.box(x, y, z - o, w, hr, t, GLASS);
   else if (face === 'r') gb.box(x + o, y, z, t, h, w, GLASS);
   else gb.box(x - o, y, z, t, h, w, GLASS);
+  if (R) gb.arch(x, y + hr, face === 'f' ? z - 0.002 : z - 0.016, R, t, 8, GLASS);
   gb.noGlow();
-  if (c.arched && (face === 'f' || face === 'b')) {
-    const az = face === 'f' ? z + 0.004 : z - 0.016;
-    gb.cyl(x, y + h + 0.012, az, w / 2 + 0.012, w / 2 + 0.012, 0.016, 8, fr, 0, Math.PI / 2);
-  }
   if (c.shutters && rng.chance(0.5) && (face === 'f' || face === 'b')) {
     const sz = face === 'f' ? z + 0.012 : z - 0.012;
     gb.box(x - w / 2 - 0.022, y - 0.006, sz, 0.026, h + 0.012, 0.01, c.shutters);

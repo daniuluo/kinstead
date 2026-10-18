@@ -1,7 +1,8 @@
 // Building sites. New buildings, upgrades, merges and moves are put up by
 // builders from the Builder's Yard: they walk out to a site, work round the
-// scaffolding, and the job only advances while they are there. A town with no
-// builders makes do with slow hired hands from the next village, and plots
+// scaffolding, and the job only advances while someone is there. Hired hands
+// from the village start every site straight away and keep at it until the
+// town's builders arrive (in a town with no builders, they do it all); plots
 // off the road (gardens, flower beds) are planted by volunteers.
 
 import { BUILDINGS } from '../defs.js';
@@ -10,7 +11,11 @@ import { lookOf, siteArea } from './agents.js';
 import { doorPoint } from '../world/world.js';
 
 const DAY_START = 6.5, DAY_END = 18;
-const HIRED_RATE = 0.5;
+const HIRED_RATE = 0.55;   // each hired hand, against 1–1.5 for a town builder
+
+// Which site the builders go to first: one the player put first (its
+// priority switch), then the oldest order.
+const firstUp = (a, b) => (b.con.priority ? 1 : 0) - (a.con.priority ? 1 : 0) || (a._queued ?? Infinity) - (b._queued ?? Infinity);
 
 // How many builders fit on a site at once.
 export function crewCap(b) { return Math.min(8, 2 + 2 * fw(b) * fd(b)); }
@@ -83,7 +88,7 @@ export class Construction {
     if (daytime && idle.length && sites.length && this._dispatchT <= 0) {
       this._dispatchT = 0.15;
       const now = this._now();
-      const open = sites.filter(s => !s.con.wait && s.access && s.connected && !(s._unreach > now)).sort((a, b) => a._queued - b._queued);
+      const open = sites.filter(s => !s.con.wait && s.access && s.connected && !(s._unreach > now)).sort(firstUp);
       for (const r of idle) {
         const next = r.plan[r.pi];
         if (next && next.t - hours < 0.75) continue;   // about to knock off for the day
@@ -110,7 +115,9 @@ export class Construction {
     for (const s of sites) {
       const con = s.con, c = this.crew.get(s.id);
       if (con.wait) { this._clearHands(s.id); s._crew = 0; continue; }
-      const hands = daytime && (!this.hasBuilders || !s.access) ? (s.size > 1 ? 2 : 1) : 0;
+      // until the town's builders are on site (or where there are none), hired
+      // hands get on with it, so a job never waits for the walk out from the yard
+      const hands = daytime && (!this.hasBuilders || !s.access || !c.onSite) ? (s.size > 1 ? 3 : 2) : 0;
       this._setHands(s, hands);
       c.hired = hands;
       c.rate += hands * HIRED_RATE;
@@ -133,7 +140,7 @@ export class Construction {
     const daytime = hours >= DAY_START && hours < DAY_END;
     const open = daytime ? [...w.buildings.values()]
       .filter(o => o !== s && o.con && !o.con.wait && o.access && o.connected && !(o._unreach > now))
-      .sort((a, b) => (a._queued ?? now) - (b._queued ?? now)) : [];
+      .sort(firstUp) : [];
     for (const r of w.residents.values()) {
       if (r.site !== s.id) continue;
       r.site = null;
