@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
@@ -31,15 +31,22 @@ export function capOf(b, key) {
 const MERGE_SHOPS = ['market', 'bakery', 'tavern'];
 const MERGE_COST = [150, 300, 500];
 function mergeResult(a, o) {
-  const home = (x) => x.type === 'house';
-  const shop = (x) => MERGE_SHOPS.includes(x.type) && x.level <= 2;
-  let type, base, flavor = null;
-  if (home(a) && home(o)) { type = 'terrace'; base = a; }
-  else if (home(a) && shop(o)) { type = 'shophouse'; base = a; flavor = o.type; }
-  else if (shop(a) && home(o)) { type = 'shophouse'; base = o; flavor = a.type; }
-  else return null;
-  const level = Math.min(Math.max(a.level, o.level), BUILDINGS[type].levels.length - 1);
-  return { type, base, flavor, level, cost: MERGE_COST[level], name: BUILDINGS[type].levels[level].name };
+  const one = (x) => BUILDINGS[x.type].size === 1 && !BUILDINGS[x.type].merged;
+  if (!one(a) || !one(o)) return null;
+  for (const m of MERGES) {
+    let base = null, other = null;
+    if (m.a.includes(a.type) && m.b.includes(o.type)) { base = a; other = o; }
+    else if (m.a.includes(o.type) && m.b.includes(a.type)) { base = o; other = a; }
+    if (!base) continue;
+    // keep the house's look when a house is involved
+    if (other.type === 'house' && base.type !== 'house') [base, other] = [other, base];
+    const def = BUILDINGS[m.to];
+    const level = Math.min(Math.max(a.level, o.level), def.levels.length - 1);
+    const flavor = m.to === 'shophouse' || m.to === 'inn' ? (base.type === 'house' || base.type === 'tavern' ? other.type : base.type) : null;
+    const cost = Math.round(120 + def.levels[level].cost * 0.3);
+    return { type: m.to, base, flavor, level, cost, name: def.levels[level].name };
+  }
+  return null;
 }
 
 // How far a building may come forward into the street in front of it (in
@@ -220,7 +227,7 @@ export class World {
     const rail = !reason && def.needsRail ? this.findRail(x, z, W, D) : null;
     if (!reason && def.needsRail && !rail) reason = 'Needs railway track next to it';
     const cost = (opts.baseCost ?? def.levels[0].cost) + trees * CLEAR_COST;
-    if (!reason && !opts.ignoreMoney && this.money < cost) reason = 'Not enough coins';
+    if (!reason && !opts.ignoreMoney && this.money < cost) reason = 'Not enough money';
     return { ok: !reason, reason, cost, access, minH, maxH, trees, rail };
   }
 
@@ -466,7 +473,7 @@ export class World {
       }
       const comp = Math.round(this.buildValue(o) * 0.5);
       out.push({ dir: k, x, z, kind: 'takeover', where, other: o, cost: base + comp, comp, label: `Take over the ${oname} ${where}`,
-        warn: `The ${oname} will be demolished${o.residents.length ? ` and its ${o.residents.length} resident${o.residents.length > 1 ? 's' : ''} rehoused` : ''} (🪙 ${comp} compensation included)` });
+        warn: `The ${oname} will be demolished${o.residents.length ? ` and its ${o.residents.length} resident${o.residents.length > 1 ? 's' : ''} rehoused` : ''} ($${comp} compensation included)` });
     });
     return out;
   }
@@ -475,7 +482,7 @@ export class World {
     const b = this.buildings.get(id);
     const opt = b && this.expandOptions(b).find(o => o.dir === dir && o.kind === kind);
     if (!opt) return { ok: false, reason: "Can't expand that way" };
-    if (this.money < opt.cost) return { ok: false, reason: 'Not enough coins' };
+    if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };
     if (opt.kind === 'strip') {
       const LAND = 0.25;
       this.money -= opt.cost;
@@ -586,7 +593,7 @@ export class World {
     const a = this.buildings.get(aId), o = this.buildings.get(bId);
     const opt = this.mergeOptions(a).find(m => m.other === o);
     if (!opt) return { ok: false, reason: "These two can't be joined" };
-    if (this.money < opt.cost) return { ok: false, reason: 'Not enough coins' };
+    if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };
     const x = Math.min(a.x, o.x), z = Math.min(a.z, o.z), w = a.x !== o.x ? 2 : 1, d = a.z !== o.z ? 2 : 1;
     let minH = Infinity, maxH = -Infinity;
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) {
@@ -641,8 +648,17 @@ export class World {
   // the first level of each branch type (e.g. Family House → Villa / Flats).
   upgradeOptions(b) {
     const def = BUILDINGS[b.type];
-    if (def.levels[b.level + 1]) return [{ type: b.type, level: b.level + 1 }];
-    return (def.branches || []).map(type => ({ type, level: 0 }));
+    const out = def.levels[b.level + 1] ? [{ type: b.type, level: b.level + 1 }] : (def.branches || []).map(type => ({ type, level: 0 }));
+    // a building that has taken over the plot next door can grow into
+    // something bigger
+    if (isExpanded(b) && LARGE[b.type]) {
+      for (const type of LARGE[b.type]) {
+        const L = BUILDINGS[type].levels;
+        const level = BUILDINGS[type].cat === 'residential' && type !== 'terrace' ? 0 : Math.min(b.level, L.length - 1);
+        out.push({ type, level, large: true });
+      }
+    }
+    return out;
   }
 
   upgradeCheck(b, toType = null) {
@@ -665,7 +681,7 @@ export class World {
       if (next.req.power) reqs.push({ label: 'Electricity', met: !!b.powered });
     }
     if (tech) reqs.unshift({ label: `Research: ${this.techName(tech)}`, met: this.hasTech(tech), tech });
-    reqs.push({ label: `${next.cost} coins`, met: this.money >= next.cost });
+    reqs.push({ label: `$${next.cost}`, met: this.money >= next.cost });
     const ok = reqs.every(r => r.met);
     return { ok, next, target, reqs, reason: ok ? null : 'Requirements not met' };
   }
@@ -742,7 +758,7 @@ export class World {
       const c = this.checkRail(x, z);
       if (!c.ok) { failed ||= c.reason; continue; }
       if (c.noop) continue;
-      if (this.money < c.cost) { failed = 'Not enough coins'; break; }
+      if (this.money < c.cost) { failed = 'Not enough money'; break; }
       this.money -= c.cost; spent += c.cost; placed++;
       this.rails[this.idx(x, z)] = 1;
       this._clearTrees(x, z);
@@ -794,7 +810,7 @@ export class World {
       const c = this.checkRoad(x, z, level);
       if (!c.ok) { failed ||= c.reason; continue; }
       if (c.noop) continue;
-      if (this.money < c.cost) { failed = 'Not enough coins'; break; }
+      if (this.money < c.cost) { failed = 'Not enough money'; break; }
       this.money -= c.cost; spent += c.cost; placed++;
       this.roads[this.idx(x, z)] = level;
       this._clearTrees(x, z);
@@ -844,7 +860,7 @@ export class World {
     for (let tz = z - 1; tz <= z + 1; tz++) for (let tx = x - 1; tx <= x + 1; tx++) {
       if (this.inBounds(tx, tz) && this.buildingAt[this.idx(tx, tz)] >= 0) return { ok: false, reason: 'Too close to a building' };
     }
-    if (this.money < TERRAFORM_COST) return { ok: false, reason: 'Not enough coins' };
+    if (this.money < TERRAFORM_COST) return { ok: false, reason: 'Not enough money' };
     return { ok: true, cost: TERRAFORM_COST };
   }
 
@@ -903,7 +919,7 @@ export class World {
     if (this.terrain.isWater(x, z)) return { ok: false, reason: "Trees don't grow in water" };
     if (this.roads[i] || this.buildingAt[i] >= 0) return { ok: false, reason: 'Occupied' };
     if (this.treeCount[i] >= 4) return { ok: false, reason: 'No room for more trees' };
-    if (this.money < TREE_COST) return { ok: false, reason: 'Not enough coins' };
+    if (this.money < TREE_COST) return { ok: false, reason: 'Not enough money' };
     return { ok: true, cost: TREE_COST };
   }
 
@@ -933,7 +949,7 @@ export class World {
     const i = this.idx(x, z);
     if (this.treeCount[i]) {
       const cost = this.treeCount[i] * CLEAR_COST;
-      if (this.money < cost) return { ok: false, reason: 'Not enough coins' };
+      if (this.money < cost) return { ok: false, reason: 'Not enough money' };
       this.money -= cost;
       this._clearTrees(x, z);
       this.emit('trees');

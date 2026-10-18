@@ -3,14 +3,14 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, servicesOf } from '../defs.js';
 import { doorPoint, fw, fd, isOpen } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { MAT } from '../render/materials.js';
 import { workArea } from '../render/buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RNG } from '../util/rng.js';
-import { traitsOf } from './people.js';
+import { traitsOf, yearsOf } from './people.js';
 
 const SKIN = ['#f1c8a5', '#e0ac85', '#c68c63', '#9a6440', '#6e4630', '#f5d6bd', '#d9a07a'];
 const HAIR = ['#2b1d14', '#5a3a22', '#8a5a2b', '#c9a15a', '#1a1a1a', '#a0522d', '#6b4a35'];
@@ -40,7 +40,7 @@ export function lookOf(r) {
     shirt: new THREE.Color(g.pick(SHIRT)),
     pants: new THREE.Color(g.pick(PANTS)),
     hat: g.chance(r.age === 'child' ? 0.1 : 0.32) ? new THREE.Color(g.pick(HATS)) : null,
-    scale: (r.age === 'child' ? 0.64 : elder ? 0.86 : 0.88 + g.next() * 0.08),
+    scale: (r.age === 'child' ? 0.5 + Math.min(1, yearsOf(r) / 17) * 0.3 : elder ? 0.86 : 0.88 + g.next() * 0.08),
     lane: 0.07 + g.next() * 0.13,
     speed: (r.age === 'elder' ? 0.72 : r.age === 'child' ? 1.15 : 1) * (0.9 + g.next() * 0.2),
   };
@@ -112,8 +112,8 @@ export class Agents {
     const shops = this._candidates(d => d.shop);
     const parks = this._candidates(d => d.park && d.outdoor);
     const taverns = this._candidates(d => d.leisure && !d.park);
-    const chapels = this._candidates(d => d.service === 'culture');
-    const schools = this._candidates(d => d.service === 'education');
+    const chapels = this._candidates(d => servicesOf(d).includes('culture'));
+    const schools = this._candidates(d => servicesOf(d).includes('education'));
     const pick = (list) => this._nearest(r, list);
     const plan = [];
     const home = r.home;
@@ -145,8 +145,11 @@ export class Agents {
       if (R() < 0.12 * tavK && taverns.length) { push(19.8 + R(), pick(taverns)); push(22.2 + R(), home); }
     } else if (r.age === 'child') {
       const play = has('playful') ? 0.9 : has('bookish') ? 0.3 : 0.6;
-      if (schools.length) {
-        push(7.3 + R() * 0.7, pick(schools));
+      // pupils go to their own school; the youngest and those without a
+      // place stay home and play
+      const school = r.school != null && this.world.buildings.get(r.school) ? r.school : null;
+      if (school != null) {
+        push(7.3 + R() * 0.7, school);
         push(14 + R() * 0.8, R() < play ? pickFar(parks) ?? home : home);
         push(17.5 + R(), home);
       } else {
@@ -359,6 +362,19 @@ export class Agents {
       wk.ghost = true;
     }
     this.game.sim.dirty = true;
+  }
+
+  // A villager changed age group: refresh their size and colours.
+  refreshLook(r) {
+    r.lk = lookOf(r);
+    if (r.walk) { r.walk.lk = r.lk; r.walk.speedK = r.lk.speed; }
+  }
+
+  // A villager is gone for good (passed away).
+  remove(r) {
+    if (r.walk) this._drop(r.walk);
+    this.game.transit.forget(r);
+    if (this.selected === r) this.select(null);
   }
 
   relocate(r) {

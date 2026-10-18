@@ -159,7 +159,7 @@ export class Input {
       const r = this.tool.kind === 'rail' ? w.placeRails(tiles) : w.placeRoads(tiles, this.tool.level);
       if (r.placed) this.game.sfx('build');
       if (r.failed && !r.placed) this.ui.toast(r.failed, 'bad');
-      else if (r.failed && r.failed === 'Not enough coins') this.ui.toast('Ran out of coins part-way', 'bad', '🪙');
+      else if (r.failed && r.failed === 'Not enough money') this.ui.toast('Ran out of money part-way', 'bad', '$');
     } else if (d.type === 'rect') {
       const tiles = this._rectTiles(d.start, d.end);
       let n = 0;
@@ -311,7 +311,7 @@ export class Input {
         tiles.push({ x, z, color: c.ok ? OK : BAD, alpha: c.noop ? 0.15 : 0.4 });
         if (c.ok) cost += c.cost; else bad ||= c.reason;
       }
-      tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name} · 🪙 ${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
+      tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name} · $${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
     } else if (t.kind === 'bulldoze' && (d || h)) {
       const list = d ? this._rectTiles(d.start, d.end) : [[h.x, h.z]];
       for (const [x, z] of list) {
@@ -334,7 +334,7 @@ export class Input {
           if (Math.hypot(x + 0.5 - cx, z + 0.5 - cz) <= radius) tiles.push({ x, z, color: def.service ? '#8fd0ff' : '#b8f08f', alpha: 0.13, border: false });
         }
       }
-      tip = `<b>${def.name}</b> · 🪙 ${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
+      tip = `<b>${def.name}</b> · $${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
       if (c.trees) tip += `<br>Clears ${c.trees} tree${c.trees > 1 ? 's' : ''}`;
       ghost = { type: t.type, x: o.x, z: o.z, ok: c.ok, chk: c };
     } else if (t.kind === 'move' && h) {
@@ -346,7 +346,7 @@ export class Input {
         for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: GOLD, alpha: 0.25 });
         for (let dz = 0; dz < D; dz++) for (let dx = 0; dx < W; dx++) tiles.push({ x: o.x + dx, z: o.z + dz, color: c.ok ? OK : BAD, alpha: 0.35 });
         const name = BUILDINGS[b.type].levels[b.level].name;
-        tip = `<b>Move the ${name}</b> · 🪙 ${fmt(c.cost || w.moveCost(b))}<br>Taken down, carted over and rebuilt` + (c.ok ? '' : `<br><span class="bad">${c.reason}</span>`);
+        tip = `<b>Move the ${name}</b> · $${fmt(c.cost || w.moveCost(b))}<br>Taken down, carted over and rebuilt` + (c.ok ? '' : `<br><span class="bad">${c.reason}</span>`);
         ghost = { type: b.type, level: b.level, variant: b.variant, flavor: b.flavor, w: W, d: D, x: o.x, z: o.z, ok: c.ok, chk: c };
       }
     } else if ((t.kind === 'terrain' || t.kind === 'trees') && h) {
@@ -440,6 +440,7 @@ export class Input {
       case 'k': ui.showResearch(); break;
       case 'u': ui.pressTool('utilities'); break;
       case 'n': ui.togglePopups(); break;
+      case 'i': ui.toggleIssues(); break;
       case 'l': ui.showLines(); break;
       case 'h': ui.showHelp(); break;
     }

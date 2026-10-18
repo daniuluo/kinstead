@@ -134,7 +134,7 @@ export class Transit {
     if (stops.length < 2) return { ok: false, reason: 'A line needs at least two stops' };
     const site = stops.map(id => w.buildings.get(id)).find(b => b && !isOpen(b));
     if (site) return { ok: false, reason: `The ${BUILDINGS[site.type].levels[site.level].name.toLowerCase()} is still being built` };
-    if (w.money < cfg.vehicleCost) return { ok: false, reason: 'Not enough coins' };
+    if (w.money < cfg.vehicleCost) return { ok: false, reason: 'Not enough money' };
     const used = new Set(w.lines.map(l => l.color));
     const color = LINE_COLORS.find(c => !used.has(c)) || LINE_COLORS[w.lines.length % LINE_COLORS.length];
     const n = w.lines.filter(l => l.mode === mode).length + 1;
@@ -165,7 +165,7 @@ export class Transit {
     if (n === line.vehicles) return { ok: false, reason: null };
     if (n > line.vehicles) {
       const cost = TRANSIT[line.mode].vehicleCost;
-      if (w.money < cost) return { ok: false, reason: 'Not enough coins' };
+      if (w.money < cost) return { ok: false, reason: 'Not enough money' };
       w.money -= cost;
     }
     line.vehicles = n;

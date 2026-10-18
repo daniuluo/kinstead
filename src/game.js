@@ -31,7 +31,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -51,6 +51,16 @@ export class Game {
 
     this.on('coins', (c) => this.ui.coin(c.x, c.y, c.z, c.v));
     this.on('day', () => this._onDay());
+    this.on('born', (babies) => {
+      if (this.demo || this.time - (this._toastT.born || -99) < 20) return;
+      this._toastT.born = this.time;
+      this.ui.toast(babies.length > 1 ? `${babies.length} babies were born today` : `A baby, ${babies[0].first}, was born to the ${babies[0].last} family`, 'good', '👪');
+    });
+    this.on('died', (gone) => {
+      if (this.demo || this.time - (this._toastT.died || -99) < 20) return;
+      this._toastT.died = this.time;
+      this.ui.toast(gone.length > 1 ? `${gone.length} old villagers passed away` : `${gone[0].first} ${gone[0].last} passed away at ${Math.floor(gone[0].years)}`, 'info', '🔔');
+    });
     this.on('season', (s) => { if (!this.demo) this.ui.toast(`${SEASONS[s].name} has arrived`, 'info', SEASONS[s].icon); });
     this.on('milestone', (t) => this._onMilestone(t));
     this.on('arrived', ({ building, family }) => {
@@ -300,7 +310,7 @@ export class Game {
   _onLand({ buyer, seller, price }) {
     if (this.demo) return;
     const n = (b) => BUILDINGS[b.type].levels[b.level].name;
-    this.ui.toast(`The ${n(buyer)} household bought part of the next-door ${n(seller)}'s garden for 🪙 ${price}`, 'info', '🌿');
+    this.ui.toast(`The ${n(buyer)} household bought part of the next-door ${n(seller)}'s garden for $${price}`, 'info', '🌿');
   }
 
   applySettings() {

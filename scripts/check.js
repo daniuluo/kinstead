@@ -317,6 +317,29 @@ const runUntil = (pred, days = 6) => {
   w.setSandbox({ freeUpgrades: false, unlockAll: false, instantBuild: false });
 }
 
+// 3d0. combination joins: every recipe yields its building (in a fresh
+// town with a long street, so there is room for every pair)
+{
+  const { MERGES } = await import('../src/defs.js');
+  const tw = World.createNew({ N: 64, seed: 31, name: 'Joinbury' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const made = [];
+  for (const m of MERGES) {
+    let done = false;
+    for (let z = 3; z < tw.N - 4 && !done; z++) for (let x = 3; x < tw.N - 5 && !done; x++) {
+      // a short street in front of the pair
+      if (![x, x + 1].every(k => tw.checkRoad(k, z - 1, 1).ok || tw.roadAt(k, z - 1))) continue;
+      if (![[x, z], [x + 1, z]].every(([a, b]) => tw.inBounds(a, b) && !tw.buildingOn(a, b) && !tw.roadAt(a, b) && !tw.terrain.isWater(a, b))) continue;
+      tw.placeRoads([[x, z - 1], [x + 1, z - 1]], 1);
+      const A = tw.placeBuilding(m.a[0], x, z, { instant: true }), B = tw.placeBuilding(m.b[0], x + 1, z, { instant: true });
+      const r = A.ok && B.ok ? tw.mergeBuildings(A.building.id, B.building.id) : { ok: false };
+      if (r.ok && r.building.type === m.to) { made.push(m.to); done = true; }
+      else for (const P of [A, B]) if (P.ok && tw.buildings.has(P.building.id)) tw.removeBuilding(P.building.id, 0);
+    }
+  }
+  ok(made.length === MERGES.length, `every join recipe works (${made.join(', ')})`);
+}
+
 // 3d1. expanding onto a neighbouring plot
 {
   w.setSandbox({ infiniteMoney: true });
@@ -333,6 +356,8 @@ const runUntil = (pred, days = 6) => {
   if (done) {
     ok(w.buildingOn(done.opt.x, done.opt.z) === done.b, 'the new plot belongs to it');
     ok(runUntil(() => !done.b.con).ok, 'builders finished the extension');
+    const big = w.upgradeOptions(done.b).filter(o => o.large).map(o => o.type);
+    ok(big.length >= 2, `the bigger plot opens larger paths: ${big.join(', ')}`);
   }
   w.setSandbox({ infiniteMoney: false });
   w.money = 1e6;

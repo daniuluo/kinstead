@@ -44,6 +44,7 @@ export class WorldView {
     this.pools.frustumCulled = false;
     scene.add(this.pools);
     for (const b of world.buildings.values()) this.addBuilding(b, false);
+    this.dirty.roads = true;   // door paths need the buildings' doors
     this.dirty.paint = true;
 
     this._h = {
@@ -57,13 +58,13 @@ export class WorldView {
         const finished = !!(prev && prev.site && !b.con);
         this.removeBuilding(b, true);
         this.addBuilding(b, !finished, true);
-        if (BUILDINGS[b.type].generator) this.dirty.roads = true;
+        this.dirty.roads = true;
         if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
         this.dirty.paint = true;
       },
       roads: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
       rails: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; },
+      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; this.dirty.roads = true; },
       trees: () => { this.dirty.nature = true; this.dirty.paint = true; },
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
     };

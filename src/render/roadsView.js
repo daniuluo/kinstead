@@ -113,6 +113,7 @@ export class RoadsView {
       if (wv) { const a = arm(wv); rect(x, cz - a, cx - hw, cz + a, L, { z0: true, z1: true }, 3); }
       if (e) { const a = arm(e); rect(cx + hw, cz - a, x + 1, cz + a, L, { z0: true, z1: true }, 3); }
     }
+    this._doorPaths(pos, col);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -181,6 +182,49 @@ export class RoadsView {
         if (n[key]) gb.box(cx + dx * 0.41, y - 0.05, cz + dz * 0.41, dx ? 0.2 : 0.64, 0.05, dz ? 0.2 : 0.64, wood2);
       }
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.cyl(cx + sx * 0.26, -0.9, cz + sz * 0.26, 0.03, 0.035, y - 0.05 + 0.9, 7, '#3f3126');
+    }
+  }
+
+  // A little path from every front door straight out to the street: stone
+  // flags beside cobbled and paved streets, a worn earth path by dirt roads.
+  _doorPaths(pos, col) {
+    const w = this.world, t = w.terrain;
+    const c = new THREE.Color();
+    const quad = (ax, az, bx, bz, half, nx, nz, color, y) => {
+      const p = [[ax - nx * half, az - nz * half], [ax + nx * half, az + nz * half], [bx + nx * half, bz + nz * half], [bx - nx * half, bz - nz * half]];
+      const h = p.map(([x, z]) => y ?? t.heightAt(x, z) + 0.016);
+      const tri = [0, 1, 2, 0, 2, 3];
+      // keep the faces pointing up whichever way the path runs
+      const cross = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+      const order = cross > 0 ? [0, 2, 1, 0, 3, 2] : tri;
+      for (const k of order) { pos.push(p[k][0], h[k], p[k][1]); col.push(color.r, color.g, color.b); }
+    };
+    for (const b of w.buildings.values()) {
+      const d = b.door;
+      if (!d || !b.access || BUILDINGS[b.type].park) continue;
+      const L = w.roadAt(b.access.x, b.access.z);
+      if (!L || t.isWater(b.access.x, b.access.z)) continue;
+      const cx = b.access.x + 0.5, cz = b.access.z + 0.5;
+      const sx = d.x + d.dx * 0.03, sz = d.z + d.dz * 0.03;
+      // run out along the door's facing until the edge of the roadway
+      const along = (cx - sx) * d.dx + (cz - sz) * d.dz;
+      const len = along - HALF[L] + 0.03;
+      if (len < 0.03 || len > 1.6) continue;
+      const nx = -d.dz, nz = d.dx;
+      if (L === 1) {
+        c.set('#9a805c');
+        const n = Math.ceil(len / 0.08);
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * len, e = ((i + 1) / n) * len;
+          quad(sx + d.dx * a, sz + d.dz * a, sx + d.dx * e, sz + d.dz * e, 0.036 + 0.006 * Math.sin(i * 2.1), nx, nz, c);
+        }
+      } else {
+        for (let a = 0, i = 0; a < len - 0.02; a += 0.068, i++) {
+          const e = Math.min(len, a + 0.056);
+          c.set(i % 2 ? '#d6ccb4' : '#c4b89c').multiplyScalar(0.95 + hash2(b.id, i, 7) * 0.1);
+          quad(sx + d.dx * a, sz + d.dz * a, sx + d.dx * e, sz + d.dz * e, 0.05, nx, nz, c);
+        }
+      }
     }
   }
 

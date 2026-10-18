@@ -1,11 +1,12 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES } from '../defs.js';
 import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
+import { computeIssues } from './issues.js';
 import { STYLES } from '../render/buildings.js';
-import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf } from '../sim/people.js';
+import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf } from '../sim/people.js';
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
@@ -34,7 +35,7 @@ const ICONS = {
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {
-  return String(html).replace(/️/g, '').replace(/🪙/g, '<span class="ms coinico">toll</span>').replace(EMOJI_RE, (m) => `<span class="ms">${ICONS[m]}</span>`);
+  return String(html).replace(/️/g, '').replace(/🪙 ?/gu, '$$').replace(EMOJI_RE, (m) => `<span class="ms">${ICONS[m]}</span>`);
 }
 
 const TOOLS = [
@@ -87,6 +88,8 @@ export class UI {
     $('btnPeople').onclick = () => this.showPeople();
     $('btnResearch').onclick = () => this.showResearch();
     $('btnPops').onclick = () => this.togglePopups();
+    $('issuesHead').onclick = () => this.toggleIssues();
+    this._issueCycle = {};
     this.syncPopButton();
     $('btnSave').onclick = () => this.showSaves();
     $('btnSettings').onclick = () => this.showSettings();
@@ -173,7 +176,7 @@ export class UI {
       el.title = c.title;
       const img = c.img.startsWith('data:') ? `<img src="${c.img}" alt="">` : `<div class="ph">${ico(c.img)}</div>`;
       const research = typeof c.locked === 'string';
-      el.innerHTML = ico(`${img}<div class="n">${esc(c.name)}</div>` + (c.locked ? `<div class="lock">${research ? esc(c.locked) : `🔒 ${c.locked} villagers`}</div>` : (c.cost ? `<div class="c">🪙 ${c.cost}</div>` : '')));
+      el.innerHTML = ico(`${img}<div class="n">${esc(c.name)}</div>` + (c.locked ? `<div class="lock">${research ? esc(c.locked) : `🔒 ${c.locked} villagers`}</div>` : (c.cost ? `<div class="c">$${c.cost}</div>` : '')));
       el.onclick = () => {
         if (research) { this.toast(`${c.name} needs research: ${c.locked.replace('🔬 ', '')}. Press K to open Research.`, 'bad', '🔬'); return; }
         if (c.locked) { this.toast(`${c.name} unlocks when your town reaches ${c.locked} villagers.`, 'bad', '🔒'); return; }
@@ -206,8 +209,8 @@ export class UI {
         break;
       }
       case 'bulldoze': msg = 'Click or drag to demolish · right-click to stop'; break;
-      case 'terrain': msg = `Click or drag to ${t.mode === 'flatten' ? 'level' : t.mode} the land · ${TERRAFORM_COST} coins each`; break;
-      case 'trees': msg = `Click or drag to plant trees · ${TREE_COST} coins each`; break;
+      case 'terrain': msg = `Click or drag to ${t.mode === 'flatten' ? 'level' : t.mode} the land · $${TERRAFORM_COST} each`; break;
+      case 'trees': msg = `Click or drag to plant trees · $${TREE_COST} each`; break;
       case 'line': msg = `Click ${t.mode === 'rail' ? 'stations on a loop of track' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
       default: msg = '';
     }
@@ -233,10 +236,10 @@ export class UI {
       const year = Math.floor((w.day - 1) / (CONFIG.DAYS_PER_SEASON * 4)) + 1;
       $('clockDate').innerHTML = ico(`${SEASONS[s].icon} ${SEASONS[s].name} · Day ${w.day}` + (year > 1 ? ` · Year ${year}` : ''));
       void dayOfYear;
-      $('money').textContent = Number.isFinite(w.money) ? fmt(w.money) : '∞';
+      $('money').textContent = Number.isFinite(w.money) ? `${w.money < 0 ? '−' : ''}$${fmt(Math.abs(w.money))}` : '∞';
       $('money').style.color = w.money < 0 ? 'var(--brick)' : '';
       const net = sim.budget.net;
-      $('net').textContent = Number.isFinite(w.money) ? `${signed(net)} / day` : 'sandbox';
+      $('net').textContent = Number.isFinite(w.money) ? `${net >= 0 ? '+' : '−'}$${fmt(Math.abs(net))} / day` : 'sandbox';
       $('net').className = !Number.isFinite(w.money) ? '' : net >= 0 ? 'pos' : 'neg';
       $('pop').textContent = fmt(w.population);
       const free = sim.housing.cap - sim.housing.used;
@@ -261,6 +264,8 @@ export class UI {
       $('speed').title = `Speed ${this.game.speed}× · [ and ] change speed`;
       if (this.selection) this.renderInspector();
     }
+    this._issuesT = (this._issuesT || 0) + dt;
+    if (this._issuesT > 1) { this._issuesT = 0; this.renderIssues(); }
     this.updateLabels();
   }
 
@@ -309,26 +314,64 @@ export class UI {
     }
   }
 
-  // Side-by-side numbers: the building now vs. after this upgrade.
-  _compareHTML(b, o, n) {
+  // Upgrade choices as separate path cards: each has its own colour and
+  // icon, shows where the path leads, what changes, its requirements and
+  // its own button. Several paths are split by an "or".
+  _upgradeHTML(b) {
+    const w = this.world;
+    const options = w.upgradeOptions(b);
+    if (!options.length) return '';
+    const branching = options.length > 1 || options[0].type !== b.type;
     const cur = BUILDINGS[b.type].levels[b.level];
+    const cards = options.map((o, i) => {
+      const up = w.upgradeCheck(b, o.type);
+      const td = BUILDINGS[o.type], n = up.next;
+      const accent = branching ? (td.accent || '#4f6a3a') : '#3c6e3c';
+      const icon = branching ? (td.pathIcon || 'alt_route') : 'upgrade';
+      const tabName = branching ? `Path ${'ABCD'[i]} · ${esc(td.branch || td.name)}` : 'Next level';
+      const unmet = up.reqs.filter(r => !r.met);
+      const status = up.ok ? '✓ Ready' : unmet.some(r => r.tech) ? '🔒 Research' : `${unmet.length} to go`;
+      // where this path leads
+      const later = o.type === b.type ? td.levels.slice(o.level + 1) : td.levels.slice(1);
+      const chain = [`<span class="now">${esc(cur.name)}</span>`, `<span class="next">${esc(n.name)}</span>`, ...later.map(L => `<span>${esc(L.name)}</span>`)].join('<i>▸</i>');
+      const styled = td.cat === 'residential' || td.cat === 'commercial';
+      const look = styled ? (this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : b.look || null) : null;
+      let c = `<div class="path" style="--accent:${accent}">`;
+      c += `<div class="path-tab"><span class="ms">${icon}</span><span>${tabName}</span><span class="tag ${up.ok ? 'ok' : ''}">${status}</span></div><div class="path-body">`;
+      c += '<div class="path-top">';
+      if (styled) c += `<img class="preview" src="${thumb(o.type, o.level, b.variant, b.flavor, look)}" alt="">`;
+      c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${BUILDINGS[b.type].name.toLowerCase()}.`)}</div></div></div>`;
+      c += `<div class="chain">${chain}</div>`;
+      c += this._tilesHTML(cur, n);
+      if (styled) {
+        const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
+        c += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => { const t = STYLE_TECH[s.id], ok = !t || w.hasTech(t); return `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}" ${ok ? '' : `disabled title="Research ${esc(TECHS[t].name)}"`}>${ok ? '' : '🔒'}${s.name}</button>`; }).join('')}</div>`;
+        c += `<label class="chk"><input type="checkbox" data-act="preview" data-type="${o.type}" ${on ? 'checked' : ''}> Preview in town</label>`;
+      }
+      c += `<div class="req">${[...unmet, ...up.reqs.filter(r => r.met)].map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
+      c += `<button class="btn primary path-go" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? `Build ${esc(n.name)}` : `Upgrade to ${esc(n.name)}`} · $${fmt(n.cost)}</button>`;
+      return c + '</div></div>';
+    });
+    return `<div class="upgrades"><div class="up-head"><span class="ms">upgrade</span>Upgrade${branching ? '<span class="up-hint">choose one path</span>' : ''}</div>${cards.join('<div class="path-or"><span>or</span></div>')}</div>`;
+  }
+
+  // Before → after tiles for everything the upgrade changes.
+  _tilesHTML(cur, n) {
     const F = [
-      ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['income', 'Earnings per worker', (v) => `🪙 ${v}`],
-      ['tax', 'Tax per worker', (v) => `${v}×`], ['visit', 'Takings per visit', (v) => `🪙 ${v}`], ['radius', 'Reach', (v) => `${v} tiles`],
-      ['appeal', 'Scenery', (v) => `+${v}`], ['supply', 'Water supply', (v) => `${v} people`], ['kw', 'Power output', (v) => `${v} kW`],
-      ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax bonus', (v) => `+${Math.round(v * 100)}%`],
-      ['pollution', 'Smoke', (v) => `${v} tiles`, true], ['upkeep', 'Upkeep', (v) => `🪙 ${v}/day`, true],
+      ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['income', 'Earnings / worker', (v) => `$${v}`],
+      ['tax', 'Tax / worker', (v) => `${v}×`], ['visit', 'Per visit', (v) => `$${v}`], ['radius', 'Reach', (v) => `${v} tiles`],
+      ['appeal', 'Scenery', (v) => `+${v}`], ['supply', 'Water for', (v) => `${v}`], ['kw', 'Power', (v) => `${v} kW`],
+      ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax', (v) => `+${Math.round(v * 100)}%`],
+      ['pollution', 'Smoke', (v) => `${v} tiles`, true], ['upkeep', 'Upkeep / day', (v) => `$${v}`, true],
     ];
-    const rows = [];
-    for (const [k, label, fmtV, worse] of F) {
+    const tiles = [];
+    for (const [k, label, f, worse] of F) {
       const a = cur[k] || 0, z = n[k] || 0;
-      if (!a && !z) continue;
+      if (a === z) continue;
       const better = worse ? z < a : z > a;
-      const cls = a === z ? '' : better ? 'up' : 'down';
-      rows.push(`<tr class="${cls}"><td>${label}</td><td>${a ? fmtV(a) : '—'}</td><td>→</td><td>${z ? fmtV(z) : '—'}</td></tr>`);
+      tiles.push(`<div class="tile ${better ? 'up' : 'down'}"><small>${label}</small><b>${a ? f(a) : '—'} <i>→</i> <span class="to">${z ? f(z) : '—'}</span></b></div>`);
     }
-    if (o.type !== b.type) rows.unshift(`<tr><td>Becomes</td><td>${esc(BUILDINGS[b.type].name)}</td><td>→</td><td>${esc(BUILDINGS[o.type].branch || BUILDINGS[o.type].name)}</td></tr>`);
-    return rows.length ? `<table class="cmp"><tr><th></th><th>Now</th><th></th><th>After</th></tr>${rows.join('')}</table>` : '';
+    return tiles.length ? `<div class="tiles">${tiles.join('')}</div>` : '';
   }
 
   // Keep the in-town preview in step with the style picker.
@@ -388,14 +431,16 @@ export class UI {
       rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
     }
     if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
+    if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
+    if (L.seats) rows.push(['Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')} · teaches to ${EDU[L.edu || 1].toLowerCase()}`]);
     if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
     if (L.income) {
       let v = b.workers.length * L.income;
-      rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `🪙 ${fmt(v)} / day`]);
+      rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `$${fmt(v)} / day`]);
     }
-    if (L.visit) rows.push(['Per visit', `🪙 ${L.visit}`]);
-    if (L.upkeep) rows.push(['Upkeep', `🪙 ${L.upkeep} / day`]);
-    if (def.service) rows.push([`${SERVICES[def.service].icon} ${SERVICES[def.service].name} reach`, `${L.radius} tiles`]);
+    if (L.visit) rows.push(['Per visit', `$${L.visit}`]);
+    if (L.upkeep) rows.push(['Upkeep', `$${L.upkeep} / day`]);
+    for (const s of servicesOf(def)) rows.push([`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
     if (def.park) rows.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
     if (L.pollution) rows.push(['Pollution', `${L.pollution} tile radius`]);
     if (L.taxBonus) rows.push(['Tax bonus', `+${Math.round(L.taxBonus * 100)}%`]);
@@ -416,7 +461,7 @@ export class UI {
       const o = w.buildings.get(l.with);
       if (!o) continue;
       const on = BUILDINGS[o.type].levels[o.level].name;
-      rows.push(l.buyer ? ['Extra land', `bought from the ${esc(on)} next door for 🪙 ${l.price}`] : ['Garden', `a strip sold to the ${esc(on)} next door for 🪙 ${l.price}`]);
+      rows.push(l.buyer ? ['Extra land', `bought from the ${esc(on)} next door for $${l.price}`] : ['Garden', `a strip sold to the ${esc(on)} next door for $${l.price}`]);
     }
     rows.push(['Built', `Day ${b.built}`]);
     if (open) h += `<div class="sec">${rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('')}</div>`;
@@ -449,36 +494,13 @@ export class UI {
     }
     // upgrades: one path, or a choice of branches at the top level
     if (!b.con) {
-      const options = w.upgradeOptions(b);
-      const branching = options.length > 1 || (options[0] && options[0].type !== b.type);
-      for (const o of options) {
-        const up = w.upgradeCheck(b, o.type);
-        const td = BUILDINGS[o.type], n = up.next;
-        const what = branching ? ` <span class="sub">· ${esc(td.branch || td.name)}</span>` : '';
-        const styled = td.cat === 'residential' || td.cat === 'commercial';
-        const look = styled ? (this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : b.look || null) : null;
-        h += `<div class="sec"><h5>Upgrade to ${esc(n.name)}${what}</h5>`;
-        if (styled || branching) {
-          h += '<div class="uprow">';
-          if (styled) h += `<img class="preview" src="${thumb(o.type, o.level, b.variant, b.flavor, look)}" alt="">`;
-          if (branching) h += `<div class="note">${esc(td.desc)} Homes for ${n.housing}${n.tax ? `, tax ${n.tax}×` : ''}.</div>`;
-          h += '</div>';
-        }
-        if (styled) {
-          const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
-          h += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => { const t = STYLE_TECH[s.id], ok = !t || w.hasTech(t); return `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}" ${ok ? '' : `disabled title="Research ${esc(TECHS[t].name)}"`}>${ok ? '' : '🔒'}${s.name}</button>`; }).join('')}</div>`;
-          h += `<div class="actions"><button class="btn small ${on ? 'gold' : ''}" data-act="preview" data-type="${o.type}">👁 ${on ? 'Previewing in town · hide' : 'Preview in town'}</button></div>`;
-        }
-        h += this._compareHTML(b, o, n);
-        h += `<div class="req">${up.reqs.map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
-        h += `<div class="actions"><button class="btn primary" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? esc(n.name) : 'Upgrade'} · 🪙 ${fmt(n.cost)}</button></div></div>`;
-      }
+      h += this._upgradeHTML(b);
       const grow = w.expandOptions(b);
       if (grow.length) {
-        h += `<div class="sec"><h5>⇲ Expand onto a neighbouring plot</h5><div class="note">A double plot holds 50% more ${L.housing ? 'households' : 'workers'}. Builders extend it while it stays open.</div><div class="actions col">`;
+        h += `<div class="sec"><h5>⇲ Expand onto a neighbouring plot</h5><div class="note">A double plot holds 50% more ${L.housing ? 'households' : 'workers'} and opens up bigger buildings to upgrade into. Builders extend it while it stays open.</div><div class="actions col">`;
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
-          const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · 🪙 ${fmt(o.cost)}`;
+          const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · $${fmt(o.cost)}`;
           h += `<button class="btn ${o.warn ? 'warn' : ''} ${confirm ? 'gold' : ''}" data-act="expand" data-dir="${o.dir}" data-kind="${o.kind}" data-x="${o.x}" data-z="${o.z}" ${w.money >= o.cost ? '' : 'disabled'}>${label}</button>`;
           if (o.warn) h += `<div class="warnline">⚠ ${esc(o.warn)}</div>`;
         }
@@ -486,16 +508,17 @@ export class UI {
       }
       const merges = w.mergeOptions(b);
       if (merges.length) {
-        h += `<div class="sec"><h5>🔗 Join with a neighbour</h5><div class="note">Builders knock the two together into one mixed-use building on a double plot.</div><div class="actions col">`;
+        h += `<div class="sec"><h5>🔗 Join with a neighbour</h5><div class="note">Builders knock the two together into one new building on a double plot. Different pairs make different buildings.</div><div class="actions col">`;
         for (const m of merges) {
           const on = BUILDINGS[m.other.type].levels[m.other.level].name;
-          h += `<button class="btn" data-act="merge" data-id="${m.other.id}" ${m.ok ? '' : 'disabled'}>+ ${esc(on)} → ${esc(m.name)} · 🪙 ${fmt(m.cost)}</button>`;
+          h += `<button class="btn" data-act="merge" data-id="${m.other.id}" ${m.ok ? '' : 'disabled'} title="${esc(BUILDINGS[m.type].desc)}">+ ${esc(on)} → ${esc(m.name)} · $${fmt(m.cost)}</button>`;
+          h += `<div class="mergedesc">${esc(BUILDINGS[m.type].desc)}</div>`;
         }
         h += '</div></div>';
       }
     }
     h += `<div class="actions">`;
-    if (!b.con) h += `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · 🪙 ${fmt(w.moveCost(b))}</button>`;
+    if (!b.con) h += `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · $${fmt(w.moveCost(b))}</button>`;
     if ((b.type !== 'townhall' || b.con) && !(b.con && b.con.kind === 'demolish')) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
     h += `</div>`;
     return h;
@@ -509,17 +532,20 @@ export class UI {
     const moodE = mood >= 75 ? '😄' : mood >= 55 ? '🙂' : mood >= 40 ? '😐' : '😟';
     let work = job ? `<span class="chip link" data-act="building" data-id="${job.id}">${esc(BUILDINGS[job.type].levels[job.level].name)}</span>` :
       (r.age === 'adult' ? 'Looking for work' : r.age === 'child' ? 'Student' : 'Retired');
-    let h = `<div class="head"><div class="big">${ageIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age} · ${moodE} ${mood}%</div></div></div>`;
+    let h = `<div class="head"><div class="big">${ageIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age}, ${Math.floor(yearsOf(r))} · ${moodE} ${mood}%</div></div></div>`;
     h += `<div class="sec"><div class="row"><span>Now</span><b>${esc(ag.activity(r))}</b></div>`;
     h += `<div class="row"><span>Home</span><b>${home ? `<span class="chip link" data-act="building" data-id="${home.id}">${esc(BUILDINGS[home.type].levels[home.level].name)}</span>` : 'Homeless'}</b></div>`;
     h += `<div class="row"><span>Work</span><b>${work}</b></div>`;
+    h += `<div class="row"><span>Education</span><b>${EDU[eduOf(r)]}</b></div>`;
+    const sc = schoolingOf(w, r);
+    if (sc) h += `<div class="row"><span>School</span><b class="${sc.ok ? '' : 'neg'}">${sc.building ? `<span class="chip link" data-act="building" data-id="${sc.building.id}">${esc(sc.text)}</span>` : esc(sc.text)}</b></div>`;
     const pay = salaryOf(w, r), cost = livingCostOf(w, r), pension = pensionOf(r);
     if (r.age !== 'child') {
-      if (pay) h += `<div class="row"><span>Wage</span><b>🪙 ${pay} / day</b></div>`;
-      if (pension) h += `<div class="row"><span>Pension</span><b>🪙 ${pension} / day</b></div>`;
-      h += `<div class="row"><span>Living costs</span><b>🪙 ${cost} / day</b></div>`;
+      if (pay) h += `<div class="row"><span>Wage</span><b>$${pay} / day</b></div>`;
+      if (pension) h += `<div class="row"><span>Pension</span><b>$${pension} / day</b></div>`;
+      h += `<div class="row"><span>Living costs</span><b>$${cost} / day</b></div>`;
       const wl = wealthOf(r);
-      h += `<div class="row"><span>Savings</span><b class="${wl < 0 ? 'neg' : ''}">🪙 ${fmt(wl)}</b></div>`;
+      h += `<div class="row"><span>Savings</span><b class="${wl < 0 ? 'neg' : ''}">$${fmt(wl)}</b></div>`;
     }
     h += '</div>';
     const traits = traitsOf(r);
@@ -542,7 +568,7 @@ export class UI {
       h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}</div>`;
       if (L < 3) {
         const c = w.checkRoad(x, z, L + 1);
-        h += `<div class="actions"><button class="btn primary" data-act="roadup" ${c.ok && w.money >= c.cost ? '' : 'disabled'} title="${esc(c.reason || '')}">⬆ ${ROAD_LEVELS[L + 1].name} · 🪙 ${c.cost ?? '—'}</button><button class="btn danger" data-act="roaddel">Remove</button></div>`;
+        h += `<div class="actions"><button class="btn primary" data-act="roadup" ${c.ok && w.money >= c.cost ? '' : 'disabled'} title="${esc(c.reason || '')}">⬆ ${ROAD_LEVELS[L + 1].name} · $${c.cost ?? '—'}</button><button class="btn danger" data-act="roaddel">Remove</button></div>`;
         if (!c.ok) h += `<div class="req"><div class="no">${esc(c.reason)}</div></div>`;
       } else h += `<div class="actions"><button class="btn danger" data-act="roaddel">Remove</button></div>`;
     } else {
@@ -602,7 +628,8 @@ export class UI {
       }
       case 'look':
         this.lookChoice.set(sel.id, data.look || null);
-        this.preview = { id: sel.id, type: data.type };
+        // the in-town preview only follows the style if it is switched on
+        if (this.preview && this.preview.id === sel.id) this.preview = { id: sel.id, type: data.type };
         this.renderInspector(true);
         break;
       case 'preview': {
@@ -645,7 +672,7 @@ export class UI {
     if (p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight) return;
     const el = document.createElement('div');
     el.className = 'coin';
-    el.textContent = `+${v} 🪙`;
+    el.textContent = `+$${v}`;
     el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
     layer.appendChild(el);
     setTimeout(() => el.remove(), 1300);
@@ -736,7 +763,7 @@ export class UI {
         <div class="field"><label>Map seed</label><div class="inline"><input id="ngSeed" style="flex:1" value="${randomSeed() % 1000000}"><button class="btn small" id="ngDice" title="Random seed">🎲</button></div></div>
         <div class="field"><label>Valley size</label><select id="ngSize"><option value="32">Small · 32×32 (hamlet)</option><option value="48" selected>Medium · 48×48 (village)</option><option value="64">Large · 64×64 (town)</option><option value="80">Huge · 80×80 (valley)</option></select></div>
       </div>
-      <div class="field"><label class="inline"><input type="checkbox" id="ngInf"> Sandbox: unlimited coins</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="ngInf"> Sandbox: unlimited money</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngAll"> Sandbox: unlock every building from the start</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngFree"> Sandbox: upgrade buildings without meeting their needs</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngInst"> Sandbox: buildings go up instantly (no builders needed)</label></div>
@@ -787,7 +814,7 @@ export class UI {
     h += `<div class="saves">${list.map(e => `<div class="save">
       ${e.thumb ? `<img src="${e.thumb}" alt="">` : '<div class="ph">🏡</div>'}
       <div><div class="t">${esc(e.name)} ${e.id === 'autosave' ? '<span class="chip">Autosave</span>' : ''}</div>
-      <div class="m">Day ${e.day} · ${fmt(e.pop)} villagers · 🪙 ${typeof e.money === "number" ? fmt(e.money) : e.money}</div><div class="m">${new Date(e.savedAt).toLocaleString()}</div></div>
+      <div class="m">Day ${e.day} · ${fmt(e.pop)} villagers · $${typeof e.money === "number" ? fmt(e.money) : e.money}</div><div class="m">${new Date(e.savedAt).toLocaleString()}</div></div>
       <div class="acts"><button class="btn small primary" data-load="${e.id}">Load</button>
       ${inGame && e.id !== 'autosave' ? `<button class="btn small" data-over="${e.id}">Overwrite</button>` : ''}
       <button class="btn small" data-dl="${e.id}" title="Download as .json">⬇</button>
@@ -840,7 +867,7 @@ export class UI {
     h += `<div class="saves">${files.map(f => {
       const a = f.appProperties || {};
       return `<div class="save"><div class="ph">☁️</div><div><div class="t">${esc(a.town || f.name)}</div>
-        <div class="m">${a.day ? `Day ${esc(a.day)} · ${esc(a.pop)} villagers · 🪙 ${esc(a.money)}` : esc(f.name)}</div>
+        <div class="m">${a.day ? `Day ${esc(a.day)} · ${esc(a.pop)} villagers · $${esc(a.money)}` : esc(f.name)}</div>
         <div class="m">${new Date(f.modifiedTime).toLocaleString()}</div></div>
         <div class="acts"><button class="btn small primary" data-gload="${f.id}">Load</button>
         ${inGame ? `<button class="btn small" data-gover="${f.id}">Overwrite</button>` : ''}
@@ -901,7 +928,7 @@ export class UI {
         <div><h5 style="margin:6px 0">Expenses / day</h5><table class="budget" id="bOut"></table></div>
       </div>
       <div class="note" style="margin-top:12px">Shop visits, fares and deliveries pay out live as villagers go about their day:
-        <b>🪙 ${fmt(w.stats.todayVisitIncome)}</b> so far today, ${fmt(w.stats.visitIncome)} all time.</div>
+        <b>$${fmt(w.stats.todayVisitIncome)}</b> so far today, ${fmt(w.stats.visitIncome)} all time.</div>
       <div class="grid2" style="margin-top:12px">
         <div><h5 style="margin:6px 0">Population</h5><canvas class="chart" id="chPop" width="600" height="220"></canvas></div>
         <div><h5 style="margin:6px 0">Treasury</h5><canvas class="chart" id="chMoney" width="600" height="220"></canvas></div>
@@ -936,8 +963,8 @@ export class UI {
       const st = g.transit.stats[l.id] || { riders: 0, fares: 0 };
       const cfg = TRANSIT[l.mode];
       return `<div class="line-item"><span class="dot" style="background:${l.color}"></span>
-        <div><b>${esc(l.name)}</b> ${l.broken ? '<span class="chip no">Route broken</span>' : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.mode === 'rail' ? 'train' : 'coach'}${l.vehicles > 1 ? (l.mode === 'rail' ? 's' : 'es') : ''} · ${fmt(st.riders)} riders · 🪙 ${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
-        <div class="inline"><button class="btn small" data-veh="${l.id}" data-d="-1">−</button><button class="btn small" data-veh="${l.id}" data-d="1" title="Add a vehicle (🪙 ${cfg.vehicleCost})">+</button><button class="btn small danger" data-ldel="${l.id}">✕</button></div></div>`;
+        <div><b>${esc(l.name)}</b> ${l.broken ? '<span class="chip no">Route broken</span>' : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.mode === 'rail' ? 'train' : 'coach'}${l.vehicles > 1 ? (l.mode === 'rail' ? 's' : 'es') : ''} · ${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
+        <div class="inline"><button class="btn small" data-veh="${l.id}" data-d="-1">−</button><button class="btn small" data-veh="${l.id}" data-d="1" title="Add a vehicle ($${cfg.vehicleCost})">+</button><button class="btn small danger" data-ldel="${l.id}">✕</button></div></div>`;
     }).join('')}</div>`;
     this.openModal(h, (c) => {
       c.querySelector('#nlCoach').onclick = () => { this.closeModal(); this.openFlyout('transit'); g.input.setTool({ kind: 'line', mode: 'coach', stops: [] }); };
@@ -971,7 +998,7 @@ export class UI {
         <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
-      ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited coins (this town)</label></div>
+      ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited money (this town)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''}> Sandbox: unlock every building (this town)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
@@ -1013,6 +1040,7 @@ export class UI {
       def.levels.forEach((L) => { if (L.tech === id) out.push(`${L.name} upgrade`); });
     }
     for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) out.push(`${STYLES.find(s => s.id === style).name} style`);
+    for (const m of MERGES) if (BUILDINGS[m.to].tech === id && !out.some(o => o.startsWith(BUILDINGS[m.to].name))) out.push(`${BUILDINGS[m.to].name} (join ${m.a[0]} + ${m.b[0]})`);
     if (id === 'railways') out.push('Railway track and lines');
     return out;
   }
@@ -1021,27 +1049,52 @@ export class UI {
     const g = this.game, w = this.world;
     if (!w || g.demo) return;
     const R = w.research, rate = g.sim.researchRate();
-    const tiers = [0, 1, 2, 3].map(t => Object.entries(TECHS).filter(([, x]) => x.tier === t));
-    const card = ([id, t]) => {
-      const done = w.hasTech(id) && R.done.includes(id) || w.sandbox.unlockAll;
-      const cur = R.current === id, can = w.canResearch(id);
-      const pct = cur ? Math.round((R.progress / t.cost) * 100) : 0;
-      const days = rate > 0 ? Math.ceil((t.cost - (cur ? R.progress : 0) - (cur ? 0 : R.bank)) / rate) : null;
-      let foot;
-      if (done) foot = '<div class="tdone">✓ Researched</div>';
-      else if (cur) foot = `<div class="meter build"><i style="width:${pct}%"></i></div><div class="tsub">${R.progress}/${t.cost} · ${days != null ? `about ${Math.max(1, days)} day${days === 1 ? '' : 's'}` : 'no research yet'}</div>`;
-      else if (can) foot = `<button class="btn small primary" data-tech="${id}">🔬 Research · ${t.cost}</button>`;
-      else foot = `<div class="tsub">Needs ${t.needs.filter(n => !R.done.includes(n)).map(n => esc(TECHS[n].name)).join(' + ')}</div>`;
-      return `<div class="tech ${done ? 'done' : cur ? 'cur' : can ? 'can' : 'locked'}"><b>${esc(t.name)}</b><div class="tdesc">${esc(t.desc)}</div><ul>${this._techUnlocks(id).map(u => `<li>${esc(u)}</li>`).join('')}</ul>${foot}</div>`;
+    const all = w.sandbox.unlockAll;
+    const state = (id) => (all || R.done.includes(id) ? 'done' : R.current === id ? 'cur' : w.canResearch(id) ? 'can' : 'locked');
+    const tiers = Math.max(...Object.values(TECHS).map(t => t.tier)) + 1;
+    const rows = BRANCHES.filter(([b]) => Object.values(TECHS).some(t => t.branch === b));
+    if (!this._techSel || !TECHS[this._techSel]) this._techSel = R.current || Object.keys(TECHS).find(id => state(id) === 'can') || 'carpentry';
+    const node = (id) => {
+      const t = TECHS[id], s = state(id);
+      const tail = s === 'done' ? '✓' : s === 'cur' ? `${Math.round((R.progress / t.cost) * 100)}%` : s === 'can' ? `🔬 ${t.cost}` : `🔒 ${t.cost}`;
+      return `<div class="tnode ${s} ${this._techSel === id ? 'sel' : ''}" data-node="${id}" style="grid-row:${rows.findIndex(r => r[0] === t.branch) + 1};grid-column:${t.tier + 2}"><b>${esc(t.name)}</b><span>${tail}</span>${s === 'cur' ? `<i style="width:${Math.round((R.progress / t.cost) * 100)}%"></i>` : ''}</div>`;
     };
+    const sel = TECHS[this._techSel], ss = state(this._techSel);
+    const days = rate > 0 ? Math.max(1, Math.ceil((sel.cost - (ss === 'cur' ? R.progress : 0) - (ss === 'cur' ? 0 : R.bank)) / rate)) : null;
+    let detail = `<div class="tdetail"><div><b>${esc(sel.name)}</b> <span class="tcost">${sel.cost} points</span><div class="tdesc">${esc(sel.desc)}</div>`;
+    if (sel.needs.length) detail += `<div class="tneeds">Needs: ${sel.needs.map(n => `<span class="${R.done.includes(n) || all ? 'ok' : 'no'}">${esc(TECHS[n].name)}</span>`).join(' + ')}</div>`;
+    detail += `</div><ul>${this._techUnlocks(this._techSel).map(u => `<li>${esc(u)}</li>`).join('') || '<li>—</li>'}</ul><div class="tact">`;
+    if (ss === 'done') detail += '<div class="tdone">✓ Researched</div>';
+    else if (ss === 'cur') detail += `<div class="meter build"><i style="width:${Math.round((R.progress / sel.cost) * 100)}%"></i></div><div class="tsub">${R.progress}/${sel.cost} · ${days ? `about ${days} day${days === 1 ? '' : 's'}` : 'no research yet'}</div>`;
+    else if (ss === 'can') detail += `<button class="btn primary" data-tech="${this._techSel}">🔬 Research · ${sel.cost} points${days ? ` · ~${days} days` : ''}</button>`;
+    else detail += '<div class="tsub">Research the projects it needs first.</div>';
+    detail += '</div></div>';
     const sources = [];
-    for (const b of w.buildings.values()) if (['townhall', 'school', 'chapel'].includes(b.type) && b.connected) sources.push(BUILDINGS[b.type].levels[b.level].name);
-    this.openModal(`<h2>Research</h2><p class="lead">🔬 ${rate} point${rate === 1 ? '' : 's'} a day from ${sources.length ? esc([...new Set(sources)].join(', ')) : 'nowhere yet'} and your villagers${R.bank ? ` · ${R.bank} banked` : ''}. Schools and chapels speed research up. ${w.sandbox.unlockAll ? '<b>Sandbox: everything is unlocked.</b>' : ''}</p>
-      <div class="techtree">${tiers.map((col, i) => `<div class="tcol"><h5>${['Crafts', 'Learning', 'Industry', 'Modern'][i]}</h5>${col.map(card).join('')}</div>`).join('')}</div>`, (c) => {
+    for (const b of w.buildings.values()) if (['townhall', 'school', 'chapel', 'parishschool'].includes(b.type) && b.connected) sources.push(BUILDINGS[b.type].levels[b.level].name);
+    this.openModal(`<h2>Research</h2><p class="lead">🔬 ${rate} point${rate === 1 ? '' : 's'} a day from ${sources.length ? esc([...new Set(sources)].join(', ')) : 'nowhere yet'} and your villagers${R.bank ? ` · ${R.bank} banked` : ''}${R.current ? ` · researching <b>${esc(TECHS[R.current].name)}</b>` : ''}. Schools and chapels speed research up.${all ? ' <b>Sandbox: everything is unlocked.</b>' : ''}</p>
+      <div class="ttree-wrap"><div class="ttree" style="grid-template-columns: 96px repeat(${tiers}, 132px); grid-template-rows: repeat(${rows.length}, 44px)">
+        <svg class="tlinks"></svg>
+        ${rows.map(([, name], i) => `<div class="tbranch" style="grid-row:${i + 1};grid-column:1">${esc(name)}</div>`).join('')}
+        ${Object.keys(TECHS).map(node).join('')}
+      </div></div>${detail}`, (c) => {
       c.classList.add('wide');
-      for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => {
-        if (w.startResearch(btn.dataset.tech)) { g.sfx('click'); this.showResearch(); }
+      const tree = c.querySelector('.ttree'), svg = c.querySelector('.tlinks');
+      const draw = () => {
+        const box = tree.getBoundingClientRect();
+        svg.setAttribute('width', tree.scrollWidth); svg.setAttribute('height', tree.scrollHeight);
+        const at = (id) => { const r = tree.querySelector(`[data-node="${id}"]`).getBoundingClientRect(); return { l: r.left - box.left, r: r.right - box.left, y: r.top - box.top + r.height / 2 }; };
+        let p = '';
+        for (const [id, t] of Object.entries(TECHS)) for (const n of t.needs) {
+          const a = at(n), b = at(id), s = state(id);
+          const col = s === 'done' ? '#2c7a2c' : s === 'can' || s === 'cur' ? '#000080' : '#9a9a9a';
+          const mx = (a.r + b.l) / 2;
+          p += `<path d="M${a.r} ${a.y} C${mx} ${a.y} ${mx} ${b.y} ${b.l} ${b.y}" stroke="${col}" stroke-width="2" fill="none" ${s === 'locked' ? 'stroke-dasharray="4 3"' : ''}/>`;
+        }
+        svg.innerHTML = p;
       };
+      requestAnimationFrame(draw);
+      for (const el of c.querySelectorAll('[data-node]')) el.onclick = () => { this._techSel = el.dataset.node; this.showResearch(); };
+      for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => { if (w.startResearch(btn.dataset.tech)) { g.sfx('click'); this.showResearch(); } };
     });
   }
 
@@ -1072,17 +1125,19 @@ export class UI {
     const name = (id) => { const b = id != null ? w.buildings.get(id) : null; return b ? BUILDINGS[b.type].levels[b.level].name : ''; };
     const AGE = { child: 0, adult: 1, elder: 2 };
     const rows = [...w.residents.values()].map(r => ({
-      r, name: `${r.first} ${r.last}`, age: r.age, home: name(r.home), job: r.job != null ? name(r.job) : (r.age === 'adult' ? '' : r.age === 'child' ? 'Child' : 'Retired'),
+      r, name: `${r.first} ${r.last}`, age: r.age, years: yearsOf(r), edu: eduOf(r), school: r.age === 'child' ? schoolingOf(w, r) : null, home: name(r.home), job: r.job != null ? name(r.job) : (r.age === 'adult' ? '' : r.age === 'child' ? 'Child' : 'Retired'),
       pay: salaryOf(w, r) + pensionOf(r), wealth: r.age === 'child' ? null : wealthOf(r), mood: Math.round(r.mood ?? 60), traits: traitsOf(r),
       builder: r.job != null && BUILDINGS[w.buildings.get(r.job)?.type]?.builders,
     }));
     const adults = rows.filter(x => x.age !== 'child');
+    const sk = this.game.sim.schooling || { kids: 0, placed: 0 };
+    const eduShare = adults.length ? Math.round(100 * adults.filter(x => x.edu >= 2).length / adults.length) : 0;
     const avgPay = adults.filter(x => x.pay > 0);
-    const summary = `${fmt(rows.length)} villagers · ${rows.filter(x => x.r.age === 'adult' && x.r.job != null).length} employed · ${rows.filter(x => x.r.age === 'adult' && x.r.job == null).length} looking for work · average wage 🪙 ${avgPay.length ? (avgPay.reduce((s, x) => s + x.pay, 0) / avgPay.length).toFixed(1) : 0} · savings 🪙 ${fmt(adults.reduce((s, x) => s + (x.wealth || 0), 0))}`;
-    const cols = [['name', 'Name'], ['age', 'Age'], ['home', 'Home'], ['job', 'Job'], ['pay', 'Income'], ['wealth', 'Savings'], ['mood', 'Mood'], ['traits', 'Personality']];
+    const summary = `${fmt(rows.length)} villagers · ${eduShare}% of grown-ups with secondary schooling · ${sk.placed}/${sk.kids} school-age children in school · ${rows.filter(x => x.r.age === 'adult' && x.r.job != null).length} employed · ${rows.filter(x => x.r.age === 'adult' && x.r.job == null).length} looking for work · average wage $${avgPay.length ? (avgPay.reduce((s, x) => s + x.pay, 0) / avgPay.length).toFixed(1) : 0} · savings $${fmt(adults.reduce((s, x) => s + (x.wealth || 0), 0))}`;
+    const cols = [['name', 'Name'], ['years', 'Age'], ['edu', 'Education'], ['home', 'Home'], ['job', 'Job / school'], ['pay', 'Income'], ['wealth', 'Savings'], ['mood', 'Mood'], ['traits', 'Personality']];
     this.openModal(`<h2>Villagers</h2><p class="lead">${summary}</p>
       <div class="pplbar"><input id="pplQ" placeholder="Search names, homes, jobs or traits…" value="${esc(st.q)}">
-        <select id="pplF">${[['', 'Everyone'], ['adult', 'Adults'], ['child', 'Children'], ['elder', 'Elders'], ['jobless', 'Looking for work'], ['builders', 'Builders'], ['poor', 'In debt']].map(([v, l]) => `<option value="${v}" ${st.f === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="pplF">${[['', 'Everyone'], ['adult', 'Adults'], ['child', 'Children'], ['elder', 'Elders'], ['jobless', 'Looking for work'], ['noschool', 'No school place'], ['builders', 'Builders'], ['poor', 'In debt']].map(([v, l]) => `<option value="${v}" ${st.f === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span id="pplN"></span></div>
       <div class="pplwrap"><table class="people"><thead><tr>${cols.map(([k, l]) => `<th data-k="${k}">${l}<span class="sort"></span></th>`).join('')}</tr></thead><tbody id="pplBody"></tbody></table></div>`, (c) => {
       c.classList.add('wide');
@@ -1093,20 +1148,21 @@ export class UI {
           if (st.f === 'adult' || st.f === 'child' || st.f === 'elder') { if (x.age !== st.f) return false; }
           else if (st.f === 'jobless') { if (!(x.age === 'adult' && x.r.job == null)) return false; }
           else if (st.f === 'builders') { if (!x.builder) return false; }
+          else if (st.f === 'noschool') { if (!(x.school && !x.school.ok)) return false; }
           else if (st.f === 'poor') { if (!(x.wealth != null && x.wealth < 0)) return false; }
           if (!q) return true;
           return [x.name, x.home, x.job, ...x.traits.map(t => TRAITS[t].name)].some(s => s.toLowerCase().includes(q));
         });
         const k = st.k;
         list.sort((a, b) => {
-          const va = k === 'age' ? AGE[a.age] : k === 'traits' ? a.traits.map(t => TRAITS[t].name).join() : a[k] ?? -1e9;
-          const vb = k === 'age' ? AGE[b.age] : k === 'traits' ? b.traits.map(t => TRAITS[t].name).join() : b[k] ?? -1e9;
+          const va = k === 'age' ? AGE[a.age] : k === 'job' && a.school ? a.school.text : k === 'traits' ? a.traits.map(t => TRAITS[t].name).join() : a[k] ?? -1e9;
+          const vb = k === 'age' ? AGE[b.age] : k === 'job' && b.school ? b.school.text : k === 'traits' ? b.traits.map(t => TRAITS[t].name).join() : b[k] ?? -1e9;
           return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * st.dir || a.r.id - b.r.id;
         });
         const total = list.length;
         list = list.slice(0, 400);
         c.querySelector('#pplN').textContent = total > 400 ? `showing 400 of ${fmt(total)}` : `${fmt(total)} shown`;
-        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${ageIcon(x.r)} ${esc(x.name)}</td><td>${x.age[0].toUpperCase() + x.age.slice(1)}</td><td>${esc(x.home) || '—'}</td><td>${x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
+        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${ageIcon(x.r)} ${esc(x.name)}</td><td class="num">${Math.floor(x.years)}</td><td>${EDU[x.edu]}</td><td>${esc(x.home) || '—'}</td><td>${x.school ? (x.school.ok ? esc(x.school.text) : '<span class="bad">No school place</span>') : x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
           `<td class="num">${x.pay ? x.pay.toFixed(1) : '—'}</td><td class="num ${x.wealth != null && x.wealth < 0 ? 'bad' : ''}">${x.wealth == null ? '—' : fmt(x.wealth)}</td><td class="num">${x.mood}%</td><td class="traits">${x.traits.map(t => TRAITS[t].name).join(', ')}</td></tr>`).join(''));
         for (const th of c.querySelectorAll('th')) th.querySelector('.sort').textContent = th.dataset.k === st.k ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
       };
@@ -1140,6 +1196,7 @@ export class UI {
         ${k('Space')}<span>Pause · ${k('[')} ${k(']')} slower / faster (up to 32×)</span>
         ${k('O')}<span>Overlays · ${k('B')} budget · ${k('L')} lines · ${k('P')} villagers</span>
         ${k('N')}<span>Hide / show pop-ups (coins, notices, tips)</span>
+        ${k('I')}<span>Show / hide the town issues list (lower left)</span>
         ${k('K')}<span>Research: unlock buildings, upgrade paths and styles</span>
         ${k('Esc')}<span>Cancel / close</span>
       </div><div style="font-size:13px;line-height:1.5">

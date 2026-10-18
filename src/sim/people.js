@@ -52,6 +52,7 @@ export function salaryOf(world, r) {
   const def = BUILDINGS[j.type], L = def.levels[j.level];
   let pay = def.builders ? 7 + 2 * j.level : L.income ? L.income * 0.6 : 5 + 1.5 * j.level;
   if (hasTrait(r, 'diligent')) pay *= 1.15;
+  pay *= EDU_PAY[eduOf(r)];
   return Math.round(pay * 10) / 10;
 }
 
@@ -68,6 +69,50 @@ export function livingCostOf(world, r) {
 }
 
 export const pensionOf = (r) => (r.age === 'elder' ? 3 : 0);
+
+// ---------------------------------------------------------- ages & schooling
+// One year of a villager's life passes every YEAR_DAYS in-game days.
+export const YEAR_DAYS = 2;
+export const EDU = ['No schooling', 'Primary', 'Secondary', 'Advanced'];
+const EDU_PAY = [0.85, 1, 1.2, 1.45];
+
+// Age in years (older saves only knew child / adult / elder).
+export function yearsOf(r) {
+  if (r.years != null) return r.years;
+  const g = new RNG((r.look ^ 0x27d4eb2d) >>> 0);
+  r.years = r.age === 'child' ? g.int(3, 16) : r.age === 'elder' ? g.int(66, 84) : g.int(19, 60);
+  return r.years;
+}
+
+// Education level 0–3. Grown-ups who arrive bring theirs with them.
+export function eduOf(r) {
+  if (r.edu != null) return r.edu;
+  const g = new RNG((r.look ^ 0x165667b1) >>> 0);
+  if (r.age === 'child') r.edu = yearsOf(r) >= 12 ? 1 : 0;
+  else {
+    const x = g.next();
+    r.edu = r.age === 'elder' ? (x < 0.45 ? 0 : x < 0.85 ? 1 : x < 0.98 ? 2 : 3) : (x < 0.28 ? 0 : x < 0.73 ? 1 : x < 0.95 ? 2 : 3);
+  }
+  return r.edu;
+}
+
+// Education of a newcomer: better schools in town attract better-educated families.
+export function arrivingEdu(world, rng) {
+  let best = -1;
+  for (const b of world.buildings.values()) if (b.type === 'school' && isOpen(b)) best = Math.max(best, b.level);
+  const x = rng.next() + best * 0.08;
+  return x < 0.28 ? 0 : x < 0.73 ? 1 : x < 0.95 ? 2 : 3;
+}
+
+// What a child is doing about school, for the UI.
+export function schoolingOf(world, r) {
+  if (r.age !== 'child') return null;
+  const y = yearsOf(r);
+  if (y < 6) return { text: 'Too young for school', ok: true };
+  const s = r.school != null ? world.buildings.get(r.school) : null;
+  if (!s) return { text: 'No school place', ok: false };
+  return { text: `${BUILDINGS[s.type].levels[s.level].name} · year ${Math.max(1, Math.floor(y) - 5)}`, ok: true, building: s };
+}
 
 // Savings a villager arrives with (villa families come with money).
 export function startingWealth(r, home) {

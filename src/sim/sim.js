@@ -1,11 +1,11 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
-import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES } from '../defs.js';
+import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
-import { settleDay, startingWealth } from './people.js';
+import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS } from './people.js';
 
 const SERVICE_KEYS = Object.keys(SERVICES);
 
@@ -71,6 +71,9 @@ export class Sim {
     w.history.push({ day: w.day - 1, pop: w.population, money: Number.isFinite(w.money) ? Math.round(w.money) : null, happy: Math.round(this.happiness), net: Math.round(this.budget.net + w.stats.todayVisitIncome) });
     if (w.history.length > 400) w.history.shift();
     w.stats.todayVisitIncome = 0;
+    const life = this.ageDay();
+    if (life.born.length) this.game.emit('born', life.born);
+    if (life.died.length) this.game.emit('died', life.died);
     settleDay(w);
     w.addResearch(this.researchRate());
     w.encroachPass(() => this.rng.next());
@@ -85,6 +88,7 @@ export class Sim {
     this.dirty = false;
     this._coverage();
     this._links();
+    this.assignSchools();
     this.assignJobs();
     this._happiness();
     this._budget();
@@ -121,7 +125,7 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (def.service && b.connected) stamp(b, L.radius, (i) => { this.coverage[def.service][i] = 1; });
+      if (b.connected) for (const s of servicesOf(def)) stamp(b, L.radius, (i) => { this.coverage[s][i] = 1; });
       if (def.park || L.appeal) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * (1 - d / (L.radius + 1)); });
       if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += 16 * (1 - d / (L.pollution + 1)); });
     }
@@ -132,7 +136,7 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b) || !b.connected) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.supply && def.service === 'water') wSup += L.supply;
+      if (L.supply && servicesOf(def).includes('water')) wSup += L.supply;
       if (L.kw) pGen += L.kw;
       else if (!def.park) pDem += 0.5 + 0.2 * (L.housing || 0) + 0.25 * (L.jobs || 0);
     }
@@ -235,16 +239,99 @@ export class Sim {
     return p;
   }
 
+  // Pupils fill the nearest schools with room; the oldest children get
+  // places first (they're closest to finishing).
+  assignSchools() {
+    const w = this.world;
+    const schools = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].seats && isOpen(b) && b.connected);
+    const left = new Map(schools.map(s => [s.id, capOf(s, 'seats')]));
+    for (const s of schools) s.pupils = [];
+    const kids = [...w.residents.values()].filter(r => r.age === 'child' && yearsOf(r) >= 6).sort((a, b) => yearsOf(b) - yearsOf(a));
+    let placed = 0;
+    for (const r of kids) {
+      r.school = null;
+      const home = r.home != null ? w.buildings.get(r.home) : null;
+      if (!home) continue;
+      let best = null, bd = Infinity;
+      for (const s of schools) {
+        if (!left.get(s.id)) continue;
+        const d = Math.abs(s.x - home.x) + Math.abs(s.z - home.z);
+        if (d < bd) { bd = d; best = s; }
+      }
+      if (!best) continue;
+      left.set(best.id, left.get(best.id) - 1);
+      best.pupils.push(r.id);
+      r.school = best.id;
+      placed++;
+    }
+    for (const r of w.residents.values()) if (r.age !== 'child' || yearsOf(r) < 6) r.school = null;
+    this.schooling = { kids: kids.length, placed, seats: schools.reduce((n, s) => n + capOf(s, 'seats'), 0) };
+  }
+
+  // A day of life: everyone ages; at each birthday children learn at their
+  // school, grow up at 18, retire at 65; the old may pass away and young
+  // couples may have a baby.
+  ageDay() {
+    const w = this.world, rng = this.rng, ag = this.game.agents;
+    const born = [], died = [];
+    for (const r of [...w.residents.values()]) {
+      const before = Math.floor(yearsOf(r));
+      r.years = yearsOf(r) + 1 / YEAR_DAYS;
+      const y = Math.floor(r.years);
+      if (y === before) continue;
+      eduOf(r);
+      if (r.age === 'child') {
+        const s = r.school != null ? w.buildings.get(r.school) : null;
+        if (s && y > 6) {
+          r.edXP = (r.edXP || 0) + 1;
+          const lvl = BUILDINGS[s.type].levels[s.level].edu || 1;
+          if (r.edXP >= 5) r.edu = Math.max(r.edu, 1);
+          if (r.edXP >= 9 && lvl >= 2) r.edu = Math.max(r.edu, 2);
+          if (r.edXP >= 11 && lvl >= 3) r.edu = Math.max(r.edu, 3);
+        }
+        if (y >= 18) { r.age = 'adult'; r.school = null; r.wealth = 0; ag?.refreshLook(r); }
+      } else if (r.age === 'adult') {
+        if (y >= 65) { r.age = 'elder'; r.job = null; ag?.refreshLook(r); }
+        else if (y >= 20 && y <= 42 && r.home != null) {
+          const home = w.buildings.get(r.home);
+          const fam = [...w.residents.values()].filter(o => (o.fam ?? o.id) === (r.fam ?? r.id));
+          const room = home && isOpen(home) && home.residents.length < capOf(home, 'housing');
+          // one chance a year per household, taken by its youngest grown-up
+          const youngest = fam.filter(o => o.age === 'adult').sort((a, b) => yearsOf(a) - yearsOf(b))[0];
+          if (room && youngest === r && fam.length < 6 && rng.chance(0.16)) {
+            const baby = { id: w.newId(), first: firstName(rng), last: r.last, age: 'child', years: 0, edu: 0, home: r.home, job: null, look: (rng.next() * 1e9) | 0, mood: 60, fam: r.fam ?? r.id, wealth: 0 };
+            w.residents.set(baby.id, baby);
+            home.residents.push(baby.id);
+            born.push(baby);
+          }
+        }
+      } else if (y >= 72 && rng.chance(Math.min(0.5, (y - 70) * 0.03))) died.push(r);
+    }
+    for (const r of died) {
+      ag?.remove(r);
+      w.residents.delete(r.id);
+      // children left with no grown-up at home go to live with relatives elsewhere
+      const kin = [...w.residents.values()].filter(o => o.home === r.home);
+      if (kin.length && kin.every(o => o.age === 'child')) ag?.depart(kin.map(o => o.id));
+    }
+    if (born.length || died.length) this.dirty = true;
+    return { born, died };
+  }
+
   jobsOf(b) { return isOpen(b) ? capOf(b, 'jobs') : 0; }
 
   assignJobs() {
     const w = this.world;
     const open = [];
     let total = 0, filled = 0;
+    this.jobsNeedingSkill = 0;
     for (const b of w.buildings.values()) {
       const j = this.jobsOf(b);
       if (!j) continue;
       total += j;
+      const need = BUILDINGS[b.type].levels[b.level].edu || 0;
+      // workers without the schooling this job now needs are let go
+      if (need) for (const rid of [...b.workers]) { const r = w.residents.get(rid); if (r && eduOf(r) < need) { b.workers.splice(b.workers.indexOf(rid), 1); r.job = null; } }
       // drop surplus workers after a downgrade / disconnection
       while (b.workers.length > j || (!b.connected && b.workers.length)) {
         const rid = b.workers.pop();
@@ -262,16 +349,18 @@ export class Sim {
         let best = null, bd = Infinity;
         for (const b of open) {
           if (b.workers.length >= this.jobsOf(b)) continue;
+          if (eduOf(r) < (BUILDINGS[b.type].levels[b.level].edu || 0)) continue;
           // builders are hired first: nothing gets built without them
           const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (BUILDINGS[b.type].builders ? 1000 : 0);
           if (d < bd) { bd = d; best = b; }
         }
-        if (!best) break;
+        if (!best) continue;
         r.job = best.id;
         best.workers.push(r.id);
         filled++;
       }
     }
+    for (const b of open) if (b.workers.length < this.jobsOf(b) && BUILDINGS[b.type].levels[b.level].edu) this.jobsNeedingSkill += this.jobsOf(b) - b.workers.length;
     this.jobs = { total, filled };
   }
 
@@ -396,6 +485,8 @@ export class Sim {
       else if (k === 1 && rng.chance(0.15)) age = 'elder';
       if (size === 1 && rng.chance(0.25)) age = 'elder';
       const r = { id: w.newId(), first: firstName(rng), last, age, home: home.id, job: null, look: (rng.next() * 1e9) | 0, mood: 60 };
+      r.years = age === 'child' ? rng.int(0, 16) : age === 'elder' ? rng.int(65, 82) : rng.int(19, 58);
+      r.edu = age === 'child' ? (r.years >= 12 ? 1 : 0) : arrivingEdu(w, rng);
       r.fam = fam.length ? fam[0].id : r.id;
       r.wealth = startingWealth(r, home);
       w.residents.set(r.id, r);
