@@ -307,11 +307,11 @@ export class Renderer {
     this.sun.position.copy(c).addScaledVector(lz, 100);
   }
 
-  // The sun's direction as lit: the time-of-day direction, turned with the view.
-  get lightDir() {
-    const d = this.sunDir, t = this.rig.turn, c = Math.cos(t), sn = Math.sin(t);
-    return _lz.set(d.x * c + d.z * sn, d.y, -d.x * sn + d.z * c);
-  }
+  // The sun's direction as lit: the time-of-day direction. It belongs to the
+  // world, not the camera, so turning the view never moves the sun: every
+  // shadow keeps falling the same way across the ground, and a turned view
+  // just shows the town from another side, sunlit or in shade.
+  get lightDir() { return _lz.copy(this.sunDir); }
 
   render() {
     if (this.post) this.post.composer.render();
