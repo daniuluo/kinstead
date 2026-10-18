@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -18,7 +18,8 @@ const HAPPY = {
   culture: { want: 'a chapel or hall nearby', label: 'Culture', icon: 'church', tip: 'Build a chapel or music hall within reach', act: { label: 'Services', cat: 'services' } },
   power: { want: 'electricity', label: 'Electricity', icon: 'bolt', tip: (f, g) => (g.sim.utility && g.sim.utility.power.gen ? 'Not enough power — build more generators' : 'Build a generator (Utilities)'), act: { label: 'Utilities', cat: 'utilities' } },
   appeal: { want: 'nicer scenery', label: 'Scenery', icon: 'park', tip: 'Plant trees, or build gardens and parks nearby', act: { label: 'Parks', cat: 'parks' } },
-  shops: { want: 'shops nearby', label: 'Shops nearby', icon: 'storefront', tip: 'Build a shop, bakery or tavern within 7 tiles', act: { label: 'Commerce', cat: 'commercial' } },
+  play: { want: 'somewhere to play', label: 'Play', icon: 'toys', tip: 'Build a play area or playing field within reach of homes with children', act: { label: 'Parks', cat: 'parks' } },
+  shops: { want: 'shops nearby', label: 'Shops nearby', icon: 'storefront', tip: 'Build a shop, café or tavern within 7 tiles', act: { label: 'Commerce', cat: 'commercial' } },
   transit: { want: 'a coach stop nearby', label: 'Transport', icon: 'directions_bus', tip: 'Put a coach stop within 4 tiles', act: { label: 'Transit', cat: 'transit' } },
   pollution: { want: 'less smoke', label: 'Smoke', icon: 'factory', tip: 'Industry is too close — move it, or plant trees between', act: { label: 'Show homes' } },
   land: { label: 'Garden deal', icon: 'yard', tip: '' },
@@ -60,6 +61,8 @@ const ICONS = {
   '🧺': 'shopping_basket', '🏛': 'account_balance', '🌷': 'local_florist', '🌼': 'filter_vintage', '🚉': 'train', '🏠': 'home',
   '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
   '🏪': 'store', '⚡': 'bolt', '🔬': 'science', '🎓': 'school', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
+  '🥕': 'nutrition', '🥩': 'kebab_dining', '👞': 'steps', '🧵': 'checkroom', '🔧': 'build', '💊': 'medication', '📖': 'menu_book',
+  '☕': 'local_cafe', '🏦': 'savings', '✉': 'mail', '🏢': 'business_center', '🏬': 'local_mall', '🛝': 'toys', '🎾': 'sports_tennis', '⚽': 'sports_soccer',
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {
@@ -237,6 +240,8 @@ export class UI {
       fl.appendChild(el);
     }
     fl.classList.remove('hidden');
+    // a row of cards wider than the window scrolls sideways with the wheel
+    fl.onwheel = (e) => { if (fl.scrollWidth > fl.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { fl.scrollLeft += e.deltaY; e.preventDefault(); } };
     // auto-select the first available tool for quick building
     this.syncToolbar();
   }
@@ -550,6 +555,7 @@ export class UI {
     if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
     if (b.flavor && def.fields) rows.push(['Produce', produceOf(b).name]);
     else if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
+      if (def.shop) rows.push(['Sells', esc(sellsText(b))]);
     for (const l of b.leases || []) {
       const o = w.buildings.get(l.with);
       if (!o) continue;

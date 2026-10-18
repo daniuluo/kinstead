@@ -46,6 +46,17 @@ for (const [type, def] of Object.entries(BUILDINGS)) {
   });
 }
 ok(true, `all building models build (${verts} verts total)`);
+// ...and a shop with homes above for every trade it can be joined from
+{
+  const { MERGES } = await import('../src/defs.js');
+  const flavors = MERGES.find(m => m.to === 'shophouse').b;
+  for (const flavor of flavors) for (let level = 0; level < BUILDINGS.shophouse.levels.length; level++) for (const rot of [0, 1]) {
+    const b = { type: 'shophouse', level, variant: 5 + level, flavor, size: 2, w: rot ? 1 : 2, d: rot ? 2 : 1, baseY: 0.5, minY: 0.2, rot };
+    const m = buildModel(b);
+    if (!m.geo || !m.geo.attributes.position.count || !m.door) throw new Error(`shophouse ${flavor} L${level}`);
+  }
+  ok(true, `a shop with homes above builds for every trade it is joined from (${flavors.join(', ')})`);
+}
 
 // 2. terrain generation over many seeds
 for (let s = 1; s <= 25; s++) {
@@ -496,6 +507,129 @@ const placePair = (tw, ta, tb) => {
   const id = F.id;
   tw.removeBuilding(id, 0);
   ok(!tw.fields.some(v => v === id), 'its fields go with the farm');
+}
+
+// 3d0c. shopping trips spread over the trades the town sells: everyday food
+// most, the town's only draper still gets the clothes shopping, a trade sold
+// only far from home is shopped for less; offices take no shoppers, and a
+// shop with homes above sells its own trade
+{
+  const { tradesOf, TRADES } = await import('../src/defs.js');
+  const { visitKind } = await import('../src/sim/agents.js');
+  const tw = World.createNew({ N: 48, seed: 35, name: 'Shopton' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [home, mk] = placePair(tw, 'house', 'market');
+  const near = ['bakery', 'butcher', 'draper'].map(t => placePair(tw, t, 'garden')[0]);
+  const far = (() => {
+    for (let z = tw.N - 6; z > 3; z--) for (let x = tw.N - 6; x > 3; x--) {
+      const d = Math.abs(x - home.x) + Math.abs(z - home.z);
+      if (d < 18 || d > 26 || !tw.checkRoad(x, z - 1, 1).ok) continue;
+      if (tw.buildingOn(x, z) || tw.roadAt(x, z) || tw.terrain.isWater(x, z)) continue;
+      tw.placeRoads([[x, z - 1]], 1);
+      const r = tw.placeBuilding('bank', x, z, { instant: true });
+      if (r.ok) return r.building;
+    }
+    return null;
+  })();
+  const shops = [mk, ...near, far].filter(Boolean);
+  const A = { world: tw, _nearest: Agents.prototype._nearest };
+  const n = 6000, got = new Map();
+  for (let i = 0; i < n; i++) { const id = Agents.prototype._shopFor.call(A, { home: home.id }, shops); got.set(id, (got.get(id) || 0) + 1); }
+  const share = (b) => (got.get(b.id) || 0) / n;
+  const [bak, but, dra] = near;
+  const pct = (b) => `${Math.round(share(b) * 100)}%`;
+  ok(shops.every(b => share(b) > 0), `every trade gets shoppers (market ${pct(mk)}, bakery ${pct(bak)}, butcher ${pct(but)}, draper ${pct(dra)}${far ? `, a bank ${Math.abs(far.x - home.x) + Math.abs(far.z - home.z)} tiles off ${pct(far)}` : ''})`);
+  ok(share(mk) > share(bak) && share(bak) > share(but) && share(but) > share(dra) && share(dra) > 0.05, 'everyday trades are shopped for most, clothes less, but the lone draper still gets its share');
+  ok(!far || share(far) < 0.5 * TRADES.banking.often / TRADES.clothes.often * share(dra), 'a trade only sold far from home is shopped for less');
+  ok(visitKind(BUILDINGS.offices) === null && !tradesOf({ type: 'offices' }).length, 'offices take no shoppers');
+  ok(tradesOf({ type: 'shophouse', flavor: 'butcher' }).join() === 'meat' && tradesOf({ type: 'deptstore' }).includes('clothes') && !tradesOf({ type: 'deptstore' }).includes('banking'), 'a shophouse sells its own trade, a department store every trade but banking');
+}
+
+// 3d0d. somewhere to play: a home with children and a play area in reach is
+// happier for it, one without children isn't asked, and children mostly
+// head for somewhere to play
+{
+  const tw = World.createNew({ N: 48, seed: 37, name: 'Playford' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [home, pg] = placePair(tw, 'house', 'playground');
+  const [other, gd] = placePair(tw, 'house', 'garden');
+  const kid = { id: tw.newId(), first: 'Pip', last: 'Swing', age: 'child', years: 8, edu: 0, home: home.id, job: null, look: 12345, mood: 60 };
+  tw.residents.set(kid.id, kid); home.residents.push(kid.id);
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  const play = (b) => { sim.recompute(); sim._happiness(); const p = b.factors.parts.find(q => q[0] === 'play'); return p ? p[1] : null; };
+  ok(play(home) === 4 && play(other) === null, 'a home with a child beside a play area gets +4 for somewhere to play; a home without children isn\'t asked');
+  const A = { world: tw, _nearest: Agents.prototype._nearest, _shopFor: Agents.prototype._shopFor, _candidates: (pred) => [...tw.buildings.values()].filter(b => pred(BUILDINGS[b.type], b)) };
+  let toPlay = 0, outings = 0;
+  for (let i = 0; i < 400; i++) { Agents.prototype.planDay.call(A, kid, null); for (const p of kid.plan) if (p.dest === pg.id || p.dest === gd.id) { outings++; if (p.dest === pg.id) toPlay++; } }
+  ok(outings > 100 && toPlay / outings > 0.6, `children mostly head for somewhere to play (${Math.round((toPlay / outings) * 100)}% of ${outings} outings to the play area, the rest to the garden)`);
+  tw.removeBuilding(pg.id, 0);
+  ok(play(home) === 0, 'without the play area the home misses it');
+}
+
+// 3d1a. taking the land beside or behind a building leaves it where it
+// stood: same place, same turn, same floor, before and after a save (which
+// rounds the ground heights a little)
+{
+  const tw = World.createNew({ N: 48, seed: 39, name: 'Stayput' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const P = placePair(tw, 'bakery', 'flowers');
+  const spot = { x: P[0].x, z: P[0].z };
+  tw.removeBuilding(P[0].id, 0); tw.removeBuilding(P[1].id, 0);
+  // where its front door is in the world, from its model
+  const doorAt = (b) => {
+    const m = buildModel(b), j = m.jitter, d = m.door, th = (b.rot * Math.PI) / 2 + j.yaw;
+    const cx = b.x + fw(b) / 2 + j.ox, cz = b.z + fd(b) / 2 + j.oz;
+    return [cx + d.x * Math.cos(th) + d.z * Math.sin(th), cz - d.x * Math.sin(th) + d.z * Math.cos(th), b.baseY];
+  };
+  const tried = [], moved = [];
+  for (let k = 0; k < 4; k++) {
+    for (const variant of [16, 48]) {   // both ends a seed would pick
+      const r = tw.placeBuilding('bakery', spot.x, spot.z, { instant: true, variant });
+      if (!r.ok) continue;
+      const b = r.building, before = doorAt(b);
+      const opt = tw.expandOptions(b).find(o => o.dir === k && o.kind === 'land');
+      if (opt && tw.expandBuilding(b.id, k, 'land').ok) {
+        const after = doorAt(b);
+        const w2 = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
+        const loaded = doorAt(w2.buildings.get(b.id));
+        const off = Math.max(...before.map((v, i) => Math.max(Math.abs(v - after[i]), Math.abs(v - loaded[i]))));
+        tried.push(`${opt.where} v${variant}`);
+        if (off > 1e-3) moved.push(`${opt.where} v${variant} by ${off.toFixed(3)}`);
+      }
+      tw.removeBuilding(b.id, 0);
+    }
+  }
+  ok(tried.length >= 2 && !moved.length, `taking land leaves the building where it stood (${tried.join(', ')})${moved.length ? ': moved ' + moved.join('; ') : ''}`);
+}
+
+// 3d1b. ...and where the street ends beside it, the grown plot doesn't come
+// forward over the neighbour in front of its new tile (only the building
+// itself does, over its own street)
+{
+  const { auditTown } = await import('./audit.js');
+  const tw = World.createNew({ N: 48, seed: 41, name: 'Streetend' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const free = (x, z) => tw.inBounds(x, z) && !tw.buildingOn(x, z) && !tw.roadAt(x, z) && !tw.terrain.isWater(x, z);
+  let A = null, C = null;
+  for (let z = 4; z < tw.N - 4 && !A; z++) for (let x = 4; x < tw.N - 4 && !A; x++) {
+    // a street ending at (x, z - 1), the bakery behind its last tile, and a
+    // neighbour on the tile past the end that faces another street
+    if (![[x - 2, z - 1], [x - 1, z - 1], [x, z - 1], [x + 1, z - 2]].every(([a, c]) => tw.roadAt(a, c) || tw.checkRoad(a, c, 1).ok)) continue;
+    if (![[x, z], [x + 1, z], [x + 1, z - 1]].every(([a, c]) => free(a, c))) continue;
+    if (Math.abs(tw.terrain.tileMax(x, z) - tw.terrain.tileMin(x + 1, z)) > 0.6) continue;
+    tw.placeRoads([[x - 2, z - 1], [x - 1, z - 1], [x, z - 1]], 1); tw.placeRoads([[x + 1, z - 2]], 1);
+    const a = tw.placeBuilding('bakery', x, z, { instant: true });
+    let c = null;
+    for (let k = 0; k < 4 && a.ok && !(c && c.ok && c.building.rot === 2); k++) { if (c && c.ok) tw.removeBuilding(c.building.id, 0); c = tw.placeBuilding('bakery', x + 1, z - 1, { instant: true, accessIndex: k }); }
+    if (a.ok && c && c.ok && a.building.rot === 2 && c.building.rot === 2) { A = a.building; C = c.building; }
+    else for (const P of [a, c]) if (P && P.ok && tw.buildings.has(P.building.id)) tw.removeBuilding(P.building.id, 0);
+  }
+  const opt = A && tw.expandOptions(A).find(o => o.kind === 'land' && o.x === A.x + 1 && o.z === A.z);
+  const grew = opt && tw.expandBuilding(A.id, opt.dir, 'land').ok;
+  const faults = [];
+  auditTown(tw, (m) => faults.push(m));
+  ok(grew && !faults.some(m => /overlap/.test(m)) && (A.front || 0) === 0 && A.ownFront > 0, `a plot grown past the end of its street keeps behind the neighbour in front of its new tile (front ${A && A.front}, the building's own ${A && A.ownFront})${faults.length ? ': ' + faults.join('; ') : ''}`);
 }
 
 // 3d1. taking a neighbouring plot: the land first (no builders, the building
@@ -1087,6 +1221,34 @@ ok([...w.buildings.values()].every(b => { const c = w2.buildings.get(b.id); retu
 let same = true;
 for (let i = 0; i < w.terrain.H.length; i++) if (Math.abs(w.terrain.H[i] - w2.terrain.H[i]) > 0.001) same = false;
 ok(same, 'save round-trip heights');
+
+// 5. snow: only in winter; a fall lays fresh snow on roads and roofs, and it
+// melts away again within the day (the same for everyone from the weather)
+{
+  const { freshSnowAt, coverAt } = await import('../src/render/sky.js');
+  const { seasonOf } = await import('../src/config.js');
+  let summer = 0, peak = 0, clear = 0, winterHours = 0;
+  for (let day = 1; day <= 48; day++) for (let h = 0; h < 24; h += 0.5) {
+    const f = freshSnowAt(77, day, h);
+    if (seasonOf(day) !== 3) { summer = Math.max(summer, f, coverAt(day, h)); continue; }
+    winterHours++; peak = Math.max(peak, f); if (f < 0.02) clear++;
+  }
+  ok(summer === 0 && peak > 0.6 && clear > winterHours * 0.3, `fresh snow only in winter: up to ${peak.toFixed(2)} after a fall, gone again ${Math.round((clear / winterHours) * 100)}% of winter hours`);
+  // the seasons turn gradually: each holds for its first half, then shades
+  // into the next, ending where the next begins
+  const { seasonBlend } = await import('../src/render/sky.js');
+  const { CONFIG } = await import('../src/config.js');
+  const D = CONFIG.DAYS_PER_SEASON;
+  let jump = 0;
+  for (let t = 0.25; t < 8 * D * 24; t += 0.25) {
+    const day = 1 + Math.floor(t / 24), h = t % 24, pd = 1 + Math.floor((t - 0.25) / 24), ph = (t - 0.25) % 24;
+    const look = (d, hh) => seasonOf(d) + seasonBlend(d, hh);   // seasons and the turn between, on one scale
+    let a = look(pd, ph), b = look(day, h);
+    if (b < a - 2) b += 4;   // winter into spring
+    jump = Math.max(jump, Math.abs(b - a));
+  }
+  ok(seasonBlend(1, 12) === 0 && seasonBlend(D / 2, 0) === 0 && seasonBlend(D, 23.9) > 0.97 && jump < 0.03, `seasons hold for half their days, then turn gradually (largest step in a quarter hour ${jump.toFixed(3)})`);
+}
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

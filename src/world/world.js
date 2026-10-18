@@ -70,10 +70,45 @@ export function sizeKFor(type, w, d) {
 // A building whose plot has grown but which hasn't been built out across it
 // yet (b.spare: the footprint it does cover) is still its old size.
 export const sizeK = (b) => (b.spare ? sizeKFor(b.type, b.spare.w, b.spare.d) : sizeKFor(b.type, fw(b), fd(b)));
-// b.spare as saved or sent: [w, d] (or { w, d }), only if smaller than the plot
+// b.spare as saved or sent: [w, d, sx, sz] (or { w, d, sx, sz }), only if
+// smaller than the plot. sx, sz: which end of the plot the building stands
+// at, in its own frame (sx across it, sz from back to front: -1, 0 or 1);
+// older saves have neither.
 export function spareOf(s, w, d) {
-  const [sw, sd] = Array.isArray(s) ? s : s && typeof s === 'object' ? [s.w, s.d] : [];
-  return Number.isInteger(sw) && Number.isInteger(sd) && sw >= 1 && sd >= 1 && sw <= w && sd <= d && sw * sd < w * d ? { w: sw, d: sd } : undefined;
+  const [sw, sd, sx, sz] = Array.isArray(s) ? s : s && typeof s === 'object' ? [s.w, s.d, s.sx, s.sz] : [];
+  if (!(Number.isInteger(sw) && Number.isInteger(sd) && sw >= 1 && sd >= 1 && sw <= w && sd <= d && sw * sd < w * d)) return undefined;
+  const side = (v) => v === -1 || v === 0 || v === 1;
+  return side(sx) && side(sz) ? { w: sw, d: sd, sx, sz } : { w: sw, d: sd };
+}
+// The tiles a building stands on while it covers only part of its grown
+// plot (b.spare with its end known), or null.
+export function spareRect(b) {
+  const s = b.spare;
+  if (!s || s.sx == null) return null;
+  const W = fw(b), D = fd(b), odd = (b.rot & 1) === 1;
+  const Ex = (odd ? D : W) / 2, Ez = (odd ? W : D) / 2, lw = odd ? s.d : s.w, ld = odd ? s.w : s.d;
+  const lx = s.sx * (Ex - lw / 2), lz = s.sz * (Ez - ld / 2);
+  const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+  return { x: Math.round(b.x + W / 2 + lx * co + lz * si - s.w / 2), z: Math.round(b.z + D / 2 - lx * si + lz * co - s.d / 2), w: s.w, d: s.d };
+}
+// A building's floor (b.baseY) and the lowest ground under its plot
+// (b.minY). On a grown plot it hasn't been built across yet, the floor is
+// the one over the tiles it stands on, so taking land beside or behind it
+// neither lifts nor sinks it.
+export function setFloor(terrain, b) {
+  let minH = Infinity, maxH = -Infinity;
+  for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) {
+    minH = Math.min(minH, terrain.tileMin(b.x + dx, b.z + dz));
+    maxH = Math.max(maxH, terrain.tileMax(b.x + dx, b.z + dz));
+  }
+  const r = spareRect(b);
+  if (!r) { b.baseY = floorHeight(terrain, b.type, b.x, b.z, fw(b), fd(b), b.rot, minH, maxH); b.minY = minH; return; }
+  let lo = Infinity, hi = -Infinity;
+  for (let dz = 0; dz < r.d; dz++) for (let dx = 0; dx < r.w; dx++) {
+    lo = Math.min(lo, terrain.tileMin(r.x + dx, r.z + dz));
+    hi = Math.max(hi, terrain.tileMax(r.x + dx, r.z + dz));
+  }
+  b.baseY = floorHeight(terrain, b.type, r.x, r.z, r.w, r.d, b.rot, lo, hi); b.minY = minH;
 }
 // A level's figures for a building of that size: capacities, outputs, upkeep, price.
 const SCALED = ['housing', 'jobs', 'seats', 'supply', 'kw', 'upkeep', 'cost'];
@@ -343,17 +378,18 @@ export class World {
 
   // A building comes forward into the street when every tile along its
   // front is road.
-  _frontTiles(b) {
+  // The tiles in front of a building's plot (or of part of it).
+  _frontTiles(b, part = null) {
     const [dx, dz] = DIRS[b.rot];
-    const W = fw(b), D = fd(b), tiles = [];
-    if (dz) for (let k = 0; k < W; k++) tiles.push([b.x + k, dz > 0 ? b.z + D : b.z - 1]);
-    else for (let k = 0; k < D; k++) tiles.push([dx > 0 ? b.x + W : b.x - 1, b.z + k]);
+    const r = part || { x: b.x, z: b.z, w: fw(b), d: fd(b) }, tiles = [];
+    if (dz) for (let k = 0; k < r.w; k++) tiles.push([r.x + k, dz > 0 ? r.z + r.d : r.z - 1]);
+    else for (let k = 0; k < r.d; k++) tiles.push([dx > 0 ? r.x + r.w : r.x - 1, r.z + k]);
     return tiles;
   }
 
-  _frontOf(b) {
+  _frontOf(b, part = null) {
     if (!b.access) return 0;
-    const tiles = this._frontTiles(b);
+    const tiles = this._frontTiles(b, part);
     if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
     // street trees and hedges take the verge, so it stays behind them
     if (this.dress && tiles.some(([x, z]) => (DRESSINGS[this.dress[this.idx(x, z)]] || {}).verge)) return 0;
@@ -372,11 +408,19 @@ export class World {
 
   // Re-decide every building's street front (after building, demolishing or
   // re-laying roads). The new building itself, if any, is not refitted.
+  // The plot comes forward only where the street runs the whole width of it
+  // (b.front). While a building stands on part of a grown plot (b.spare),
+  // the building itself comes forward as far as its own part's street
+  // allows, as it did before the plot grew (b.ownFront).
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b);
-      if (f !== (b.front || 0)) { b.front = f; if (b !== except) refit.push(b); }
+      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined;
+      if (f !== (b.front || 0) || own !== b.ownFront) {
+        b.front = f;
+        if (own === undefined) delete b.ownFront; else b.ownFront = own;
+        if (b !== except) refit.push(b);
+      }
     }
     for (const b of refit) this.emit('building:refit', b);
   }
@@ -462,7 +506,7 @@ export class World {
   // Built out across the whole plot: extended, or rebuilt as a building whose
   // own footprint is the plot (a Country Mansion on a double plot).
   _fill(b, extend) {
-    if (b.spare && (extend || baseArea(b) >= fw(b) * fd(b))) delete b.spare;
+    if (b.spare && (extend || baseArea(b) >= fw(b) * fd(b))) { delete b.spare; setFloor(this.terrain, b); this._updateFronts(b); }
   }
 
   // A home rebuilt to hold fewer people (a Grand Manor on a double plot
@@ -640,20 +684,23 @@ export class World {
     this.money -= opt.cost;
     this._dissolveLeases(b);
     const tiles = opt.tiles || [[opt.x, opt.z]];
-    const spare = b.spare || { w: fw(b), d: fd(b) };   // what the building itself covers
+    // what the building itself covers, and where (it stays where it stands)
+    const spare = b.spare || { w: fw(b), d: fd(b) };
+    const ox = b.x + fw(b) / 2, oz = b.z + fd(b) / 2;
     this._unfield(tiles);
     for (const [x, z] of tiles) { this._clearTrees(x, z); this.buildingAt[this.idx(x, z)] = b.id; }
     const xs = [b.x, b.x + fw(b) - 1, ...tiles.map(t => t[0])], zs = [b.z, b.z + fd(b) - 1, ...tiles.map(t => t[1])];
     const x0 = Math.min(...xs), z0 = Math.min(...zs);
     b.w = Math.max(...xs) - x0 + 1; b.d = Math.max(...zs) - z0 + 1;
     b.x = x0; b.z = z0; b.size = Math.max(b.w, b.d);
-    b.spare = spare;
-    let minH = Infinity, maxH = -Infinity;
-    for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
-      minH = Math.min(minH, this.terrain.tileMin(b.x + dx, b.z + dz));
-      maxH = Math.max(maxH, this.terrain.tileMax(b.x + dx, b.z + dz));
+    if (spare.sx == null) {
+      // which end of the new plot it stands at, in its own frame
+      const dx = ox - (b.x + b.w / 2), dz = oz - (b.z + b.d / 2), th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      const lx = dx * co - dz * si, lz = dx * si + dz * co, sign = (v) => (Math.abs(v) < 0.01 ? 0 : Math.sign(v));
+      spare.sx = sign(lx); spare.sz = sign(lz);
     }
-    b.baseY = floorHeight(this.terrain, b.type, b.x, b.z, b.w, b.d, b.rot, minH, maxH); b.minY = minH;
+    b.spare = spare;
+    setFloor(this.terrain, b);
     this._updateFronts(b);
     this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
     // the land is the building's now, as a garden; what to build across it
@@ -833,7 +880,7 @@ export class World {
       residents: [], workers: [], connected: false, happiness: 60, factors: null,
     };
     const spare = spareOf(rec.spare, w, d);
-    if (spare) b.spare = spare;
+    if (spare) { b.spare = spare; setFloor(this.terrain, b); }
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) this.buildingAt[this.idx(rec.x + dx, rec.z + dz)] = b.id;
     if (Array.isArray(rec.leases) && rec.leases.length) {
       b.leases = rec.leases.map(l => ({ ...l }));

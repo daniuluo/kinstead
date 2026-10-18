@@ -37,6 +37,7 @@ export class WorldView {
     this.pending = [];
     this.dirty = { roads: false, nature: false, terrain: false, paint: false, glows: true };
     this.season = 1;
+    this.seasonW = 0;
     this.poolTex = glowTexture();
     this.pools = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
       map: this.poolTex, color: '#ffb35c', transparent: true, opacity: 0, depthWrite: false,
@@ -99,7 +100,7 @@ export class WorldView {
   // ----------------------------------------------------------- buildings
   addBuilding(b, animate = false, upgrade = false) {
     if (b.con) { this._addSite(b, animate); return; }
-    const model = buildModel(b, { season: this.season, ground: this.groundFn });
+    const model = buildModel(b, { season: this.season, seasonW: this.seasonW, ground: this.groundFn });
     const mesh = new THREE.Mesh(model.geo, MAT.building);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -140,7 +141,7 @@ export class WorldView {
 
   // A building site: the finished model is kept and re-cut as work progresses.
   _addSite(b, animate) {
-    const opts = { season: this.season, ground: this.groundFn };
+    const opts = { season: this.season, seasonW: this.seasonW, ground: this.groundFn };
     const con = b.con;
     const up = con.kind === 'upgrade';
     const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look } : b, opts);
@@ -220,7 +221,7 @@ export class WorldView {
     }
     const it = b && spec ? this.items.get(b.id) : null;
     if (!it || it.site) return;
-    const model = buildModel({ ...b, type: spec.type, level: spec.level, look: spec.look, con: null }, { season: this.season, ground: this.groundFn });
+    const model = buildModel({ ...b, type: spec.type, level: spec.level, look: spec.look, con: null }, { season: this.season, seasonW: this.seasonW, ground: this.groundFn });
     if (model.spin) model.spin.geo.dispose();
     const mesh = new THREE.Mesh(model.geo, MAT.building);
     mesh.castShadow = true;
@@ -342,11 +343,16 @@ export class WorldView {
     }
   }
 
-  setSeason(s) {
-    if (s === this.season) return;
+  // The season, and how far it has turned towards the next (0 .. 1): the
+  // ground, trees and farm crops are repainted in sixteen steps over the
+  // turn, so it comes on gradually without repainting every frame.
+  setSeason(s, w = 0) {
+    const q = Math.round(w * 16) / 16;
+    if (s === this.season && q === this.seasonW) return;
     this.season = s;
-    this.terrain.setSeason(s);
-    this.nature.setSeason(s);
+    this.seasonW = q;
+    this.terrain.setSeason(s, q);
+    this.nature.setSeason(s, q);
     for (const it of [...this.items.values()]) if (it.b.type === 'farm') { this.removeBuilding(it.b, true); this.addBuilding(it.b, false); }
   }
 

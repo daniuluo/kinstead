@@ -25,6 +25,8 @@
 // branches: at its top level a type can be rebuilt as one of these types
 // (a Family House becomes either a Villa or a Townhouse of flats).
 // Type flags: hidden types never appear in the build menu (merged buildings);
+// play: somewhere children play (homes with children within its reach are
+// happier, and children head there after school);
 // merged types occupy a 2×1 plot made from two neighbouring buildings;
 // estate types a 2×2 plot grown from a double plot (see ESTATE).
 
@@ -92,7 +94,7 @@ export const BUILDINGS = {
 
   // ------------------------------------------------------------- commerce
   market: {
-    name: 'Market', cat: 'commercial', size: 1, shop: true, icon: '🧺',
+    name: 'Market', cat: 'commercial', size: 1, shop: true, trade: ['provisions', 'greens'], icon: '🧺',
     desc: 'Villagers come here to shop. Every visit brings in money.',
     levels: [
       { name: 'Market Stall', cost: 150, jobs: 2, income: 4, visit: 3 },
@@ -102,7 +104,7 @@ export const BUILDINGS = {
     ],
   },
   bakery: {
-    name: 'Bread & Pastry', cat: 'commercial', size: 1, shop: true, unlock: 25, tech: 'commerce', icon: '🥖',
+    name: 'Bread & Pastry', cat: 'commercial', size: 1, shop: true, trade: 'bread', unlock: 25, tech: 'commerce', icon: '🥖',
     desc: 'Fresh bread every morning. The ovens smoke all day.',
     levels: [
       { name: 'Bakery', cost: 260, jobs: 3, income: 5, visit: 4 },
@@ -120,10 +122,109 @@ export const BUILDINGS = {
       { name: 'Coaching Inn', cost: 1500, jobs: 9, income: 6, visit: 11, unlock: 120 },
     ],
   },
+  // The high street: shops for each trade (see TRADES), from the first
+  // greengrocer to the bank.
+  grocer: {
+    name: 'Greengrocery', cat: 'commercial', size: 1, shop: true, trade: 'greens', unlock: 25, icon: '🥕',
+    desc: 'Fruit and vegetables from the farms, piled up on trestles outside.',
+    levels: [
+      { name: 'Greengrocer', cost: 200, jobs: 2, income: 5, visit: 3 },
+      { name: 'Fruiterer', cost: 440, jobs: 4, income: 6, visit: 5, unlock: 60 },
+      { name: 'Grocery & Provisions', cost: 1000, jobs: 7, income: 7, visit: 7, unlock: 120 },
+    ],
+  },
+  butcher: {
+    name: 'Butchery', cat: 'commercial', size: 1, shop: true, trade: 'meat', unlock: 25, tech: 'commerce', icon: '🥩',
+    desc: 'Joints hung along the front and a slab counter open to the street.',
+    levels: [
+      { name: "Butcher's Shop", cost: 280, jobs: 3, income: 5, visit: 4 },
+      { name: 'Family Butcher', cost: 560, jobs: 5, income: 6, visit: 6, unlock: 60 },
+      { name: 'Butcher & Poulterer', cost: 1150, jobs: 8, income: 7, visit: 8, unlock: 120 },
+    ],
+  },
+  cobbler: {
+    name: 'Boots & Shoes', cat: 'commercial', size: 1, shop: true, trade: 'shoes', unlock: 25, tech: 'commerce', icon: '👞',
+    desc: 'Boots made and mended at the bench in the window.',
+    levels: [
+      { name: "Cobbler's Shop", cost: 220, jobs: 2, income: 5, visit: 4 },
+      { name: 'Boot & Shoe Shop', cost: 560, jobs: 5, income: 6, visit: 6, unlock: 60 },
+    ],
+  },
+  draper: {
+    name: 'Clothing', cat: 'commercial', size: 1, shop: true, trade: 'clothes', unlock: 60, tech: 'trade2', icon: '🧵',
+    desc: 'Cloth by the yard and clothes made to measure. Two side by side make a department store.',
+    levels: [
+      { name: "Tailor's Shop", cost: 340, jobs: 3, income: 6, visit: 5 },
+      { name: 'Draper & Outfitter', cost: 760, jobs: 6, income: 7, visit: 8, unlock: 120 },
+      { name: 'Drapery Emporium', cost: 1500, jobs: 10, income: 8, visit: 10, unlock: 200, req: { power: true } },
+    ],
+  },
+  ironmonger: {
+    name: 'Hardware', cat: 'commercial', size: 1, shop: true, trade: 'hardware', unlock: 60, tech: 'industry2', icon: '🔧',
+    desc: 'Pails, nails, tools and tin baths, hung all over the front.',
+    levels: [
+      { name: 'Ironmonger', cost: 360, jobs: 3, income: 6, visit: 5 },
+      { name: 'Hardware Merchant', cost: 900, jobs: 7, income: 7, visit: 8, unlock: 120 },
+    ],
+  },
+  chemist: {
+    name: 'Remedies', cat: 'commercial', size: 1, shop: true, trade: 'medicine', unlock: 60, tech: 'medicine', icon: '💊',
+    desc: 'Pills, powders and tonics made up behind the counter, with great coloured jars in the window.',
+    levels: [
+      { name: 'Apothecary', cost: 380, jobs: 3, income: 6, visit: 6 },
+      { name: 'Chemist & Druggist', cost: 820, jobs: 6, income: 7, visit: 8, unlock: 120 },
+      { name: 'Dispensing Chemist', tech: 'hospitals', cost: 1600, jobs: 9, income: 8, visit: 10, unlock: 200, req: { power: true } },
+    ],
+  },
+  stationer: {
+    name: 'Books & Paper', cat: 'commercial', size: 1, shop: true, trade: 'books', unlock: 60, tech: 'schooling', icon: '📖',
+    desc: 'Paper, ink, newspapers and books. Its readers add a little to research every day.',
+    levels: [
+      { name: 'Stationer', cost: 420, jobs: 3, income: 6, visit: 5 },
+      { name: 'Bookseller & Library', cost: 950, jobs: 6, income: 7, visit: 8, unlock: 120 },
+    ],
+  },
+  coffeehouse: {
+    name: 'Tea & Coffee', cat: 'commercial', size: 1, shop: true, trade: 'tea', unlock: 60, tech: 'hospitality', icon: '☕',
+    desc: 'Coffee, tea and cake in the afternoon: somewhere to sit and talk that is not the pub.',
+    levels: [
+      { name: 'Coffee House', cost: 400, jobs: 3, income: 5, visit: 6 },
+      { name: 'Tea Rooms', cost: 860, jobs: 6, income: 6, visit: 9, unlock: 120 },
+      { name: 'Grand Café', cost: 1700, jobs: 9, income: 7, visit: 12, unlock: 200, req: { power: true } },
+    ],
+  },
+  bank: {
+    name: 'Banking', cat: 'commercial', size: 1, shop: true, trade: 'banking', unlock: 120, tech: 'trade3', icon: '🏦',
+    desc: 'Villagers bank their savings here. Few visits, small fees, but its clerks earn well.',
+    levels: [
+      { name: 'Savings Bank', cost: 1100, jobs: 5, income: 11, visit: 2, edu: 2 },
+      { name: 'Town Bank', tech: 'civic', cost: 2200, jobs: 9, income: 12, visit: 3, edu: 3, unlock: 200, req: { power: true } },
+    ],
+  },
+  postoffice: {
+    name: 'Post & Telegraph', cat: 'commercial', size: 1, shop: true, trade: 'post', unlock: 60, tech: 'services2', icon: '✉️',
+    desc: 'Letters, parcels and postal orders, and telegrams once the wires come. A pillar box at the kerb.',
+    levels: [
+      { name: 'Post Office', cost: 420, jobs: 3, income: 6, visit: 3, edu: 1 },
+      { name: 'General Post Office', tech: 'electricity', cost: 1100, jobs: 8, income: 7, visit: 5, edu: 2, unlock: 120 },
+    ],
+  },
+  // Offices: no shop counter, but well-paid work for villagers with some
+  // schooling. Two side by side make an exchange.
+  offices: {
+    name: 'Offices', cat: 'commercial', size: 1, unlock: 60, tech: 'trade2', icon: '🏢',
+    desc: 'Clerks at their desks: merchants, lawyers and insurers. Good wages, but only for villagers with some schooling.',
+    levels: [
+      { name: 'Counting House', cost: 480, jobs: 4, income: 7, edu: 2 },
+      { name: 'Chambers', cost: 1050, jobs: 8, income: 8, edu: 3, unlock: 120 },
+      { name: 'Office Building', tech: 'highrise', cost: 2200, jobs: 14, income: 9, edu: 3, unlock: 200, req: { power: true } },
+    ],
+  },
 
-  // A home joined with a shop, bakery or tavern: trade below, families above.
+  // A home joined with a shop: trade below, families above. It sells what
+  // the shop it was joined from sold (b.flavor).
   shophouse: {
-    name: 'Shop & Home', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, tech: 'commerce', icon: '🏪',
+    name: 'Shop & Home', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: ['provisions', 'greens'], tech: 'commerce', icon: '🏪',
     desc: 'Mixed use: a shop on the ground floor with homes above.',
     levels: [
       { name: 'Shophouse', cost: 150, housing: 6, jobs: 4, income: 6, visit: 6 },
@@ -134,7 +235,7 @@ export const BUILDINGS = {
 
   // Joined from two neighbours (see MERGES) or grown on an expanded plot.
   arcade: {
-    name: 'Shopping Arcade', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, tech: 'arcades', icon: '🧺', branch: 'Arcade', accent: '#a0522d', pathIcon: 'storefront',
+    name: 'Shopping Arcade', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: ['provisions', 'bread', 'greens', 'meat', 'clothes', 'shoes'], tech: 'arcades', icon: '🧺', branch: 'Arcade', accent: '#a0522d', pathIcon: 'storefront',
     desc: 'A covered row of shops under one roof.',
     levels: [
       { name: 'Market Arcade', cost: 300, jobs: 7, income: 6, visit: 8 },
@@ -162,11 +263,30 @@ export const BUILDINGS = {
   },
   // A fishing hut joined with a market stall: the catch landed and sold on the quay.
   fishmarket: {
-    name: 'Fish Trade', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, tech: 'trade2', icon: '🐟', branch: 'Fish market', accent: '#2f6a7a', pathIcon: 'set_meal',
+    name: 'Fish Trade', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: 'fish', tech: 'trade2', icon: '🐟', branch: 'Fish market', accent: '#2f6a7a', pathIcon: 'set_meal',
     desc: 'The catch landed and sold on the spot: fish stalls under an open roof, with an ice house behind.',
     levels: [
       { name: 'Fish Market', cost: 550, jobs: 6, income: 8, visit: 6 },
       { name: 'Fish Hall', tech: 'trade3', cost: 1400, jobs: 10, income: 9, visit: 9, unlock: 60 },
+    ],
+  },
+  // Two offices joined, or offices and a bank: the town's money under one roof.
+  exchange: {
+    name: 'Exchange', cat: 'commercial', size: 2, merged: true, hidden: true, tech: 'trade3', icon: '🏛️', branch: 'Exchange', accent: '#3a3a5a', pathIcon: 'account_balance',
+    desc: 'A great hall where merchants and brokers trade, behind a portico with a clock in the pediment, and offices all round it.',
+    levels: [
+      { name: 'Exchange Buildings', cost: 1500, jobs: 14, income: 9, edu: 3, unlock: 120 },
+      { name: 'Stock Exchange', tech: 'civic', cost: 3200, jobs: 22, income: 10, edu: 4, unlock: 200, req: { power: true } },
+    ],
+  },
+  // A draper joined with the shop next door, or grown onto a double plot:
+  // every trade under one roof, floor above floor.
+  deptstore: {
+    name: 'Department Store', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: 'all', tech: 'trade3', icon: '🏬', branch: 'Department store', accent: '#5a2a4a', pathIcon: 'local_mall',
+    desc: 'A great store with plate-glass windows the length of the street, selling everything from cloth and boots to tea and tin baths.',
+    levels: [
+      { name: 'Department Store', cost: 1600, jobs: 12, income: 8, visit: 12, unlock: 120 },
+      { name: 'Grand Department Store', tech: 'civic', cost: 3200, jobs: 18, income: 9, visit: 15, unlock: 200, req: { power: true } },
     ],
   },
   // A cottage joined with a workshop: the family lives over the workshop.
@@ -301,7 +421,7 @@ export const BUILDINGS = {
     ],
   },
   markethall: {
-    name: 'Market Halls', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', shop: true, tech: 'bigplots', icon: '🧺', branch: 'Market hall', accent: '#8a4a1d', pathIcon: 'storefront',
+    name: 'Market Halls', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', shop: true, trade: 'all', tech: 'bigplots', icon: '🧺', branch: 'Market hall', accent: '#8a4a1d', pathIcon: 'storefront',
     desc: 'A great covered market hall over the whole estate, with shops round its walls and stalls down the aisles.',
     levels: [
       { name: 'Corn Exchange', cost: 1300, jobs: 14, income: 7, visit: 10, unlock: 60 },
@@ -617,6 +737,44 @@ export const BUILDINGS = {
     desc: 'A monument to your founders.',
     levels: [{ name: 'Statue', cost: 260, upkeep: 1, appeal: 8, radius: 4 }],
   },
+  // Places to play and to play games.
+  playground: {
+    name: 'Play Area', cat: 'parks', size: 1, park: true, outdoor: true, play: true, visitors: 4, icon: '🛝',
+    desc: 'Somewhere for the children to play: they run here after school, and families with children nearby are happier.',
+    levels: [
+      { name: 'Swing Green', cost: 70, upkeep: 1, appeal: 3, radius: 4 },
+      { name: 'Playground', cost: 200, upkeep: 2, appeal: 5, radius: 5, unlock: 25 },
+      { name: 'Adventure Playground', cost: 420, upkeep: 4, appeal: 7, radius: 6, unlock: 60 },
+    ],
+  },
+  courts: {
+    name: 'Ball Games', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 4, unlock: 25, tech: 'gardening', icon: '🎾',
+    desc: 'A lawn kept for games: bowls at first, then croquet, then lawn tennis behind a wire fence.',
+    levels: [
+      { name: 'Bowling Green', cost: 90, upkeep: 2, appeal: 6, radius: 4 },
+      { name: 'Croquet Lawn', cost: 240, upkeep: 3, appeal: 9, radius: 5, unlock: 60 },
+      { name: 'Tennis Courts', cost: 480, upkeep: 5, appeal: 12, radius: 6, unlock: 120 },
+    ],
+  },
+  sportsground: {
+    name: 'Playing Field', cat: 'parks', size: 2, park: true, outdoor: true, play: true, visitors: 5, unlock: 60, tech: 'parks2', icon: '⚽',
+    desc: 'A big field for games on a 2×2 plot: the children play here, and the town turns out to watch the matches.',
+    levels: [
+      { name: 'Playing Field', cost: 350, upkeep: 4, appeal: 8, radius: 6 },
+      { name: 'Cricket Ground', cost: 900, upkeep: 7, appeal: 14, radius: 8, unlock: 120 },
+      { name: 'Football Ground', tech: 'railways', cost: 1800, upkeep: 12, appeal: 18, radius: 10, unlock: 200 },
+    ],
+  },
+  // A play area joined with another, a games lawn or a green: room for the
+  // whole family.
+  recground: {
+    name: 'Recreation Ground', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, play: true, visitors: 4, tech: 'gardening', icon: '🛝', branch: 'Recreation ground', accent: '#4f7a2f', pathIcon: 'sports_soccer',
+    desc: 'A playground, a lawn for games and a shelter side by side, with a paddling pool later: somewhere for the whole family.',
+    levels: [
+      { name: 'Recreation Ground', cost: 300, upkeep: 4, appeal: 10, radius: 6 },
+      { name: "People's Park", cost: 800, upkeep: 7, appeal: 16, radius: 8, unlock: 60 },
+    ],
+  },
 
   // -------------------------------------------------------------- transit
   coachstop: {
@@ -661,7 +819,7 @@ export const TECHS = {
   homes2: { name: 'Better Homes', cost: 45, tier: 0, branch: 'homes', needs: [], desc: 'Second-level home upgrades, like the Family House.' },
   homes3: { name: 'Fine Homes', cost: 180, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
   flats: { name: 'Flats', cost: 300, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
-  highrise: { name: 'Tall Buildings', cost: 1080, tier: 4, branch: 'homes', needs: ['flats', 'steam'], desc: 'Tenements, mansion blocks and the tallest terraces.' },
+  highrise: { name: 'Tall Buildings', cost: 1080, tier: 4, branch: 'homes', needs: ['flats', 'steam'], desc: 'Tenements, mansion blocks, office buildings and the tallest terraces.' },
   masonry: { name: 'Masonry', cost: 60, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses, the masons' lodge, and a chapel joined with the cottage next door as its vicarage." },
   stonework: { name: 'Dressed Stone', cost: 115, tier: 1, branch: 'stone', needs: ['masonry'], desc: 'Stone-fronted buildings and monuments.' },
   architecture: { name: 'Architecture', cost: 270, tier: 2, branch: 'stone', needs: ['stonework'], desc: 'Villas, manor houses and cobbled squares.' },
@@ -670,16 +828,16 @@ export const TECHS = {
   urban: { name: 'Terraces', cost: 160, tier: 1, branch: 'brick', needs: ['brickmaking', 'joining'], desc: 'Join neighbouring homes into terraces.' },
   pigments: { name: 'Limewash', cost: 30, tier: 0, branch: 'colour', needs: [], desc: 'Limewashed walls.' },
   paints: { name: 'Paints', cost: 90, tier: 1, branch: 'colour', needs: ['pigments'], desc: 'Painted walls in every colour.' },
-  commerce: { name: 'Shopkeeping', cost: 60, tier: 0, branch: 'trade', needs: [], desc: 'Bakeries, and shops with homes above.' },
-  trade2: { name: 'Shopfitting', cost: 115, tier: 1, branch: 'trade', needs: ['commerce'], desc: 'Second-level shop upgrades, and fish markets joined from a fishing hut and a market stall.' },
+  commerce: { name: 'Shopkeeping', cost: 60, tier: 0, branch: 'trade', needs: [], desc: 'Bakeries, butchers and cobblers, and shops with homes above.' },
+  trade2: { name: 'Shopfitting', cost: 115, tier: 1, branch: 'trade', needs: ['commerce'], desc: "Second-level shop upgrades, tailors' shops and counting houses, and fish markets joined from a fishing hut and a market stall." },
   arcades: { name: 'Arcades', cost: 270, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
-  trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades.' },
-  civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, the Grand Hall, grand squares and covered markets.' },
-  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks.' },
-  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns and inns, and brewhouses joined from a tavern and a workshop.' },
-  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
+  trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades, savings banks, department stores joined from a draper and the shop next door, and exchanges joined from two offices.' },
+  civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, town banks, grand department stores, stock exchanges, the Grand Hall, grand squares and covered markets.' },
+  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks, bowling greens, and recreation grounds joined from play areas and games lawns.' },
+  hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, and brewhouses joined from a tavern and a workshop.' },
+  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, and playing fields.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
-  industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), and craftsman's houses joined from a cottage and a workshop." },
+  industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), ironmongers to sell their wares, and craftsman's houses joined from a cottage and a workshop." },
   woodwork: { name: 'Joinery', cost: 115, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
   industry3: { name: 'Manufacturing', cost: 300, tier: 2, branch: 'industry', needs: ['industry2'], desc: 'Third-level and higher industry.' },
   metallurgy: { name: 'Metallurgy', cost: 525, tier: 3, branch: 'industry', needs: ['industry3', 'brickmaking'], desc: 'Turn a smithy into an iron foundry, then a steelworks.' },
@@ -687,22 +845,22 @@ export const TECHS = {
   horticulture: { name: 'Orchards', cost: 160, tier: 1, branch: 'farm', needs: ['industry2'], desc: 'Turn a farm into an orchard with a cider mill.' },
   hydraulics: { name: 'Hydraulics', cost: 75, tier: 0, branch: 'water', needs: [], desc: 'River pumps and water towers.' },
   fountains: { name: 'Fountains', cost: 135, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
-  electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets.' },
+  electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets, and the telegraph at the General Post Office.' },
   steam: { name: 'Steam Power', cost: 750, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
   cables: { name: 'Underground Cables', cost: 800, tier: 4, branch: 'power', needs: ['steam'], desc: 'Bury the power lines under the streets, street by street or the whole town: no more poles and wires, and prettier streets.' },
-  services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings (guardhouses, churches, water towers), and watch houses joined from two watch posts.' },
-  medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, almshouses, and cottage hospitals joined from two herbalists.' },
+  services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings (guardhouses, churches, water towers), post offices, and watch houses joined from two watch posts.' },
+  medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, almshouses, apothecaries to make up the remedies, and cottage hospitals joined from two herbalists.' },
   firefighting: { name: 'Fire Brigades', cost: 270, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
-  hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals and infirmaries.' },
+  hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals, infirmaries and dispensing chemists.' },
   services3: { name: 'Civic Services', cost: 720, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
   municipal: { name: 'Municipal Government', cost: 1800, tier: 5, branch: 'public', needs: ['civic', 'services3'], desc: 'The City Hall: council, courts and records under one clock tower, for more tax and research.' },
   metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for the most tax and research.' },
-  schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, and board schools joined from two schoolhouses.' },
+  schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, stationers to sell paper and books, and board schools joined from two schoolhouses.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
-  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
+  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains, and football grounds with a stand for the crowds the trains bring.' },
 };
 
 // Upgrade levels unlock by research too. Unless a level names its own
@@ -747,14 +905,17 @@ export const produceOf = (b) => (b && b.flavor && Object.hasOwn(PRODUCE, b.flavo
 
 export const MERGES = [
   { a: ['house'], b: ['house'], to: 'terrace' },
-  { a: ['house'], b: ['market', 'bakery', 'tavern'], to: 'shophouse' },
-  { a: ['market', 'bakery'], b: ['market', 'bakery'], to: 'arcade' },
+  { a: ['house'], b: ['market', 'bakery', 'tavern', 'grocer', 'butcher', 'cobbler', 'draper', 'ironmonger', 'chemist', 'stationer', 'coffeehouse', 'postoffice'], to: 'shophouse' },
+  { a: ['market', 'bakery', 'grocer', 'butcher'], b: ['market', 'bakery', 'grocer', 'butcher'], to: 'arcade' },
+  { a: ['draper'], b: ['draper', 'market', 'cobbler'], to: 'deptstore' },
+  { a: ['offices'], b: ['offices', 'bank'], to: 'exchange' },
   { a: ['tavern'], b: ['market', 'bakery', 'tavern'], to: 'inn' },
   { a: ['chapel'], b: ['school'], to: 'parishschool' },
   { a: ['clinic'], b: ['chapel', 'house'], to: 'almshouse' },
   { a: ['well', 'pump'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
   { a: ['workshop', 'lumber'], b: ['workshop', 'lumber'], to: 'joinery' },
   { a: ['garden', 'flowers'], b: ['garden', 'flowers', 'statue'], to: 'park' },
+  { a: ['playground', 'courts'], b: ['playground', 'courts', 'garden'], to: 'recground' },
   // a grand home or a block of flats takes in the house next door (lead: the
   // first one's look carries on, not the cottage's)
   { a: ['villa'], b: ['villa', 'house', 'garden', 'flowers'], to: 'mansion', lead: true },
@@ -773,9 +934,10 @@ export const MERGES = [
 // What a building on an expanded (double) plot can be rebuilt as.
 export const LARGE = {
   house: ['mansion', 'apartments', 'terrace'], villa: ['mansion'], flats: ['apartments'],
-  market: ['arcade'], bakery: ['arcade'], tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
+  market: ['arcade'], bakery: ['arcade'], grocer: ['arcade'], butcher: ['arcade'], draper: ['deptstore'], offices: ['exchange'],
+  tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
   school: ['parishschool', 'boardschool'], clinic: ['almshouse', 'cottagehospital'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
-  chapel: ['vicarage'], builder: ['contractor'],
+  chapel: ['vicarage'], builder: ['contractor'], playground: ['recground'], courts: ['recground'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).
@@ -818,6 +980,19 @@ export const NEEDS = {
   musichall: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights' } },
   brewhouse: { water: { from: 0, without: 0.3, what: 'the mash tun and the coppers' }, power: { from: 1, use: 'machines', without: 0.6, what: 'its steam-driven mash tuns' } },
   fishmarket: { water: { from: 0, without: 0.6, what: 'washing down the slabs' }, power: { from: 1, use: 'machines', without: 0.7, what: 'its ice machines' } },
+  grocer: { power: { from: 2, use: 'lights', without: 0.85, what: 'its shop lights' } },
+  butcher: { water: { from: 0, without: 0.4, what: 'scrubbing the block and the slabs' }, power: { from: 2, use: 'machines', without: 0.7, what: 'its cold room' } },
+  cobbler: { power: { from: 1, use: 'machines', without: 0.85, what: 'its stitching machines' } },
+  draper: { power: { from: 1, use: 'lights', without: 0.8, what: 'its window displays' } },
+  ironmonger: { power: { from: 1, use: 'lights', without: 0.85, what: 'its shop lights' } },
+  chemist: { water: { from: 0, without: 0.6, what: 'making up the remedies' }, power: { from: 2, use: 'lights', without: 0.85, what: 'its shop lights' } },
+  stationer: { power: { from: 1, use: 'lights', without: 0.85, what: 'its reading lamps' } },
+  coffeehouse: { water: { from: 0, without: 0.4, what: 'the urns and the washing up' }, power: { from: 1, use: 'lights', without: 0.75, what: 'its lamps' } },
+  bank: { power: { from: 1, use: 'lights', without: 0.8, what: 'its banking hall' } },
+  deptstore: { power: { from: 0, use: 'lights', without: 0.8, what: 'its windows and shop floors' } },
+  postoffice: { power: { from: 1, use: 'machines', without: 0.8, what: 'its telegraph' } },
+  offices: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lamps over the desks' } },
+  exchange: { power: { from: 0, use: 'lights', without: 0.8, what: 'the lamps over its trading floor' } },
   lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
   workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
   joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },
@@ -849,7 +1024,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 
@@ -869,6 +1044,44 @@ const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0
 const BUILD_PACE = 1 / 3;
 export function workNeeded(cost, kind = 'build') {
   return Math.max(0.5, Math.round((2 + cost / 28) * (WORK_K[kind] ?? 1) * BUILD_PACE * 10) / 10);
+}
+
+// What the shops sell (def.trade), and how often a villager out shopping
+// goes for each: a trip is for one trade the town has, the everyday ones
+// most often, and goes to one of the nearer shops selling it (see
+// Agents._shopFor). A big store sells every trade ('all': all but banking
+// and the post);
+// a shop with homes above sells what the shop it was joined from sold.
+export const TRADES = {
+  provisions: { name: 'provisions', often: 3 },
+  bread: { name: 'bread', often: 3 },
+  greens: { name: 'fruit and vegetables', often: 2 },
+  meat: { name: 'meat', often: 2 },
+  fish: { name: 'fish', often: 1.2 },
+  tea: { name: 'tea and cake', often: 1.2 },
+  clothes: { name: 'clothes', often: 1 },
+  shoes: { name: 'boots and shoes', often: 0.8 },
+  hardware: { name: 'hardware', often: 0.8 },
+  medicine: { name: 'remedies', often: 0.7 },
+  books: { name: 'books and paper', often: 0.6 },
+  post: { name: 'the post', often: 0.6 },
+  banking: { name: 'banking', often: 0.5 },
+};
+const ALL_TRADES = Object.keys(TRADES).filter(t => t !== 'banking' && t !== 'post');
+export function tradesOf(b) {
+  const def = BUILDINGS[b.type];
+  if (!def.shop) return [];
+  const own = b.flavor && BUILDINGS[b.flavor] && BUILDINGS[b.flavor].trade;
+  const t = own || def.trade || 'provisions';
+  return t === 'all' ? ALL_TRADES : Array.isArray(t) ? t : [t];
+}
+
+// What a shop sells, in words ('' for anything that isn't a shop).
+export function sellsText(b) {
+  const def = BUILDINGS[b.type], own = b.flavor && BUILDINGS[b.flavor] && BUILDINGS[b.flavor].trade;
+  if ((own || def.trade) === 'all') return 'A bit of everything';
+  const s = tradesOf(b).map(t => TRADES[t].name).join(', ');
+  return s && s[0].toUpperCase() + s.slice(1);
 }
 
 export function isShop(type) { return !!BUILDINGS[type].shop; }
