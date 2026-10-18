@@ -155,16 +155,18 @@ export class Input {
       this._selectClick(e);
     } else if (d.type === 'line') {
       const tiles = this._lineTiles(d.start, d.end);
-      const w = this.world;
-      const r = this.tool.kind === 'rail' ? w.placeRails(tiles) : w.placeRoads(tiles, this.tool.level);
-      if (r.placed) this.game.sfx('build');
-      if (r.failed && !r.placed) this.ui.toast(r.failed, 'bad');
-      else if (r.failed && r.failed === 'Not enough money') this.ui.toast('Ran out of money part-way', 'bad', '$');
+      const c = this.tool.kind === 'rail' ? { t: 'rails', tiles } : { t: 'roads', tiles, level: this.tool.level };
+      this.game.cmd(c, (r) => {
+        if (r.placed) this.game.sfx('build');
+        if (r.failed && !r.placed) this.ui.toast(r.failed, 'bad');
+        else if (r.failed && r.failed === 'Not enough money') this.ui.toast('Ran out of money part-way', 'bad', '$');
+      });
     } else if (d.type === 'rect') {
       const tiles = this._rectTiles(d.start, d.end);
-      let n = 0;
-      for (const [x, z] of tiles) { const r = this.world.bulldoze(x, z); if (r.ok) n++; else if (r.reason && tiles.length === 1) this.ui.toast(r.reason, 'bad'); }
-      if (n) this.game.sfx('demolish');
+      this.game.cmd({ t: 'bulldoze', tiles }, (r) => {
+        if (r.n) this.game.sfx('demolish');
+        else if (r.reason && tiles.length === 1) this.ui.toast(r.reason, 'bad');
+      });
     }
     this.drag = null;
     this.refresh();
@@ -190,36 +192,40 @@ export class Input {
   }
 
   _place(tile, painting = false) {
-    const w = this.world, t = this.tool;
+    const t = this.tool;
     const def = BUILDINGS[t.type];
     const o = this._origin(tile, def.size);
-    const r = w.placeBuilding(t.type, o.x, o.z, { variant: this.variant, accessIndex: this.accessIndex });
-    if (r.ok) {
-      this.game.sfx('build');
-      this.variant = (Math.random() * 1e9) | 0;
-      this.ghostKey = '';
-      if (def.unique) { this.ui.closeFlyout(); this.setTool({ kind: 'select' }); }
-    } else if (!painting) this.ui.toast(r.reason, 'bad');
+    this.game.cmd({ t: 'place', type: t.type, x: o.x, z: o.z, variant: this.variant, accessIndex: this.accessIndex }, (r) => {
+      if (r.ok) {
+        this.game.sfx('build');
+        this.variant = (Math.random() * 1e9) | 0;
+        this.ghostKey = '';
+        if (def.unique && this.tool === t) { this.ui.closeFlyout(); this.setTool({ kind: 'select' }); }
+      } else if (!painting) this.ui.toast(r.reason || "Can't build there", 'bad');
+    });
   }
 
   _moveTo(tile) {
     const w = this.world, b = w.buildings.get(this.tool.id);
     if (!b) { this.setTool({ kind: 'select' }); return; }
     const o = this._origin(tile, fw(b), fd(b));
-    const r = w.moveBuilding(b.id, o.x, o.z, { accessIndex: this.accessIndex });
-    if (!r.ok) { this.ui.toast(r.reason, 'bad'); return; }
     const name = BUILDINGS[b.type].levels[b.level].name;
-    this.game.sfx('build');
-    this.ui.toast(r.instant ? `Moved the ${name}` : `Builders will take down the ${name}, cart it over and rebuild it here`, 'good', '🏗️');
-    this.setTool({ kind: 'select' });
-    this.ui.inspect({ kind: 'building', id: r.building.id });
+    this.game.cmd({ t: 'move', id: b.id, x: o.x, z: o.z, accessIndex: this.accessIndex }, (r) => {
+      if (!r.ok) { this.ui.toast(r.reason || "Can't move it there", 'bad'); return; }
+      this.game.sfx('build');
+      this.ui.toast(r.instant ? `Moved the ${name}` : `Builders will take down the ${name}, cart it over and rebuild it here`, 'good', '🏗️');
+      if (this.tool.kind === 'move') this.setTool({ kind: 'select' });
+      if (r.building) this.ui.inspect({ kind: 'building', id: r.building.id });
+    });
   }
 
   _applyTile(tile) {
-    const w = this.world, t = this.tool;
-    const r = t.kind === 'trees' ? w.plantTree(tile.x, tile.z) : w.terraform(tile.x, tile.z, t.mode);
-    if (r.ok) this.game.sfx(t.kind === 'trees' ? 'plant' : 'dig');
-    else if (r.reason && !this.drag) this.ui.toast(r.reason, 'bad');
+    const t = this.tool, quiet = !!this.drag;
+    const c = t.kind === 'trees' ? { t: 'plant', x: tile.x, z: tile.z } : { t: 'terraform', x: tile.x, z: tile.z, mode: t.mode };
+    this.game.cmd(c, (r) => {
+      if (r.ok) this.game.sfx(c.t === 'plant' ? 'plant' : 'dig');
+      else if (r.reason && !quiet) this.ui.toast(r.reason, 'bad');
+    });
   }
 
   _lineClick(e) {
@@ -238,11 +244,12 @@ export class Input {
   finishLine() {
     const t = this.tool;
     if (t.kind !== 'line') return;
-    const r = this.game.transit.createLine(t.mode, t.stops);
-    if (!r.ok) { this.ui.toast(r.reason, 'bad'); return; }
-    this.ui.toast(`${r.line.name} is running!`, 'good', t.mode === 'rail' ? '🚂' : '🐴');
-    this.game.sfx('upgrade');
-    this.setTool({ kind: 'line', mode: t.mode, stops: [] });
+    this.game.cmd({ t: 'line', mode: t.mode, stops: t.stops.slice() }, (r) => {
+      if (!r.ok) { this.ui.toast(r.reason || "Couldn't start that line", 'bad'); return; }
+      this.ui.toast(`${r.line.name} is running!`, 'good', t.mode === 'rail' ? '🚂' : '🐴');
+      this.game.sfx('upgrade');
+      if (this.tool === t) this.setTool({ kind: 'line', mode: t.mode, stops: [] });
+    });
   }
 
   _origin(tile, w, d = w) {
@@ -446,6 +453,7 @@ export class Input {
       case 'n': ui.togglePopups(); break;
       case 'i': ui.toggleIssues(); break;
       case 'l': ui.showLines(); break;
+      case 'm': ui.showMultiplayer(); break;
       case 'h': ui.showHelp(); break;
     }
   }

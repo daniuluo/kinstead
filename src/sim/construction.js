@@ -125,11 +125,26 @@ export class Construction {
   _finish(s) {
     const w = this.world, ag = this.game.agents;
     this._clearHands(s.id);
-    // send the crew back to the yard before the site turns into a building (or vanishes)
+    // the crew walks straight on to the next site that needs hands (oldest
+    // first) rather than back to the yard; with nothing waiting, or the end of
+    // the day near, they go back to the yard. Either way they leave before the
+    // site turns into a building (or vanishes).
+    const hours = w.hours, now = this._now();
+    const daytime = hours >= DAY_START && hours < DAY_END;
+    const open = daytime ? [...w.buildings.values()]
+      .filter(o => o !== s && o.con && !o.con.wait && o.access && o.connected && !(o._unreach > now))
+      .sort((a, b) => (a._queued ?? now) - (b._queued ?? now)) : [];
     for (const r of w.residents.values()) {
       if (r.site !== s.id) continue;
-      if (r.loc === 'out' && r.at === s.id) ag.go(r, r.job ?? r.home);
       r.site = null;
+      if (r.loc !== 'out' || r.at !== s.id) continue;
+      const nx = r.plan && r.plan[r.pi];
+      const next = nx && nx.t - hours < 0.75 ? null : open.find(o => (this.crew.get(o.id)?.assigned ?? 0) < crewCap(o));
+      if (next) {
+        ag.go(r, next.id);
+        if (r.loc === 'walk') { r.site = next.id; const c = this.crew.get(next.id); if (c) c.assigned++; continue; }
+      }
+      ag.go(r, r.job ?? r.home);
     }
     w.finishConstruction(s);
   }

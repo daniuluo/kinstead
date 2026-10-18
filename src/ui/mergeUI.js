@@ -116,7 +116,7 @@ export class MergeDialog {
     };
     const both = this.pick.A && this.pick.B;
     this.ui.openModal(`<h2>Merge villages</h2>
-      <p class="lead">Join two saved towns into one. Town B is set beside, apart from or over town A; the ground is blended where the valleys meet, the roads are joined up, and every clash is settled for you. Neither save is changed — the merged town is a new one.</p>
+      <p class="lead">Join two saved towns into one. Town B is set beside, apart from or over town A; the ground is blended where the valleys meet, the roads are joined up, and every clash is settled for you. Neither save is changed — the merged town is a new one.${this.game.net ? ' <b>Merging ends your multiplayer session.</b>' : ''}</p>
       <div class="merge-pick">${col('A')}${col('B')}</div>
       <div class="actions"><button class="btn" id="mgSwap" ${this.pick.A || this.pick.B ? '' : 'disabled'}>${ms('swap_horiz')} Swap A and B</button>
       <span style="flex:1"></span><button class="btn primary" id="mgNext" ${both ? '' : 'disabled'}>Arrange them ${ms('arrow_forward')}</button></div>`, (c) => {
@@ -333,7 +333,8 @@ export class MergeDialog {
     const A = this.pick.A, B = this.pick.B;
     let out;
     try { out = mergeWorlds(A.world, B.world, { ...this.arr, seam: this.seam || undefined, name: this.name }); } catch (e) { ui.toast(e.message, 'bad'); return; }
-    const before = this.inGame ? g.world.townName : null;
+    // (a guest's copy of a friend's town is not theirs to keep)
+    const before = this.inGame && !g.replica ? g.world.townName : null;
     if (before) g.saveLocal('premerge', true);
     g.loadData(out.data);
     ui.closeAllWindows();

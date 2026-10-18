@@ -1,13 +1,15 @@
-// Town invariants shared by the headless tests (playtest.js, merge-test.js):
-// plots never overlap (land deals and street fronts included) and the tile
-// map agrees with them, villagers, transit lines and land deals point at
-// real buildings, and nobody is over capacity. Calls problem(msg) per fault.
+// Town invariants checked by the headless tests (playtest.js, starters.js,
+// merge-test.js): plots never overlap (land deals and street fronts
+// included) and the tile map agrees with them, villagers, transit lines and
+// land deals point at real buildings, capacities hold, building sites keep
+// moving, nothing turns into NaN.
 
 import { fw, fd, isOpen, capOf } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
 
 const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 
+// The invariants of a town at rest; calls problem(msg) per fault.
 export function auditTown(w, problem) {
   // plots never overlap and the tile map agrees
   const rects = [];
@@ -44,4 +46,26 @@ export function auditTown(w, problem) {
     if (b.workers.length > capOf(b, 'jobs')) problem(`${L.name} #${b.id} has too many workers`);
     if (L.seats && (b.pupils || []).length > capOf(b, 'seats')) problem(`${L.name} #${b.id} has too many pupils`);
   }
+}
+
+// Returns audit(day) for a running game, which reports each broken invariant
+// via problem(day, msg).
+export function makeAudit(game, problem) {
+  const audit = (day) => {
+    const w = game.world;
+    auditTown(w, (msg) => problem(day, msg));
+    // the oldest open site must keep moving while there are builders
+    const C = game.construction;
+    const open = [...w.buildings.values()].filter(b => b.con && !b.con.wait && b.access && b.connected).sort((a, b) => a._queued - b._queued);
+    const head = open[0];
+    if (head) {
+      const key = `${head.id}:${head.con.kind}:${Math.floor((head.con.done / head.con.work) * 20)}`;
+      if (audit.head !== key) { audit.head = key; audit.headSince = day; }
+      else if (day - audit.headSince > 3 && C.hasBuilders) problem(day, `the oldest site (${head.type} #${head.id}, ${head.con.kind}) has not moved for ${day - audit.headSince} days`);
+    }
+    if (Number.isNaN(w.money)) problem(day, 'money is not a number');
+    for (const wk of game.agents.walkers) if (!Number.isFinite(wk.x) || !Number.isFinite(wk.z)) { problem(day, 'a walker has no position'); break; }
+    for (const a of game.animals.list) if (!Number.isFinite(a.x)) { problem(day, 'an animal has no position'); break; }
+  };
+  return audit;
 }
