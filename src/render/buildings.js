@@ -5689,19 +5689,20 @@ function annexPlan(def, b, Ex, Ez, B) {
   const main = { x0: B.x0, x1: B.x1, z0: B.z0, z1: B.z1 };
   const areas = [];
   if (extraW >= 0.5) {
-    // the land beside keeps behind the street line (the building's own
-    // front, b.front, is the one that may come forward)
-    const az1 = sp ? B.z1 - (b.front || 0) : B.z1;
-    if (side < 0) { main.x1 = B.x1 - extraW; areas.push({ x0: main.x1, x1: B.x1, z0: B.z0, z1: az1, where: 'beside' }); }
-    else { main.x0 = B.x0 + extraW; areas.push({ x0: B.x0, x1: main.x0, z0: B.z0, z1: az1, where: 'beside' }); }
+    if (side < 0) { main.x1 = B.x1 - extraW; areas.push({ x0: main.x1, x1: B.x1, z0: B.z0, z1: B.z1, where: 'beside' }); }
+    else { main.x0 = B.x0 + extraW; areas.push({ x0: B.x0, x1: main.x0, z0: B.z0, z1: B.z1, where: 'beside' }); }
   }
   if (extraD >= 0.5) {
     // land behind; or, the rare time it was taken in front, the land in front
     if (sp && sp.sz < 0) { main.z1 = B.z0 + ld; areas.push({ x0: main.x0, x1: main.x1, z0: main.z1, z1: B.z1, where: 'beside' }); }
     else { main.z0 = B.z0 + extraD; areas.push({ x0: main.x0, x1: main.x1, z0: B.z0, z1: main.z0, where: 'behind' }); }
   }
+  // the building itself may come forward further than the plot as a whole
+  // (b.ownFront: its own part has the street in front, the rest not)
+  const fwd = sp && sp.sz >= 0 ? b.ownFront ?? b.front ?? 0 : 0;
+  if (sp && sp.sz >= 0) main.z1 += fwd - (b.front || 0);
   // the middle of the building's own footprint, as it was on its own plot
-  const pc = { x: (main.x0 + main.x1) / 2, z: (main.z0 + main.z1 - (sp && sp.sz < 0 ? 0 : b.front || 0)) / 2 };
+  const pc = { x: (main.x0 + main.x1) / 2, z: (main.z0 + main.z1 - (sp && sp.sz < 0 ? 0 : sp ? fwd : b.front || 0)) / 2 };
   return { main, areas, Ex: lw / 2, Ez: ld / 2, pc };
 }
 

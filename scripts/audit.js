@@ -4,7 +4,7 @@
 // land deals point at real buildings, capacities hold, building sites keep
 // moving, nothing turns into NaN.
 
-import { fw, fd, isOpen, capOf } from '../src/world/world.js';
+import { fw, fd, isOpen, capOf, spareRect } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
 
 const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
@@ -19,11 +19,14 @@ export function auditTown(w, problem) {
     const [dx, dz] = DIR[b.rot], f = b.front || 0;
     if (dx > 0) e.x1 += f; if (dx < 0) e.x0 += f; if (dz > 0) e.z1 += f; if (dz < 0) e.z0 += f;
     rects.push([b.x - e.x0, b.z - e.z0, b.x + fw(b) + e.x1, b.z + fd(b) + e.z1, b]);
+    // a building on part of a grown plot may stand forward of the plot
+    const r = spareRect(b), o = b.ownFront || 0;
+    if (r && o > f) rects.push([r.x - (dx < 0 ? o : 0), r.z - (dz < 0 ? o : 0), r.x + r.w + (dx > 0 ? o : 0), r.z + r.d + (dz > 0 ? o : 0), b]);
     for (let dz2 = 0; dz2 < fd(b); dz2++) for (let dx2 = 0; dx2 < fw(b); dx2++) if (w.roadAt(b.x + dx2, b.z + dz2) || w.railAt(b.x + dx2, b.z + dz2)) problem(`${b.type} #${b.id} sits on a road or track`);
   }
   for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
     const a = rects[i], c = rects[j];
-    if (a[0] < c[2] - 1e-6 && c[0] < a[2] - 1e-6 && a[1] < c[3] - 1e-6 && c[1] < a[3] - 1e-6) problem(`plots overlap: ${a[4].type} #${a[4].id} and ${c[4].type} #${c[4].id}`);
+    if (a[4] !== c[4] && a[0] < c[2] - 1e-6 && c[0] < a[2] - 1e-6 && a[1] < c[3] - 1e-6 && c[1] < a[3] - 1e-6) problem(`plots overlap: ${a[4].type} #${a[4].id} and ${c[4].type} #${c[4].id}`);
   }
   for (const i in w.buildingAt) if (w.buildingAt[i] >= 0 && !w.buildings.has(w.buildingAt[i])) { problem(`tile ${i} points at a missing building`); break; }
   // people, lines and land deals point at real places

@@ -603,6 +603,35 @@ const placePair = (tw, ta, tb) => {
   ok(tried.length >= 2 && !moved.length, `taking land leaves the building where it stood (${tried.join(', ')})${moved.length ? ': moved ' + moved.join('; ') : ''}`);
 }
 
+// 3d1b. ...and where the street ends beside it, the grown plot doesn't come
+// forward over the neighbour in front of its new tile (only the building
+// itself does, over its own street)
+{
+  const { auditTown } = await import('./audit.js');
+  const tw = World.createNew({ N: 48, seed: 41, name: 'Streetend' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const free = (x, z) => tw.inBounds(x, z) && !tw.buildingOn(x, z) && !tw.roadAt(x, z) && !tw.terrain.isWater(x, z);
+  let A = null, C = null;
+  for (let z = 4; z < tw.N - 4 && !A; z++) for (let x = 4; x < tw.N - 4 && !A; x++) {
+    // a street ending at (x, z - 1), the bakery behind its last tile, and a
+    // neighbour on the tile past the end that faces another street
+    if (![[x - 2, z - 1], [x - 1, z - 1], [x, z - 1], [x + 1, z - 2]].every(([a, c]) => tw.roadAt(a, c) || tw.checkRoad(a, c, 1).ok)) continue;
+    if (![[x, z], [x + 1, z], [x + 1, z - 1]].every(([a, c]) => free(a, c))) continue;
+    if (Math.abs(tw.terrain.tileMax(x, z) - tw.terrain.tileMin(x + 1, z)) > 0.6) continue;
+    tw.placeRoads([[x - 2, z - 1], [x - 1, z - 1], [x, z - 1]], 1); tw.placeRoads([[x + 1, z - 2]], 1);
+    const a = tw.placeBuilding('bakery', x, z, { instant: true });
+    let c = null;
+    for (let k = 0; k < 4 && a.ok && !(c && c.ok && c.building.rot === 2); k++) { if (c && c.ok) tw.removeBuilding(c.building.id, 0); c = tw.placeBuilding('bakery', x + 1, z - 1, { instant: true, accessIndex: k }); }
+    if (a.ok && c && c.ok && a.building.rot === 2 && c.building.rot === 2) { A = a.building; C = c.building; }
+    else for (const P of [a, c]) if (P && P.ok && tw.buildings.has(P.building.id)) tw.removeBuilding(P.building.id, 0);
+  }
+  const opt = A && tw.expandOptions(A).find(o => o.kind === 'land' && o.x === A.x + 1 && o.z === A.z);
+  const grew = opt && tw.expandBuilding(A.id, opt.dir, 'land').ok;
+  const faults = [];
+  auditTown(tw, (m) => faults.push(m));
+  ok(grew && !faults.some(m => /overlap/.test(m)) && (A.front || 0) === 0 && A.ownFront > 0, `a plot grown past the end of its street keeps behind the neighbour in front of its new tile (front ${A && A.front}, the building's own ${A && A.ownFront})${faults.length ? ': ' + faults.join('; ') : ''}`);
+}
+
 // 3d1. taking a neighbouring plot: the land first (no builders, the building
 // stays its size), then what to build across it
 {

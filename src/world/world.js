@@ -378,19 +378,18 @@ export class World {
 
   // A building comes forward into the street when every tile along its
   // front is road.
-  // The tiles in front of a building: in front of its plot, or, while it
-  // stands on part of a grown plot (b.spare), in front of that part.
-  _frontTiles(b) {
+  // The tiles in front of a building's plot (or of part of it).
+  _frontTiles(b, part = null) {
     const [dx, dz] = DIRS[b.rot];
-    const r = spareRect(b) || { x: b.x, z: b.z, w: fw(b), d: fd(b) }, tiles = [];
+    const r = part || { x: b.x, z: b.z, w: fw(b), d: fd(b) }, tiles = [];
     if (dz) for (let k = 0; k < r.w; k++) tiles.push([r.x + k, dz > 0 ? r.z + r.d : r.z - 1]);
     else for (let k = 0; k < r.d; k++) tiles.push([dx > 0 ? r.x + r.w : r.x - 1, r.z + k]);
     return tiles;
   }
 
-  _frontOf(b) {
+  _frontOf(b, part = null) {
     if (!b.access) return 0;
-    const tiles = this._frontTiles(b);
+    const tiles = this._frontTiles(b, part);
     if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
     // street trees and hedges take the verge, so it stays behind them
     if (this.dress && tiles.some(([x, z]) => (DRESSINGS[this.dress[this.idx(x, z)]] || {}).verge)) return 0;
@@ -409,11 +408,19 @@ export class World {
 
   // Re-decide every building's street front (after building, demolishing or
   // re-laying roads). The new building itself, if any, is not refitted.
+  // The plot comes forward only where the street runs the whole width of it
+  // (b.front). While a building stands on part of a grown plot (b.spare),
+  // the building itself comes forward as far as its own part's street
+  // allows, as it did before the plot grew (b.ownFront).
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b);
-      if (f !== (b.front || 0)) { b.front = f; if (b !== except) refit.push(b); }
+      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined;
+      if (f !== (b.front || 0) || own !== b.ownFront) {
+        b.front = f;
+        if (own === undefined) delete b.ownFront; else b.ownFront = own;
+        if (b !== except) refit.push(b);
+      }
     }
     for (const b of refit) this.emit('building:refit', b);
   }
