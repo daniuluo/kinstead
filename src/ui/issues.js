@@ -1,7 +1,7 @@
 // The town's problems and bottlenecks, most serious first, for the issues
 // panel. Each issue can point at the buildings involved or open a menu.
 
-import { BUILDINGS, SERVICES, needsOf } from '../defs.js';
+import { BUILDINGS, SERVICES, needsOf, TECHS } from '../defs.js';
 import { isOpen, capOf } from '../world/world.js';
 import { yearsOf, stageForAge } from '../sim/people.js';
 import { mainBlocker } from './working.js';
@@ -113,7 +113,7 @@ export function computeIssues(game) {
 
   // research
   const R = w.research;
-  if (!w.sandbox.unlockAll && !R.current && Object.keys(R).length && sim.researchRate() > 0) add('info', 'science', R.bank ? `No research project — ${R.bank} points waiting` : 'No research project chosen', { kind: 'research' });
+  if (!w.sandbox.unlockAll && !R.current && Object.keys(R).length && sim.researchRate() > 0 && Object.keys(TECHS).some(id => !R.done.includes(id))) add('info', 'science', R.bank ? `No research project — ${R.bank} points waiting` : 'No research project chosen', { kind: 'research' });
 
   // transit stops nobody uses
   const idle = [...w.buildings.values()].filter(b => BUILDINGS[b.type].stop && isOpen(b) && !w.lines.some(l => l.stops.includes(b.id)));

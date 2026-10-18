@@ -37,7 +37,7 @@ export function mountStarterPicker(root, game, { getMap, onPick }) {
       if (!root.isConnected) return;
       try {
         const s = starterSummary(def.id);
-        cardOf(def.id).querySelector('.m').textContent = `${s.N}×${s.N} · ${s.pop} villagers · $${fmt(s.money)} · day ${s.day}`;
+        cardOf(def.id).querySelector('.m').textContent = `${s.N}×${s.N} · ${fmt(s.pop)} villagers · $${fmt(s.money)} · day ${s.day}`;
         show(def.id, loadStarter(def.id));
       } catch (e) {
         console.error(e);

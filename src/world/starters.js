@@ -18,6 +18,7 @@ import { Transit } from '../sim/transit.js';
 import { BUILDINGS, TECHS } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { serialize, deserialize } from '../save/saves.js';
+import { growCity } from './city.js';
 
 // Places in a starter's build script are given in the town's own frame:
 // [a, b] is a steps along the main road (towards the way out of the valley)
@@ -162,6 +163,12 @@ export const STARTERS = [
       { day: 14, upgrade: 'builder', look: 'timber', tech: 'carpentry' },
     ],
   },
+  {
+    // spring of the eleventh year · laid out whole by src/world/city.js, not
+    // grown from a script: radius is how far out the streets go
+    id: 'city', name: 'Cathedral city', town: 'Kingsbridge', N: 80, seed: 315838, radius: 20, city: true, day: 241, settle: 4, money: 60000,
+    desc: 'A whole city decades along: a domed civic palace, a cathedral, high streets of every trade, works and a wind farm, and some 3,000 people at work.',
+  },
 ];
 
 const FRAME = { out: [1, 0], in: [-1, 0], right: [0, 1], left: [0, -1] };
@@ -172,7 +179,7 @@ export function starterById(id) { return STARTERS.find(s => s.id === id) || null
 
 // A stand-in for the game object the Sim reports to. Nobody walks about
 // while a starter town grows, so arrivals simply move in and leavers go.
-function headlessGame(w) {
+export function headlessGame(w) {
   const game = {
     world: w, speed: 1, _ev: {},
     on(e, f) { (this._ev[e] ||= []).push(f); },
@@ -196,6 +203,7 @@ function headlessGame(w) {
 // it), its Sim, and a log of any script steps that could not be done.
 // onDay(world, sim) is called at the end of every day (for tests).
 export function growStarter(def, { onDay } = {}) {
+  if (def.city) return growCity(def, { onDay });
   const { N, seed } = def;
   const w = World.createNew({ N, seed, name: def.town });
   w.townId = ('starter' + def.id).replace(/[^a-z0-9]/g, '').slice(0, 24);   // grown the same every time (a game started from it gets its own)
