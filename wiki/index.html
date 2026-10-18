@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kinstead wiki</title>
+  <meta name="description" content="The Kinstead wiki: every mechanic, building, level and research project of the cozy isometric town builder, read from the game's own data.">
+  <meta name="theme-color" content="#000080">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><path d=%22M8 30 32 10l24 20v26H8z%22 fill=%22%23d8c29a%22/><path d=%22M4 32 32 8l28 24-4 4L32 15 8 36z%22 fill=%22%239c4a32%22/><rect x=%2227%22 y=%2240%22 width=%2210%22 height=%2216%22 fill=%22%235c3d26%22/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+  <!-- only the icons the wiki shows (scripts/site-check.js keeps this list complete) -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0&icon_names=account_balance,add_location_alt,add_road,agriculture,article,bolt,construction,cottage,directions_bus,factory,flag,grid_view,group_add,groups,holiday_village,home,join_inner,keyboard,local_hospital,medical_services,menu,menu_book,open_in_full,palette,park,partly_cloudy_day,payments,play_arrow,science,search,sentiment_satisfied,settings,star,storefront,train&display=block" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="../site/site.css">
+  <!-- the game's own modules draw the building pictures, as in the game -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="site wiki-body">
+  <a class="skip" href="#page">Skip to the page</a>
+  <header class="site-head"><div class="wrap">
+    <a class="site-logo" href="../" aria-label="Kinstead home"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 30 32 10l24 20v26H8z" fill="#d8c29a"/><path d="M4 32 32 8l28 24-4 4L32 15 8 36z" fill="#9c4a32"/><rect x="27" y="40" width="10" height="16" fill="#5c3d26"/></svg>Kinstead</a>
+    <nav class="site-nav" aria-label="Site">
+      <a class="play" href="../play/"><span class="ms" aria-hidden="true">play_arrow</span>Play</a>
+      <a href="./" aria-current="page"><span class="ms" aria-hidden="true">menu_book</span>Wiki</a>
+      <a href="../#features"><span class="ms" aria-hidden="true">star</span>Features</a>
+    </nav>
+  </div></header>
+
+  <div class="wiki">
+    <aside class="win wiki-side" id="side" aria-label="Wiki pages">
+      <div class="tb"><span class="ms" aria-hidden="true">menu_book</span>Contents
+        <button class="btn small wiki-toggle" id="navToggle" aria-expanded="false" aria-controls="nav" type="button"><span class="ms" aria-hidden="true">menu</span>Pages</button>
+      </div>
+      <div class="body">
+        <div class="wiki-search" role="search">
+          <span class="ms" aria-hidden="true">search</span>
+          <input id="q" type="search" placeholder="Search the wiki" autocomplete="off" aria-label="Search the wiki" role="combobox" aria-expanded="false" aria-controls="results">
+          <div class="wiki-results hidden" id="results" role="listbox"></div>
+        </div>
+        <nav class="wiki-nav" id="nav" aria-label="Wiki pages"></nav>
+      </div>
+    </aside>
+    <main class="win wiki-main">
+      <div class="tb" id="pageBar"><span class="ms" aria-hidden="true">article</span>Kinstead wiki<span class="tb-btns" aria-hidden="true"><i></i><i></i></span></div>
+      <div class="body"><article class="doc wiki-page" id="page" tabindex="-1"><p class="wiki-loading">Loading…</p>
+        <noscript><p>The wiki reads the game's own data with JavaScript; please turn it on. The <a href="https://github.com/daniuluo/kinstead#readme">README on GitHub</a> describes the game too.</p></noscript>
+      </article></div>
+    </main>
+  </div>
+
+  <footer class="site-foot"><div class="wrap">
+    <nav aria-label="Footer"><a href="../">Home</a><a href="../play/">Play</a><a href="https://github.com/daniuluo/kinstead">Source on GitHub</a></nav>
+    <span class="grow"></span>
+    <span>The figures in this wiki are read from the game's code: they are always the current game's.</span>
+  </div></footer>
+
+  <script>
+    // fresh files after an update (see sw.js; only on the live site)
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('../sw.js', { updateViaCache: 'none' }).catch(() => {});
+  </script>
+  <script type="module" src="wiki.js"></script>
+</body>
+</html>

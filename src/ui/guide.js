@@ -15,8 +15,8 @@ const plot = (def) => (def.merged ? { w: 2, d: 1 } : { w: def.size, d: def.size 
 const visitors = (type, level) => { const p = plot(BUILDINGS[type]); return visitorCap({ type, level, size: Math.max(p.w, p.d), ...p }); };
 const WHO = { park: 'people out for a stroll', shop: 'shoppers', tavern: 'guests', chapel: 'worshippers', clinic: 'patients' };
 
-// What one level offers, as [label, value] pairs.
-function stats(type, level) {
+// What one level offers, as [label, value] pairs (the wiki shows these too).
+export function stats(type, level) {
   const def = BUILDINGS[type], L = def.levels[level], out = [];
   if (L.housing) out.push(['Homes for', `${L.housing} villagers`]);
   if (L.households) out.push(['Households', L.households === 1 ? 'one family' : `up to ${L.households} families`]);
@@ -52,7 +52,7 @@ function needs(world, type, level) {
   return out;
 }
 
-function placement(def) {
+export function placement(def) {
   const out = [];
   out.push(def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
   if (!def.park) out.push('needs a road alongside');
@@ -72,7 +72,7 @@ function lockText(world, type) {
 // The 2×2 estates a building can lead to: every double-plot building it can
 // become (grown, joined, branched or moved on a stage), and what each of
 // those can be rebuilt as on a 2×2 estate. [{ from, to }]
-function estatesFrom(type) {
+export function estatesFrom(type) {
   const seen = new Set([type]), queue = [type], out = [];
   while (queue.length) {
     const t = queue.shift(), def = BUILDINGS[t];

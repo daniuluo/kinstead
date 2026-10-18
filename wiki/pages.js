@@ -1,0 +1,699 @@
+// The wiki's pages. Each page is a list of sections of markup, written as
+// functions of the game's own data, so every figure comes from
+// src/defs.js, src/config.js or a checked fact (facts.js) and changes when
+// the game does. The building pages and the research tree are generated
+// whole (catalog.js); the prose here explains how things work.
+//
+// Keep this in step with the game: a new mechanic, key or setting wants a
+// line here too (scripts/site-check.js fails on a new building, research
+// project, key, setting or happiness factor the wiki doesn't cover).
+
+import {
+  BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, FARM_JOIN,
+  PRODUCE, FRUIT, TRADES, CORNER_SHOPS, NEEDS, RESEARCH_SOURCES, STYLE_TECH, BURY_COST, CAPABILITIES, servicesOf, unlockOf, techForLevel,
+} from '../src/defs.js';
+import {
+  CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, ROAD_SALVAGE, DRESSINGS, TITLES, SEASONS,
+  PERF_DEFAULTS, BATTERY_SAVER, TILT_SHIFT, TILT_BAND, SHADOW_SIZE,
+} from '../src/config.js';
+import { fact } from './facts.js';
+import { bl, tl, pl, k, table, money, pct, esc, fmt, an, ms, CAT_PAGE, pic } from './links.js';
+
+export const GROUPS = [
+  ['start', 'Start here'], ['town', 'Running the town'], ['buildings', 'Buildings'], ['grow', 'Growing'],
+  ['people', 'People'], ['together', 'Together'], ['options', 'Options'],
+];
+
+
+const minutes = (s) => (s % 60 ? `${fmt(s / 60)} minutes` : `${s / 60} minutes`);
+const list = (items) => `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+const types = () => Object.keys(BUILDINGS);
+const name0 = (t) => BUILDINGS[t].levels[0].name;
+const or = (arr) => (arr.length < 2 ? arr.join('') : `${arr.slice(0, -1).join(', ')} or ${arr[arr.length - 1]}`);
+const and = (arr) => (arr.length < 2 ? arr.join('') : `${arr.slice(0, -1).join(', ')} and ${arr[arr.length - 1]}`);
+const providers = (s) => types().filter(t => servicesOf(BUILDINGS[t]).includes(s));
+
+// ---------------------------------------------------------- keyboard keys
+// Every key the game answers to (scripts/site-check.js compares this with
+// src/ui/input.js). keys: what input.js sees (e.key, lower case).
+export const KEYS = [
+  { show: ['Space'], keys: [' '], what: 'Pause, or carry on at the speed you had' },
+  { show: [','], keys: [','], what: 'Normal speed (1×)' },
+  { show: ['.'], keys: ['.'], what: 'Fast (4×)' },
+  { show: ['/'], keys: ['/'], what: 'Fastest (32×)' },
+  { show: ['[', ']'], keys: ['[', ']'], what: 'One speed slower / faster' },
+  { show: ['W', 'A', 'S', 'D'], keys: ['w', 'a', 's', 'd'], what: 'Pan the camera (the arrow keys too)' },
+  { show: ['←', '↑', '→', '↓'], keys: ['arrowleft', 'arrowup', 'arrowright', 'arrowdown'], what: 'Pan the camera' },
+  { show: ['+', '−'], keys: ['+', '=', '-', '_'], what: 'Zoom in / out (or the mouse wheel)' },
+  { show: ['Q', 'E'], keys: ['q', 'e'], what: 'Turn the view a quarter turn anticlockwise / clockwise' },
+  { show: ['T'], keys: ['t'], what: 'Switch between the isometric view and the 2D top-down map' },
+  { show: ['V'], keys: ['v'], what: 'Hide the interface to see just the town (V or Esc brings it back)' },
+  { show: ['1'], keys: ['1'], what: 'Select tool' },
+  { show: ['R'], keys: ['r'], what: 'Roads menu' },
+  ...CATEGORIES.map(c => ({ show: [c.key], keys: [c.key.toLowerCase()], what: `${esc(c.name)} menu` })),
+  { show: ['8'], keys: ['8'], what: 'Terrain menu (raise, lower, level, plant trees)' },
+  { show: ['X', 'Delete'], keys: ['x', 'delete'], what: 'Demolish' },
+  { show: ['Tab'], keys: ['tab'], what: "Turn a building's entrance before placing it; with Select roads, switch between picking stretches and dragging a box" },
+  { show: ['Enter'], keys: ['enter'], what: 'Finish the transit line you are drawing' },
+  { show: ['Backspace'], keys: ['backspace'], what: 'Take back the last stop of a new line, or the last stretch of road picked' },
+  { show: ['O'], keys: ['o'], what: 'Data overlays' },
+  { show: ['B'], keys: ['b'], what: 'Budget and statistics' },
+  { show: ['L'], keys: ['l'], what: 'Transit lines' },
+  { show: ['P'], keys: ['p'], what: 'Villagers directory' },
+  { show: ['K'], keys: ['k'], what: 'Research' },
+  { show: ['I'], keys: ['i'], what: 'Show or hide the Issues panel' },
+  { show: ['N'], keys: ['n'], what: 'Hide or show pop-ups' },
+  { show: ['M'], keys: ['m'], what: 'Multiplayer: host this town or join one' },
+  { show: ['H'], keys: ['h'], what: 'How to play' },
+  { show: ['Ctrl', 'S'], keys: ['ctrl+s'], what: 'Quick save to this browser' },
+  { show: ['Ctrl', 'Shift', 'S'], keys: ['ctrl+shift+s'], what: 'Download the save as a .json file' },
+  { show: ['Esc'], keys: ['escape'], what: 'Close the front window, then cancel the tool, then clear the selection' },
+];
+const keyCell = (e) => e.show.map(k).join(' ');
+
+// ------------------------------------------------------- the settings
+// Every setting by the label the game gives it (scripts/site-check.js
+// checks each label in the Settings window is here).
+export const SETTINGS = [
+  { group: 'Display', rows: [
+    ['Pixel-art look', 'On / off', 'The town drawn small with outlines and scaled up crisply. Off is the smooth look: antialiased, with a light haze in the far distance.'],
+    ['Pixel size', '1× Finest · 2× Classic · 3× Chunky · 4× Retro', 'How big each pixel of the art is on the screen (pixel-art look only).'],
+    ['Soft contact shadows', 'On / off', 'Ambient occlusion: a soft shade where walls meet the ground and in corners.'],
+    ['Tilt-shift', 'Off · Subtle · Strong', 'The model-village look (see below).'],
+    ['Sharp band', 'Narrow · Normal · Wide', 'How much of the middle stays sharp with tilt-shift on.'],
+  ] },
+  { group: 'Performance', rows: [
+    ['Presets', 'Battery saver · Best look', 'Battery saver sets every choice below to its lightest (and turns soft contact shadows and tilt-shift off); Best look puts them back as they were at first.'],
+    ['Frame rate', 'Screen · 60 · 30', 'As fast as the screen refreshes, or capped at 60 or 30 frames a second.'],
+    ['Resolution', '100% · 75% · 50%', "The share of the screen's resolution drawn (in pixel-art mode, chunkier pixels instead)."],
+    ['Shadows', `High · Medium · Low · Off`, `The sharpness of the shadow map (${SHADOW_SIZE.high}, ${SHADOW_SIZE.medium} or ${SHADOW_SIZE.low} texels across), or no shadows.`],
+    ['Smoke & dust', 'Full · Fewer · Off', 'Smoke, dust, sparks, fireworks, snow and rain.'],
+    ['Villagers shown', 'All · Half · Near view', 'Draw every villager, about half of them, or only those near the middle of the view. Those not drawn still live their lives.'],
+    ['Draw slowly while paused', 'On / off', 'Only a few frames a second while the game is paused and nothing moves.'],
+  ] },
+  { group: 'Sound', rows: [
+    ['Sound effects', 'On / off', 'Clicks, building, coins and the hiss of rain.'],
+    ['Music', 'On / off', 'The soundtrack (also the note button in the top bar).'],
+    ['Music volume', 'A slider', 'How loud the soundtrack plays.'],
+  ] },
+  { group: 'Pop-ups', rows: [
+    ['Coins over buildings as they earn', 'On / off', 'The little coins that rise from shops, works and homes.'],
+    ['Notices', 'On / off', 'The messages in the corner (a building finished, a family arrived…).'],
+    ['Tips when hovering', 'On / off', 'Hover tips over buildings and buttons.'],
+    ['Name tag over the selected villager', 'On / off', 'The label over a villager you follow.'],
+    ['Warnings over buildings', 'On / off', 'The badges over buildings with no power, water or workers.'],
+  ] },
+  { group: 'Game', rows: [
+    ['Autosave every in-game day', 'On / off', `Saves the town to this browser every day (and every ${CONFIG.AUTOSAVE_SECONDS} seconds, and when you leave the tab).`],
+  ] },
+  { group: 'Sandbox · this town only', rows: [
+    ['Unlimited money', 'On / off', 'Build anything without counting the cost.'],
+    ['Every building unlocked', 'On / off', 'No waiting for villagers or research.'],
+    ['Upgrades without their needs', 'On / off', 'Upgrade without the happiness, services or electricity a level asks for.'],
+    ['Instant building', 'On / off', 'No builders needed: buildings appear at once.'],
+  ] },
+  { group: 'Advanced', rows: [
+    ['Google OAuth client ID (for saving to Google Drive)', 'Text', 'Your own Client ID for Google Drive saves, kept in this browser only (see Saving).'],
+  ] },
+];
+
+// ------------------------------------------------------------------ pages
+export const PAGES = [
+  // ======================================================= start here
+  {
+    id: 'start', title: 'Getting started', icon: 'flag', group: 'start',
+    summary: 'Kinstead is a cozy isometric village builder that runs in your browser. Here is how a village begins.',
+    sections: () => [
+      { id: 'about', title: 'What Kinstead is', html: `
+        <p>You lay out a village in a green valley: streets, cottages, a market, a well. Families move in from the edge of the map, find work and school places, and go about their day. As the village grows you upgrade its buildings, research new ones, join neighbours into bigger buildings, and keep everyone housed, employed, supplied and happy, until the hamlet is a market town or a cathedral city.</p>
+        <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same.</p>
+        <p>Kinstead is free and runs in any modern browser with WebGL: there's nothing to install, and your towns are saved in your browser (or to a file, or Google Drive).</p>` },
+      { id: 'title', title: 'The title screen', html: `
+        <p>Behind the title card a little demo village goes about its evening. The buttons:</p>
+        ${list([
+          '<b>Continue</b> loads the town you saved last (it only shows when there is one).',
+          '<b>New village</b> starts a town: pick a name, a seed and a valley size, or a ready-made ' + pl('starters', 'starter town') + '.',
+          '<b>Load a save…</b> lists the towns saved in this browser, and loads a <code>.json</code> save file or one from Google Drive.',
+          '<b>Multiplayer…</b> hosts a town for friends or joins theirs with an invite code (' + pl('multiplayer', 'Multiplayer') + ').',
+          '<b>Merge villages…</b> joins two saved towns into one valley (' + pl('merging', 'Merging villages') + ').',
+        ])}
+        <p>The first time you visit, the game goes straight to the new-village window.</p>` },
+      { id: 'new', title: 'Starting a village', html: `
+        <p>In the new-village window you can name the town (or take a suggested name), type or roll a seed, and pick a valley size: <b>Small ${fact('sizes', 0)}×${fact('sizes', 0)}</b>, <b>Medium ${fact('sizes', 1)}×${fact('sizes', 1)}</b>, <b>Large ${fact('sizes', 2)}×${fact('sizes', 2)}</b> or <b>Huge ${fact('sizes', 3)}×${fact('sizes', 3)}</b> tiles. Every seed grows a different valley of rivers, lakes, hills, woods and rocky slopes.</p>
+        <p><b>Start from</b> chooses an empty valley or one of the ${pl('starters', 'starter towns')}. An empty valley comes with a road in from the edge of the map, a ${bl('townhall')}, a ${bl('well')}, a ${bl('market')} and two ${bl('house', 0, 'cottages')} with their founding families, and ${money(CONFIG.START_MONEY)} in the treasury.</p>
+        <p>Four ${pl('settings/sandbox', 'sandbox switches')} can be ticked for a new game: unlimited money, every building unlocked, upgrades without their needs, and instant building.</p>` },
+      { id: 'first', title: 'Your first days', html: `
+        <ol>
+          <li><b>Homes.</b> Build ${bl('house', 0, 'cottages')} along the road (Homes menu, ${k('2')}). Builders from the ${bl('builder')} walk out and put them up; then families move in from the edge of the map.</li>
+          <li><b>Work.</b> Give the grown-ups jobs: ${bl('market', 0, 'market stalls')}, ${bl('farm', 0, 'farms')}, ${bl('lumber', 0, 'woodcutters')}, ${bl('fishery', 0, 'fishing huts')}. The <b>RCI</b> bars in the top bar show whether homes, shops or industry are wanted most.</li>
+          <li><b>Services.</b> Wells give every home on the roads running water through the mains. Cover the homes with health care, schooling and safety (Services, ${k('5')}), and add gardens and greens (Parks, ${k('6')}). ${pl('coverage', 'Services and coverage')} explains reach.</li>
+          <li><b>Upgrades.</b> Happy, well-served homes can be upgraded: a Cottage becomes a Family House, then a grand ${bl('villa')} or a block of ${bl('flats', 0, 'Townhouse Flats')}. Select a building to see its upgrades and what they need.</li>
+          <li><b>Research.</b> Press ${k('K')} and pick a project: new buildings, upgrade levels, styles and abilities such as ${pl('joins', 'joining neighbours')}. The town hall, schools and chapels earn the points.</li>
+          <li><b>Power and water.</b> Bigger works and the grandest homes need ${pl('power-water', 'electricity and running water')}. A badge over a building shows what it lacks, and its panel says what to do.</li>
+          <li><b>Transport.</b> As the town spreads, link ${bl('coachstop', 0, 'coach stops')} into lines, and later lay ${pl('transport/rail', 'railway track')} between stations.</li>
+        </ol>
+        <p>Press ${k('H')} in the game at any time for a short guide.</p>` },
+      { id: 'titles', title: 'From hamlet to market town', html: `
+        <p>The town's title, under its name in the top bar, grows with its population:</p>
+        ${table(['Title', '#Villagers'], TITLES.map(t => [esc(t.name), t.pop ? `${fmt(t.pop)}+` : 'from the start']))}
+        <p>Each new title is celebrated with fireworks. Many buildings and upgrade levels also wait for a number of villagers: the building pages list them as "Unlocks at".</p>` },
+      { id: 'saving', title: 'Saving and loading', html: `
+        ${list([
+          `<b>Autosave.</b> The town is saved to this browser every in-game day (Settings → Game), every ${CONFIG.AUTOSAVE_SECONDS} seconds whatever the speed, and whenever you switch away from or close the tab. When a different town takes the autosave (say you start a new village), the last one is kept as <b>Previous town</b>.`,
+          `<b>Save slots.</b> ${k('Ctrl')} ${k('S')} saves at once; the 💾 button opens the Save window with every slot, each with a download button.`,
+          `<b>Files.</b> <b>Download save (.json)</b> at the top of the Save window, or ${k('Ctrl')} ${k('Shift')} ${k('S')}. Drop a <code>.json</code> save onto the game to load it.`,
+          '<b>Google Drive.</b> Saves go to a <b>Kinstead Saves</b> folder in your Drive, using the narrow <code>drive.file</code> permission (the game sees only files it made). It needs a Google OAuth Client ID, set up once: the README on GitHub explains the steps.',
+        ])}
+        <p>Saves are kept per website, not per page, so a town saved anywhere on this site can be continued from the home page's <b>Continue</b> button too.</p>` },
+    ],
+    see: ['controls', 'starters', 'construction'],
+  },
+  {
+    id: 'controls', title: 'Controls and keys', icon: 'keyboard', group: 'start',
+    summary: 'Mouse, touch and every keyboard shortcut.',
+    sections: () => [
+      { id: 'mouse', title: 'Mouse and touch', html: `
+        ${table(['Do this', 'To'], [
+          ['Left-click', 'Select a building, villager or road; place what you are holding'],
+          ['Left-drag (Select tool)', 'Pan'],
+          ['Right-drag or middle-drag', 'Pan, whatever tool you hold'],
+          ['Drag with a road, track, field or demolish tool', 'Lay a line of road or track, or sweep a box'],
+          ['Mouse wheel', 'Zoom, towards the pointer'],
+          ['Right-click', 'Drop the tool you are holding, or clear a road pick'],
+          ['Shift-click (Select roads)', 'Add another stretch of road to the pick'],
+          ['One finger (touch)', 'Tap to select or place; drag to pan'],
+          ['Two fingers (touch)', 'Pinch to zoom'],
+        ])}
+        <p>On a phone the windows open across the middle at full width, the building panel sits along the bottom and the toolbar scrolls sideways.</p>` },
+      { id: 'keys', title: 'Keyboard shortcuts', html: table(['Key', 'Does'], KEYS.map(e => [keyCell(e), e.what])) +
+        `<p>With the interface hidden (${k('V')}) only the camera and speed keys answer, and ${k('V')} or ${k('Esc')} brings it back. Shortcuts don't fire while you type in a box.</p>` },
+      { id: 'views', title: 'Turning the view and the 2D map', html: `
+        <p>${k('Q')} and ${k('E')} (or the turn buttons beside <b>2D</b> in the top bar) swing the camera a quarter turn around the ground at the middle of the screen, so you can see the town from all four sides. The sun stays where it is in the sky, so the shadows keep falling the same way and the far side of the town is the shaded side.</p>
+        <p>${k('T')} or the <b>2D</b> button swings the camera straight down for a grid-aligned map, which turns too. Zoom with the wheel or the <b>+</b>/<b>−</b> buttons.</p>` },
+      { id: 'hide', title: 'Hiding the interface', html: `
+        <p>The eye button in the top bar, or ${k('V')}, hides every panel, button and pop-up to leave just the town, for a picture or to take it in. The camera, zoom, turning and game speed still work, while clicks on the town do nothing. ${k('V')}, ${k('Esc')} or the faint <b>Show interface</b> button in the corner brings it all back.</p>` },
+      { id: 'windows', title: 'Windows, overlays and the Issues panel', html: `
+        <p>Drag a window by its title bar and keep several open at once; ${k('Esc')} closes the front one. Windows stay on screen when the browser shrinks or a phone turns.</p>
+        <p><b>Overlays</b> (${k('O')}) colour the map by happiness, water, health, education, safety, culture, power, scenery or pollution, or show the transit routes.</p>
+        <p>The <b>Issues</b> panel in the lower left (${k('I')}) lists the town's bottlenecks: homes out of reach of health care, schools or safety, school places short, power or water short, workplaces stopped or slowed for want of power, water or workers, sites waiting for builders, skilled jobs nobody can fill. Click an entry to jump to the buildings involved, one after another.</p>
+        <p>The <b>building guide</b> shows every level of a building and the paths it can take: hover a card in a build menu for a summary, pick it for the full guide, and press <b>All paths</b> (or <b>Paths</b> in a building's panel) for a tree of everything it can become.</p>` },
+    ],
+    see: ['start', 'settings'],
+  },
+
+  // ===================================================== running the town
+  {
+    id: 'economy', title: 'Money and the budget', icon: 'payments', group: 'town',
+    summary: 'Where the coins come from, where they go, and what things cost.',
+    sections: () => [
+      { id: 'income', title: 'Where money comes from', html: `
+        ${list([
+          `<b>Taxes</b> from every grown-up and pensioner, more from those in work and from grander homes (${pl('taxes', 'Taxes')}).`,
+          `<b>Commerce</b>: shops, taverns and offices earn their <i>earnings</i> (coins a worker a day) for every job that is filled, and markets, shops and pubs a little more on every visit. Powered businesses earn ${pct(fact('poweredIncome') - 1)} more.`,
+          '<b>Industry</b>: farms, woodcutters, fisheries, workshops and the rest earn per worker too, farms by what they grow and woodcutters by the trees around them.',
+          '<b>Fares</b> from villagers riding the coaches and trains.',
+        ])}
+        <p>A workplace earns in proportion to how well it works: a half-staffed shop earns half, and one short of power or water earns less (see ${pl('power-water/needs', 'What needs power or water')}).</p>` },
+      { id: 'spending', title: 'Where it goes', html: `
+        ${list([
+          '<b>Upkeep</b> of buildings: most services, utilities and transit stops cost coins every day (each building page lists its upkeep).',
+          `<b>Roads</b>: ${and(ROAD_LEVELS.filter(Boolean).map(r => `${esc(r.name.toLowerCase())} ${money(r.upkeep)}`))} a tile a day, plus any ${pl('roads/dress', 'street dressing')}, and railway track.`,
+          `<b>Transit</b>: every coach or train on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train).`,
+          '<b>Building work</b>: building, upgrading, joining, moving and restyling are paid for when you order them.',
+        ])}` },
+      { id: 'costs', title: 'What things cost', html: table(['Thing', '#Price'], [
+        ...ROAD_LEVELS.filter(Boolean).map(r => [`${esc(r.name)} (a tile)${r.unlock ? ` · from ${r.unlock} villagers` : ''}`, money(r.cost)]),
+        [`A bridge tile`, `× ${BRIDGE_MULT}`],
+        ['Railway track (a tile)', money(RAIL_COST)],
+        ['Planting a tree', money(TREE_COST)],
+        ['Clearing a tree', money(CLEAR_COST)],
+        ['Raising, lowering or levelling a tile', money(TERRAFORM_COST)],
+        ['A neighbouring plot of land', money(CONFIG.PLOT_PRICE)],
+        ['A field of farmland', money(CONFIG.FIELD_COST)],
+        ['Burying the power lines (a road tile)', money(BURY_COST)],
+        ['A coach / a train', `${money(TRANSIT.coach.vehicleCost)} / ${money(TRANSIT.rail.vehicleCost)}`],
+        ['Joining two buildings', `${money(fact('joinCost', 0))} + ${pct(fact('joinCost', 1))} of the new level`],
+        ['Moving a building', `${money(fact('moveCost', 0))} + ${pct(fact('moveCost', 1))} of its worth`],
+        ['Restyling', `${pct(fact('restyle', 0))} of its worth (at least ${money(fact('restyle', 1))})`],
+      ]) + '<p>A building is "worth" what its levels cost to build, together (and more on a bigger plot).</p>' },
+      { id: 'refunds', title: 'Money back', html: `
+        ${list([
+          `Demolishing a building pays back ${pct(fact('demolishRefund'))} of what it is worth.`,
+          `Taking up a road, or downgrading it, pays back ${pct(ROAD_SALVAGE)} of the difference in price; the same goes for a street dressing.`,
+          `Taking a field out pays back ${pct(0.25)} of its price.`,
+        ])}` },
+      { id: 'demand', title: 'Demand: the RCI bars', html: `
+        <p>The three bars at the end of the top bar show what the town wants most: <b style="color:#00a000">R</b>esidential (homes: more jobs than free homes, and a happy town), <b style="color:#0050d0">C</b>ommercial (shops and pubs for a growing population) and <b style="color:#b08000">I</b>ndustrial (work for the grown-ups). A full bar means build more of that kind.</p>` },
+      { id: 'budget', title: 'The budget window', html: `
+        <p>Press ${k('B')}, or click the coins in the top bar, for the budget: today's income by source (taxes, commerce, industry) and spending (services, buildings, roads, transit), charts of the town's history, and the tax slider.</p>` },
+    ],
+    see: ['taxes', 'happiness', 'construction'],
+  },
+  {
+    id: 'taxes', title: 'Taxes', icon: 'account_balance', group: 'town',
+    summary: 'The tax rate, who pays it, and what it does to happiness.',
+    sections: () => {
+      const homeRows = [];
+      for (const t of types()) {
+        const d = BUILDINGS[t];
+        if (d.cat !== 'residential' && !d.levels.some(L => L.housing)) continue;
+        d.levels.forEach((L, i) => { if (L.housing) homeRows.push([bl(t, i), d.cat === 'residential' ? esc(d.name) : `${esc(d.name)} (with homes)`, `× ${fmt(L.tax ?? 1 + 0.25 * i)}`]); });
+      }
+      const th = BUILDINGS.townhall.levels;
+      const effect = (rate) => (rate > fact('happyTax', 0) ? -(rate - fact('happyTax', 0)) * fact('happyTax', 1) : (fact('happyTax', 0) - rate) * fact('happyTax', 2));
+      return [
+        { id: 'rate', title: 'The tax rate', html: `
+          <p>The tax rate is set in the budget window (${k('B')}), from ${fact('taxRange', 0)}% to ${fact('taxRange', 1)}%. A new town starts at ${fact('taxDefault')}%. Higher taxes bring in more but make every home less happy; lower taxes cheer them up:</p>
+          ${table(['Rate', '#Happiness of every home'], [0, 5, 10, 12, 15, 20].filter(r => r <= fact('taxRange', 1)).map(r => [`${r}%`, `${effect(r) > 0 ? '+' : ''}${fmt(effect(r))}`]))}` },
+        { id: 'who', title: 'Who pays', html: `
+          <p>Each day, at the standard ${fact('happyTax', 0)}% rate:</p>
+          ${list([
+            `a grown-up in work pays ${money(fact('taxWorker', 0))}, times their home's tax factor (below);`,
+            `a grown-up without work pays ${money(fact('taxWorker', 1))};`,
+            `a pensioner pays ${money(fact('taxElder'))};`,
+            'children pay nothing.',
+          ])}
+          <p>All of it scales with the rate (at 20% twice as much) and with the town hall's bonus. So a town of grand homes full of working families pays far more than one of crowded flats.</p>` },
+        { id: 'homes', title: 'Tax factors of homes', html: table(['Home', 'Kind', '#Tax factor'], homeRows) },
+        { id: 'townhall', title: 'The town hall', html: `
+          <p>Each level of the ${bl('townhall', 0, 'town hall')} raises taxes across the whole town:</p>
+          ${table(['Level', '#Town tax', '#Research a day'], th.map((L, i) => [bl('townhall', i), L.taxBonus ? `+${pct(L.taxBonus)}` : '—', `${RESEARCH_SOURCES.townhall[Math.min(i, RESEARCH_SOURCES.townhall.length - 1)]}`]))}
+          <p>There is only one town hall in a town.</p>` },
+      ];
+    },
+    see: ['economy', 'happiness'],
+  },
+  {
+    id: 'happiness', title: 'Happiness', icon: 'sentiment_satisfied', group: 'town',
+    summary: 'What makes a home happy, and why it matters: newcomers, leavers and upgrades.',
+    sections: () => [
+      { id: 'factors', title: 'What feeds it', html: `
+        <p>Every home has a happiness from 0 to 100, the sum of these, and the town's figure in the top bar is the average over every villager:</p>
+        ${table(['Factor', '#Points', 'How to get it'], [
+          ['Everyday life', `${fact('happyBase')}`, 'Every home starts here'],
+          ['Water', `+${fact('happyWater')}`, 'Running water: road-connected to a well, pump or water tower, with enough to go round'],
+          ['Health care', `+${fact('happyHealth')}`, `A clinic or hospital in reach (${pl('coverage', 'coverage')})`],
+          ['Schooling', `+${fact('happyEducation')}`, 'A school in reach'],
+          ['Safety', `+${fact('happySafety')}`, 'A watch post or fire station in reach'],
+          ['Culture', `+${fact('happyCulture')}`, 'A chapel, hall or theatre in reach'],
+          ['Electricity', `+${fact('happyPower')}`, 'The home is powered'],
+          ['Scenery', `up to +${fact('happyAppeal', 0)}`, 'Trees, water, gardens and parks, grand homes, dressed streets and buried power lines nearby'],
+          ['Shops nearby', `+${fact('happyShops', 1)}`, `A shop, café or tavern within ${fact('happyShops', 0)} tiles`],
+          ['Play', `+${fact('happyPlay')}`, 'For homes with children: a play area or playing field whose reach takes the home in'],
+          ['Transport', `+${fact('happyTransit', 1)}`, `A coach stop or station within ${fact('happyTransit', 0)} tiles`],
+          ['Garden deal', `+${fact('happyLand', 0)} / +${fact('happyLand', 1)}`, 'A home that bought a garden strip from a neighbour (or sold one)'],
+          ['Taxes', `${fmt(-(fact('taxRange', 1) - fact('happyTax', 0)) * fact('happyTax', 1))} to +${fmt(fact('happyTax', 0) * fact('happyTax', 2))}`, `Below ${fact('happyTax', 0)}% cheers them, above it costs ${fact('happyTax', 1)} a point (${pl('taxes', 'Taxes')})`],
+          ['Smoke', `down to −${fact('happySmoke')}`, 'Works too close: the building pages list how far each one smokes'],
+          ['Crowding', `−${fact('happyCrowded')}`, 'More people than rooms'],
+          ['Work', `down to −${fact('happyJobs')}`, 'Grown-ups in the home looking for work (all of them: the full amount)'],
+          ['Road', `−${fact('happyRoad')}`, "Not connected to the town's roads"],
+        ])}
+        <p>The best a home can do is ${fact('happyBase') + fact('happyWater') + fact('happyHealth') + fact('happyEducation') + fact('happySafety') + fact('happyCulture') + fact('happyPower') + fact('happyAppeal', 0) + fact('happyShops', 1) + fact('happyPlay') + fact('happyTransit', 1) + fact('happyLand', 0) + fact('happyTax', 0) * fact('happyTax', 2)} before the cap of 100.</p>` },
+      { id: 'see', title: 'Seeing what is missing', html: `
+        <p>Click the happiness figure in the top bar for the whole town: how many points each factor adds now, how many the average villager could gain, how many homes miss out, and a button that takes you to the fix. A home's panel lists its own gaps first, with what to do, and each villager's page shows their mood and what would make them happier. The Happiness overlay (${k('O')}) colours the map.</p>` },
+      { id: 'arrive', title: 'Newcomers and leavers', html: `
+        <p>New households arrive from the edge of the map each day and take up empty homes, but only homes with a happiness of at least ${fact('arriveHappy')}. More come when the town is happy and has free jobs (at most ${CONFIG.ARRIVE_MAX} a day). A home below ${fact('leaveHappy', 0)} is in trouble: each day there is a ${pct(fact('leaveHappy', 1))} chance that half its people pack up and leave.</p>` },
+      { id: 'mood', title: "A villager's mood", html: `
+        <p>Each villager's mood is their home's happiness, ${fact('moodWork', 0)} points more for a grown-up in work and ${fact('moodWork', 1)} less for one looking for work (students are neither).</p>` },
+      { id: 'upgrades', title: 'Happiness and upgrades', html: `
+        <p>Most home upgrades need the home itself to be happy enough, as well as services in reach: a Family House needs ${BUILDINGS.house.levels[1].req.happiness}% and water, a ${BUILDINGS.villa.levels[0].name} ${BUILDINGS.villa.levels[0].req.happiness}%, water and health care. The building pages list every level's needs.</p>` },
+    ],
+    see: ['coverage', 'taxes', 'people'],
+  },
+  {
+    id: 'coverage', title: 'Services and coverage', icon: 'medical_services', group: 'town',
+    summary: 'How clinics, schools, watch posts and chapels reach the homes around them.',
+    sections: () => {
+      const svc = Object.entries(SERVICES).filter(([s]) => s !== 'water' && s !== 'power');
+      return [
+        { id: 'reach', title: 'How reach works', html: `
+          <p>A service building covers every tile within its <b>reach</b> (its radius in tiles, from the middle of its plot), as long as it stands on the town's roads. A home inside the reach has that service, for its happiness and for upgrades. The overlays (${k('O')}) show each service's reach on the map.</p>
+          <p>Reach depends on staff: a service with every job filled reaches its full radius, one half staffed reaches ${pct(fact('reachStaff') + (1 - fact('reachStaff')) / 2)} of it, and one with nobody in it reaches nothing. Water and electricity are different: they come through the mains and the wires (${pl('power-water', 'Power and water')}).</p>` },
+        { id: 'kinds', title: 'The services', html: table(['Service', 'Buildings that give it'], svc.map(([s, S]) => [`${S.icon} ${esc(S.name)}`, providers(s).map(t => bl(t, 'type')).join(', ')])) },
+        { id: 'schools', title: 'School places', html: `
+          <p>A school has a fixed number of <b>places</b> (its seats), and only as many as its teachers can manage. Children go to the nearest school with room that teaches their stage. ${pl('people/school', 'Schooling')} explains the stages.</p>` },
+        { id: 'crowds', title: 'Crowds and visitors', html: `
+          <p>Every place villagers visit holds only so many at once: shops, pubs and theatres, chapels, clinics (the old see the doctor most often) and parks. A full place sends people on to the nearest one of the same kind with room, or they stay home. The building pages give each one's "Visitors at once"; hover over a building or open it to see its visitors now.</p>` },
+        { id: 'working', title: 'Staff, power and water', html: `
+          <p>Services, schools and utilities only work as well as they are staffed: a clinic with nobody in it cares for nobody. Some also need power or running water past their first levels. ${pl('power-water/needs', 'What needs power or water')} lists every one.</p>` },
+      ];
+    },
+    see: ['services', 'happiness', 'power-water'],
+  },
+  {
+    id: 'power-water', title: 'Power and water', icon: 'bolt', group: 'town',
+    summary: 'Wells and pumps, generators and wires, and what stops without them.',
+    sections: () => {
+      const util = (key) => types().flatMap(t => BUILDINGS[t].levels.map((L, i) => (L[key] ? [bl(t, i), `${fmt(L[key])}${key === 'kw' ? ' kW' : ''}`, L.jobs ? `${L.jobs}` : '—', money(L.cost), unlockOf(t, i) ? `${unlockOf(t, i)}` : '—', techForLevel(t, i) ? tl(techForLevel(t, i)) : '—'] : null)).filter(Boolean));
+      const needRows = [];
+      for (const [t, n] of Object.entries(NEEDS)) {
+        if (!BUILDINGS[t]) continue;
+        for (const kind of ['power', 'water']) {
+          const x = n[kind];
+          if (!x) continue;
+          needRows.push([bl(t, x.from), kind === 'power' ? (x.use === 'machines' ? 'Power (machines)' : 'Power (light)') : 'Running water', esc(x.what), x.without ? `${pct(x.without)}` : '<b>stops</b>']);
+        }
+      }
+      return [
+        { id: 'water', title: 'Water', html: `
+          <p>Wells, pumps and water towers draw water for a number of people each (Utilities menu, ${k('U')}). The water flows through mains under the streets to <b>every road-connected building</b>, so it doesn't matter where on the roads a well stands. The town needs as much as it has villagers; when demand outstrips supply, some homes go dry. A well or pump short of hands draws less (with nobody there, ${pct(fact('waterUnstaffed'))}).</p>
+          ${table(['Building', '#Water for', '#Jobs', '#Cost', '#Unlocks at', 'Research'], util('supply'))}
+          <p>A home without running water can't upgrade, expand or grow its family, and loses ${fact('happyWater')} happiness.</p>` },
+        { id: 'power', title: 'Electricity', html: `
+          <p>Water wheels (on a river bank), wind generators and coal power stations make electricity, which runs along the streets on poles and wires to every road-connected building. Each building takes ${fact('powerDemand', 0)} kW, plus ${fact('powerDemand', 1)} kW for every resident it houses and ${fact('powerDemand', 2)} kW for every job. When the town is short, some buildings go dark. A generator short of hands makes less.</p>
+          ${table(['Building', '#Power', '#Jobs', '#Cost', '#Unlocks at', 'Research'], util('kw'))}
+          <p>Powered homes are happier (+${fact('happyPower')}) and their windows light properly instead of by candle; powered businesses earn ${pct(fact('poweredIncome') - 1)} more; street lamps light up at night; and the grandest upgrades need electricity. ${tl('electricity')} unlocks the first generators.</p>` },
+        { id: 'needs', title: 'What needs power or water', html: `
+          <p>Early buildings (cottages, wells, farms, woodcutters, builders) need none of this. From the level shown, these need power or water to work fully; without it they do only the share given (and stopped works go dark, their chimneys cold):</p>
+          ${table(['From', 'Needs', 'For', '#Without it'], needRows)}
+          <p>Small badges over a building show everything it is missing (red for what stops it, amber for what holds it back), the building panel says what to do, and the Issues panel groups them. The town hall and railway stations work without staff.</p>` },
+        { id: 'cables', title: 'Underground cables', html: `
+          <p>With ${tl('cables')} researched, the power lines can be buried, one street at a time from a road's panel (${money(BURY_COST)} a tile) or the whole town at once from a generator's. The poles and wires come down, and the street is a little nicer to live on.</p>` },
+      ];
+    },
+    see: ['utilities', 'coverage'],
+  },
+  {
+    id: 'transport', title: 'Transit', icon: 'directions_bus', group: 'town',
+    summary: 'Horse-drawn coach lines and steam railways.',
+    sections: () => {
+      const T = (m) => TRANSIT[m];
+      const row = (m) => [esc(T(m).name), money(T(m).vehicleCost), money(T(m).upkeep), money(T(m).fare), `${T(m).capacity}`, `${fmt(T(m).speed)}`, bl(T(m).stopType)];
+      return [
+        { id: 'modes', title: 'Coaches and trains', html: table(['Mode', '#Each vehicle', '#Upkeep a day', '#Fare', '#Seats', '#Speed (tiles/s)', 'Stops'], [row('coach'), row('rail')]) +
+          `<p>Villagers on long trips walk to a stop, wait there, ride, and pay the fare. A home within ${fact('happyTransit', 0)} tiles of a stop is happier (+${fact('happyTransit', 1)}).</p>` },
+        { id: 'coach', title: 'Coach lines', html: `
+          <p>Build ${bl('coachstop', 0, 'coach stops')} beside the road (Transit menu, ${k('7')}), then make a line: pick the stops in order, press ${k('Enter')} to finish (${k('Backspace')} takes back the last stop). The coaches loop between the stops along the roads. The lines window (${k('L')}) lists every line, with its riders, vehicles and colour.</p>` },
+        { id: 'rail', title: 'Railways', html: `
+          <p>${tl('railways')} unlocks track (${money(RAIL_COST)} a tile, with curves) and ${bl('station', 0, 'stations')}, which need a road on one side and track on another. Trains never reverse, so a rail line needs a <b>loop</b> of track through its stations: the trains drive forward around it, ease in and out of the stations and stop centred on each platform. A loop takes up to three trains; a dead-end line is refused.</p>` },
+      ];
+    },
+    see: ['transit', 'roads'],
+  },
+  {
+    id: 'roads', title: 'Roads and streets', icon: 'add_road', group: 'town',
+    summary: 'Paths, cobbles and paved streets; bridges; picking whole stretches; and dressing a street with trees, hedges or lamps.',
+    sections: () => [
+      { id: 'kinds', title: 'Kinds of road', html: table(['Road', '#Cost a tile', '#Upkeep a day', '#Unlocks at'], ROAD_LEVELS.filter(Boolean).map(r => [esc(r.name), money(r.cost), money(r.upkeep), r.unlock ? `${r.unlock} villagers` : 'from the start'])) +
+        `<p>Drag with the road tool (${k('R')}) to lay a line; laying a better road over an old one upgrades it. Over water a road becomes a wooden bridge (${BRIDGE_MULT}× the price) with sloped approaches. Every building needs a road along its front, and the road out of the valley can't be taken up.</p>
+        <p>Where a road turns a corner it sweeps round in a curve, and the inside corners of junctions are filled with a matching curve; kerbs, door paths and power poles follow along, and villagers cut the corner along it. Buildings come forward into the verge of the street in front of them.</p>` },
+      { id: 'select', title: 'Whole stretches at once', html: `
+        <p><b>Select roads</b> in the Roads menu (or <b>Select stretch</b> in a road's panel) picks the run of road between two junctions with a click, more runs with Shift-click, or every road in a dragged box (${k('Tab')} switches). The panel shows what upgrading every tile one level, downgrading it or taking it all up costs or pays back, what can't change and why, and who would be cut off: buildings left without a road, coach lines without a route, buildings that step back from the street. Anything cut off takes a second click. ${k('Backspace')} steps back through your picks; right-click clears them.</p>` },
+      { id: 'dress', title: 'Dressing a street', html: `
+        <p>A picked stretch can be dressed. Each has a price per tile and a little upkeep, and makes the homes and shops beside it nicer to live by (scenery):</p>
+        ${table(['Dressing', '#Cost a tile', '#Upkeep', '#Scenery', 'Needs'], DRESSINGS.filter(Boolean).map(d => [`<b>${esc(d.name)}</b><br><span class="muted">${esc(d.desc)}</span>`, money(d.cost), money(d.upkeep), `+${fmt(d.appeal)}`, [d.unlock ? `${d.unlock} villagers` : '', d.minLevel ? esc(ROAD_LEVELS[d.minLevel].name) : ''].filter(Boolean).join(', ') || '—']))}
+        <p>Trees and hedges stand on the verges: they leave gaps at junctions, bends, driveways, lamps and poles, and buildings that stood forward into the street step back behind them. Lamps are lit at night only as far as the town has power. Swapping or removing a dressing, or taking up its road, pays back ${pct(ROAD_SALVAGE)} of its price.</p>` },
+      { id: 'land', title: 'Shaping the land', html: `
+        <p>The Terrain menu (${k('8')}) raises, lowers and levels the ground (${money(TERRAFORM_COST)} a tile) and plants trees (${money(TREE_COST)} each). Building over trees clears them for ${money(CLEAR_COST)} a tree. On a slope a building is let into the hill, with a stone lower floor where the ground falls away, so its door stays at street level.</p>` },
+    ],
+    see: ['economy', 'transport'],
+  },
+  {
+    id: 'research', title: 'Research tree', icon: 'science', group: 'town', generated: 'research',
+    summary: 'Every research project, what it needs and what it unlocks.',
+  },
+  {
+    id: 'seasons', title: 'Time, seasons and weather', icon: 'partly_cloudy_day', group: 'town',
+    summary: 'Days, nights, the four seasons, rain and snow, and the soundtrack.',
+    sections: () => [
+      { id: 'day', title: 'Days and nights', html: `
+        <p>A day lasts ${minutes(CONFIG.DAY_SECONDS)} at normal speed. The sun rises and sets, windows light up in the evening, street lamps come on once the town has power, villagers carry lanterns home and fireflies come out in summer.</p>
+        <p>Pause with ${k('Space')}, or run at ${speedsText()} (${k('[')} and ${k(']')} step through them). The game plays on in a background tab in bigger, undrawn steps.</p>` },
+      { id: 'seasons', title: 'Seasons', html: `
+        <p>Each season lasts ${CONFIG.DAYS_PER_SEASON} days, ${and(SEASONS.map(s => `${s.icon} ${esc(s.name.toLowerCase())}`))}, and a villager's year passes every two days. The seasons turn gradually: each holds for the first half of its days, then shades into the next, the grass changing colour, the trees turning one by one, the wildflowers coming and going and the crops ripening or going back to bare earth. Snow settles over the first two days of winter and melts over the last day and a half.</p>` },
+      { id: 'weather', title: 'Weather', html: `
+        <p>Most days are fair, but now and then clouds roll in for a few hours and the heaviest spells bring rain (snow in winter), with a soft hiss of rain. In winter snow lies on the roofs as well as the fields, and a fall leaves fresh snow on the roofs and a trodden layer on the streets that melts away over the next few hours. The weather follows the town's seed and clock, so everyone in a multiplayer town sees the same sky.</p>` },
+      { id: 'music', title: 'Music and sound', html: `
+        <p>A gentle folk soundtrack is made up as it plays: a lute picking out chords, a flute or bells on top and a warm pad underneath. It slows into a minor key at night and plays quieter in the rain. It is synthesised in the browser, so there are no music files. Turn it off with the note button in the top bar, or set its volume in ${pl('settings/sound', 'Settings')}.</p>` },
+    ],
+    see: ['farms', 'settings'],
+  },
+
+  // ================================================================ buildings
+  ...CATEGORIES.map(c => ({
+    id: CAT_PAGE[c.id], title: c.name, icon: { residential: 'cottage', commercial: 'storefront', industry: 'factory', services: 'local_hospital', utilities: 'bolt', parks: 'park', transit: 'train' }[c.id],
+    group: 'buildings', generated: 'catalog', cat: c.id,
+    summary: {
+      residential: 'Cottages, family houses, grand homes and flats, terraces and the 2×2 estates.',
+      commercial: 'Markets, the high street of shops for every trade, pubs, offices, and the buildings joined from them.',
+      industry: 'Farms, woodcutters, fisheries, workshops and builders, and the mills and works they grow into.',
+      services: 'Schools, clinics, watch posts, chapels and the town hall, and the colleges, hospitals and cathedral they lead to.',
+      utilities: 'Wells, pumps and water towers; water wheels, wind generators and power stations.',
+      parks: 'Gardens, greens, squares and statues, places to play and games lawns.',
+      transit: 'Coach stops and railway stations.',
+    }[c.id],
+  })),
+  {
+    id: 'construction', title: 'Building and upgrading', icon: 'construction', group: 'buildings',
+    summary: 'Placing buildings, the builders, upgrades, demolishing and moving.',
+    sections: () => [
+      { id: 'place', title: 'Placing a building', html: `
+        <p>Pick a building from a menu in the toolbar and click a plot beside a road; ${k('Tab')} turns its entrance first. A green ghost means it fits. Most buildings take one tile; double-plot and 2×2 buildings come from ${pl('joins', 'joins')}, ${pl('plots', 'grown plots')} and ${pl('estates', 'estates')}. Some need water beside them (fisheries, pumps, water wheels), track (stations) or trees around them (woodcutters earn more in the woods), and a town has only one town hall.</p>` },
+      { id: 'builders', title: 'Builders and building sites', html: `
+        <p>Nothing appears at once. Builders from the ${bl('builder')} walk to each site and work round the scaffolding, and a building goes up in stages: a pegged-out plot and materials, foundations, walls rising, roof. It only progresses while someone is working on it. Hired hands from the village start every site straight away and keep at it until the town's builders arrive; with no builders in town, they do all of it. Bigger buildings take many builder-hours, which the building pages list.</p>
+        <p>Tick <b>Priority</b> on a site's panel to send the builders there first; a flag marks it until it's finished. The ${bl('contractor', 0)} builds faster with more builders. The <b>Instant building</b> sandbox switch skips the builders.</p>` },
+      { id: 'upgrade', title: 'Upgrading', html: `
+        <p>Select a building to see its upgrades. Each option shows what changes (homes, jobs, earnings, reach, upkeep…) and what it needs: villagers, research, happiness, services in reach, electricity, and the money. Homes and shops can pick a ${pl('styles', 'style')} as they upgrade, and <b>Preview in town</b> shows it in place before you build. Some buildings branch: a Family House becomes a grand ${bl('villa')} or ${bl('flats', 0, 'flats')}, a tavern can turn into a ${bl('musichall')}, a farm into an ${bl('orchard')}.</p>` },
+      { id: 'demolish', title: 'Demolishing', html: `
+        <p>The bulldozer (${k('X')}) sends a crew to pull a building down over time; the people inside move out first. It pays back ${pct(fact('demolishRefund'))} of what the building was worth. Drag a box to clear trees and roads too.</p>` },
+      { id: 'move', title: 'Moving', html: `
+        <p>With ${tl('relocation')} researched, <b>Move</b> takes any building somewhere else for ${money(fact('moveCost', 0))} plus ${pct(fact('moveCost', 1))} of its worth: builders take it down, a cart hauls the materials, and it goes back up on the new plot with its people.</p>` },
+    ],
+    see: ['joins', 'plots', 'styles'],
+  },
+
+  // =================================================================== growing
+  {
+    id: 'joins', title: 'Joining buildings', icon: 'join_inner', group: 'grow',
+    summary: 'Two neighbouring buildings knocked into one on a double plot.',
+    sections: () => {
+      const rows = MERGES.map(m => [bl(m.to), or(m.a.map(t => bl(t))), or(m.b.map(t => bl(t))), techForLevel(m.to, 0) ? tl(techForLevel(m.to, 0)) : '—']);
+      return [
+        { id: 'how', title: 'How to join', html: `
+          <p>Once ${tl('joining')} is researched, select a building next to another: if the pair makes something, the panel offers <b>Join</b>. The two become one building on a double plot, built by the builders like any other job, for ${money(fact('joinCost', 0))} plus ${pct(fact('joinCost', 1))} of the new building's level. Either order works.</p>
+          <p>A joined building takes the higher of the two levels, but never one the town hasn't researched or grown into yet, and the join button warns when the new building has room for fewer people than live in the two. The join keeps the look of the leading building: a shophouse is built in its shop's trade and style, a villa keeps its grand look when it takes in a cottage.</p>` },
+        { id: 'all', title: 'Every join', html: table(['Makes', 'From', 'Joined with', 'Research'], rows) +
+          `<p>A farm joined with a ${bl('house', 0, 'cottage or family house')} beside it becomes a ${bl(FARM_JOIN.to)}: a farmhouse goes up in the yard and the family moves in, and the farm keeps its level, fields and produce.</p>` },
+        { id: 'grown', title: 'Without a neighbour', html: `
+          <p>Many of these can also be had without a neighbour: a building on a ${pl('plots', 'grown double plot')} can be rebuilt as them.</p>` },
+      ];
+    },
+    see: ['plots', 'estates', 'commerce'],
+  },
+  {
+    id: 'plots', title: 'Plots and extending', icon: 'open_in_full', group: 'grow',
+    summary: 'Taking the land next door, then building across the bigger plot.',
+    sections: () => [
+      { id: 'land', title: 'Taking land', html: `
+        <p>With ${tl('surveying')} researched, a building's panel can take the land beside or behind it. That can be an empty plot (${money(CONFIG.PLOT_PRICE)} of land, plus clearing any trees), a strip of a cottage's garden, or a small neighbour bought out at what its building is worth and demolished (it asks twice, and shows the plot it would take). Taking land is instant, and the building stays exactly where it stood, with the new land as its garden. Land is only offered where the bigger plot opens up something bigger to build.</p>
+        <p>Big homes can also buy a strip of a neighbouring cottage's garden: their owners pay the cottage's owners, both plots change size together, and both homes are a little happier for the deal.</p>` },
+      { id: 'build', title: 'Building across the bigger plot', html: `
+        <p>Then, under <b>Upgrade</b>, choose what to build across the bigger plot: one of the bigger buildings it opens up, or <b>Extend</b> the building as it is to hold 50% more, for what that extra half is worth. A home, shop or service is built on to, the house carrying on along the same front, or a back wing a storey lower behind it; works get a work shed and yard, utilities a tank or transformer house, parks more garden.</p>
+        ${table(['Building', 'On a double plot can become'], Object.entries(LARGE).map(([t, to]) => [bl(t, 'type'), to.map(x => bl(x)).join(', ')]))}
+        <p>The later stages of schooling need a double plot too: a middle school must grow before it can become a ${bl('highschool')}.</p>` },
+    ],
+    see: ['estates', 'joins'],
+  },
+  {
+    id: 'estates', title: '2×2 estates', icon: 'grid_view', group: 'grow',
+    summary: 'Double plots grown onto the two plots beside them, and rebuilt as estates.',
+    sections: () => [
+      { id: 'how', title: 'Growing an estate', html: `
+        <p>With ${tl('bigplots')} researched, a double-plot building can take the two plots beside it (${money(2 * CONFIG.PLOT_PRICE)} of land) for a 2×2 estate, and then be rebuilt as its estate counterpart at the level it had reached, or extended. Each estate has its own model over the whole plot, and each is a step up from its double-plot building, priced in line with the rest. Estates don't grow any further.</p>` },
+      { id: 'all', title: 'Every estate', html: table(['Double-plot building', 'Grown to 2×2 becomes', 'Levels'], Object.entries(ESTATE).flatMap(([from, to]) => to.map(t => [bl(from), bl(t), BUILDINGS[t].levels.map(L => esc(L.name)).join(' › ')]))) +
+        `<p>${ESTATE_TYPES.length} estates in all. The building pages show each one's levels, and the research tree lists them under ${tl('bigplots')}.</p>` },
+    ],
+    see: ['plots', 'joins'],
+  },
+  {
+    id: 'styles', title: 'Styles and restyling', icon: 'palette', group: 'grow',
+    summary: 'Timber frame, limewash, painted, brick, stone or clapboard, chosen as a home or shop is upgraded or restyled.',
+    sections: () => {
+      const STY = [
+        ['timber', 'Timber frame', 'Steep roofs, a jettied upper floor and a central stack.'],
+        ['plaster', 'Limewash', 'Thatch or half-hipped roofs, a chimney up the outside wall and a deep front garden.'],
+        ['painted', 'Painted', 'A symmetrical Georgian front with a hipped roof, a centred door and a chimney at each end.'],
+        ['brick', 'Brick', 'Gables, bay windows, round-topped windows and paired stacks.'],
+        ['stone', 'Stone', 'Low slate or saltbox roofs, deep-set round-topped windows and an outside stack.'],
+        ['clapboard', 'Clapboard', 'A saltbox roof, dormers, shutters and a deep porch.'],
+      ];
+      return [
+        { id: 'styles', title: 'The six styles', html: `
+          <p>Pick a <b>style</b> for any home or shop upgrade. Each builds differently, not just in different colours. A style needs its research first:</p>
+          <div class="style-grid">${STY.map(([id, n, d]) => `<figure>${pic('house', 1, { variant: 4242, look: id, alt: `A family house in the ${n.toLowerCase()} style` })}<figcaption><b>${esc(n)}</b>${esc(d)} <span class="muted">Research: ${STYLE_TECH[id] ? tl(STYLE_TECH[id]) : '—'}</span></figcaption></figure>`).join('')}</div>
+          <p>Tick <b>Preview in town</b> to see the style in place before building.</p>` },
+        { id: 'restyle', title: 'Restyling', html: `
+          <p>A home or shop can change style without being upgraded: its panel's <b>Restyle</b> section lists every style you have researched, and builders rebuild its fronts and roof in the one you pick, for ${pct(fact('restyle', 0))} of what the building is worth (at least ${money(fact('restyle', 1))}). Changing style during an upgrade adds the same ${pct(fact('restyle', 0))} to the upgrade's price.</p>` },
+      ];
+    },
+    see: ['construction', 'homes'],
+  },
+  {
+    id: 'farms', title: 'Farms and fields', icon: 'agriculture', group: 'grow',
+    summary: 'Ploughing fields, choosing what a farm grows, orchards and homesteads.',
+    sections: () => {
+      const farm = BUILDINGS.farm;
+      return [
+        { id: 'fields', title: 'Fields', html: `
+          <p>A ${bl('farm')}'s barn, cart shed and yard stand at the front of its plot by the road, with its home field behind. Pick <b>Add fields</b> in its panel and drag a box over open land to plough <b>farmland</b> beyond its plot. Fields go behind and beside the farm (never between it and the road), must touch it or its other fields, and cost ${money(CONFIG.FIELD_COST)} each (plus clearing any trees). Each field gives work to about ${CONFIG.FIELD_JOBS} more farmhands.</p>
+          ${table(['Farm level', '#Fields it can work'], farm.levels.map((L, i) => [bl('farm', i), `${CONFIG.FIELD_MAX[Math.min(i, CONFIG.FIELD_MAX.length - 1)]}`]))}
+          <p>The fields are one farmland with the farm's own: the furrows run on from one to the next, and a single post-and-rail fence goes round the outside. Fields change with the seasons (green shoots, golden wheat, stubble, snow) and block building and roads. <b>Take fields out</b> (or the bulldozer) gives a quarter of the price back, and a farm that is demolished or moved loses them.</p>` },
+        { id: 'produce', title: 'What a farm grows', html: `
+          <p>A farm chooses its <b>produce</b> in its panel. Crops need hands; livestock needs far fewer but earns much more per worker:</p>
+          ${table(['Produce', 'Kind', '#Hands', '#Earnings per hand', 'About it'], Object.values(PRODUCE).map(p => [`${p.icon} ${esc(p.name)}`, p.kind === 'livestock' ? 'Livestock' : 'Crops', `× ${fmt(p.jobs)}`, `× ${fmt(p.income)}`, esc(p.desc)]))}
+          <p>Livestock farms turn their fields to fenced pasture with a field shelter and trough, or a hen house, and their herds grow with the farm and its fields.</p>` },
+        { id: 'orchard', title: 'Orchards', html: `
+          <p>With ${tl('horticulture')}, a farm can become an ${bl('orchard')}: it keeps its fields, planted with rows of fruit trees (blossom in spring, fruit in summer and autumn), and works as many as the farm did. ${FRUIT.icon} ${esc(FRUIT.desc)} An orchard can't change what it grows.</p>` },
+        { id: 'homestead', title: 'Homesteads', html: `
+          <p>A farm has no farmhouse to begin with. Join a cottage or family house beside it and it becomes a ${bl('homestead')}: a farmhouse goes up in the yard, the family moves in, and the farm keeps its level, fields and produce (${BUILDINGS.homestead.levels.map(L => esc(L.name)).join(' › ')}).</p>` },
+        { id: 'animals', title: 'Animals', html: `
+          <p>Sheep, cows and chickens graze on the farms and out across their fields; how many depends on what the farm keeps, its level and how many fields it works. In the wild, deer and foxes roam the woods, rabbits the meadows, and mallards paddle on the lakes and river. They wander, steer round buildings, rarely cross roads, and bolt from villagers who get too close.</p>` },
+      ];
+    },
+    see: ['industry', 'seasons'],
+  },
+  {
+    id: 'highstreet', title: 'The high street', icon: 'storefront', group: 'grow',
+    summary: 'Shops for every trade, how villagers shop, corner shopfronts and the backs of shops.',
+    sections: () => {
+      const sellers = (tr) => types().filter(t => { const d = BUILDINGS[t]; if (!d.shop) return false; const x = d.trade; return x === 'all' ? tr !== 'banking' && tr !== 'post' : Array.isArray(x) ? x.includes(tr) : x === tr; });
+      return [
+        { id: 'trades', title: 'Trades', html: `
+          <p>Every shop sells a trade. A villager out shopping goes for one trade the town has (everyday food most often, clothes, boots, hardware, remedies, books, the post and the bank less), to one of the nearer shops selling it: a street of bakeries doesn't draw every errand, and the town's only draper still gets the clothes shopping. A trade sold only far from home is shopped for less.</p>
+          ${table(['Trade', '#How often', 'Sold at'], Object.entries(TRADES).map(([id, T]) => [esc(T.name[0].toUpperCase() + T.name.slice(1)), `× ${fmt(T.often)}`, sellers(id).map(t => bl(t, 'type')).join(', ')]))}
+          <p>A ${bl('shophouse')} sells what the shop it was joined from sold, and a department store a bit of everything but banking and the post.</p>` },
+        { id: 'shops', title: 'Opening shops', html: `
+          <p>The Commerce menu (${k('3')}) has a shop for each trade, unlocked from the first villagers to the late game; each shop's entry says what it needs. Offices have no counter but pay well, for villagers with some schooling. Shops, cafés and taverns within ${fact('happyShops', 0)} tiles make homes happier (+${fact('happyShops', 1)}).</p>` },
+        { id: 'corners', title: 'Corner shopfronts', html: `
+          <p>On a street corner (a side street running down one side of it) a shop carries its shopfront round the corner: windows with its goods, the fascia and its awning down the side street too, a pilaster where the two fronts meet, and some of its goods on the side pavement. The town works this out from the roads, so laying or taking up a side street changes it. These turn the corner: ${and([...CORNER_SHOPS].filter(t => BUILDINGS[t]).map(t => bl(t, 'type')))}.</p>` },
+        { id: 'backs', title: 'The backs of shops', html: `
+          <p>From behind each shop still shows its trade: the back door at one end, its name on a board across the back, loading doors with a hoist at the bigger shops, and the trade's own things by the door: crates of greens, the butcher's smoke-house flue, the cobbler's lit workshop window, bales at the draper's, drums of paraffin at the ironmonger's, the chemist's green dispensary window, skylights in the stationer's roof, mail sacks at the post office, the bank's barred windows, the bakery's bread oven, and a fire escape down the back of the tall offices.</p>` },
+      ];
+    },
+    see: ['commerce', 'joins'],
+  },
+
+  // ==================================================================== people
+  {
+    id: 'people', title: 'People', icon: 'groups', group: 'people',
+    summary: 'Who your villagers are: ages, families, schooling, jobs, education and money.',
+    sections: () => [
+      { id: 'who', title: 'Who they are', html: `
+        <p>Every resident has a name (families share a surname, and names rarely repeat), an age, an education, a home, maybe a job, a wage, savings, living costs, a family and friends (workmates, neighbours, classmates). Press ${k('P')} for the <b>Villagers</b> directory: search, filter and sort everyone in town, then click a name to follow them.</p>
+        <p>They are little chibi figures with big round heads and bold hairdos, drawn to scale with the buildings, in clothes that follow their work (a farmhand's overalls and straw hat, a builder's flat cap, a shopkeeper's apron, a clerk's bowler) and their means. Builders swing their hammers round the scaffolding, shoppers carry home a basket, children take a satchel to school, and in winter most wear a scarf and a bobble hat. Each keeps their own look for life.</p>` },
+      { id: 'traits', title: 'Traits', html: `<p>Each villager has one or two traits that shape their daily routine:</p>` + '<div id="people-traits" data-gen="traits"></div>' },
+      { id: 'ages', title: 'Ages and families', html: `
+        <p>A year passes every two in-game days. Babies are born, children grow up, young adults move out of their parents' home, older villagers retire (with a pension of ${money(fact('pension'))} a day) and eventually die.</p>
+        <p>A cottage, family house or villa holds one household; a Manor House or Country Mansion two, the 2×2 estates four or five, a terrace one per house in the row. Newcomers to a single-family home come as one big family that all but fills it, children, grown-up sons and daughters and grandparents among them. Flats, apartments and shophouses take any number of households. A home short of water can't grow its family.</p>` },
+      { id: 'school', title: 'Schooling', html: `
+        <p>Children go to the school that fits their age: <b>elementary</b> from ${fact('schoolAges', 0)}, <b>middle school</b> from ${fact('schoolAges', 1)} and <b>high school</b> from ${fact('schoolAges', 2)}, at the nearest school with a place. Some young adults go on to <b>college</b> or <b>university</b> instead of working. Each school has a fixed number of places; the Issues panel shows when they run short.</p>
+        <p>A school upgrades two ways: <b>larger</b> (more places at the same stage) or the <b>next stage</b> (${bl('school', 'type', 'School')} → ${bl('middleschool')} → ${bl('highschool')} → ${bl('college')} → ${bl('university')}); the later stages need a bigger plot.</p>` },
+      { id: 'edu', title: 'Education, jobs and pay', html: `
+        <p>Better-educated workers earn more, and skilled jobs need them: the building pages give each workplace's schooling. Grown-ups who arrive bring their education with them, and better schools in town attract better-educated families.</p>
+        <div id="people-edu" data-gen="edu"></div>
+        <p>Villagers pay their living costs from their wages (grander homes cost more to keep), and keep the rest as savings. Hard-working villagers earn a little more.</p>` },
+      { id: 'jobs', title: 'Finding work', html: `
+        <p>Grown-ups look for work at the nearest workplace with a free job they are schooled for. Builders are hired first (nothing gets built without them), then places with nobody at all, so as few as possible stand idle. A household with grown-ups looking for work is unhappy (${pl('happiness', 'Happiness')}).</p>` },
+    ],
+    see: ['happiness', 'services'],
+  },
+
+  // ================================================================= together
+  {
+    id: 'multiplayer', title: 'Multiplayer', icon: 'group_add', group: 'together',
+    summary: `Build one town together, live, with up to ${fact('maxPlayers')} players.`,
+    sections: () => [
+      { id: 'host', title: 'Hosting', html: `
+        <p>Open the town you want to share and press ${k('M')} (or the people button in the top bar), then <b>Host this town</b>. On the title screen, <b>Multiplayer…</b> offers <i>New village and host</i> or <i>Continue and host</i>. You get a six-character invite code such as <code>K7Q-M2P</code>. Send it to your friends, or use <b>Copy invite link</b> for a link that opens the game with the code filled in. Keep your tab open: your computer runs the town for everyone.</p>` },
+      { id: 'join', title: 'Joining', html: `
+        <p>Open the game, choose <b>Multiplayer…</b> on the title screen (or press ${k('M')} in a town of your own, which is autosaved first), type your name and the code, and press <b>Join</b>. You wait until the host lets you in; then the host's town loads and follows the host's live. Everything you do (building, roads, terrain, upgrades, joins, research, taxes, transit lines, the town's name and the game speed) is sent to the host and applied for everyone. An invite link only fills in the code: joining is always your click.</p>` },
+      { id: 'who', title: "Who's in", html: `
+        <p>The host decides. <i>Ask me before anyone joins</i> is on by default: the host sees <i>Mallory wants to join</i> under the top bar, with <b>Let in</b> and <b>Turn away</b>. The Multiplayer window lists the players, with buttons to make one a <b>visitor</b> (who can look and point but not build) or <b>remove</b> them, and has switches for asking, <b>locking the town</b> and what newcomers join as, plus <b>New code</b>, which stops the old code working at once. The sandbox switches stay with the host.</p>
+        <p>Each player's cursor shows in the others' towns as a ring in their colour with their name and what they are holding. If a guest leaves, everyone else carries on. If the host stops or closes the tab, the guests can keep playing the town on their own, save it or download it.</p>` },
+      { id: 'how', title: 'How it works', html: `
+        <p>Only the host runs the town (the clock, money, construction, homes and jobs, arrivals, transit, research); guests send the host their actions, which it checks by the same rules as its own. A guest joins with a snapshot of the town, then gets only what changed five times a second, and everything in full every 15 seconds so nothing drifts. Villagers on a guest's screen walk about by themselves, so one may be in a different spot on each screen.</p>
+        <p>Players find each other through the free PeerJS service; the town itself goes directly between the browsers (or through a relay when no direct route exists). As in any peer-to-peer game, players you connect with can see your internet address, so share codes with people you trust.</p>` },
+    ],
+    see: ['merging', 'start/saving'],
+  },
+  {
+    id: 'merging', title: 'Merging villages', icon: 'add_location_alt', group: 'together',
+    summary: 'Join two towns into one valley.',
+    sections: () => [
+      { id: 'how', title: 'Merging two towns', html: `
+        <p><b>Save → Merge villages…</b> (or <b>Merge villages…</b> on the title menu) joins two towns into a new one; neither save is changed. While playing, the map-pin button in the top bar (<b>Merge a village into this town</b>) opens it with your town as town A.</p>
+        <ol>
+          <li><b>Pick town A and town B.</b> Each can be a save in this browser, the town you are playing, a <code>.json</code> save, or a brand-new village (an empty valley or a ${pl('starters', 'starter town')}). Town A keeps its name, its place and its road out of the valley; town B joins it.</li>
+          <li><b>Arrange them.</b> <i>Place it in the town</i> pauses the game and sets the incoming village down beside your town: drag it with the mouse, ${k('R')} turns it, ${k('Enter')} merges and ${k('Esc')} cancels. Or <i>Arrange on a map</i>: set B beside A, drag it anywhere, turn it, and see the merged valley a moment after you stop. A merged map can be up to ${fact('mergeMax')}×${fact('mergeMax')} tiles.</li>
+          <li><b>Merge.</b> The merged town loads with a report of what was moved, refunded, changed or dropped. It is autosaved straight away.</li>
+        </ol>` },
+      { id: 'join', title: 'How the join is made', html: list([
+        "<b>Ground</b>: each town keeps the land round its own buildings and streets; the heights are blended smoothly across a band at the join, and rivers and lakes that reach the join are carried across or run on to the map edge.",
+        '<b>Buildings</b>: where two plots overlap, the more valuable one stays and the other moves to the nearest free plot with a road, or is refunded. There is one town hall: the second becomes a Plaza of the same level.',
+        "<b>Roads</b>: every piece of road is joined to the network that leads out of the valley, along the cheapest route.",
+        "<b>People</b>: villagers whose home vanished move into homes with room, households together; nobody shares a whole name.",
+        '<b>Town</b>: research is everything either town discovered, the money is both treasuries plus refunds, and the day is the later town\'s.',
+      ]) },
+    ],
+    see: ['multiplayer', 'starters'],
+  },
+  {
+    id: 'starters', title: 'Starter towns', icon: 'holiday_village', group: 'together', generated: 'starters',
+    summary: 'Ready-made towns to take over, from a riverside hamlet to the Cathedral city.',
+    sections: () => [
+      { id: 'about', title: 'Taking over a town', html: `
+        <p>In the new-village window, <b>Start from</b> offers an empty valley or a starter town a few weeks along, each with its own streets, buildings, families and research. Each card shows a little map of the town, its size, villagers and money, and picking one shows it behind the window.</p>
+        <p>A starter town is <b>grown when you pick it</b>, by the game's own rules: its founders build street by street, families move in, find work and school places and have children, and its research carries on with the next projects on its list. So a starter always follows the current version of the game.</p>` },
+    ],
+    see: ['start', 'merging'],
+  },
+
+  // ================================================================== options
+  {
+    id: 'settings', title: 'Settings', icon: 'settings', group: 'options',
+    summary: 'Display, performance, sound, pop-ups, the game and sandbox switches.',
+    sections: () => {
+      const preset = (p) => [`${p.fps ? `${p.fps} fps` : 'screen rate'}`, pct(p.resScale), p.shadows ? `${p.shadowQuality} shadows` : 'no shadows', `effects ${p.effects}`, `villagers ${p.villagers}`, p.pausedSlow ? 'slow when paused' : ''].filter(Boolean).join(' · ');
+      const groupTable = (g) => table(['Setting', 'Choices', 'What it does'], g.rows.map(([a, b, c]) => [`<b>${esc(a)}</b>`, esc(b), esc(c)]));
+      const sec = (g, id, extra = '') => ({ id, title: g.group.replace(' · this town only', ''), html: groupTable(g) + extra });
+      const G = (name) => SETTINGS.find(s => s.group === name);
+      return [
+        { id: 'window', title: 'The Settings window', html: `<p>The ⚙ button in the top bar opens Settings, in group boxes (two columns, one on a phone). Every change applies as it's made; <b>Close</b> just closes the window, and <b>Quit to title</b> goes back to the title screen.</p>` },
+        sec(G('Display'), 'display', `
+          <h3 id="settings/tilt-shift">Tilt-shift</h3>
+          <p>Tilt-shift makes the town look like a tabletop model. The middle of the screen stays sharp (always the middle, wherever the camera goes) and the view goes soft by degrees out to every edge: a wide oval, the blur easing in with no line where it starts, growing faster up and down than across and slower below the middle than above, so the sharp area reaches further down the screen. The colours get a little lift. <b>Subtle</b> blurs up to ${fmt(TILT_SHIFT.subtle.blur * 100)}% of the screen's height, <b>Strong</b> ${fmt(TILT_SHIFT.strong.blur * 100)}%; the sharp band reaches ${pct(TILT_BAND.narrow)}, ${pct(TILT_BAND.normal)} or ${pct(TILT_BAND.wide)} of the height above and below the middle. It works in both looks, costs a fraction of a millisecond a frame, and is off by default.</p>`),
+        sec(G('Performance'), 'performance', `
+          <p>If the game runs slowly or keeps a laptop's fan going, lower these. The defaults draw as well as the game can: ${esc(preset(PERF_DEFAULTS))}. <b>Battery saver</b> sets ${esc(preset(BATTERY_SAVER))}, and turns off soft contact shadows${BATTERY_SAVER.tiltShift === 'off' ? ' and tilt-shift' : ''}. They're saved with the other settings.</p>`),
+        sec(G('Sound'), 'sound'),
+        sec(G('Pop-ups'), 'popups', `<p>All of them at once: the bell button in the top bar, or ${k('N')}.</p>`),
+        sec(G('Game'), 'game'),
+        sec(G('Sandbox · this town only'), 'sandbox', '<p>The sandbox switches belong to the town and are saved with it. In multiplayer only the host can change them.</p>'),
+        sec(G('Advanced'), 'advanced'),
+      ];
+    },
+    see: ['controls', 'start/saving'],
+  },
+];
+
+// The speeds, from the game's own buttons.
+function speedsText() {
+  const v = [1, 2, 3, 4, 5].map(i => fact('speeds', i));
+  return `${and(['normal speed (1×)', ...v.map(s => `${s}×`)])}`;
+}
+
+// Generated bits of the prose pages (they need modules beyond the
+// definitions; wiki.js fills them in).
+export const GEN = {
+  async traits(root) {
+    const { TRAITS } = await import('../src/sim/people.js');
+    root.innerHTML = table(['Trait', 'What it means'], Object.values(TRAITS).map(t => [`<b>${esc(t.name)}</b>`, esc(t.desc)]));
+  },
+  async edu(root) {
+    const { EDU } = await import('../src/sim/people.js');
+    root.innerHTML = table(['Education', '#Pay'], EDU.map((e, i) => [esc(e), `× ${fmt(fact('eduPay', i))}`]));
+  },
+};
+
+// A page by id.
+export const pageById = (id) => PAGES.find(p => p.id === id) || null;
+
