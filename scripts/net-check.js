@@ -11,7 +11,7 @@ import { Agents } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Construction } from '../src/sim/construction.js';
 import { ReplicaSim, ReplicaConstruction } from '../src/net/replica.js';
-import { worldFromSnapshot, makeSnapshot } from '../src/net/sync.js';
+import { worldFromSnapshot, makeSnapshot, PROTOCOL } from '../src/net/sync.js';
 import { HostSession, GuestSession, makeLink } from '../src/net/session.js';
 import { runCommand, packResult } from '../src/commands.js';
 import { BUILDINGS, TECHS } from '../src/defs.js';
@@ -333,6 +333,81 @@ let ended = null;
   // a snapshot is just data
   const snap = JSON.parse(JSON.stringify(makeSnapshot(host)));
   ok(worldFromSnapshot(snap).buildings.size === hw.buildings.size, `a snapshot is plain JSON (${(JSON.stringify(snap).length / 1024).toFixed(0)} KB)`);
+}
+
+// ------------------------------- 7b. a hostile player can't hurt the others
+{
+  // a guest that ignores the rules: odd command names, prototype keys, markup,
+  // floods, and messages far too big
+  const [a, b] = pipe();
+  host.net.addLink(makeLink(a));
+  const evil = makeLink(b);
+  const replies = [];
+  evil.onMessage = (m) => { if (m.t === 'res') replies.push(m); };
+  evil.send({ t: 'hello', proto: PROTOCOL, name: '<img src=x onerror=alert(1)>Mallory' });
+  await until(() => host.net.players.length === 3);
+  const mal = host.net.players[host.net.players.length - 1];
+  ok(mal && !/[<>"]/.test(mal.name), `a player's name loses its markup ("${mal && mal.name}")`);
+  const townBefore = hw.townName, bBefore = hw.buildings.size;
+  const bad = [
+    { t: '__proto__' }, { t: 'constructor' }, { t: 'toString' },
+    { t: 'place', type: '__proto__', x: 5, z: 5 }, { t: 'place', type: 'constructor', x: 5, z: 5 },
+    { t: 'research', id: '__proto__' }, { t: 'research', id: 'constructor' },
+    { t: 'upgrade', id: 1, to: '__proto__' }, { t: 'line', mode: 'toString', stops: [] },
+    { t: 'sandbox', opts: { infiniteMoney: true } },
+  ];
+  bad.forEach((c, i) => evil.send({ t: 'cmd', id: 100 + i, c }));
+  await until(() => replies.length >= bad.length);
+  ok(replies.length === bad.length && replies.every(m => m.r.ok === false), `every rule-bending command is refused (${replies.filter(m => !m.r.ok).length}/${bad.length})`);
+  ok(hw.buildings.size === bBefore && !hw.sandbox.infiniteMoney, 'nothing changed in the town');
+  ok(({}).hidden === undefined && ({}).levels === undefined && Object.keys(Object.prototype).length === 0, 'nothing leaked onto Object.prototype');
+  replies.length = 0;
+  evil.send({ t: 'cmd', id: 200, c: { t: 'rename', name: '<script>alert(1)</script>Evilton' } });
+  await until(() => replies.length >= 1);
+  ok(!/[<>"]/.test(hw.townName) && hw.townName.includes('Evilton'), `a town name loses its markup ("${hw.townName}")`);
+  host.cmd({ t: 'rename', name: townBefore });
+  // a flood of commands is cut short
+  replies.length = 0;
+  for (let i = 0; i < 200; i++) evil.send({ t: 'cmd', id: 300 + i, c: { t: 'tax', rate: 5 } });
+  await until(() => replies.length >= 200);
+  const slowed = replies.filter(m => !m.r.ok && /slow down/i.test(m.r.reason || '')).length;
+  ok(slowed > 100, `a flood of 200 commands is mostly turned away (${slowed} refused)`);
+  // a message announced as enormous is dropped, not buffered
+  const raw = b;
+  const received = host.net.players.length;
+  raw.send('#999999999|' + 'x'.repeat(10));
+  for (let i = 0; i < 5; i++) raw.send('+' + 'x'.repeat(10000));
+  raw.send(JSON.stringify({ t: 'cmd', id: 1, c: { t: 'tax', rate: 5 } }) + ' '.repeat(300 * 1024));
+  pump();
+  ok(host.net.players.length === received && !evil.closed, 'oversized messages are ignored without breaking the link');
+  evil.send({ t: 'bye' });
+  await until(() => host.net.players.length === 2);
+}
+{
+  // a host that sends markup in names and colours: the guest cleans it on arrival
+  const g3 = makeGame('guest3');
+  const [a, b] = pipe();
+  const fakeHost = makeLink(a);
+  const gs3 = new GuestSession(g3, makeLink(b), { name: 'Di' });
+  fakeHost.onMessage = (m) => {
+    if (m.t !== 'hello') return;
+    const snap = JSON.parse(JSON.stringify(makeSnapshot(host)));
+    snap.save.name = '<img src=x onerror=alert(1)>Town';
+    snap.save.residents[0][1] = '<img src=x onerror=alert(2)>';
+    snap.save.residents[0][2] = '"><b>';
+    fakeHost.send({ t: 'welcome', you: { id: 9, name: '<b>Di</b>', color: 'red;background:url(//evil)' },
+      players: [{ id: 0, name: '<i>Boss</i>', color: 'javascript:alert(1)', host: true }, { id: 9, name: 'Di', color: '#4fb84a', extra: { __proto__: { polluted: 1 } } }], snap, cursors: [] });
+  };
+  let joined = false;
+  gs3.join().then(() => { joined = true; }, (e) => console.error(e));
+  await until(() => joined);
+  const r0 = g3.world.residents.get(host.world.residents.values().next().value.id);
+  ok(joined && r0 && !/[<>"]/.test(r0.first + r0.last), `villager names from a host lose their markup ("${r0 && r0.first}" "${r0 && r0.last}")`);
+  ok(!/[<>"]/.test(g3.world.townName), `the town name from a host loses its markup ("${g3.world.townName}")`);
+  ok(gs3.players.every(p => /^#[0-9a-fA-F]{3,8}$/.test(p.color) && !/[<>]/.test(p.name)) && gs3.me.color === '#888888', 'player names and colours from a host are cleaned');
+  ok(({}).polluted === undefined, 'nothing leaked onto Object.prototype');
+  gs3.close();
+  pump();
 }
 
 // ---------------------------------------- 8. the host closes the town

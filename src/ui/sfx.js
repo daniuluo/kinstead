@@ -45,6 +45,27 @@ export class Sfx {
     src.start(t0);
   }
 
+  // A soft hiss of rain while it rains (only once sound has started).
+  setRain(level) {
+    if (!this.ctx || Math.abs(level - (this._rain ?? 0)) < 0.02) return;
+    this._rain = level;
+    const c = this.ctx;
+    if (!this.rainGain) {
+      const n = c.sampleRate * 2, buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+      let b = 0;
+      for (let i = 0; i < n; i++) { b = 0.97 * b + 0.03 * (Math.random() * 2 - 1); d[i] = (Math.random() * 2 - 1) * 0.6 + b * 4; }
+      const src = c.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 1600; f.Q.value = 0.5;
+      this.rainGain = c.createGain();
+      this.rainGain.gain.value = 0;
+      src.connect(f).connect(this.rainGain).connect(this.master);
+      src.start();
+    }
+    this.rainGain.gain.setTargetAtTime(level * 0.25, c.currentTime, 1.5);
+  }
+
   play(name) {
     if (!this._ensure()) return;
     const t = this.ctx.currentTime + 0.005;

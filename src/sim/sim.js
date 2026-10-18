@@ -320,16 +320,27 @@ export class Sim {
     }
   }
 
-  // Research points per day.
-  researchRate() {
-    const w = this.world;
-    let p = Math.floor(w.population / 30);
+  // Research points per day, and where they come from: town halls, schools,
+  // chapels and the like (by level, and only while working), plus one point
+  // for every 60 villagers.
+  researchSources() {
+    const w = this.world, by = new Map();
     for (const b of w.buildings.values()) {
       const src = RESEARCH_SOURCES[b.type];
-      if (src && isOpen(b) && b.connected) p += Math.round(src[Math.min(b.level, src.length - 1)] * Math.min(1, b.working ?? 1));
+      if (!src || !isOpen(b) || !b.connected) continue;
+      const p = Math.round(src[Math.min(b.level, src.length - 1)] * Math.min(1, b.working ?? 1));
+      if (p <= 0) continue;
+      const name = BUILDINGS[b.type].levels[b.level].name;
+      if (!by.has(name)) by.set(name, { name, n: 0, points: 0 });
+      const e = by.get(name);
+      e.n++; e.points += p;
     }
-    return p;
+    const out = [...by.values()].sort((a, b) => b.points - a.points);
+    const v = Math.floor(w.population / 60);
+    if (v) out.push({ name: 'Villagers', n: 0, points: v });
+    return out;
   }
+  researchRate() { return this.researchSources().reduce((n, s) => n + s.points, 0); }
 
   // Pupils fill the nearest schools with room; the oldest children get
   // places first (they're closest to finishing).

@@ -11,6 +11,7 @@ import { BUILDINGS } from '../defs.js';
 import { ROAD_LEVELS } from '../config.js';
 import { runCommand, packResult, unpackResult, describeCommand } from '../commands.js';
 import { PROTOCOL, Tracker, makeSnapshot, applyDelta } from './sync.js';
+import { cleanColor } from '../util/text.js';
 
 export const COLORS = ['#e8b830', '#3d8fe0', '#e0503f', '#4fb84a', '#a86ae0', '#f0862f', '#2fb8a8', '#e060a8'];
 export const MAX_PLAYERS = 8;
@@ -21,13 +22,19 @@ const PING = 2000;             // ms between heartbeats
 const HOST_SILENCE = 45000;    // ms of silence before the host gives up on a guest
 const GUEST_SILENCE = 20000;   // ...and a guest on the host
 const CHUNK = 15000;           // characters per data channel message
+// Limits on what another player can send: a guest's messages are small (a
+// command, a cursor); the host's can be a whole town. Anything bigger, or
+// faster than a person could click, is dropped.
+const MAX_FROM_GUEST = 256 * 1024, MAX_FROM_HOST = 64 * 1024 * 1024;
+const RATES = { cmd: [15, 40], cur: [25, 50] };   // per second, burst
+const HELLO_WAIT = 20000;      // ms a new connection has to say who it is
 
 // ---------------------------------------------------------------- links
 
 // Wrap a raw string channel { send(s), onData(fn), onClose(fn), close() } as a
 // message link. Long messages (a town snapshot) go in pieces.
 export function makeLink(raw) {
-  const L = { onMessage: null, onClose: null, closed: false, sent: 0, received: 0, lastHeard: Date.now() };
+  const L = { onMessage: null, onClose: null, closed: false, sent: 0, received: 0, lastHeard: Date.now(), maxMessage: MAX_FROM_HOST };
   let buf = null, need = 0, got = 0;
   const deliver = (s) => {
     let m;
@@ -38,9 +45,15 @@ export function makeLink(raw) {
     if (typeof s !== 'string' || L.closed) return;
     L.lastHeard = Date.now();
     L.received += s.length;
-    if (s[0] === '#') { const bar = s.indexOf('|'); need = Number(s.slice(1, bar)); buf = [s.slice(bar + 1)]; got = buf[0].length; }
-    else if (s[0] === '+' && buf) { buf.push(s.slice(1)); got += s.length - 1; }
-    else { deliver(s); return; }
+    if (s[0] === '#') {
+      const bar = s.indexOf('|'), n = Number(s.slice(1, bar));
+      buf = null;
+      if (bar < 0 || !Number.isInteger(n) || n <= 0 || n > L.maxMessage) return;
+      need = n; buf = [s.slice(bar + 1)]; got = buf[0].length;
+    } else if (s[0] === '+' && buf) {
+      if (got + s.length - 1 > need) { buf = null; return; }
+      buf.push(s.slice(1)); got += s.length - 1;
+    } else { if (s.length <= L.maxMessage) deliver(s); return; }
     if (got >= need) { const all = buf.join(''); buf = null; deliver(all); }
   });
   raw.onClose(() => { if (L.closed) return; L.closed = true; L.onClose?.(); });
@@ -65,13 +78,16 @@ export function makeLink(raw) {
 
 // ------------------------------------------------------------- cursors
 
-const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24);
+const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f\u007f<>"`]/g, '').trim().slice(0, 24);
+// a player record from the host, kept to what the game uses
+const cleanPlayer = (p) => ({ id: Number.isInteger(p?.id) ? p.id : -1, name: cleanName(p?.name) || 'Player', color: cleanColor(p?.color, '#888888'), host: p?.host === true });
+const cleanPlayers = (list) => (Array.isArray(list) ? list.slice(0, MAX_PLAYERS).map(cleanPlayer) : []);
 
 // What a player's pointer is over, what they have selected and what tool they hold.
 function cursorOf(game) {
   const h = game.input.hover, sel = game.ui.selection, t = game.input.tool;
   let act = '';
-  if (t.kind === 'build') act = BUILDINGS[t.type]?.name || '';
+  if (t.kind === 'build') act = BUILDINGS[t.type]?.levels[0].name || '';
   else if (t.kind === 'road') act = ROAD_LEVELS[t.level]?.name || '';
   else if (t.kind === 'rail') act = 'Laying track';
   else if (t.kind === 'bulldoze') act = 'Demolishing';
@@ -121,6 +137,7 @@ export class HostSession extends Peerish {
     this.me = { id: 0, name: cleanName(name) || 'Host', color: COLORS[0], host: true };
     this.players = [this.me];
     this.guests = new Map();     // link → player
+    this.buckets = new Map();    // link → message allowances
     this.cursors = new Map();    // player id → last cursor
     this.events = [];
     this.notes = new Map();
@@ -148,6 +165,9 @@ export class HostSession extends Peerish {
   // A guest's link is open: they say hello first.
   addLink(link) {
     if (this.closed) { link.close(); return; }
+    link.maxMessage = MAX_FROM_GUEST;
+    // a connection that never says who it is doesn't get to linger
+    setTimeout(() => { if (!this.guests.has(link) && !link.closed) link.close(); }, HELLO_WAIT);
     link.onMessage = (m) => this._onMessage(link, m);
     link.onClose = () => this._drop(link, 'left');
   }
@@ -157,13 +177,17 @@ export class HostSession extends Peerish {
     if (m.t === 'hello') { this._hello(link, m); return; }
     const p = this.guests.get(link);
     if (!p) return;
+    if ((m.t === 'cmd' || m.t === 'cur') && !this._allow(link, m.t)) {
+      if (m.t === 'cmd') link.send({ t: 'res', id: Number.isInteger(m.id) ? m.id : 0, r: { ok: false, reason: 'Too many actions at once: slow down a little' } });
+      return;
+    }
     switch (m.t) {
       case 'cmd': {
         let r;
         try { r = runCommand(this.game, m.c, p); } catch (e) { console.error('Multiplayer: command failed', m.c, e); r = { ok: false, reason: 'Something went wrong on the host' }; }
         // everyone gets the change first, so the result finds it already in place
         this.flush();
-        link.send({ t: 'res', id: m.id, r: packResult(r) });
+        link.send({ t: 'res', id: Number.isInteger(m.id) ? m.id : 0, r: packResult(r) });
         break;
       }
       case 'cur': {
@@ -175,6 +199,19 @@ export class HostSession extends Peerish {
       }
       case 'bye': this._drop(link, 'left'); link.close(); break;
     }
+  }
+
+  // A guest may only send so many commands and cursor moves a second.
+  _allow(link, kind) {
+    const [rate, burst] = RATES[kind], now = performance.now();
+    let b = this.buckets.get(link);
+    if (!b) this.buckets.set(link, b = {});
+    const k = b[kind] || (b[kind] = { n: burst, t: now });
+    k.n = Math.min(burst, k.n + ((now - k.t) / 1000) * rate);
+    k.t = now;
+    if (k.n < 1) return false;
+    k.n -= 1;
+    return true;
   }
 
   _hello(link, m) {
@@ -201,6 +238,7 @@ export class HostSession extends Peerish {
     const p = this.guests.get(link);
     if (!p) return;
     this.guests.delete(link);
+    this.buckets.delete(link);
     this.cursors.delete(p.id);
     this.players = this.players.filter(x => x !== p);
     this.game.cursors?.remove(p.id);
@@ -325,8 +363,8 @@ export class GuestSession extends Peerish {
     if (this.closed) return;
     switch (m.t) {
       case 'welcome': {
-        this.me = m.you;
-        this.players = m.players;
+        this.me = cleanPlayer(m.you);
+        this.players = cleanPlayers(m.players);
         try { this.game.joinTown(m.snap, this); } catch (e) {
           console.error('Multiplayer: could not load the town', e);
           this._join?.reject(new Error("The host's town couldn't be loaded here."));
@@ -341,7 +379,7 @@ export class GuestSession extends Peerish {
         break;
       }
       case 'refuse':
-        this._join?.reject(new Error(m.reason || 'The host turned the connection down.'));
+        this._join?.reject(new Error(typeof m.reason === 'string' && m.reason ? m.reason.slice(0, 200) : 'The host turned the connection down.'));
         this._join = null;
         this.close();
         break;
@@ -358,14 +396,14 @@ export class GuestSession extends Peerish {
         break;
       }
       case 'players': {
-        this.players = m.list;
-        const ids = new Set(m.list.map(p => p.id));
+        this.players = cleanPlayers(m.list);
+        const ids = new Set(this.players.map(p => p.id));
         for (const pid of [...(this.game.cursors?.list.keys() || [])]) if (!ids.has(pid)) this.game.cursors.remove(pid);
         this.onChange?.();
         break;
       }
       case 'cur': this._showCursor(m.p, cleanCursor(m.c)); break;
-      case 'note': if (m.by !== this.me?.id) this.game.ui?.toast(m.text, 'info', '👪'); break;
+      case 'note': if (m.by !== this.me?.id && typeof m.text === 'string') this.game.ui?.toast(m.text.slice(0, 200), 'info', '👪'); break;
       case 'end': this._ended(m.reason || 'ended'); break;
     }
   }

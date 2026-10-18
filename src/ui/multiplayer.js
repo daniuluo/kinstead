@@ -56,7 +56,7 @@ export function showMultiplayer(game, { code = null } = {}) {
       <h5>Players · ${net.players.length}</h5>${playersHTML(net)}
       <div class="actions"><button class="btn" id="mpSave">💾 Save a copy here</button><button class="btn danger" id="mpLeave">Leave the town</button></div>`;
   } else {
-    h += `<p class="lead">Build a town together, live. One player hosts: their computer runs the town, and the others join with its invite code.</p>
+    h += `<p class="lead">Build a town together, live. One player hosts: their computer runs the town, and the others join with its invite code. Only share codes with people you trust: as in any peer-to-peer game, the players you connect with can see your internet address.</p>
       <div class="field"><label>Your name</label><input id="mpName" maxlength="24" placeholder="Builder" value="${esc(loadName())}"></div>
       <div class="grid2 mp-cols">
         <div><h5>Host</h5>${inTown
