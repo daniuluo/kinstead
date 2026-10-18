@@ -5832,7 +5832,7 @@ export function buildModel(b, opts = {}) {
     const g3 = gb3.build();
     if (g3) { weather(g3); tint(g3, pal.tint); geo = mergeGeometries([geo, g3], false); geo.computeBoundingSphere(); }
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null };
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, houses: c.houses };
 }
 
 // A home, shop or service built out across the land it took: the house itself

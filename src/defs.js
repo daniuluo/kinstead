@@ -75,9 +75,9 @@ export const BUILDINGS = {
     name: 'Flats', cat: 'residential', size: 1, hidden: true, spacious: true, tech: 'flats', icon: '🏘️', branch: 'Flats', accent: '#2c5a8a', pathIcon: 'apartment',
     desc: 'Homes stacked into flats: room for many households on one plot.',
     levels: [
-      { name: 'Townhouse Flats', cost: 650, housing: 12, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
-      { name: 'Tenement', tech: 'highrise', cost: 1300, housing: 22, tax: 1.25, unlock: 120, req: { power: true, happiness: 60, water: true, health: true, education: true } },
-      { name: 'Mansion Block', tech: 'highrise', cost: 2600, housing: 34, tax: 1.3, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Townhouse Flats', cost: 980, housing: 18, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
+      { name: 'Tenement', tech: 'highrise', cost: 1600, housing: 27, tax: 1.25, unlock: 120, req: { power: true, happiness: 60, water: true, health: true, education: true } },
+      { name: 'Mansion Block', tech: 'highrise', cost: 2750, housing: 36, tax: 1.3, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
     ],
   },
 
@@ -98,9 +98,9 @@ export const BUILDINGS = {
     desc: 'Villagers come here to shop. Every visit brings in money.',
     levels: [
       { name: 'Market Stall', cost: 150, jobs: 2, income: 4, visit: 3 },
-      { name: 'Shop', cost: 380, jobs: 4, income: 5, visit: 5, unlock: 25 },
-      { name: 'Emporium', cost: 900, jobs: 8, income: 6, visit: 8, unlock: 120 },
-      { name: 'Market Hall', tech: 'civic', cost: 1800, jobs: 12, income: 7, visit: 11, unlock: 200, req: { power: true } },
+      { name: 'Shop', cost: 670, jobs: 7, income: 5, visit: 5, unlock: 25 },
+      { name: 'Emporium', cost: 1600, jobs: 14, income: 6, visit: 8, unlock: 120 },
+      { name: 'Market Hall', tech: 'civic', cost: 2850, jobs: 19, income: 7, visit: 11, unlock: 200, req: { power: true } },
     ],
   },
   bakery: {
@@ -108,8 +108,8 @@ export const BUILDINGS = {
     desc: 'Fresh bread every morning. The ovens smoke all day.',
     levels: [
       { name: 'Bakery', cost: 260, jobs: 3, income: 5, visit: 4 },
-      { name: 'Patisserie', cost: 520, jobs: 5, income: 6, visit: 6, unlock: 60 },
-      { name: 'Grand Bakery', cost: 1100, jobs: 8, income: 7, visit: 8, unlock: 120 },
+      { name: 'Patisserie', cost: 830, jobs: 8, income: 6, visit: 6, unlock: 60 },
+      { name: 'Grand Bakery', cost: 1500, jobs: 11, income: 7, visit: 8, unlock: 120 },
     ],
   },
   tavern: {
@@ -129,17 +129,17 @@ export const BUILDINGS = {
     desc: 'Fruit and vegetables from the farms, piled up on trestles outside.',
     levels: [
       { name: 'Greengrocer', cost: 200, jobs: 2, income: 5, visit: 3 },
-      { name: 'Fruiterer', cost: 440, jobs: 4, income: 6, visit: 5, unlock: 60 },
-      { name: 'Grocery & Provisions', cost: 1000, jobs: 7, income: 7, visit: 7, unlock: 120 },
+      { name: 'Fruiterer', cost: 770, jobs: 7, income: 6, visit: 5, unlock: 60 },
+      { name: 'Grocery & Provisions', cost: 1700, jobs: 12, income: 7, visit: 7, unlock: 120 },
     ],
   },
   butcher: {
     name: 'Butchery', cat: 'commercial', size: 1, shop: true, trade: 'meat', unlock: 25, tech: 'commerce', icon: '🥩',
     desc: 'Joints hung along the front and a slab counter open to the street.',
     levels: [
-      { name: "Butcher's Shop", cost: 280, jobs: 3, income: 5, visit: 4 },
-      { name: 'Family Butcher', cost: 560, jobs: 5, income: 6, visit: 6, unlock: 60 },
-      { name: 'Butcher & Poulterer', cost: 1150, jobs: 8, income: 7, visit: 8, unlock: 120 },
+      { name: "Butcher's Shop", cost: 470, jobs: 5, income: 5, visit: 4 },
+      { name: 'Family Butcher', cost: 780, jobs: 7, income: 6, visit: 6, unlock: 60 },
+      { name: 'Butcher & Poulterer', cost: 1750, jobs: 12, income: 7, visit: 8, unlock: 120 },
     ],
   },
   cobbler: {
@@ -154,9 +154,9 @@ export const BUILDINGS = {
     name: 'Clothing', cat: 'commercial', size: 1, shop: true, trade: 'clothes', unlock: 60, tech: 'trade2', icon: '🧵',
     desc: 'Cloth by the yard and clothes made to measure. Two side by side make a department store.',
     levels: [
-      { name: "Tailor's Shop", cost: 340, jobs: 3, income: 6, visit: 5 },
-      { name: 'Draper & Outfitter', cost: 760, jobs: 6, income: 7, visit: 8, unlock: 120 },
-      { name: 'Drapery Emporium', cost: 1500, jobs: 10, income: 8, visit: 10, unlock: 200, req: { power: true } },
+      { name: "Tailor's Shop", cost: 570, jobs: 5, income: 6, visit: 5 },
+      { name: 'Draper & Outfitter', cost: 1250, jobs: 10, income: 7, visit: 8, unlock: 120 },
+      { name: 'Drapery Emporium', cost: 2100, jobs: 14, income: 8, visit: 10, unlock: 200, req: { power: true } },
     ],
   },
   ironmonger: {
@@ -164,7 +164,7 @@ export const BUILDINGS = {
     desc: 'Pails, nails, tools and tin baths, hung all over the front.',
     levels: [
       { name: 'Ironmonger', cost: 360, jobs: 3, income: 6, visit: 5 },
-      { name: 'Hardware Merchant', cost: 900, jobs: 7, income: 7, visit: 8, unlock: 120 },
+      { name: 'Hardware Merchant', cost: 1550, jobs: 12, income: 7, visit: 8, unlock: 120 },
     ],
   },
   chemist: {
@@ -180,8 +180,8 @@ export const BUILDINGS = {
     name: 'Books & Paper', cat: 'commercial', size: 1, shop: true, trade: 'books', unlock: 60, tech: 'schooling', icon: '📖',
     desc: 'Paper, ink, newspapers and books. Its readers add a little to research every day.',
     levels: [
-      { name: 'Stationer', cost: 420, jobs: 3, income: 6, visit: 5 },
-      { name: 'Bookseller & Library', cost: 950, jobs: 6, income: 7, visit: 8, unlock: 120 },
+      { name: 'Stationer', cost: 700, jobs: 5, income: 6, visit: 5 },
+      { name: 'Bookseller & Library', cost: 1750, jobs: 11, income: 7, visit: 8, unlock: 120 },
     ],
   },
   coffeehouse: {
@@ -189,24 +189,24 @@ export const BUILDINGS = {
     desc: 'Coffee, tea and cake in the afternoon: somewhere to sit and talk that is not the pub.',
     levels: [
       { name: 'Coffee House', cost: 400, jobs: 3, income: 5, visit: 6 },
-      { name: 'Tea Rooms', cost: 860, jobs: 6, income: 6, visit: 9, unlock: 120 },
-      { name: 'Grand Café', cost: 1700, jobs: 9, income: 7, visit: 12, unlock: 200, req: { power: true } },
+      { name: 'Tea Rooms', cost: 720, jobs: 5, income: 6, visit: 9, unlock: 120 },
+      { name: 'Grand Café', cost: 1300, jobs: 7, income: 7, visit: 12, unlock: 200, req: { power: true } },
     ],
   },
   bank: {
     name: 'Banking', cat: 'commercial', size: 1, shop: true, trade: 'banking', unlock: 120, tech: 'trade3', icon: '🏦',
     desc: 'Villagers bank their savings here. Few visits, small fees, but its clerks earn well.',
     levels: [
-      { name: 'Savings Bank', cost: 1100, jobs: 5, income: 11, visit: 2, edu: 2 },
-      { name: 'Town Bank', tech: 'civic', cost: 2200, jobs: 9, income: 12, visit: 3, edu: 3, unlock: 200, req: { power: true } },
+      { name: 'Savings Bank', cost: 3100, jobs: 14, income: 11, visit: 2, edu: 2 },
+      { name: 'Town Bank', tech: 'civic', cost: 5900, jobs: 24, income: 12, visit: 3, edu: 3, unlock: 200, req: { power: true } },
     ],
   },
   postoffice: {
     name: 'Post & Telegraph', cat: 'commercial', size: 1, shop: true, trade: 'post', unlock: 60, tech: 'services2', icon: '✉️',
     desc: 'Letters, parcels and postal orders, and telegrams once the wires come. A pillar box at the kerb.',
     levels: [
-      { name: 'Post Office', cost: 420, jobs: 3, income: 6, visit: 3, edu: 1 },
-      { name: 'General Post Office', tech: 'electricity', cost: 1100, jobs: 8, income: 7, visit: 5, edu: 2, unlock: 120 },
+      { name: 'Post Office', cost: 840, jobs: 6, income: 6, visit: 3, edu: 1 },
+      { name: 'General Post Office', tech: 'electricity', cost: 1650, jobs: 12, income: 7, visit: 5, edu: 2, unlock: 120 },
     ],
   },
   // Offices: no shop counter, but well-paid work for villagers with some
@@ -215,9 +215,9 @@ export const BUILDINGS = {
     name: 'Offices', cat: 'commercial', size: 1, unlock: 60, tech: 'trade2', icon: '🏢',
     desc: 'Clerks at their desks: merchants, lawyers and insurers. Good wages, but only for villagers with some schooling.',
     levels: [
-      { name: 'Counting House', cost: 480, jobs: 4, income: 7, edu: 2 },
-      { name: 'Chambers', cost: 1050, jobs: 8, income: 8, edu: 3, unlock: 120 },
-      { name: 'Office Building', tech: 'highrise', cost: 2200, jobs: 14, income: 9, edu: 3, unlock: 200, req: { power: true } },
+      { name: 'Counting House', cost: 1550, jobs: 13, income: 7, edu: 2 },
+      { name: 'Chambers', cost: 3000, jobs: 23, income: 8, edu: 3, unlock: 120 },
+      { name: 'Office Building', tech: 'highrise', cost: 6300, jobs: 40, income: 9, edu: 3, unlock: 200, req: { power: true } },
     ],
   },
 
@@ -239,17 +239,17 @@ export const BUILDINGS = {
     desc: 'A covered row of shops under one roof.',
     levels: [
       { name: 'Market Arcade', cost: 300, jobs: 7, income: 6, visit: 8 },
-      { name: 'Covered Market', tech: 'civic', cost: 900, jobs: 11, income: 7, visit: 11, unlock: 60 },
-      { name: 'Grand Arcade', tech: 'civic', cost: 1900, jobs: 16, income: 8, visit: 14, unlock: 120, req: { power: true } },
+      { name: 'Covered Market', tech: 'civic', cost: 1250, jobs: 15, income: 7, visit: 11, unlock: 60 },
+      { name: 'Grand Arcade', tech: 'civic', cost: 2600, jobs: 22, income: 8, visit: 14, unlock: 120, req: { power: true } },
     ],
   },
   inn: {
     name: 'Lodging', cat: 'commercial', size: 2, merged: true, hidden: true, leisure: true, tech: 'hospitality', icon: '🍺', branch: 'Inn', accent: '#7a3a2a', pathIcon: 'hotel',
     desc: 'Rooms, ale and a yard for the coaches. Busy every evening.',
     levels: [
-      { name: 'Market Inn', cost: 300, jobs: 6, income: 5, visit: 9 },
-      { name: 'Posting House', cost: 900, jobs: 9, income: 6, visit: 12, unlock: 60 },
-      { name: 'Grand Hotel', cost: 2000, jobs: 14, income: 7, visit: 16, unlock: 120, req: { power: true } },
+      { name: 'Market Inn', cost: 450, jobs: 9, income: 5, visit: 9 },
+      { name: 'Posting House', cost: 1500, jobs: 15, income: 6, visit: 12, unlock: 60 },
+      { name: 'Grand Hotel', cost: 3150, jobs: 22, income: 7, visit: 16, unlock: 120, req: { power: true } },
     ],
   },
   // A tavern joined with a workshop: it brews its own ale and sells it.
@@ -267,7 +267,7 @@ export const BUILDINGS = {
     desc: 'The catch landed and sold on the spot: fish stalls under an open roof, with an ice house behind.',
     levels: [
       { name: 'Fish Market', cost: 550, jobs: 6, income: 8, visit: 6 },
-      { name: 'Fish Hall', tech: 'trade3', cost: 1400, jobs: 10, income: 9, visit: 9, unlock: 60 },
+      { name: 'Fish Hall', tech: 'trade3', cost: 2400, jobs: 17, income: 9, visit: 9, unlock: 60 },
     ],
   },
   // Two offices joined, or offices and a bank: the town's money under one roof.
@@ -275,8 +275,8 @@ export const BUILDINGS = {
     name: 'Exchange', cat: 'commercial', size: 2, merged: true, hidden: true, tech: 'trade3', icon: '🏛️', branch: 'Exchange', accent: '#3a3a5a', pathIcon: 'account_balance',
     desc: 'A great hall where merchants and brokers trade, behind a portico with a clock in the pediment, and offices all round it.',
     levels: [
-      { name: 'Exchange Buildings', cost: 1500, jobs: 14, income: 9, edu: 3, unlock: 120 },
-      { name: 'Stock Exchange', tech: 'civic', cost: 3200, jobs: 22, income: 10, edu: 4, unlock: 200, req: { power: true } },
+      { name: 'Exchange Buildings', cost: 3950, jobs: 37, income: 9, edu: 3, unlock: 120 },
+      { name: 'Stock Exchange', tech: 'civic', cost: 8700, jobs: 60, income: 10, edu: 4, unlock: 200, req: { power: true } },
     ],
   },
   // A draper joined with the shop next door, or grown onto a double plot:
@@ -285,8 +285,8 @@ export const BUILDINGS = {
     name: 'Department Store', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, trade: 'all', tech: 'trade3', icon: '🏬', branch: 'Department store', accent: '#5a2a4a', pathIcon: 'local_mall',
     desc: 'A great store with plate-glass windows the length of the street, selling everything from cloth and boots to tea and tin baths.',
     levels: [
-      { name: 'Department Store', cost: 1600, jobs: 12, income: 8, visit: 12, unlock: 120 },
-      { name: 'Grand Department Store', tech: 'civic', cost: 3200, jobs: 18, income: 9, visit: 15, unlock: 200, req: { power: true } },
+      { name: 'Department Store', cost: 3750, jobs: 28, income: 8, visit: 12, unlock: 120 },
+      { name: 'Grand Department Store', tech: 'civic', cost: 7100, jobs: 40, income: 9, visit: 15, unlock: 200, req: { power: true } },
     ],
   },
   // A cottage joined with a workshop: the family lives over the workshop.
@@ -337,8 +337,8 @@ export const BUILDINGS = {
     name: 'Police', cat: 'services', size: 2, merged: true, hidden: true, service: 'safety', tech: 'services2', icon: '🛡️', branch: 'Watch house', accent: '#2f3e5a', pathIcon: 'local_police',
     desc: 'The watch under one roof, with cells and a yard: one station keeps a much wider area safe than two posts.',
     levels: [
-      { name: 'Watch House', cost: 650, upkeep: 12, jobs: 5, radius: 10, edu: 1 },
-      { name: 'Police Station', tech: 'services3', cost: 1500, upkeep: 20, jobs: 9, radius: 15, edu: 2, unlock: 120 },
+      { name: 'Watch House', cost: 650, upkeep: 17, jobs: 9, radius: 10, edu: 1 },
+      { name: 'Police Station', tech: 'services3', cost: 1500, upkeep: 26, jobs: 14, radius: 15, edu: 2, unlock: 120 },
     ],
   },
   // Two herbalists joined: one small hospital with beds.
@@ -346,8 +346,8 @@ export const BUILDINGS = {
     name: 'Hospital', cat: 'services', size: 2, merged: true, hidden: true, service: 'health', tech: 'medicine', icon: '🩺', branch: 'Cottage hospital', accent: '#b83a32', pathIcon: 'local_hospital',
     desc: 'A cottage hospital: a doctor, nurses and a ward of beds, reaching much further than two herbalists.',
     levels: [
-      { name: 'Cottage Hospital', cost: 750, upkeep: 12, jobs: 5, radius: 10, edu: 2 },
-      { name: 'General Hospital', tech: 'hospitals', cost: 1700, upkeep: 22, jobs: 10, radius: 15, edu: 4, unlock: 120, req: { power: true } },
+      { name: 'Cottage Hospital', cost: 750, upkeep: 14, jobs: 7, radius: 10, edu: 2 },
+      { name: 'General Hospital', tech: 'hospitals', cost: 1700, upkeep: 30, jobs: 17, radius: 15, edu: 4, unlock: 120, req: { power: true } },
     ],
   },
   // Two schoolhouses joined: a board school with separate rooms for each class.
@@ -382,8 +382,8 @@ export const BUILDINGS = {
     name: 'Library', cat: 'services', size: 2, merged: true, hidden: true, service: 'culture', tech: 'parish', icon: '📖', branch: 'Library', accent: '#4a3a6a', pathIcon: 'local_library',
     desc: 'A free library with a reading room: villagers come in to read and borrow, and its readers add to research every day.',
     levels: [
-      { name: 'Free Library', cost: 700, upkeep: 9, jobs: 2, radius: 9, edu: 2 },
-      { name: 'Public Library', tech: 'academies', cost: 1600, upkeep: 16, jobs: 4, radius: 13, edu: 3, unlock: 120 },
+      { name: 'Free Library', cost: 700, upkeep: 14, jobs: 4, radius: 9, edu: 2 },
+      { name: 'Public Library', tech: 'academies', cost: 1600, upkeep: 22, jobs: 7, radius: 13, edu: 3, unlock: 120 },
     ],
   },
   fountaingarden: {
@@ -414,8 +414,8 @@ export const BUILDINGS = {
     name: 'Apartments', cat: 'residential', size: 2, merged: true, hidden: true, tech: 'flats', icon: '🏘️', branch: 'Apartments', accent: '#2c6a6a', pathIcon: 'domain',
     desc: 'A big block of flats: dozens of households on a double plot.',
     levels: [
-      { name: 'Apartment Court', cost: 1500, housing: 30, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
-      { name: 'Grand Apartments', tech: 'highrise', cost: 3200, housing: 50, tax: 1.35, unlock: 200, req: { happiness: 64, water: true, health: true, education: true, power: true } },
+      { name: 'Apartment Court', cost: 2500, housing: 50, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
+      { name: 'Grand Apartments', tech: 'highrise', cost: 4750, housing: 74, tax: 1.35, unlock: 200, req: { happiness: 64, water: true, health: true, education: true, power: true } },
     ],
   },
 
@@ -434,26 +434,26 @@ export const BUILDINGS = {
     name: 'Quadrangle', cat: 'residential', size: 2, hidden: true, estate: true, tech: 'bigplots', icon: '🏘️', branch: 'Quadrangle', accent: '#1f5a5a', pathIcon: 'apartment',
     desc: 'Four mansion blocks round a garden court: a whole street of households on one estate.',
     levels: [
-      { name: 'Mansion Quadrangle', cost: 3600, housing: 62, tax: 1.35, unlock: 120, req: { happiness: 60, water: true, health: true, education: true } },
-      { name: 'Grand Mansion Court', tech: 'highrise', cost: 6800, housing: 100, tax: 1.4, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Mansion Quadrangle', cost: 6000, housing: 103, tax: 1.35, unlock: 120, req: { happiness: 60, water: true, health: true, education: true } },
+      { name: 'Grand Mansion Court', tech: 'highrise', cost: 10100, housing: 148, tax: 1.4, unlock: 200, req: { power: true, happiness: 66, water: true, health: true, education: true, safety: true } },
     ],
   },
   markethall: {
     name: 'Market Halls', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', shop: true, trade: 'all', tech: 'bigplots', icon: '🧺', branch: 'Market hall', accent: '#8a4a1d', pathIcon: 'storefront',
     desc: 'A great covered market hall over the whole estate, with shops round its walls and stalls down the aisles.',
     levels: [
-      { name: 'Corn Exchange', cost: 1300, jobs: 14, income: 7, visit: 10, unlock: 60 },
-      { name: 'Covered Market Hall', tech: 'civic', cost: 2600, jobs: 22, income: 8, visit: 13, unlock: 120 },
-      { name: 'Grand Galleria', tech: 'civic', cost: 4600, jobs: 32, income: 9, visit: 17, unlock: 200, req: { power: true } },
+      { name: 'Corn Exchange', cost: 2250, jobs: 24, income: 7, visit: 10, unlock: 60 },
+      { name: 'Covered Market Hall', tech: 'civic', cost: 4350, jobs: 37, income: 8, visit: 13, unlock: 120 },
+      { name: 'Grand Galleria', tech: 'civic', cost: 6900, jobs: 48, income: 9, visit: 17, unlock: 200, req: { power: true } },
     ],
   },
   coachinginn: {
     name: 'Coaching House', cat: 'commercial', size: 2, hidden: true, estate: true, ground: 'stone', leisure: true, tech: 'bigplots', icon: '🍺', branch: 'Coaching inn', accent: '#6a2a1a', pathIcon: 'hotel',
     desc: 'A grand coaching inn: the inn on the street, and a carriage arch through to a yard ringed by stables and coach houses.',
     levels: [
-      { name: 'Great Coaching Inn', cost: 1400, jobs: 13, income: 6, visit: 12, unlock: 60 },
-      { name: 'Royal Posting House', tech: 'trade3', cost: 2200, jobs: 18, income: 7, visit: 15, unlock: 120 },
-      { name: 'Palace Hotel', tech: 'civic', cost: 4000, jobs: 27, income: 8, visit: 20, unlock: 200, req: { power: true } },
+      { name: 'Great Coaching Inn', cost: 2150, jobs: 20, income: 6, visit: 12, unlock: 60 },
+      { name: 'Royal Posting House', tech: 'trade3', cost: 3650, jobs: 30, income: 7, visit: 15, unlock: 120 },
+      { name: 'Palace Hotel', tech: 'civic', cost: 6200, jobs: 42, income: 8, visit: 20, unlock: 200, req: { power: true } },
     ],
   },
   timberworks: {
@@ -648,8 +648,8 @@ export const BUILDINGS = {
     desc: 'Keeps villagers healthy.',
     levels: [
       { name: 'Herbalist', cost: 300, upkeep: 6, jobs: 2, radius: 6, edu: 1 },
-      { name: 'Clinic', tech: 'medicine', cost: 650, upkeep: 12, jobs: 5, radius: 9, edu: 3, unlock: 60 },
-      { name: 'Hospital', tech: 'hospitals', cost: 1400, upkeep: 20, jobs: 9, radius: 13, edu: 4, unlock: 120, req: { power: true } },
+      { name: 'Clinic', tech: 'medicine', cost: 650, upkeep: 16, jobs: 8, radius: 9, edu: 3, unlock: 60 },
+      { name: 'Hospital', tech: 'hospitals', cost: 1400, upkeep: 23, jobs: 12, radius: 13, edu: 4, unlock: 120, req: { power: true } },
     ],
   },
   school: {
@@ -718,11 +718,11 @@ export const BUILDINGS = {
     name: 'Town Council', cat: 'services', size: 2, unique: true, icon: '🏛️',
     desc: 'The heart of the town. Every upgrade raises taxes across the whole town, and its research.',
     levels: [
-      { name: 'Town Hall', cost: 1000, upkeep: 5, jobs: 3, taxBonus: 0, edu: 2 },
-      { name: 'Guild Hall', cost: 1600, upkeep: 10, jobs: 6, taxBonus: 0.1, edu: 3, unlock: 120 },
-      { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 18, jobs: 10, taxBonus: 0.2, edu: 3, unlock: 200, req: { power: true } },
-      { name: 'City Hall', tech: 'municipal', cost: 5200, upkeep: 28, jobs: 14, taxBonus: 0.3, edu: 3, appeal: 6, radius: 4, unlock: 350, req: { power: true, happiness: 62 } },
-      { name: 'Civic Palace', tech: 'metropolis', cost: 8800, upkeep: 42, jobs: 18, taxBonus: 0.4, edu: 4, appeal: 10, radius: 5, unlock: 600, req: { power: true, happiness: 68, culture: true } },
+      { name: 'Town Hall', cost: 1000, upkeep: 8, jobs: 6, taxBonus: 0, edu: 2 },
+      { name: 'Guild Hall', cost: 1600, upkeep: 13, jobs: 10, taxBonus: 0.1, edu: 3, unlock: 120 },
+      { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 22, jobs: 14, taxBonus: 0.2, edu: 3, unlock: 200, req: { power: true } },
+      { name: 'City Hall', tech: 'municipal', cost: 5200, upkeep: 32, jobs: 18, taxBonus: 0.3, edu: 3, appeal: 6, radius: 4, unlock: 350, req: { power: true, happiness: 62 } },
+      { name: 'Civic Palace', tech: 'metropolis', cost: 8800, upkeep: 47, jobs: 22, taxBonus: 0.4, edu: 4, appeal: 10, radius: 5, unlock: 600, req: { power: true, happiness: 68, culture: true } },
     ],
   },
 

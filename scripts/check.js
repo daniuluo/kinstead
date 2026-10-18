@@ -463,11 +463,20 @@ const placePair = (tw, ta, tb) => {
   ok(r.ok && r.building.variant === V.variant, 'the villa leads: the joined house keeps its look, not the cottage\'s');
   const [F, G] = placePair(tw, 'flats', 'flats');
   F.level = G.level = 2;   // two Mansion Blocks, full
-  F.residents = new Array(34).fill(0); G.residents = new Array(34).fill(0);
+  const full = BUILDINGS.flats.levels[2].housing, room = BUILDINGS.apartments.levels[1].housing;
+  F.residents = new Array(full).fill(0); G.residents = new Array(full).fill(0);
   tw.research.done.push('steam', 'electricity', 'hydraulics', 'highrise');
   opt = tw.mergeOptions(F).find(m => m.other === G);
-  ok(opt && opt.name === 'Grand Apartments' && opt.moveOut === 68 - 50, `two full Mansion Blocks joined say ${opt && opt.moveOut} people must move out of the ${opt && opt.name}`);
+  ok(opt && opt.name === 'Grand Apartments' && opt.moveOut === Math.max(0, 2 * full - room), `two full Mansion Blocks (${full} each) joined into the ${opt && opt.name} (${room}) say ${opt && opt.moveOut} must move out`);
   F.residents = []; G.residents = [];
+  // ...and when the two hold more than what they become, the ones who won't fit
+  const [V2, H2] = placePair(tw, 'villa', 'house');
+  V2.level = 2; H2.level = 1;   // a Grand Manor and a Family House, full
+  const a = BUILDINGS.villa.levels[2].housing, b = BUILDINGS.house.levels[1].housing, into = BUILDINGS.mansion.levels[1].housing;
+  V2.residents = new Array(a).fill(0); H2.residents = new Array(b).fill(0);
+  const o2 = tw.mergeOptions(V2).find(m => m.other === H2);
+  ok(o2 && o2.name === 'Stately Home' && o2.moveOut === a + b - into && o2.moveOut > 0, `a full Grand Manor (${a}) and Family House (${b}) joined into a ${o2 && o2.name} (${into}) say ${o2 && o2.moveOut} must move out`);
+  V2.residents = []; H2.residents = [];
 }
 
 // 3d0f. farms: the farmyard by the road with fields behind; farmland beyond
