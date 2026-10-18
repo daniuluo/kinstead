@@ -3,7 +3,7 @@
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
-import { fw, fd, isOpen, capOf } from '../world/world.js';
+import { fw, fd, isOpen, capOf, sizeK } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
 import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stageForAge, hasTrait } from './people.js';
 
@@ -131,8 +131,8 @@ export class Sim {
     for (const b of w.buildings.values()) {
       if (!isOpen(b) || !b.connected) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
-      if (L.kw) pGen += L.kw * this.staffOf(b);
-      else if (!def.park) pDem += 0.5 + 0.2 * (L.housing || 0) + 0.25 * (L.jobs || 0);
+      if (L.kw) pGen += L.kw * sizeK(b) * this.staffOf(b);
+      else if (!def.park) pDem += 0.5 + 0.2 * capOf(b, 'housing') + 0.25 * capOf(b, 'jobs');
     }
     pGen = Math.round(pGen);
     this.powerShare = pGen ? Math.min(1, pDem ? pGen / pDem : 1) : 0;
@@ -153,7 +153,7 @@ export class Sim {
       if (!servicesOf(def).includes('water') || !isOpen(b) || !b.connected) continue;
       const L = def.levels[b.level], np = needsOf(b.type, b.level).power;
       const k = this.staffOf(b) * (np && !b.powered ? np.without : 1);
-      if (L.supply) wSup += L.supply * k;
+      if (L.supply) wSup += L.supply * sizeK(b) * k;
       if (k > 0) stamp(b, L.radius, (i) => { this.coverage.water[i] = 1; });
     }
     wSup = Math.round(wSup);
@@ -328,7 +328,7 @@ export class Sim {
     for (const b of w.buildings.values()) {
       const src = RESEARCH_SOURCES[b.type];
       if (!src || !isOpen(b) || !b.connected) continue;
-      const p = Math.round(src[Math.min(b.level, src.length - 1)] * Math.min(1, b.working ?? 1));
+      const p = Math.round(src[Math.min(b.level, src.length - 1)] * sizeK(b) * Math.min(1, b.working ?? 1));
       if (p <= 0) continue;
       const name = BUILDINGS[b.type].levels[b.level].name;
       if (!by.has(name)) by.set(name, { name, n: 0, points: 0 });
@@ -527,8 +527,8 @@ export class Sim {
       const v = this.incomeOf(b);
       if (v) { if (def.cat === 'industry') inc.industry += v; else inc.commerce += v; }
       if (L.upkeep) {
-        if (def.cat === 'services' || def.cat === 'transit') exp.services += L.upkeep;
-        else exp.buildings += L.upkeep;
+        if (def.cat === 'services' || def.cat === 'transit') exp.services += Math.round(L.upkeep * sizeK(b));
+        else exp.buildings += Math.round(L.upkeep * sizeK(b));
       }
     }
     for (let i = 0; i < w.roads.length; i++) {

@@ -573,6 +573,11 @@ export const LARGE = {
   market: ['arcade'], bakery: ['arcade'], tavern: ['inn'], workshop: ['joinery'], lumber: ['joinery'],
   school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'],
 };
+// ...and what a double plot can become as a 2×2 estate (nothing needs one yet).
+export const ESTATE = {};
+// A plot may only grow when the bigger plot opens up a bigger building to
+// upgrade into: these are the options for a plot growing to `area` tiles.
+export const growsInto = (type, area) => (area >= 4 ? ESTATE[type] : LARGE[type]) || [];
 
 // Every service a building provides (combined buildings can provide two).
 export const servicesOf = (def) => def.services || (def.service ? [def.service] : []);

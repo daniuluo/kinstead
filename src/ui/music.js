@@ -1,39 +1,39 @@
-// A gentle soundtrack, made up as it plays: a lute picking out folk chords,
-// a soft flute (or bells in winter and at night) wandering over them and a
-// warm pad underneath, in an easy 3/4 lilt. At night it slows down and turns
-// to a minor key; in rain it plays quieter and sparser. Everything is
-// synthesised with the Web Audio API, so there are no music files and nothing
-// to license.
+// A gentle ambient soundtrack, made up as it plays. Slow chord pads swell in,
+// drift for half a minute and dissolve into the next chord over a soft drone;
+// glassy chimes and quiet piano notes drift in now and then, echo, and fade
+// into a long reverb. Warm major-seventh colours by day, darker minor ones at
+// night; quieter, darker and sparser in rain, glassier in winter. Everything
+// is synthesised with the Web Audio API, so there are no music files and
+// nothing to license.
 
 const KEY = 50;   // D3
-const TRIAD = { M: [0, 4, 7], m: [0, 3, 7] };
-// four-bar chord loops: [semitones above the key, major or minor]
-const LOOPS = {
-  day: [
-    [[0, 'M'], [5, 'M'], [9, 'm'], [7, 'M']],
-    [[0, 'M'], [7, 'M'], [9, 'm'], [5, 'M']],
-    [[0, 'M'], [10, 'M'], [5, 'M'], [0, 'M']],
-    [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']],
-    [[0, 'M'], [5, 'M'], [0, 'M'], [7, 'M']],
-  ],
-  night: [
-    [[0, 'm'], [10, 'M'], [8, 'M'], [10, 'M']],
-    [[0, 'm'], [5, 'm'], [10, 'M'], [0, 'm']],
-    [[0, 'm'], [8, 'M'], [3, 'M'], [10, 'M']],
-  ],
-};
-const TUNE = { day: [0, 2, 4, 7, 9], night: [0, 3, 5, 7, 10] };   // pentatonic, so nothing clashes
-const RHYTHMS = [[1, 1, 1], [2, 1], [1, 2], [0.5, 0.5, 1, 1], [1, 0.5, 0.5, 1], [3], [1, 1, 0.5, 0.5]];
-const ENDINGS = [[2, 1], [3], [1, 2]];
+// chord colours as semitones above the chord's root, and roots above the key
+const DAY = [
+  { root: 0, v: [0, 7, 11, 14, 16] },       // Dmaj9
+  { root: 5, v: [0, 7, 11, 14, 18] },       // Gmaj7#11
+  { root: 9, v: [0, 7, 10, 14, 15] },       // Bm9
+  { root: 7, v: [0, 7, 9, 14, 16] },        // A6/9
+  { root: 4, v: [0, 7, 10, 14, 15] },       // F#m9
+  { root: 2, v: [0, 7, 10, 14, 17] },       // Em11
+];
+const NIGHT = [
+  { root: 0, v: [0, 7, 10, 14, 15] },       // Dm9
+  { root: 10, v: [0, 7, 11, 14, 16] },      // Cmaj9
+  { root: 8, v: [0, 7, 11, 14, 18] },       // Bbmaj7#11
+  { root: 5, v: [0, 7, 10, 14, 15] },       // Gm9
+  { root: 3, v: [0, 7, 11, 14, 16] },       // Fmaj9
+];
+// notes the chimes and piano may play over each chord (a pentatonic-ish set)
+const SPARKLE = { day: [0, 2, 4, 7, 9, 11], night: [0, 2, 3, 7, 10] };
 const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
 const pick = (a) => a[(Math.random() * a.length) | 0];
+const rand = (a, b) => a + Math.random() * (b - a);
 
 export class Music {
   constructor(game) {
     this.game = game;
     this.on = false;
-    this.plucks = new Map();
-    this.phrase = null;
+    this.section = null;
   }
 
   get ctx() { return this.game.audio.ctx; }
@@ -46,7 +46,7 @@ export class Music {
     if (this.out) this.out.gain.setTargetAtTime(this._vol(), this.ctx.currentTime, 0.3);
   }
 
-  _vol() { return 1.3 * Math.max(0, Math.min(1, this.game.settings.musicVol ?? 0.5)); }
+  _vol() { return 1.5 * Math.max(0, Math.min(1, this.game.settings.musicVol ?? 0.5)); }
 
   start() {
     if (this.on) return;
@@ -56,229 +56,204 @@ export class Music {
       this.out = c.createGain();
       this.out.gain.value = 0;
       this.out.connect(c.destination);
+      // everything plays into a gently darkened bus, a long hall and an echo
       this.bus = c.createGain();
-      const tone = c.createBiquadFilter();
-      tone.type = 'lowpass'; tone.frequency.value = 5200;
-      this.bus.connect(tone).connect(this.out);
+      this.tone = c.createBiquadFilter();
+      this.tone.type = 'lowpass'; this.tone.frequency.value = 4200;
+      this.bus.connect(this.tone).connect(this.out);
       const verb = c.createConvolver();
-      verb.buffer = this._room(2.6);
+      verb.buffer = this._hall(6);
+      this.verbIn = c.createGain();
+      this.verbIn.gain.value = 0.9;
       const wet = c.createGain();
-      wet.gain.value = 0.32;
-      this.bus.connect(verb).connect(wet).connect(this.out);
+      wet.gain.value = 0.55;
+      this.bus.connect(this.verbIn).connect(verb).connect(wet).connect(this.out);
+      // the echo is only for the chimes and piano
+      this.echo = c.createGain();
+      const d = c.createDelay(2), fb = c.createGain(), dl = c.createBiquadFilter();
+      d.delayTime.value = 0.68; fb.gain.value = 0.38;
+      dl.type = 'lowpass'; dl.frequency.value = 2400;
+      this.echo.connect(d).connect(dl).connect(fb).connect(d);
+      dl.connect(this.bus);
     }
     this.on = true;
     this.out.gain.cancelScheduledValues(c.currentTime);
-    this.out.gain.setTargetAtTime(this._vol(), c.currentTime, 1.2);
-    this.next = c.currentTime + 0.2;
-    this.barN = 0;
-    this.phrase = null;
+    this.out.gain.setTargetAtTime(this._vol(), c.currentTime, 2);
+    this.section = null;
+    this.nextSection = c.currentTime + 0.2;
+    this.nextNote = c.currentTime + rand(3, 6);
     clearInterval(this.timer);
-    this.timer = setInterval(() => this._tick(), 200);
+    this.timer = setInterval(() => this._tick(), 250);
   }
 
   stop() {
     if (!this.on) return;
     this.on = false;
     clearInterval(this.timer);
-    if (this.out) this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    if (this.out) this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.6);
   }
 
-  // A soft room for everything to ring in: a burst of fading noise.
-  _room(sec) {
+  // A long, soft hall: stereo noise that fades away slowly.
+  _hall(sec) {
     const c = this.ctx, n = Math.floor(c.sampleRate * sec), b = c.createBuffer(2, n, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
       const d = b.getChannelData(ch);
-      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 3;
+      let lp = 0;
+      for (let i = 0; i < n; i++) {
+        lp = lp * 0.55 + (Math.random() * 2 - 1) * 0.45;   // a little darker than white noise
+        d[i] = lp * (1 - i / n) ** 2.4;
+      }
     }
     return b;
   }
 
-  // ---------------------------------------------------------- composing
   _mood() {
     const env = this.game.env || {};
     return { night: (env.night || 0) > 0.55, wet: (env.rain || 0) > 0.3 || !!env.snowing, winter: env.season === 3 };
-  }
-
-  // Eight bars: a chord loop played twice, with a tune (or a rest from it).
-  _newPhrase() {
-    const m = this._mood(), mode = m.night ? 'night' : 'day';
-    this.count = (this.count || 0) + 1;
-    // every so often a quiet breather: just the pad and a few bells
-    const breather = this.count % (4 + ((Math.random() * 3) | 0)) === 0;
-    const loop = pick(LOOPS[mode]);
-    const p = {
-      mode, loop, breather,
-      bpm: m.night ? 60 + Math.random() * 6 : m.wet ? 66 : 76 + Math.random() * 8,
-      sparse: m.night || m.wet,
-      tune: !breather && Math.random() < (m.wet ? 0.4 : m.night ? 0.55 : 0.7),
-      voice: m.winter || (m.night && Math.random() < 0.5) ? 'bell' : 'flute',
-      soft: m.wet ? 0.7 : 1,
-    };
-    p.notes = p.tune ? this._motif(p) : [];
-    return p;
-  }
-
-  _chord(p, bar) {
-    const [off, q] = p.loop[bar % 4];
-    let root = KEY + off;
-    if (root > KEY + 7) root -= 12;
-    return { root, t: TRIAD[q] };
-  }
-
-  // A four-bar tune: mostly stepwise on the pentatonic scale, landing on a
-  // chord note at the start of each bar and on the root at the end.
-  _motif(p) {
-    const pool = [];
-    for (let o = 1; o <= 3; o++) for (const s of TUNE[p.mode]) { const m = KEY + 12 * o + s; if (m >= 62 && m <= 86) pool.push(m); }
-    let i = (pool.length / 2) | 0;
-    const notes = [];
-    const nearest = (m, ch, rootOnly) => {
-      let best = m, bd = 99;
-      for (let o = -1; o <= 4; o++) for (const t of rootOnly ? [0] : ch.t) {
-        const c = ch.root + 12 * o + t;
-        if (c < 62 || c > 86) continue;
-        if (Math.abs(c - m) < bd) { bd = Math.abs(c - m); best = c; }
-      }
-      return best;
-    };
-    for (let bar = 0; bar < 4; bar++) {
-      const ch = this._chord(p, bar), r = bar === 3 ? pick(ENDINGS) : pick(RHYTHMS);
-      let beat = 0;
-      r.forEach((d, k) => {
-        i = Math.max(0, Math.min(pool.length - 1, i + pick([-1, -1, 1, 1, 0, 2, -2, 1])));
-        let m = pool[i];
-        if (beat === 0) m = nearest(m, ch, false);
-        const last = bar === 3 && k === r.length - 1;
-        if (last) m = nearest(m, ch, true);
-        if (!last && !(bar === 0 && k === 0) && Math.random() < 0.12) { beat += d; return; }
-        notes.push({ bar, beat, dur: d, midi: m });
-        beat += d;
-      });
-    }
-    return notes;
   }
 
   // ---------------------------------------------------------- scheduling
   _tick() {
     const c = this.ctx;
     if (!c || !this.on) return;
-    // after a long stall (a sleeping tab) start again from now
-    if (this.next < c.currentTime - 1) this.next = c.currentTime + 0.1;
-    while (this.next < c.currentTime + 1.4) {
-      if (this.barN % 8 === 0 || !this.phrase) this.phrase = this._newPhrase();
-      const beat = 60 / this.phrase.bpm;
-      this._bar(this.phrase, this.barN % 8, this.next, beat);
-      this.next += beat * 3;
-      this.barN++;
-    }
+    const now = c.currentTime;
+    // after a long stall (a sleeping tab) pick up again from now
+    if (this.nextSection < now - 2) this.nextSection = now + 0.1;
+    if (this.nextNote < now - 2) this.nextNote = now + rand(1, 3);
+    const m = this._mood();
+    this.tone.frequency.setTargetAtTime(m.wet ? 2200 : m.night ? 3000 : 4200, now, 3);
+    while (this.nextSection < now + 2) this._newSection(this.nextSection, m);
+    while (this.section && this.nextNote < now + 2) this._sparkle(this.nextNote, m);
   }
 
-  _bar(p, bar, t0, beat) {
-    const ch = this._chord(p, bar), [r, t] = [ch.root, ch.t];
-    const k = p.soft;
-    // warm pad, swelling over the bar
-    this._pad([r + 12, r + 12 + t[1], r + 12 + t[2]], t0, beat * 3, (p.breather ? 0.05 : p.sparse ? 0.04 : 0.028) * k);
-    if (p.breather) {
-      if (bar % 2 === 0) this._bell(r + 24 + t[2], t0 + beat, 0.05 * k);
-      return;
+  // A new chord: pads swell in over a few seconds and overlap the old ones as
+  // they fade, with a quiet drone on the root underneath.
+  _newSection(t, m) {
+    const set = m.night ? NIGHT : DAY;
+    let ch = pick(set);
+    for (let i = 0; i < 4 && this.section && ch === this.section.ch; i++) ch = pick(set);
+    const len = rand(24, 38) * (m.night ? 1.25 : 1);
+    const root = KEY + ch.root - (ch.root > 6 ? 12 : 0);
+    const soft = m.wet ? 0.65 : 1;
+    const fade = 7;
+    this.section = { ch, root, mode: m.night ? 'night' : 'day', t0: t, t1: t + len };
+    // the pad voices, spread across the stereo field
+    ch.v.forEach((iv, k) => this._pad(root + 12 + iv, t, len + fade, 0.016 * soft * (k === 0 ? 1.2 : 1), (k / (ch.v.length - 1)) * 1.2 - 0.6));
+    this._drone(root - 12, t, len + fade, 0.05 * soft);
+    this.nextSection = t + len;
+  }
+
+  // Now and then a chime or a soft piano note, sometimes a short falling or
+  // rising figure; fewer at night and in rain.
+  _sparkle(t, m) {
+    const s = this.section;
+    const pool = [];
+    for (let o = 2; o <= 3; o++) for (const iv of SPARKLE[s.mode]) pool.push(s.root + 12 * o + iv);
+    const soft = m.wet ? 0.6 : 1;
+    const bell = m.winter || Math.random() < (m.night ? 0.65 : 0.45);
+    const n = Math.random() < 0.3 ? (Math.random() < 0.5 ? 2 : 3) : 1;
+    let i = (Math.random() * pool.length) | 0;
+    const step = Math.random() < 0.5 ? -1 : 1;
+    for (let k = 0; k < n; k++) {
+      const midi = pool[Math.max(0, Math.min(pool.length - 1, i))];
+      const at = t + k * rand(0.45, 0.8), pan = rand(-0.7, 0.7);
+      if (bell) this._chime(midi, at, 0.05 * soft, pan);
+      else this._piano(midi - 12, at, 0.07 * soft, pan);
+      i += step * (Math.random() < 0.7 ? 1 : 2);
     }
-    // bass on the first beat
-    this._pluck(r - 12, t0, 0.32 * k, 600);
-    // the lute picks out the chord in eighth notes (fewer at night and in rain)
-    const arp = [r, r + t[2], r + 12 + t[1], r + t[2], r + 12, r + t[2]];
-    arp.forEach((m, i) => {
-      if (p.sparse && i % 2) return;
-      const swing = i % 2 ? beat * 0.04 : 0;
-      this._pluck(m, t0 + i * beat / 2 + swing, (i === 0 ? 0.24 : 0.16) * k, 2600);
-    });
-    // the tune, played twice through the phrase
-    for (const n of p.notes) {
-      if (n.bar !== bar % 4) continue;
-      const at = t0 + n.beat * beat, dur = n.dur * beat;
-      if (p.voice === 'bell') this._bell(n.midi, at, 0.09 * k);
-      else this._flute(n.midi, at, dur, 0.075 * k);
-    }
+    const gap = (m.night ? rand(4, 10) : rand(2.5, 7)) * (m.wet ? 1.5 : 1);
+    this.nextNote = t + gap;
   }
 
   // ---------------------------------------------------------- instruments
-  // A plucked string (Karplus-Strong), rendered once per pitch and reused.
-  _pluckBuf(midi) {
-    let b = this.plucks.get(midi);
-    if (b) return b;
-    const c = this.ctx, sr = c.sampleRate, f = mtof(midi), N = Math.max(2, Math.round(sr / f));
-    const len = Math.floor(sr * (midi < 48 ? 2.4 : 1.7));
-    const ring = new Float32Array(N), out = new Float32Array(len);
-    let prev = 0;
-    for (let i = 0; i < N; i++) { const v = Math.random() * 2 - 1; ring[i] = (v + prev) * 0.5; prev = ring[i]; }
-    for (let i = 0, p = 0; i < len; i++) {
-      const a = ring[p], nb = ring[(p + 1) % N];
-      out[i] = a;
-      ring[p] = (a + nb) * 0.4985;
-      p = (p + 1) % N;
-    }
-    for (let i = Math.floor(len * 0.85); i < len; i++) out[i] *= (len - i) / (len * 0.15);
-    b = c.createBuffer(1, len, sr);
-    b.copyToChannel(out, 0);
-    b.rate = f / (sr / (N + 0.5));   // the averaging adds half a sample: tune it back
-    this.plucks.set(midi, b);
-    return b;
+  _panner(pan) {
+    const c = this.ctx;
+    if (!c.createStereoPanner) return null;
+    const p = c.createStereoPanner();
+    p.pan.value = pan;
+    return p;
   }
 
-  _pluck(midi, t, vol, bright) {
-    const c = this.ctx, b = this._pluckBuf(midi);
-    const s = c.createBufferSource(), g = c.createGain(), f = c.createBiquadFilter();
-    s.buffer = b;
-    s.playbackRate.value = b.rate;
-    f.type = 'lowpass'; f.frequency.value = bright;
-    g.gain.value = vol;
-    s.connect(f).connect(g).connect(this.bus);
-    s.start(t);
-  }
-
-  _flute(midi, t, dur, vol) {
-    const c = this.ctx, f0 = mtof(midi);
-    const o = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain(), lp = c.createBiquadFilter();
-    const lfo = c.createOscillator(), lg = c.createGain();
-    o.type = 'triangle'; o.frequency.value = f0;
-    o2.type = 'sine'; o2.frequency.value = f0 * 2;
-    const g2 = c.createGain(); g2.gain.value = 0.18;
-    lfo.frequency.value = 5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f0 * 0.006, t + Math.min(0.5, dur));
-    lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
-    lp.type = 'lowpass'; lp.frequency.value = 2400;
-    const end = t + Math.max(0.15, dur * 0.95);
+  // A soft pad voice: two detuned triangles through a filter that opens and
+  // closes slowly, swelling in and fading out over several seconds.
+  _pad(midi, t, dur, vol, pan) {
+    const c = this.ctx, f = mtof(midi);
+    const g = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.5;
+    lp.frequency.setValueAtTime(500, t);
+    lp.frequency.linearRampToValueAtTime(rand(1100, 1700), t + dur * 0.45);
+    lp.frequency.linearRampToValueAtTime(600, t + dur);
+    const att = Math.min(6, dur * 0.25), rel = 7;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.07);
-    g.gain.setValueAtTime(vol * 0.85, end - 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, end + 0.18);
-    o.connect(lp); o2.connect(g2).connect(lp); lp.connect(g).connect(this.bus);
-    for (const x of [o, o2, lfo]) { x.start(t); x.stop(end + 0.25); }
+    g.gain.exponentialRampToValueAtTime(vol, t + att);
+    g.gain.setValueAtTime(vol, t + dur - rel);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const p = this._panner(pan);
+    lp.connect(g);
+    if (p) g.connect(p).connect(this.bus); else g.connect(this.bus);
+    for (const det of [-7, 7]) {
+      const o = c.createOscillator();
+      o.type = 'triangle'; o.frequency.value = f; o.detune.value = det + rand(-2, 2);
+      o.connect(lp);
+      o.start(t); o.stop(t + dur + 0.1);
+    }
   }
 
-  _bell(midi, t, vol) {
-    const c = this.ctx, f0 = mtof(midi);
-    for (const [k, v, d] of [[1, 1, 2.2], [2.76, 0.35, 0.9], [5.4, 0.12, 0.4]]) {
-      const o = c.createOscillator(), g = c.createGain();
+  _drone(midi, t, dur, vol) {
+    const c = this.ctx, g = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 280;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 8);
+    g.gain.setValueAtTime(vol, t + dur - 7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    lp.connect(g).connect(this.bus);
+    for (const [k, type] of [[1, 'sine'], [2, 'triangle']]) {
+      const o = c.createOscillator();
+      o.type = type; o.frequency.value = mtof(midi) * k;
+      const og = c.createGain(); og.gain.value = k === 1 ? 1 : 0.25;
+      o.connect(og).connect(lp);
+      o.start(t); o.stop(t + dur + 0.1);
+    }
+  }
+
+  // A glassy chime: a few slightly inharmonic sine partials with long tails.
+  _chime(midi, t, vol, pan) {
+    const c = this.ctx, f0 = mtof(midi), g = c.createGain();
+    g.gain.value = vol;
+    const p = this._panner(pan);
+    if (p) g.connect(p).connect(this.bus); else g.connect(this.bus);
+    g.connect(this.echo);
+    for (const [k, v, d] of [[1, 1, 4.5], [2.01, 0.28, 2.6], [3.98, 0.12, 1.4], [5.43, 0.05, 0.8]]) {
+      const o = c.createOscillator(), e = c.createGain();
       o.type = 'sine'; o.frequency.value = f0 * k;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol * v, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g).connect(this.bus);
+      e.gain.setValueAtTime(0.0001, t);
+      e.gain.exponentialRampToValueAtTime(v, t + 0.015);
+      e.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(e).connect(g);
       o.start(t); o.stop(t + d + 0.05);
     }
   }
 
-  _pad(notes, t, dur, vol) {
-    const c = this.ctx, g = c.createGain(), lp = c.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 900;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.4);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur * 1.25);
-    lp.connect(g).connect(this.bus);
-    for (const m of notes) for (const det of [-6, 6]) {
-      const o = c.createOscillator();
-      o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = det;
-      o.connect(lp);
-      o.start(t); o.stop(t + dur * 1.3);
+  // A soft, felted piano note: a quick, rounded attack and a long decay.
+  _piano(midi, t, vol, pan) {
+    const c = this.ctx, f0 = mtof(midi), g = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(f0 * 6, t);
+    lp.frequency.exponentialRampToValueAtTime(f0 * 1.5, t + 2.5);
+    g.gain.value = vol;
+    const p = this._panner(pan);
+    lp.connect(g);
+    if (p) g.connect(p).connect(this.bus); else g.connect(this.bus);
+    g.connect(this.echo);
+    for (const [k, v, d] of [[1, 1, 5], [2, 0.35, 3], [3, 0.12, 1.6]]) {
+      const o = c.createOscillator(), e = c.createGain();
+      o.type = k === 1 ? 'triangle' : 'sine'; o.frequency.value = f0 * k;
+      e.gain.setValueAtTime(0.0001, t);
+      e.gain.exponentialRampToValueAtTime(v, t + 0.02);
+      e.gain.exponentialRampToValueAtTime(v * 0.35, t + 0.6);
+      e.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(e).connect(lp);
+      o.start(t); o.stop(t + d + 0.05);
     }
   }
 }
