@@ -2,7 +2,10 @@
 
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf } from '../defs.js';
+import { isOpen } from '../world/world.js';
 import { thumb } from './thumbs.js';
+import { STYLES } from '../render/buildings.js';
+import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf } from '../sim/people.js';
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
@@ -26,11 +29,12 @@ const ICONS = {
   '🍂': 'eco', '❄': 'ac_unit', '🧑': 'person', '🧒': 'child_care', '🧓': 'elderly', '👪': 'groups', '🎲': 'casino',
   '🐟': 'set_meal', '🌾': 'grass', '🪓': 'carpenter', '🔨': 'hardware', '🥖': 'bakery_dining', '🍺': 'sports_bar',
   '🧺': 'shopping_basket', '🏛': 'account_balance', '🌷': 'local_florist', '🌼': 'filter_vintage', '🚉': 'train', '🏠': 'home',
-  '😢': 'sentiment_dissatisfied', '🗽': 'person_pin',
+  '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
+  '🏪': 'store', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {
-  return String(html).replace(/️/g, '').replace(/🪙/g, '<span class="ms coin">toll</span>').replace(EMOJI_RE, (m) => `<span class="ms">${ICONS[m]}</span>`);
+  return String(html).replace(/️/g, '').replace(/🪙/g, '<span class="ms coinico">toll</span>').replace(EMOJI_RE, (m) => `<span class="ms">${ICONS[m]}</span>`);
 }
 
 const TOOLS = [
@@ -62,6 +66,7 @@ export class UI {
     this._t = 0;
     this.labels = new Map();
     this.follow = null;
+    this.lookChoice = new Map();   // building id → style picked for its next upgrade
     this.buildToolbar();
     this.bindStatic();
   }
@@ -78,6 +83,9 @@ export class UI {
     $('btnOverlay').onclick = () => this.toggleOverlayMenu();
     $('btnLines').onclick = () => this.showLines();
     $('btnBudget').onclick = () => this.showBudget();
+    $('btnPeople').onclick = () => this.showPeople();
+    $('btnPops').onclick = () => this.togglePopups();
+    this.syncPopButton();
     $('btnSave').onclick = () => this.showSaves();
     $('btnSettings').onclick = () => this.showSettings();
     $('btnHelp').onclick = () => this.showHelp();
@@ -142,15 +150,15 @@ export class UI {
       cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
     } else {
       for (const [type, def] of Object.entries(BUILDINGS)) {
-        if (def.cat !== cat) continue;
+        if (def.cat !== cat || def.hidden) continue;
         const u = unlockOf(type, 0);
         cards.push(card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, pop < u ? u : 0, () => this.game.input.setTool({ kind: 'build', type }), def.desc));
       }
       if (cat === 'parks') cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
       if (cat === 'transit') {
-        cards.push(card('rail', '🛤️', 'Lay track', `${RAIL_COST} / tile`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'rail' }), 'Drag to lay railway track. Track can cross roads.'));
+        cards.push(card('rail', '🛤️', 'Lay track', `${RAIL_COST} / tile`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'rail' }), 'Drag to lay railway track. Trains never reverse, so lines need a loop of track. Track can cross roads.'));
         cards.push(card('line:coach', '🐴', 'New coach line', `${TRANSIT.coach.vehicleCost}`, 0, () => this.game.input.setTool({ kind: 'line', mode: 'coach', stops: [] }), 'Click coach stops in order, then press Enter.'));
-        cards.push(card('line:rail', '🚂', 'New rail line', `${TRANSIT.rail.vehicleCost}`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'line', mode: 'rail', stops: [] }), 'Click stations in order, then press Enter.'));
+        cards.push(card('line:rail', '🚂', 'New rail line', `${TRANSIT.rail.vehicleCost}`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'line', mode: 'rail', stops: [] }), 'Stations must sit on a loop of track (trains never reverse). Click them in order, then press Enter.'));
         cards.push(card('lines', '📋', 'Manage lines', '', 0, () => this.showLines()));
       }
     }
@@ -185,12 +193,17 @@ export class UI {
     let msg = '';
     switch (t.kind) {
       case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
-      case 'rail': msg = 'Drag to lay railway track · it can cross roads · right-click to stop'; break;
-      case 'build': msg = `Click to place a ${BUILDINGS[t.type].name} · Tab flips the entrance · right-click to stop`; break;
+      case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
+      case 'build': msg = `Click to place a ${BUILDINGS[t.type].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
+      case 'move': {
+        const b = this.world.buildings.get(t.id);
+        msg = b ? `Click a new plot for the ${BUILDINGS[b.type].levels[b.level].name} · it is taken down, carted over and rebuilt · Tab flips the entrance · right-click to cancel` : '';
+        break;
+      }
       case 'bulldoze': msg = 'Click or drag to demolish · right-click to stop'; break;
       case 'terrain': msg = `Click or drag to ${t.mode === 'flatten' ? 'level' : t.mode} the land · ${TERRAFORM_COST} coins each`; break;
       case 'trees': msg = `Click or drag to plant trees · ${TREE_COST} coins each`; break;
-      case 'line': msg = `Click ${t.mode === 'rail' ? 'stations' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
+      case 'line': msg = `Click ${t.mode === 'rail' ? 'stations on a loop of track' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
       default: msg = '';
     }
     h.textContent = msg;
@@ -241,6 +254,7 @@ export class UI {
 
   // ------------------------------------------------------------ inspector
   inspect(sel) {
+    if (this.preview && (!sel || sel.kind !== 'building' || sel.id !== this.preview.id)) { this.preview = null; this.game.view?.setPreview(null, null); }
     this.selection = sel;
     this.game.agents.select(sel && sel.kind === 'resident' ? this.world.residents.get(sel.id) : null);
     if (!sel) { $('inspector').classList.add('hidden'); this.game.setFollow(null); this.game.refreshCursor(); return; }
@@ -271,15 +285,81 @@ export class UI {
       html = this._roadHTML(sel.x, sel.z, L);
     }
     el.innerHTML = `<button class="close" data-act="close">✕</button>` + ico(html);
+    if (sel.kind === 'building') this._syncPreview(w.buildings.get(sel.id));
     el.classList.remove('hidden');
     for (const a of el.querySelectorAll('[data-act]')) a.onclick = (e) => this._act(a.dataset.act, a.dataset, e);
+  }
+
+  // Side-by-side numbers: the building now vs. after this upgrade.
+  _compareHTML(b, o, n) {
+    const cur = BUILDINGS[b.type].levels[b.level];
+    const F = [
+      ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['income', 'Earnings per worker', (v) => `🪙 ${v}`],
+      ['tax', 'Tax per worker', (v) => `${v}×`], ['visit', 'Takings per visit', (v) => `🪙 ${v}`], ['radius', 'Reach', (v) => `${v} tiles`],
+      ['appeal', 'Scenery', (v) => `+${v}`], ['supply', 'Water supply', (v) => `${v} people`], ['kw', 'Power output', (v) => `${v} kW`],
+      ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax bonus', (v) => `+${Math.round(v * 100)}%`],
+      ['pollution', 'Smoke', (v) => `${v} tiles`, true], ['upkeep', 'Upkeep', (v) => `🪙 ${v}/day`, true],
+    ];
+    const rows = [];
+    for (const [k, label, fmtV, worse] of F) {
+      const a = cur[k] || 0, z = n[k] || 0;
+      if (!a && !z) continue;
+      const better = worse ? z < a : z > a;
+      const cls = a === z ? '' : better ? 'up' : 'down';
+      rows.push(`<tr class="${cls}"><td>${label}</td><td>${a ? fmtV(a) : '—'}</td><td>→</td><td>${z ? fmtV(z) : '—'}</td></tr>`);
+    }
+    if (o.type !== b.type) rows.unshift(`<tr><td>Becomes</td><td>${esc(BUILDINGS[b.type].name)}</td><td>→</td><td>${esc(BUILDINGS[o.type].branch || BUILDINGS[o.type].name)}</td></tr>`);
+    return rows.length ? `<table class="cmp"><tr><th></th><th>Now</th><th></th><th>After</th></tr>${rows.join('')}</table>` : '';
+  }
+
+  // Keep the in-town preview in step with the style picker.
+  _syncPreview(b) {
+    const p = this.preview;
+    if (!b || !p || p.id !== b.id || b.con) { if (p && (!b || p.id !== b.id || b.con)) this.preview = null; this.game.view.setPreview(null, null); return; }
+    const opt = this.world.upgradeOptions(b).find(o => o.type === p.type);
+    if (!opt) { this.preview = null; this.game.view.setPreview(null, null); return; }
+    const look = this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : b.look || null;
+    this.game.view.setPreview(b, { type: opt.type, level: opt.level, look });
+  }
+
+  _siteHTML(b) {
+    const st = this.game.construction.status(b);
+    const con = b.con;
+    const tdef = BUILDINGS[con.toType || b.type];
+    const target = con.kind === 'upgrade' ? tdef.levels[con.to].name : BUILDINGS[b.type].levels[b.level].name;
+    const title = con.kind === 'dismantle' ? 'Being taken down for a move'
+      : con.wait === 'dismantle' ? 'Waiting for the old building to come down'
+        : con.wait === 'haul' ? 'Materials on their way by cart'
+          : con.kind === 'upgrade' ? `Upgrading to ${target}`
+            : con.kind === 'merge' ? `Joining into ${target}`
+              : con.moved ? 'Going back up on its new plot' : 'Under construction';
+    const pct = Math.round(st.progress * 100);
+    let h = `<div class="sec"><h5>🏗️ ${esc(title)}</h5><div class="meter build"><i style="width:${pct}%"></i></div>`;
+    const rows = [['Progress', `${pct}%`]];
+    if (!con.wait) {
+      rows.push(['Builders on site', `${st.onSite} / ${st.cap}` + (st.hired ? ` + ${st.hired} hired` : '')]);
+      if (st.eta != null) rows.push(['Work left', `about ${Math.max(1, Math.ceil(st.eta))} h at this pace`]);
+    }
+    h += rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('');
+    let note = null, cls = 'ok';
+    const hrs = this.world.hours;
+    if (con.wait) note = null;
+    else if (!b.access) note = 'Volunteers from the village are doing this one.';
+    else if (!st.hasBuilders) { note = "No builders in town: hired hands from the next village work slowly. Build a 🧱 Builder's Yard."; cls = 'no'; }
+    else if (!b.connected) { note = "Builders can't reach it: connect it to the town's roads."; cls = 'no'; }
+    else if (hrs < 6.5 || hrs >= 18) note = 'The builders start again at dawn.';
+    else if (!st.assigned) note = 'Waiting for a free builder.';
+    if (note) h += `<div class="req"><div class="${cls}">${note}</div></div>`;
+    return h + '</div>';
   }
 
   _buildingHTML(b) {
     const w = this.world, sim = this.game.sim;
     const def = BUILDINGS[b.type], L = def.levels[b.level];
+    const open = isOpen(b);
     const stars = def.levels.length > 1 ? `<span class="stars">${'★'.repeat(b.level + 1)}${'☆'.repeat(def.levels.length - b.level - 1)}</span>` : '';
-    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}</div></div></div>`;
+    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}</div></div></div>`;
+    if (b.con) h += this._siteHTML(b);
     const chips = [];
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
     if (def.needsRail) chips.push(b.rail ? '<span class="chip ok">On the railway</span>' : '<span class="chip no">No track alongside</span>');
@@ -305,9 +385,18 @@ export class UI {
       rows.push(['Lines', lines.length ? lines.map(l => `<span style="color:${l.color}">●</span> ${esc(l.name)}`).join('<br>') : 'None yet']);
       rows.push(['Waiting', `${waiting}`]);
     }
+    if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
+    if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
+    if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].name : b.flavor]);
+    for (const l of b.leases || []) {
+      const o = w.buildings.get(l.with);
+      if (!o) continue;
+      const on = BUILDINGS[o.type].levels[o.level].name;
+      rows.push(l.buyer ? ['Extra land', `bought from the ${esc(on)} next door for 🪙 ${l.price}`] : ['Garden', `a strip sold to the ${esc(on)} next door for 🪙 ${l.price}`]);
+    }
     rows.push(['Built', `Day ${b.built}`]);
-    h += `<div class="sec">${rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('')}</div>`;
-    if (L.housing) {
+    if (open) h += `<div class="sec">${rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('')}</div>`;
+    if (L.housing && open) {
       const f = b.factors || {};
       h += `<div class="sec"><h5>Happiness ${b.happiness}%</h5><div class="meter"><i style="width:${b.happiness}%;background-position:${-300 + b.happiness * 3}px 0"></i></div>`;
       const fc = [];
@@ -318,6 +407,7 @@ export class UI {
       if (f.pollution > 2) fc.push(`<span class="chip no">🏭 Smoky (−${Math.round(f.pollution)})</span>`);
       if (f.unemployed > 0.3) fc.push('<span class="chip no">🧰 Needs jobs</span>');
       if (f.tax < -2) fc.push('<span class="chip no">💸 High taxes</span>');
+      if (f.land) fc.push(`<span class="chip ok">🌿 ${f.land === 'buyer' ? 'Big garden' : 'Paid for a garden strip'}</span>`);
       h += `<div class="chips" style="margin-top:6px">${fc.join('')}</div></div>`;
       if (b.residents.length) {
         h += `<div class="sec"><h5>Household</h5><div class="chips">${b.residents.map(id => {
@@ -332,14 +422,45 @@ export class UI {
         return r ? `<span class="chip link" data-act="resident" data-id="${id}">${esc(r.first)} ${esc(r.last[0])}.</span>` : '';
       }).join('')}${b.workers.length > 16 ? `<span class="chip">+${b.workers.length - 16}</span>` : ''}</div></div>`;
     }
-    const up = w.upgradeCheck(b);
-    if (!up.max) {
-      const n = up.next;
-      h += `<div class="sec"><h5>Upgrade to ${esc(n.name)}</h5><div class="req">${up.reqs.map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div></div>`;
+    // upgrades: one path, or a choice of branches at the top level
+    if (!b.con) {
+      const options = w.upgradeOptions(b);
+      const branching = options.length > 1 || (options[0] && options[0].type !== b.type);
+      for (const o of options) {
+        const up = w.upgradeCheck(b, o.type);
+        const td = BUILDINGS[o.type], n = up.next;
+        const what = branching ? ` <span class="sub">· ${esc(td.branch || td.name)}</span>` : '';
+        const styled = td.cat === 'residential' || td.cat === 'commercial';
+        const look = styled ? (this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : b.look || null) : null;
+        h += `<div class="sec"><h5>Upgrade to ${esc(n.name)}${what}</h5>`;
+        if (styled || branching) {
+          h += '<div class="uprow">';
+          if (styled) h += `<img class="preview" src="${thumb(o.type, o.level, b.variant, b.flavor, look)}" alt="">`;
+          if (branching) h += `<div class="note">${esc(td.desc)} Homes for ${n.housing}${n.tax ? `, tax ${n.tax}×` : ''}.</div>`;
+          h += '</div>';
+        }
+        if (styled) {
+          const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
+          h += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}">${s.name}</button>`).join('')}</div>`;
+          h += `<div class="actions"><button class="btn small ${on ? 'gold' : ''}" data-act="preview" data-type="${o.type}">👁 ${on ? 'Previewing in town · hide' : 'Preview in town'}</button></div>`;
+        }
+        h += this._compareHTML(b, o, n);
+        h += `<div class="req">${up.reqs.map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
+        h += `<div class="actions"><button class="btn primary" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? esc(n.name) : 'Upgrade'} · 🪙 ${fmt(n.cost)}</button></div></div>`;
+      }
+      const merges = w.mergeOptions(b);
+      if (merges.length) {
+        h += `<div class="sec"><h5>🔗 Join with a neighbour</h5><div class="note">Builders knock the two together into one mixed-use building on a double plot.</div><div class="actions col">`;
+        for (const m of merges) {
+          const on = BUILDINGS[m.other.type].levels[m.other.level].name;
+          h += `<button class="btn" data-act="merge" data-id="${m.other.id}" ${m.ok ? '' : 'disabled'}>+ ${esc(on)} → ${esc(m.name)} · 🪙 ${fmt(m.cost)}</button>`;
+        }
+        h += '</div></div>';
+      }
     }
     h += `<div class="actions">`;
-    if (!up.max) h += `<button class="btn primary" data-act="upgrade" ${up.ok ? '' : 'disabled'}>⬆ Upgrade · 🪙 ${fmt(up.next.cost)}</button>`;
-    if (b.type !== 'townhall') h += `<button class="btn danger" data-act="demolish">Demolish</button>`;
+    if (!b.con) h += `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · 🪙 ${fmt(w.moveCost(b))}</button>`;
+    if (b.type !== 'townhall' || b.con) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
     h += `</div>`;
     return h;
   }
@@ -355,8 +476,24 @@ export class UI {
     let h = `<div class="head"><div class="big">${ageIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age} · ${moodE} ${mood}%</div></div></div>`;
     h += `<div class="sec"><div class="row"><span>Now</span><b>${esc(ag.activity(r))}</b></div>`;
     h += `<div class="row"><span>Home</span><b>${home ? `<span class="chip link" data-act="building" data-id="${home.id}">${esc(BUILDINGS[home.type].levels[home.level].name)}</span>` : 'Homeless'}</b></div>`;
-    h += `<div class="row"><span>Work</span><b>${work}</b></div></div>`;
-    h += `<div class="actions"><button class="btn ${this.game.follow === r.id ? 'gold' : 'primary'}" data-act="follow">${this.game.follow === r.id ? '◉ Following' : '🎥 Follow'}</button></div>`;
+    h += `<div class="row"><span>Work</span><b>${work}</b></div>`;
+    const pay = salaryOf(w, r), cost = livingCostOf(w, r), pension = pensionOf(r);
+    if (r.age !== 'child') {
+      if (pay) h += `<div class="row"><span>Wage</span><b>🪙 ${pay} / day</b></div>`;
+      if (pension) h += `<div class="row"><span>Pension</span><b>🪙 ${pension} / day</b></div>`;
+      h += `<div class="row"><span>Living costs</span><b>🪙 ${cost} / day</b></div>`;
+      const wl = wealthOf(r);
+      h += `<div class="row"><span>Savings</span><b class="${wl < 0 ? 'neg' : ''}">🪙 ${fmt(wl)}</b></div>`;
+    }
+    h += '</div>';
+    const traits = traitsOf(r);
+    h += `<div class="sec"><h5>Personality</h5><div class="chips">${traits.map(t => `<span class="chip" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`).join('')}</div>`;
+    h += `<div class="note">${traits.map(t => esc(TRAITS[t].desc)).join('. ')}.</div></div>`;
+    const rel = relativesOf(w, r), friends = friendsOf(w, r);
+    const link = (o, label) => `<span class="chip link" data-act="resident" data-id="${o.id}">${ageIcon(o)} ${esc(o.first)}${o.last !== r.last ? ' ' + esc(o.last[0]) + '.' : ''} <i>${label}</i></span>`;
+    if (rel.length) h += `<div class="sec"><h5>Family</h5><div class="chips">${rel.map(x => link(x.r, x.role)).join('')}</div></div>`;
+    h += `<div class="sec"><h5>Friends</h5><div class="chips">${friends.length ? friends.map(x => link(x.r, x.ctx)).join('') : '<span class="muted">Keeps to themselves</span>'}</div></div>`;
+    h += `<div class="actions"><button class="btn ${this.game.follow === r.id ? 'gold' : 'primary'}" data-act="follow">${this.game.follow === r.id ? '◉ Following' : '🎥 Follow'}</button><button class="btn" data-act="people">👪 All villagers</button></div>`;
     return h;
   }
 
@@ -386,13 +523,42 @@ export class UI {
       case 'resident': this.inspect({ kind: 'resident', id: Number(data.id) }); break;
       case 'building': {
         const b = w.buildings.get(Number(data.id));
-        if (b) { this.inspect({ kind: 'building', id: b.id }); g.renderer.lookAt(b.x + b.size / 2, b.z + b.size / 2); }
+        if (b) { this.inspect({ kind: 'building', id: b.id }); g.renderer.lookAt(b.x + (b.w ?? b.size) / 2, b.z + (b.d ?? b.size) / 2); }
         break;
       }
       case 'upgrade': {
-        const r = w.upgradeBuilding(sel.id);
-        if (r.ok) { g.sfx('upgrade'); this.toast(`Upgraded to ${BUILDINGS[r.building.type].levels[r.building.level].name}!`, 'good', '⬆️'); }
-        else this.toast(r.reason || 'Cannot upgrade yet', 'bad');
+        const look = this.lookChoice.has(sel.id) ? this.lookChoice.get(sel.id) : undefined;
+        this.preview = null;
+        g.view.setPreview(null, null);
+        const r = w.upgradeBuilding(sel.id, data.type || null, look);
+        if (r.ok) this.lookChoice.delete(sel.id);
+        if (r.ok) {
+          const b = r.building;
+          g.sfx('upgrade');
+          if (r.instant) this.toast(`Upgraded to ${BUILDINGS[b.type].levels[b.level].name}!`, 'good', '⬆️');
+          else this.toast(`Builders will rebuild it as a ${BUILDINGS[b.con.toType || b.type].levels[b.con.to].name}`, 'good', '🏗️');
+        } else this.toast(r.reason || 'Cannot upgrade yet', 'bad');
+        this.renderInspector(true);
+        break;
+      }
+      case 'merge': {
+        const r = w.mergeBuildings(sel.id, Number(data.id));
+        if (r.ok) {
+          g.sfx('build');
+          this.toast(`Joining them into a ${BUILDINGS[r.building.type].levels[r.building.level].name}`, 'good', '🏗️');
+          this.inspect({ kind: 'building', id: r.building.id });
+        } else this.toast(r.reason || "Can't join these", 'bad');
+        break;
+      }
+      case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
+      case 'look':
+        this.lookChoice.set(sel.id, data.look || null);
+        this.preview = { id: sel.id, type: data.type };
+        this.renderInspector(true);
+        break;
+      case 'preview': {
+        const on = this.preview && this.preview.id === sel.id && this.preview.type === data.type;
+        this.preview = on ? null : { id: sel.id, type: data.type };
         this.renderInspector(true);
         break;
       }
@@ -402,6 +568,7 @@ export class UI {
         break;
       }
       case 'follow': g.setFollow(g.follow === sel.id ? null : sel.id); this.renderInspector(true); break;
+      case 'people': this.showPeople(); break;
       case 'roadup': {
         const L = w.roadAt(sel.x, sel.z);
         const r = w.placeRoads([[sel.x, sel.z]], L + 1);
@@ -417,7 +584,7 @@ export class UI {
   // --------------------------------------------------------- floating UI
   coin(x, y, z, v) {
     const g = this.game;
-    if (g.renderer.rig.zoom < 1.1) return;
+    if (!g.settings.popCoins || g.renderer.rig.zoom < 1.1) return;
     const layer = $('popups');
     if (layer.childElementCount > 30) return;
     const p = g.renderer.worldToScreen(new g.THREE.Vector3(x, y, z));
@@ -434,7 +601,7 @@ export class UI {
     const g = this.game;
     const r = g.agents.selected;
     let el = this.labels.get('sel');
-    if (!r || !this.world.residents.has(r.id)) { if (el) { el.remove(); this.labels.delete('sel'); } return; }
+    if (!r || !this.world.residents.has(r.id) || !g.settings.popLabels) { if (el) { el.remove(); this.labels.delete('sel'); } return; }
     const pos = g.agents.positionOf(r);
     if (!pos) return;
     if (!el) { el = document.createElement('div'); el.className = 'label3d'; $('popups').appendChild(el); this.labels.set('sel', el); }
@@ -443,7 +610,10 @@ export class UI {
     el.textContent = `${r.first} · ${g.agents.activity(r)}`;
   }
 
+  // Notices can be switched off; warnings about something the player just
+  // tried ('bad') always show, since they explain why it didn't work.
   toast(msg, kind = 'info', icon = null) {
+    if (!this.game.settings.popToasts && kind !== 'bad') return;
     const box = $('toasts');
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
@@ -455,6 +625,7 @@ export class UI {
 
   tooltip(html, x, y) {
     const t = $('tooltip');
+    if (!this.game.settings.popTips) html = null;
     if (!html) { t.classList.add('hidden'); return; }
     t.innerHTML = html;
     t.classList.remove('hidden');
@@ -488,7 +659,7 @@ export class UI {
     if (x) x.onclick = () => this.closeModal();
     if (mount) mount(card);
   }
-  closeModal() { $('modal').classList.add('hidden'); $('modalCard').innerHTML = ''; this._modalLocked = false; }
+  closeModal() { $('modal').classList.add('hidden'); $('modalCard').innerHTML = ''; $('modalCard').classList.remove('wide'); this._modalLocked = false; }
   get modalOpen() { return !$('modal').classList.contains('hidden'); }
 
   showRename() {
@@ -514,12 +685,13 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="ngInf"> Sandbox: unlimited coins</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngAll"> Sandbox: unlock every building from the start</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="ngFree"> Sandbox: upgrade buildings without meeting their needs</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="ngInst"> Sandbox: buildings go up instantly (no builders needed)</label></div>
       <div class="actions"><button class="btn primary" id="ngGo">🏡 Found the village</button></div>`, (c) => {
       c.querySelector('#ngDice').onclick = () => { c.querySelector('#ngSeed').value = randomSeed() % 1000000; };
       c.querySelector('#ngGo').onclick = () => {
         const seedStr = c.querySelector('#ngSeed').value.trim();
         const seed = /^\d+$/.test(seedStr) ? Number(seedStr) : [...seedStr].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked } };
+        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked, instantBuild: c.querySelector('#ngInst').checked } };
         this.closeModal();
         onCreate(opts);
       };
@@ -703,7 +875,7 @@ export class UI {
   showLines() {
     const g = this.game, w = this.world;
     const lines = w.lines;
-    let h = `<h2>Transit lines</h2><p class="lead">Coaches run on roads between coach stops; trains run on track between stations. Villagers on long trips walk to a stop, wait, ride and pay a fare.</p>`;
+    let h = `<h2>Transit lines</h2><p class="lead">Coaches loop between coach stops on the roads. Trains never reverse, so a rail line needs a loop of track passing every station; a loop can run up to three trains. Villagers on long trips walk to a stop, wait, ride and pay a fare.</p>`;
     h += `<div class="actions" style="margin:0 0 12px"><button class="btn primary" id="nlCoach">🐴 New coach line</button><button class="btn primary" id="nlRail" ${w.unlockPop < 25 ? 'disabled title="Unlocks at 25 villagers"' : ''}>🚂 New rail line</button></div>`;
     if (!lines.length) h += `<div class="empty">No lines yet. Build at least two coach stops (Transit menu), then create a line.</div>`;
     h += `<div class="lines-list">${lines.map(l => {
@@ -738,11 +910,17 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="stAO" ${s.ao ? 'checked' : ''}> Ambient occlusion (soft contact shadows)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAuto" ${s.autosave ? 'checked' : ''}> Autosave every in-game day</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stSound" ${s.sound ? 'checked' : ''}> Sound effects</label></div>
+      <div class="field"><label>Pop-ups</label><div class="checkrow">
+        <label class="inline"><input type="checkbox" id="stCoins" ${s.popCoins ? 'checked' : ''}> Coin pop-ups</label>
+        <label class="inline"><input type="checkbox" id="stToasts" ${s.popToasts ? 'checked' : ''}> Notices</label>
+        <label class="inline"><input type="checkbox" id="stTips" ${s.popTips ? 'checked' : ''}> Hover tips</label>
+        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
       ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited coins (this town)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''}> Sandbox: unlock every building (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>` : ''}
+      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
       <div class="field"><label>Google OAuth Client ID (for Drive saves)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div>
       <div class="actions"><button class="btn primary" id="stOk">Done</button><button class="btn" id="stMenu">Quit to title</button></div>`, (c) => {
       c.querySelector('#stOk').onclick = () => {
@@ -750,21 +928,108 @@ export class UI {
         s.ao = c.querySelector('#stAO').checked;
         s.pixelArt = c.querySelector('#stPix').checked;
         s.pixelSize = Number(c.querySelector('#stPixSize').value);
-        const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll'), free = c.querySelector('#stFree');
+        const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll'), free = c.querySelector('#stFree'), inst = c.querySelector('#stInst');
         if (inf && all && free) {
-          g.world.setSandbox({ infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked });
+          g.world.setSandbox({ infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked, instantBuild: !!inst?.checked });
           g.sim.recompute();
           if (this.category) this.openFlyout(this.category);
           if (this.selection) this.renderInspector(true);
         }
         s.autosave = c.querySelector('#stAuto').checked;
         s.sound = c.querySelector('#stSound').checked;
+        s.popCoins = c.querySelector('#stCoins').checked;
+        s.popToasts = c.querySelector('#stToasts').checked;
+        s.popTips = c.querySelector('#stTips').checked;
+        s.popLabels = c.querySelector('#stLabels').checked;
+        this.syncPopButton();
         const id = c.querySelector('#stGcid').value.trim();
         if (id !== g.drive.clientId) g.drive.setClientId(id);
         g.applySettings();
         this.closeModal();
       };
       c.querySelector('#stMenu').onclick = () => { this.closeModal(); g.toTitle(); };
+    });
+  }
+
+  // One switch for every pop-up (coins, notices, hover tips, name tags).
+  togglePopups() {
+    const s = this.game.settings;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
+    s.popCoins = s.popToasts = s.popTips = s.popLabels = !any;
+    this.game.applySettings();
+    this.syncPopButton();
+    if (!any) this.toast('Pop-ups on', 'info', '💡');
+  }
+
+  syncPopButton() {
+    const s = this.game.settings, b = $('btnPops');
+    if (!b) return;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
+    b.innerHTML = `<span class="ms">${any ? 'notifications' : 'notifications_off'}</span>`;
+    b.classList.toggle('on', !any);
+    b.title = `${any ? 'Hide' : 'Show'} pop-ups: coins, notices, tips (N)`;
+  }
+
+  // Everyone in town: who they are, where they live and work, pay and savings.
+  showPeople() {
+    const g = this.game, w = this.world;
+    if (!w || g.demo) return;
+    const st = this._ppl ||= { q: '', f: '', k: 'name', dir: 1 };
+    const name = (id) => { const b = id != null ? w.buildings.get(id) : null; return b ? BUILDINGS[b.type].levels[b.level].name : ''; };
+    const AGE = { child: 0, adult: 1, elder: 2 };
+    const rows = [...w.residents.values()].map(r => ({
+      r, name: `${r.first} ${r.last}`, age: r.age, home: name(r.home), job: r.job != null ? name(r.job) : (r.age === 'adult' ? '' : r.age === 'child' ? 'Child' : 'Retired'),
+      pay: salaryOf(w, r) + pensionOf(r), wealth: r.age === 'child' ? null : wealthOf(r), mood: Math.round(r.mood ?? 60), traits: traitsOf(r),
+      builder: r.job != null && BUILDINGS[w.buildings.get(r.job)?.type]?.builders,
+    }));
+    const adults = rows.filter(x => x.age !== 'child');
+    const avgPay = adults.filter(x => x.pay > 0);
+    const summary = `${fmt(rows.length)} villagers · ${rows.filter(x => x.r.age === 'adult' && x.r.job != null).length} employed · ${rows.filter(x => x.r.age === 'adult' && x.r.job == null).length} looking for work · average wage 🪙 ${avgPay.length ? (avgPay.reduce((s, x) => s + x.pay, 0) / avgPay.length).toFixed(1) : 0} · savings 🪙 ${fmt(adults.reduce((s, x) => s + (x.wealth || 0), 0))}`;
+    const cols = [['name', 'Name'], ['age', 'Age'], ['home', 'Home'], ['job', 'Job'], ['pay', 'Income'], ['wealth', 'Savings'], ['mood', 'Mood'], ['traits', 'Personality']];
+    this.openModal(`<h2>Villagers</h2><p class="lead">${summary}</p>
+      <div class="pplbar"><input id="pplQ" placeholder="Search names, homes, jobs or traits…" value="${esc(st.q)}">
+        <select id="pplF">${[['', 'Everyone'], ['adult', 'Adults'], ['child', 'Children'], ['elder', 'Elders'], ['jobless', 'Looking for work'], ['builders', 'Builders'], ['poor', 'In debt']].map(([v, l]) => `<option value="${v}" ${st.f === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <span id="pplN"></span></div>
+      <div class="pplwrap"><table class="people"><thead><tr>${cols.map(([k, l]) => `<th data-k="${k}">${l}<span class="sort"></span></th>`).join('')}</tr></thead><tbody id="pplBody"></tbody></table></div>`, (c) => {
+      c.classList.add('wide');
+      const body = c.querySelector('#pplBody');
+      const render = () => {
+        const q = st.q.trim().toLowerCase();
+        let list = rows.filter(x => {
+          if (st.f === 'adult' || st.f === 'child' || st.f === 'elder') { if (x.age !== st.f) return false; }
+          else if (st.f === 'jobless') { if (!(x.age === 'adult' && x.r.job == null)) return false; }
+          else if (st.f === 'builders') { if (!x.builder) return false; }
+          else if (st.f === 'poor') { if (!(x.wealth != null && x.wealth < 0)) return false; }
+          if (!q) return true;
+          return [x.name, x.home, x.job, ...x.traits.map(t => TRAITS[t].name)].some(s => s.toLowerCase().includes(q));
+        });
+        const k = st.k;
+        list.sort((a, b) => {
+          const va = k === 'age' ? AGE[a.age] : k === 'traits' ? a.traits.map(t => TRAITS[t].name).join() : a[k] ?? -1e9;
+          const vb = k === 'age' ? AGE[b.age] : k === 'traits' ? b.traits.map(t => TRAITS[t].name).join() : b[k] ?? -1e9;
+          return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * st.dir || a.r.id - b.r.id;
+        });
+        const total = list.length;
+        list = list.slice(0, 400);
+        c.querySelector('#pplN').textContent = total > 400 ? `showing 400 of ${fmt(total)}` : `${fmt(total)} shown`;
+        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${ageIcon(x.r)} ${esc(x.name)}</td><td>${x.age[0].toUpperCase() + x.age.slice(1)}</td><td>${esc(x.home) || '—'}</td><td>${x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
+          `<td class="num">${x.pay ? x.pay.toFixed(1) : '—'}</td><td class="num ${x.wealth != null && x.wealth < 0 ? 'bad' : ''}">${x.wealth == null ? '—' : fmt(x.wealth)}</td><td class="num">${x.mood}%</td><td class="traits">${x.traits.map(t => TRAITS[t].name).join(', ')}</td></tr>`).join(''));
+        for (const th of c.querySelectorAll('th')) th.querySelector('.sort').textContent = th.dataset.k === st.k ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
+      };
+      c.querySelector('#pplQ').oninput = (e) => { st.q = e.target.value; render(); };
+      c.querySelector('#pplF').onchange = (e) => { st.f = e.target.value; render(); };
+      for (const th of c.querySelectorAll('th')) th.onclick = () => { if (st.k === th.dataset.k) st.dir = -st.dir; else { st.k = th.dataset.k; st.dir = ['pay', 'wealth', 'mood'].includes(st.k) ? -1 : 1; } render(); };
+      body.onclick = (e) => {
+        const tr = e.target.closest('tr[data-id]');
+        if (!tr) return;
+        const r = w.residents.get(Number(tr.dataset.id));
+        if (!r) return;
+        this.closeModal();
+        this.inspect({ kind: 'resident', id: r.id });
+        g.setFollow(r.id);
+      };
+      render();
+      c.querySelector('#pplQ').focus();
     });
   }
 
@@ -779,13 +1044,15 @@ export class UI {
         ${k('1')}–${k('8')}<span>Tool menus · ${k('R')} roads · ${k('X')} demolish</span>
         ${k('Tab')}<span>Flip a building's entrance</span>
         ${k('Space')}<span>Pause · ${k('[')} ${k(']')} slower / faster (up to 32×)</span>
-        ${k('O')}<span>Overlays · ${k('B')} budget · ${k('L')} lines</span>
+        ${k('O')}<span>Overlays · ${k('B')} budget · ${k('L')} lines · ${k('P')} villagers</span>
+        ${k('N')}<span>Hide / show pop-ups (coins, notices, tips)</span>
         ${k('Esc')}<span>Cancel / close</span>
       </div><div style="font-size:13px;line-height:1.5">
         <b>Getting started</b><br>
-        1. Build 🏡 cottages along the road — families move in from the edge of the map.<br>
+        1. Build 🏡 cottages along the road — builders from the 🧱 Builder's Yard put them up, then families move in from the edge of the map.<br>
         2. Give them work: 🧺 markets, 🌾 farms, 🪓 woodcutters, 🐟 fisheries.<br>
-        3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded.<br>
+        3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
+        Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
         4. Watch the RCI bars to see what's in demand.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
         6. Save to this browser, a file, or Google Drive from 💾.

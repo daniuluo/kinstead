@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { BUILDINGS, TRANSIT } from '../defs.js';
+import { fw, fd } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
@@ -94,6 +95,7 @@ export class Input {
       case 'road': case 'rail': if (tile) this.drag = { type: 'line', start: tile, end: tile }; break;
       case 'bulldoze': if (tile) this.drag = { type: 'rect', start: tile, end: tile }; break;
       case 'build': if (tile) { this._place(tile); this.drag = { type: 'paint', last: `${tile.x},${tile.z}` }; } break;
+      case 'move': if (tile) this._moveTo(tile); break;
       case 'terrain': case 'trees': if (tile) { this._applyTile(tile); this.drag = { type: 'paint', last: `${tile.x},${tile.z}` }; } break;
       case 'line': this._lineClick(e); break;
     }
@@ -200,6 +202,19 @@ export class Input {
     } else if (!painting) this.ui.toast(r.reason, 'bad');
   }
 
+  _moveTo(tile) {
+    const w = this.world, b = w.buildings.get(this.tool.id);
+    if (!b) { this.setTool({ kind: 'select' }); return; }
+    const o = this._origin(tile, fw(b), fd(b));
+    const r = w.moveBuilding(b.id, o.x, o.z, { accessIndex: this.accessIndex });
+    if (!r.ok) { this.ui.toast(r.reason, 'bad'); return; }
+    const name = BUILDINGS[b.type].levels[b.level].name;
+    this.game.sfx('build');
+    this.ui.toast(r.instant ? `Moved the ${name}` : `Builders will take down the ${name}, cart it over and rebuild it here`, 'good', '🏗️');
+    this.setTool({ kind: 'select' });
+    this.ui.inspect({ kind: 'building', id: r.building.id });
+  }
+
   _applyTile(tile) {
     const w = this.world, t = this.tool;
     const r = t.kind === 'trees' ? w.plantTree(tile.x, tile.z) : w.terraform(tile.x, tile.z, t.mode);
@@ -230,10 +245,10 @@ export class Input {
     this.setTool({ kind: 'line', mode: t.mode, stops: [] });
   }
 
-  _origin(tile, size) {
-    if (size === 1) return { x: tile.x, z: tile.z };
-    // centre 2x2 footprints on the cursor
-    return { x: Math.round(tile.px - size / 2), z: Math.round(tile.pz - size / 2) };
+  _origin(tile, w, d = w) {
+    if (w === 1 && d === 1) return { x: tile.x, z: tile.z };
+    // centre bigger footprints on the cursor
+    return { x: Math.round(tile.px - w / 2), z: Math.round(tile.pz - d / 2) };
   }
 
   _lineTiles(a, b) {
@@ -269,7 +284,7 @@ export class Input {
       const sel = this.ui.selection;
       if (sel && sel.kind === 'building') {
         const b = w.buildings.get(sel.id);
-        if (b) for (let dz = 0; dz < b.size; dz++) for (let dx = 0; dx < b.size; dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: GOLD, alpha: 0.25 });
+        if (b) for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: GOLD, alpha: 0.25 });
       } else if (sel && sel.kind === 'road') tiles.push({ x: sel.x, z: sel.z, color: GOLD, alpha: 0.3 });
       if (h && e && !d) {
         const r = g.agents.pick(e.clientX, e.clientY);
@@ -280,10 +295,11 @@ export class Input {
         else if (b) {
           const def = BUILDINGS[b.type], L = def.levels[b.level];
           tip = `<b>${L.name}</b>`;
-          if (L.housing) tip += `<br>${b.residents.length}/${L.housing} residents · ${b.happiness}% happy`;
+          if (b.con) tip += `<br>🏗️ ${b.con.kind === 'dismantle' ? 'coming down' : 'being built'} · ${Math.round(Math.min(1, b.con.done / b.con.work) * 100)}%`;
+          else if (L.housing) tip += `<br>${b.residents.length}/${L.housing} residents · ${b.happiness}% happy`;
           else if (L.jobs) tip += `<br>${b.workers.length}/${L.jobs} workers`;
           if (!b.connected && (!def.park || b.access)) tip += `<br><span class="bad">Not connected</span>`;
-          for (let dz = 0; dz < b.size; dz++) for (let dx = 0; dx < b.size; dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: SOFT, alpha: 0.14, border: false });
+          for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: SOFT, alpha: 0.14, border: false });
         } else tiles.push({ x: h.x, z: h.z, color: SOFT, alpha: 0.12 });
       }
     } else if ((t.kind === 'road' || t.kind === 'rail') && (d || h)) {
@@ -299,7 +315,7 @@ export class Input {
       const list = d ? this._rectTiles(d.start, d.end) : [[h.x, h.z]];
       for (const [x, z] of list) {
         const b = w.buildingOn(x, z);
-        if (b) { for (let dz = 0; dz < b.size; dz++) for (let dx = 0; dx < b.size; dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: BAD, alpha: 0.4 }); }
+        if (b) { for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: BAD, alpha: 0.4 }); }
         else tiles.push({ x, z, color: BAD, alpha: (w.roadAt(x, z) || w.railAt(x, z) || w.treeCount[w.idx(x, z)]) ? 0.4 : 0.15 });
       }
       if (!d && h) { const b = w.buildingOn(h.x, h.z); if (b) tip = `Demolish ${BUILDINGS[b.type].levels[b.level].name}`; }
@@ -320,6 +336,18 @@ export class Input {
       tip = `<b>${def.name}</b> · 🪙 ${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
       if (c.trees) tip += `<br>Clears ${c.trees} tree${c.trees > 1 ? 's' : ''}`;
       ghost = { type: t.type, x: o.x, z: o.z, ok: c.ok, chk: c };
+    } else if (t.kind === 'move' && h) {
+      const b = w.buildings.get(t.id);
+      if (b) {
+        const W = fw(b), D = fd(b);
+        const o = this._origin(h, W, D);
+        const c = w.moveCheck(b, o.x, o.z);
+        for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: GOLD, alpha: 0.25 });
+        for (let dz = 0; dz < D; dz++) for (let dx = 0; dx < W; dx++) tiles.push({ x: o.x + dx, z: o.z + dz, color: c.ok ? OK : BAD, alpha: 0.35 });
+        const name = BUILDINGS[b.type].levels[b.level].name;
+        tip = `<b>Move the ${name}</b> · 🪙 ${fmt(c.cost || w.moveCost(b))}<br>Taken down, carted over and rebuilt` + (c.ok ? '' : `<br><span class="bad">${c.reason}</span>`);
+        ghost = { type: b.type, level: b.level, variant: b.variant, flavor: b.flavor, w: W, d: D, x: o.x, z: o.z, ok: c.ok, chk: c };
+      }
     } else if ((t.kind === 'terrain' || t.kind === 'trees') && h) {
       const c = t.kind === 'trees' ? w.checkPlant(h.x, h.z) : w.checkTerraform(h.x, h.z);
       tiles.push({ x: h.x, z: h.z, color: c.ok ? OK : BAD, alpha: 0.35 });
@@ -351,15 +379,17 @@ export class Input {
     const rot = acc ? acc.rot : this.variant % 4;
     const minH = isFinite(c.minH) ? c.minH : w.terrain.tileMin(gh.x, gh.z);
     const maxH = isFinite(c.maxH) ? c.maxH : w.terrain.tileMax(gh.x, gh.z);
-    const key = `${gh.type}|${gh.x}|${gh.z}|${rot}|${gh.ok}|${this.variant}`;
+    const W = gh.w ?? def.size, D = gh.d ?? def.size, variant = gh.variant ?? this.variant;
+    const key = `${gh.type}|${gh.level || 0}|${gh.x}|${gh.z}|${W}|${D}|${rot}|${gh.ok}|${variant}`;
     if (key === this.ghostKey) return;
     this.ghostKey = key;
     if (this.ghost) { scene.remove(this.ghost); this.ghost.geometry.dispose(); }
-    const b = { type: gh.type, level: 0, variant: this.variant, size: def.size, baseY: maxH, minY: minH, rot, rail: c.rail || null };
+    const b = { type: gh.type, level: gh.level || 0, variant, flavor: gh.flavor || null, size: Math.max(W, D), w: W, d: D, baseY: maxH, minY: minH, rot, rail: c.rail || null };
     b.x = gh.x; b.z = gh.z;
     const model = buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z), season: this.game.view.season });
+    if (model.spin) model.spin.geo.dispose();
     this.ghost = new THREE.Mesh(model.geo, gh.ok ? MAT.ghostOk : MAT.ghostBad);
-    this.ghost.position.set(gh.x + def.size / 2 + model.jitter.ox, maxH + 0.002, gh.z + def.size / 2 + model.jitter.oz);
+    this.ghost.position.set(gh.x + W / 2 + model.jitter.ox, maxH + 0.002, gh.z + D / 2 + model.jitter.oz);
     this.ghost.rotation.y = (rot * Math.PI) / 2 + model.jitter.yaw;
     this.ghost.renderOrder = 9;
     scene.add(this.ghost);
@@ -405,6 +435,8 @@ export class Input {
       case 'backspace': if (this.tool.kind === 'line') { this.tool.stops.pop(); ui.updateHint(); g.updateRouteOverlay(); } break;
       case 'o': ui.toggleOverlayMenu(); break;
       case 'b': ui.showBudget(); break;
+      case 'p': ui.showPeople(); break;
+      case 'n': ui.togglePopups(); break;
       case 'l': ui.showLines(); break;
       case 'h': ui.showHelp(); break;
     }

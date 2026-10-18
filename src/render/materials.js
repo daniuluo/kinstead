@@ -127,7 +127,11 @@ export function patch(material, { snow = false, snowMask = false, emit = false, 
 
 export const MAT = {
   building: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0 }), { snow: true, emit: true, pattern: 'building' }, 'bld'),
+  // building sites are open-topped shells, so their insides must show
+  site: patch(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide }), { snow: true, emit: true, pattern: 'building' }, 'site'),
   terrain: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }), { snowMask: true, pattern: 'terrain' }, 'ter'),
+  // crisp road surfaces laid over the terrain (kept clear of snow so streets stay readable)
+  road: patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), { pattern: 'terrain' }, 'road'),
   side: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }),
   foliage: patch(new THREE.MeshStandardMaterial({ roughness: 0.92 }), { snow: true, wind: true }, 'fol'),
   grass: patch(new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.95 }), { snow: true, wind: true }, 'grs'),

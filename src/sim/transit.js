@@ -7,7 +7,7 @@ import { CONFIG } from '../config.js';
 import { GeoBuilder } from '../render/geo.js';
 import { MAT } from '../render/materials.js';
 import { tilePolyline, smoothPolyline } from './path.js';
-import { bridgeDeckY } from '../world/world.js';
+import { bridgeDeckY, isOpen } from '../world/world.js';
 
 const WARM = [1.7, 1.2, 0.55];
 
@@ -56,6 +56,12 @@ function cartModel(cargo) {
   if (cargo === 'logs') for (let i = 0; i < 3; i++) gb.cyl(-0.05 + i * 0.05, 0.13, -0.17, 0.022, 0.022, 0.26, 6, '#7a5636', 0, Math.PI / 2);
   else if (cargo === 'hay') gb.blob(0, 0.14, -0.04, 0.08, 0.06, 0.12, '#d9b44a');
   else if (cargo === 'fish') { gb.box(0, 0.11, -0.04, 0.14, 0.04, 0.2, '#9fb2bd'); }
+  else if (cargo === 'materials') {
+    // a building on the move: beams, stone blocks and a stack of roof tiles
+    for (let i = 0; i < 3; i++) gb.box(-0.045 + i * 0.045, 0.11, -0.04, 0.035, 0.03, 0.3, '#a8855a');
+    for (let i = 0; i < 2; i++) gb.box(0, 0.14 + i * 0.035, -0.12 + i * 0.03, 0.12, 0.035, 0.06, '#b3a996');
+    gb.box(0, 0.14, 0.03, 0.1, 0.05, 0.07, '#9c4a32');
+  }
   else for (let i = 0; i < 3; i++) gb.box(0, 0.11 + (i % 2) * 0.05, -0.12 + i * 0.07, 0.07, 0.05, 0.06, '#a47c4f');
   gb.box(0, 0.09, 0.12, 0.012, 0.012, 0.1, '#5b4231');
   wheels(gb, -0.04, 0.095, 0.045);
@@ -94,8 +100,7 @@ function carriageModel(color) {
 
 const CARGO = { farm: 'hay', lumber: 'logs', fishery: 'fish', workshop: 'crates' };
 const CAR_SPACING = 0.56;   // distance between train car centres along the track
-const TRAIN_CARS = 3;       // engine + two carriages
-const TRAIN_HALF = (CAR_SPACING * (TRAIN_CARS - 1)) / 2 + 0.08;
+const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 
 export class Transit {
   constructor(game) {
@@ -127,13 +132,15 @@ export class Transit {
     const w = this.world;
     const cfg = TRANSIT[mode];
     if (stops.length < 2) return { ok: false, reason: 'A line needs at least two stops' };
+    const site = stops.map(id => w.buildings.get(id)).find(b => b && !isOpen(b));
+    if (site) return { ok: false, reason: `The ${BUILDINGS[site.type].levels[site.level].name.toLowerCase()} is still being built` };
     if (w.money < cfg.vehicleCost) return { ok: false, reason: 'Not enough coins' };
     const used = new Set(w.lines.map(l => l.color));
     const color = LINE_COLORS.find(c => !used.has(c)) || LINE_COLORS[w.lines.length % LINE_COLORS.length];
     const n = w.lines.filter(l => l.mode === mode).length + 1;
     const line = { id: w.newId(), mode, name: `${mode === 'rail' ? 'Rail' : 'Coach'} Line ${n}`, color, stops: stops.slice(), vehicles: 1 };
     const route = this._route(line);
-    if (!route) return { ok: false, reason: mode === 'rail' ? 'Stations are not connected by track' : 'Stops are not connected by road' };
+    if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : 'Stops are not connected by road' };
     w.money -= cfg.vehicleCost;
     w.lines.push(line);
     w.emit('lines');
@@ -154,8 +161,8 @@ export class Transit {
     const w = this.world;
     const line = w.lines.find(l => l.id === id);
     if (!line) return { ok: false };
-    n = Math.max(1, Math.min(line.mode === 'rail' ? 1 : 5, n));
-    if (n === line.vehicles) return { ok: false, reason: line.mode === 'rail' ? 'A single-track line runs one train' : null };
+    n = Math.max(1, Math.min(line.mode === 'rail' ? 3 : 5, n));
+    if (n === line.vehicles) return { ok: false, reason: null };
     if (n > line.vehicles) {
       const cost = TRANSIT[line.mode].vehicleCost;
       if (w.money < cost) return { ok: false, reason: 'Not enough coins' };
@@ -173,22 +180,26 @@ export class Transit {
     const w = this.world, paths = this.game.paths;
     const stops = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
     if (stops.length < 2) return null;
+    const stopTiles = stops.map(b => this._stopTile(b, line.mode));
+    if (stopTiles.some(t => !t)) return null;
     let tiles = [];
-    const stopIdx = [];
-    const open = line.mode === 'rail';
-    const legs = open ? stops.length - 1 : stops.length;
-    for (let i = 0; i < legs; i++) {
-      const a = this._stopTile(stops[i], line.mode), b = this._stopTile(stops[(i + 1) % stops.length], line.mode);
-      if (!a || !b) return null;
-      const leg = line.mode === 'rail' ? paths.rail(a.x, a.z, b.x, b.z) : paths.road(a.x, a.z, b.x, b.z);
-      if (!leg) return null;
-      stopIdx.push(tiles.length ? tiles.length - 1 : 0);
-      tiles = tiles.length ? tiles.concat(leg.slice(1)) : leg.slice();
+    let stopIdx = [];
+    if (line.mode === 'rail') {
+      const loop = this._railLoop(stopTiles);
+      if (!loop) return null;
+      ({ tiles, stopIdx } = loop);
+    } else {
+      for (let i = 0; i < stops.length; i++) {
+        const a = stopTiles[i], b = stopTiles[(i + 1) % stops.length];
+        const leg = paths.road(a.x, a.z, b.x, b.z);
+        if (!leg) return null;
+        stopIdx.push(tiles.length ? tiles.length - 1 : 0);
+        tiles = tiles.length ? tiles.concat(leg.slice(1)) : leg.slice();
+      }
     }
-    if (open) stopIdx.push(tiles.length - 1);
-    const off = line.mode === 'rail' ? 0 : 0.17;
-    let pts = tilePolyline(tiles, off);
-    pts = smoothPolyline(pts, open ? 0.5 : 0.3, open ? 6 : 4);
+    const rail = line.mode === 'rail';
+    let pts = tilePolyline(tiles, rail ? 0 : 0.17);
+    pts = smoothPolyline(pts, rail ? 0.5 : 0.3, rail ? 6 : 4);
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     const length = cum[cum.length - 1];
@@ -208,19 +219,69 @@ export class Transit {
       marks.push({ stop: stops[i].id, s: cum[best] });
       from = best;
     }
-    return { pts, cum, length, marks, mode: line.mode, open };
+    return { pts, cum, length, marks, mode: line.mode };
   }
 
-  // Where a train's midpoint stops for a station: centred on the platform,
-  // but never so close to the end of the track that cars hang off it.
-  _stopS(route, i) {
-    const lo = Math.min(TRAIN_HALF, route.length / 2), hi = Math.max(route.length - TRAIN_HALF, route.length / 2);
-    return Math.min(hi, Math.max(lo, route.marks[i].s));
+  // A closed route through every station (in order) that a train can drive
+  // without ever reversing: a search over (tile, direction of travel) that
+  // never allows a U-turn, and that must come back into the first station
+  // heading the same way it set off. Null if the track has no such loop.
+  _railLoop(stopTiles) {
+    const w = this.world, N = w.N;
+    let best = null;
+    for (let d0 = 0; d0 < 4; d0++) {
+      const s0 = stopTiles[0];
+      let cur = { i: s0.z * N + s0.x, d: d0 };
+      let tiles = [[s0.x, s0.z]];
+      const stopIdx = [0];
+      let ok = true;
+      for (let k = 1; k <= stopTiles.length; k++) {
+        const g = stopTiles[k % stopTiles.length];
+        const leg = this._railLeg(cur, g.z * N + g.x, k === stopTiles.length ? d0 : -1);
+        if (!leg) { ok = false; break; }
+        tiles = tiles.concat(leg.tiles.slice(1));
+        if (k < stopTiles.length) stopIdx.push(tiles.length - 1);
+        cur = { i: g.z * N + g.x, d: leg.dir };
+      }
+      if (ok && (!best || tiles.length < best.tiles.length)) best = { tiles, stopIdx };
+    }
+    return best;
+  }
+
+  _railLeg(start, goal, goalDir) {
+    const w = this.world, N = w.N, rails = w.rails;
+    const n4 = N * N * 4;
+    if (!this._prev || this._prev.length !== n4) { this._prev = new Int32Array(n4); this._seen = new Uint32Array(n4); this._stamp = 0; }
+    const prev = this._prev, seen = this._seen, stamp = ++this._stamp;
+    const s0 = start.i * 4 + start.d;
+    seen[s0] = stamp; prev[s0] = -1;
+    const q = [s0];
+    for (let qi = 0; qi < q.length; qi++) {
+      const st = q[qi], i = st >> 2, d = st & 3;
+      const x = i % N, z = (i / N) | 0;
+      for (let m = 0; m < 4; m++) {
+        if (m === ((d + 2) & 3)) continue;           // no reversing
+        const nx = x + STEP[m][0], nz = z + STEP[m][1];
+        if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+        const ni = nz * N + nx;
+        if (!rails[ni]) continue;
+        const ns = ni * 4 + m;
+        if (seen[ns] === stamp) continue;
+        seen[ns] = stamp; prev[ns] = st;
+        if (ni === goal && (goalDir < 0 || m === goalDir)) {
+          const out = [];
+          for (let k = ns; k !== -1; k = prev[k]) { const ti = k >> 2; out.push([ti % N, (ti / N) | 0]); }
+          return { tiles: out.reverse(), dir: m };
+        }
+        q.push(ns);
+      }
+    }
+    return null;
   }
 
   _sample(route, s) {
     const { pts, cum, length } = route;
-    s = route.open ? Math.min(length, Math.max(0, s)) : ((s % length) + length) % length;
+    s = ((s % length) + length) % length;
     let lo = 0, hi = cum.length - 1;
     while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid; }
     const a = pts[lo], b = pts[hi];
@@ -233,6 +294,7 @@ export class Transit {
     const w = this.world;
     const tx = Math.floor(x), tz = Math.floor(z);
     if (w.inBounds(tx, tz) && w.terrain.isWater(tx, tz)) return bridgeDeckY() + (mode === 'rail' ? 0.045 : 0);
+    if (mode !== 'rail') { const r = w.rampHeight(x, z); if (r != null) return r + 0.02; }
     return w.terrain.heightAt(x, z) + (mode === 'rail' ? 0.06 : 0.03);
   }
 
@@ -256,21 +318,12 @@ export class Transit {
       const r = this.routes.get(v.line.id);
       if (!w.lines.includes(v.line) || !r) { this._removeVehicle(v); continue; }
       v.route = r;
-      if (r.open) {
-        v.s = Math.min(Math.max(v.s, this._stopS(r, 0)), this._stopS(r, r.marks.length - 1));
-        let best = 0;
-        for (let i = 1; i < r.marks.length; i++) if (Math.abs(this._stopS(r, i) - v.s) < Math.abs(this._stopS(r, best) - v.s)) best = i;
-        v.next = best;
-        v.dir = best >= r.marks.length - 1 ? -1 : 1;
-      } else {
-        v.s = Math.min(v.s, r.length);
-        v.next = this._nextMark(r, v.s);
-      }
+      v.s = Math.min(v.s, r.length);
+      v.next = this._nextMark(r, v.s);
     }
     for (const line of w.lines) {
       const r = this.routes.get(line.id);
       if (!r) continue;
-      if (r.open) line.vehicles = 1;
       const mine = this.vehicles.filter(v => v.line === line);
       while (mine.length > line.vehicles) this._removeVehicle(mine.pop());
       for (let k = mine.length; k < line.vehicles; k++) mine.push(this._spawnVehicle(line, r, (r.length * k) / line.vehicles));
@@ -292,8 +345,7 @@ export class Transit {
       meshes.push(new THREE.Mesh(this._geo('coach' + line.color, () => coachModel(line.color)), MAT.building));
     }
     for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
-    const v = { line, route, s, meshes, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0, dir: 1, orient: 1 };
-    if (route.open) { v.s = this._stopS(route, 0); v.next = 0; }
+    const v = { line, route, s, meshes, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0 };
     this.vehicles.push(v);
     return v;
   }
@@ -322,7 +374,7 @@ export class Transit {
         if (db < dB) { dB = db; sB = m; }
       }
       if (!sA || !sB || sA === sB || dA > 7 || dB > 7) continue;
-      const ride = route.open ? Math.abs(sB.s - sA.s) : ((sB.s - sA.s) + route.length) % route.length;
+      const ride = ((sB.s - sA.s) + route.length) % route.length;
       const cfg = TRANSIT[line.mode];
       const cost = dA + dB + (ride * CONFIG.WALK_SPEED) / cfg.speed + 3;
       if (cost < walkLen * 0.85 && (!best || cost < best.cost)) {
@@ -421,7 +473,7 @@ export class Transit {
     for (const v of this.vehicles) {
       const cfg = TRANSIT[v.line.mode];
       const route = v.route;
-      if (route.open) { this._moveTrain(v, dt, speed, cfg); continue; }
+      const rail = v.line.mode === 'rail';
       if (v.state === 'dwell') {
         v.dwell -= dt * speed;
         if (v.dwell <= 0) { v.state = 'move'; v.next = (v.next + 1) % route.marks.length; }
@@ -429,79 +481,49 @@ export class Transit {
         const mark = route.marks[v.next];
         let dist = mark.s - v.s;
         if (dist < 0) dist += route.length;
-        const step = dt * speed * cfg.speed;
+        let step = dt * speed * cfg.speed;
+        if (rail) {
+          // pull away gently and brake into the platform
+          const prevMark = route.marks[(v.next - 1 + route.marks.length) % route.marks.length];
+          let since = v.s - prevMark.s;
+          if (since < 0) since += route.length;
+          step *= Math.min(1, 0.25 + Math.min(dist, since) * 0.6);
+        }
         if (step >= dist) {
           v.s = mark.s;
           v.state = 'dwell';
-          v.dwell = v.line.mode === 'rail' ? 2.2 : 1.4;
+          v.dwell = rail ? 2.6 : 1.4;
           this._atStop(v, mark);
         } else v.s = (v.s + step) % route.length;
       }
-      // place meshes
-      const spacing = 0.56;
+      // place meshes: trains are centred on their position (engine in front)
       for (let k = 0; k < v.meshes.length; k++) {
-        const p = this._sample(route, v.s - k * spacing - (k ? 0.04 : 0));
+        const off = rail ? (1 - k) * CAR_SPACING : -k * 0.6;
+        const p = this._sample(route, v.s + off);
         const m = v.meshes[k];
-        const y = this._height(v.line.mode, p.x, p.z);
-        m.position.set(p.x, y, p.z);
+        m.position.set(p.x, this._height(v.line.mode, p.x, p.z), p.z);
         m.rotation.y = p.heading;
+      }
+      if (rail && speed) {
+        v.smokeAcc += dt * (v.state === 'move' ? 6 : 1.5);
+        const m = v.meshes[0];
+        while (v.smokeAcc > 1) {
+          v.smokeAcc -= 1;
+          const fx = m.position.x + Math.sin(m.rotation.y) * 0.14, fz = m.position.z + Math.cos(m.rotation.y) * 0.14;
+          this.game.view.smoke.emit({
+            x: fx, y: m.position.y + 0.3, z: fz, vx: (Math.random() - 0.5) * 0.05, vy: 0.3, vz: (Math.random() - 0.5) * 0.05,
+            drag: 0.8, life: 2.5, size: 0.08, size1: 0.4, r: 0.92, g: 0.92, b: 0.95, alpha: 0.55, alpha1: 0, fadeIn: 0.05,
+          });
+        }
       }
     }
     this._updateCarts(dt);
   }
 
-  // Trains shuttle along their line as a push-pull set: the engine stays at
-  // its end of the train, so on the way back it pushes instead of pulling,
-  // and the whole consist reverses together at the end stations.
-  _moveTrain(v, dt, speed, cfg) {
-    const route = v.route, n = route.marks.length;
-    if (v.state === 'dwell') {
-      v.dwell -= dt * speed;
-      if (v.dwell <= 0) {
-        v.state = 'move';
-        let next = v.next + v.dir;
-        if (next < 0 || next >= n) { v.dir = -v.dir; next = v.next + v.dir; }
-        v.next = Math.max(0, Math.min(n - 1, next));
-      }
-    } else if (speed) {
-      const target = this._stopS(route, v.next);
-      const dist = target - v.s;
-      // gentle acceleration out of and braking into stations
-      const ease = Math.min(1, 0.35 + Math.abs(dist) * 0.9);
-      const step = dt * speed * cfg.speed * ease;
-      if (Math.abs(dist) <= step) {
-        v.s = target;
-        v.state = 'dwell';
-        v.dwell = 2.4;
-        this._atStop(v, route.marks[v.next]);
-      } else v.s += Math.sign(dist) * step;
-    }
-    for (let k = 0; k < v.meshes.length; k++) {
-      const off = v.orient * ((CAR_SPACING * (TRAIN_CARS - 1)) / 2 - k * CAR_SPACING);
-      const p = this._sample(route, v.s + off);
-      const m = v.meshes[k];
-      m.position.set(p.x, this._height('rail', p.x, p.z), p.z);
-      // the engine always faces outward from its end of the train
-      m.rotation.y = p.heading + (k === 0 && v.orient < 0 ? Math.PI : 0);
-    }
-    if (speed) {
-      v.smokeAcc += dt * (v.state === 'move' ? 6 : 1.5);
-      const m = v.meshes[0];
-      while (v.smokeAcc > 1) {
-        v.smokeAcc -= 1;
-        const fx = m.position.x + Math.sin(m.rotation.y) * 0.14, fz = m.position.z + Math.cos(m.rotation.y) * 0.14;
-        this.game.view.smoke.emit({
-          x: fx, y: m.position.y + 0.3, z: fz, vx: (Math.random() - 0.5) * 0.05, vy: 0.3, vz: (Math.random() - 0.5) * 0.05,
-          drag: 0.8, life: 2.5, size: 0.08, size1: 0.4, r: 0.92, g: 0.92, b: 0.95, alpha: 0.55, alpha1: 0, fadeIn: 0.05,
-        });
-      }
-    }
-  }
-
   // ---------------------------------------------------------------- carts
   planCarts() {
     const w = this.world;
-    const shops = [...w.buildings.values()].filter(b => BUILDINGS[b.type].shop && b.connected && b.access);
+    const shops = [...w.buildings.values()].filter(b => BUILDINGS[b.type].shop && b.connected && b.access && isOpen(b));
     if (!shops.length) return;
     for (const b of w.buildings.values()) {
       const def = BUILDINGS[b.type];
@@ -512,6 +534,22 @@ export class Transit {
         this.cartPlan.push({ day: w.day, t: 8 + Math.random() * 9, from: b.id, to: to.id });
       }
     }
+  }
+
+  // A cart of building materials for a building being moved. Calls back on
+  // arrival; returns false if there is no road between the two plots.
+  haul(A, B, onArrive) {
+    if (!A.access || !B.access) return false;
+    const tiles = this.game.paths.road(A.access.x, A.access.z, B.access.x, B.access.z);
+    if (!tiles || tiles.length < 2) return false;
+    const pts = smoothPolyline(tilePolyline(tiles, 0.17), 0.3, 3);
+    const cum = [0];
+    for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+    const mesh = new THREE.Mesh(this._geo('cartmaterials', () => cartModel('materials')), MAT.building);
+    mesh.castShadow = true;
+    this.group.add(mesh);
+    this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, to: B.id, cb: onArrive });
+    return true;
   }
 
   _updateCarts(dt) {
@@ -541,6 +579,7 @@ export class Transit {
       if (c.s >= c.route.length) {
         this.group.remove(c.mesh);
         this.carts.splice(i, 1);
+        if (c.cb) { c.cb(); continue; }
         const B = w.buildings.get(c.to);
         if (B) {
           const v = this.game.sim.recordVisit(B, 4);

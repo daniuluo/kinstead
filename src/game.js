@@ -14,6 +14,7 @@ import { Sim } from './sim/sim.js';
 import { Agents } from './sim/agents.js';
 import { Transit } from './sim/transit.js';
 import { Animals } from './sim/animals.js';
+import { Construction } from './sim/construction.js';
 import { UI } from './ui/ui.js';
 import { Input } from './ui/input.js';
 import { Sfx } from './ui/sfx.js';
@@ -30,7 +31,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -85,6 +86,9 @@ export class Game {
     if (fresh) this.sim.seedFounders(); else this.sim.recompute();
     this.agents = new Agents(this);
     this.animals = new Animals(this);
+    this.construction = new Construction(this);
+    world.on('building:done', (e) => this._onBuilt(e));
+    world.on('land:sold', (e) => this._onLand(e));
     this.transit.rebuild();
     this.transit.planCarts();
     this.renderer.setBounds(world.N);
@@ -269,6 +273,22 @@ export class Game {
 
   sfx(name) { if (this.settings.sound) this.audio.play(name); }
 
+  _onBuilt({ building: b, kind, moved }) {
+    if (this.demo || this.time - (this._toastT.built || -99) < 4) return;
+    this._toastT.built = this.time;
+    const name = BUILDINGS[b.type].levels[b.level].name;
+    const msg = kind === 'upgrade' ? `Upgrade finished: ${name}` : kind === 'merge' ? `The builders finished the ${name}`
+      : moved ? `The ${name} is back up on its new plot` : `The builders finished a new ${name}`;
+    this.ui.toast(msg, 'good', '🏗️');
+    this.sfx('upgrade');
+  }
+
+  _onLand({ buyer, seller, price }) {
+    if (this.demo) return;
+    const n = (b) => BUILDINGS[b.type].levels[b.level].name;
+    this.ui.toast(`The ${n(buyer)} household bought part of the next-door ${n(seller)}'s garden for 🪙 ${price}`, 'info', '🌿');
+  }
+
   applySettings() {
     this.renderer.setShadows(this.settings.shadows);
     const s = this.settings;
@@ -354,6 +374,7 @@ export class Game {
       env.snowing = env.season === 3 && this.sky.snow > 0.15 && ((w.day * 7 + Math.floor(w.hours / 5)) % 3 === 0);
       this.view.setSeason(env.season);
       this.agents.update(dt, gameDt);
+      this.construction.update(dt, gameDt);
       this.transit.update(dt);
       this.animals.update(dt, this.speed);
       this.view.update(dt, gameDt, env);

@@ -5,7 +5,15 @@ import * as THREE from 'three';
 import { MAT } from './materials.js';
 import { GeoBuilder } from './geo.js';
 import { hash2 } from '../util/rng.js';
-import { bridgeDeckY } from '../world/world.js';
+
+// Road surface widths (half-width) and colours per road level, with a band
+// of kerb / edging stones on cobbled and paved streets.
+const HALF = [0, 0.16, 0.215, 0.27];
+const SURF = [null, new THREE.Color('#a3835a'), new THREE.Color('#9a9488'), new THREE.Color('#5f5d5a')];
+const KERB = [null, null, new THREE.Color('#bbb3a2'), new THREE.Color('#cfc9bc')];
+const BAND = 0.035, CELL = 0.125;
+import { bridgeDeckY, RAMP } from '../world/world.js';
+import { CONFIG } from '../config.js';
 
 export class RoadsView {
   constructor(world, scene) {
@@ -15,6 +23,9 @@ export class RoadsView {
     this.props.castShadow = true;
     this.props.receiveShadow = true;
     scene.add(this.props);
+    this.surface = new THREE.Mesh(new THREE.BufferGeometry(), MAT.road);
+    this.surface.receiveShadow = true;
+    scene.add(this.surface);
     this.lamps = [];
     this.rebuild();
   }
@@ -29,6 +40,9 @@ export class RoadsView {
         if (!L) continue;
         const n = { N: !!w.roadAt(x, z - 1), S: !!w.roadAt(x, z + 1), W: !!w.roadAt(x - 1, z), E: !!w.roadAt(x + 1, z) };
         if (t.isWater(x, z)) { this._bridge(gb, x, z, n, L); continue; }
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (w.roadAt(x + dx, z + dz) && w.inBounds(x + dx, z + dz) && t.isWater(x + dx, z + dz)) this._ramp(gb, x, z, dx, dz, L);
+        }
         if (L >= 2 && !w.railAt(x, z)) {
           const straightNS = n.N && n.S && !n.E && !n.W, straightEW = n.E && n.W && !n.N && !n.S;
           if ((straightNS || straightEW) && hash2(x, z, 91) < 0.4) {
@@ -44,6 +58,65 @@ export class RoadsView {
     const pg = gb.build();
     this.props.geometry.dispose();
     this.props.geometry = pg || new THREE.BufferGeometry();
+    this.surface.geometry.dispose();
+    this.surface.geometry = this._surfaces();
+  }
+
+  // Each road tile is a centre square plus an arm towards every connected
+  // neighbour, laid as small quads that follow the ground. Cobbled and paved
+  // streets get a band of edging stones wherever the road has an edge.
+  _surfaces() {
+    const w = this.world, t = w.terrain, N = w.N;
+    const pos = [], col = [];
+    const c = new THREE.Color();
+    const height = (x, z) => {
+      if (w.rampHeight(x, z) != null) return null;
+      return t.heightAt(x, z) + 0.018;
+    };
+    const rect = (x0, z0, x1, z1, L, edges, seed) => {
+      // split lines: regular cells plus the kerb band on edged sides
+      const xs = new Set([x0, x1]), zs = new Set([z0, z1]);
+      for (let k = 1; k * CELL < x1 - x0; k++) xs.add(x0 + k * CELL);
+      for (let k = 1; k * CELL < z1 - z0; k++) zs.add(z0 + k * CELL);
+      if (KERB[L]) {
+        if (edges.x0) xs.add(x0 + BAND); if (edges.x1) xs.add(x1 - BAND);
+        if (edges.z0) zs.add(z0 + BAND); if (edges.z1) zs.add(z1 - BAND);
+      }
+      const X = [...xs].sort((a, b) => a - b), Z = [...zs].sort((a, b) => a - b);
+      for (let i = 0; i + 1 < X.length; i++) for (let j = 0; j + 1 < Z.length; j++) {
+        const ax = X[i], bx = X[i + 1], az = Z[j], bz = Z[j + 1];
+        if (bx - ax < 1e-4 || bz - az < 1e-4) continue;
+        const h00 = height(ax, az), h01 = height(ax, bz), h10 = height(bx, az), h11 = height(bx, bz);
+        if (h00 == null || h01 == null || h10 == null || h11 == null) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        const kerb = KERB[L] && ((edges.x0 && mx < x0 + BAND) || (edges.x1 && mx > x1 - BAND) || (edges.z0 && mz < z0 + BAND) || (edges.z1 && mz > z1 - BAND));
+        c.copy(kerb ? KERB[L] : SURF[L]);
+        const v = 1 + (hash2(Math.floor(mx * 16), Math.floor(mz * 16), seed) - 0.5) * (L === 2 ? 0.16 : 0.08);
+        c.multiplyScalar(v);
+        const tri = [[ax, h00, az], [ax, h01, bz], [bx, h10, az], [bx, h10, az], [ax, h01, bz], [bx, h11, bz]];
+        for (const p of tri) { pos.push(p[0], p[1], p[2]); col.push(c.r, c.g, c.b); }
+      }
+    };
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const L = w.roads[w.idx(x, z)];
+      if (!L || t.isWater(x, z)) continue;
+      const hw = HALF[L], cx = x + 0.5, cz = z + 0.5;
+      const nb = (dx, dz) => w.roadAt(x + dx, z + dz);
+      const n = nb(0, -1), s = nb(0, 1), wv = nb(-1, 0), e = nb(1, 0);
+      rect(cx - hw, cz - hw, cx + hw, cz + hw, L, { x0: !wv, x1: !e, z0: !n, z1: !s }, 3);
+      // arms narrow to meet a lesser road next door
+      const arm = (L2) => Math.min(hw, HALF[L2] || hw);
+      if (n) { const a = arm(n); rect(cx - a, z, cx + a, cz - hw, L, { x0: true, x1: true }, 3); }
+      if (s) { const a = arm(s); rect(cx - a, cz + hw, cx + a, z + 1, L, { x0: true, x1: true }, 3); }
+      if (wv) { const a = arm(wv); rect(x, cz - a, cx - hw, cz + a, L, { z0: true, z1: true }, 3); }
+      if (e) { const a = arm(e); rect(cx + hw, cz - a, x + 1, cz + a, L, { z0: true, z1: true }, 3); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
   }
 
   _lamp(gb, x, y, z) {
@@ -82,6 +155,34 @@ export class RoadsView {
       }
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.cyl(cx + sx * 0.26, -0.9, cz + sz * 0.26, 0.03, 0.035, y - 0.05 + 0.9, 7, '#3f3126');
     }
+  }
+
+  // Approach from the bank up (or down) to a bridge deck: a sloped deck on a
+  // stone embankment, with an abutment wall where it meets the bridge.
+  _ramp(gb, x, z, dx, dz, L) {
+    const w = this.world, t = w.terrain;
+    const n = 5, step = RAMP / n;
+    const wood = L >= 2 ? '#8a8276' : '#7d5b3b', wood2 = L >= 2 ? '#7a7368' : '#6e4e31', stone = '#8f877a';
+    const ex = x + 0.5 + dx * 0.5, ez = z + 0.5 + dz * 0.5;   // middle of the shared edge
+    const ry = Math.atan2(-dx, -dz);                           // local +z runs from the edge into the land
+    const at = (d) => w.rampHeight(ex - dx * (d + 1e-4), ez - dz * (d + 1e-4));
+    for (let k = 0; k < n; k++) {
+      const d0 = k * step, d1 = (k + 1) * step;
+      const y0 = at(d0), y1 = at(Math.min(d1, RAMP - 1e-3));
+      if (y0 == null || y1 == null) continue;
+      const mx = ex - dx * (d0 + d1) / 2, mz = ez - dz * (d0 + d1) / 2, my = (y0 + y1) / 2;
+      gb.push(mx, 0, mz, ry);
+      gb.boxC(0, my - 0.025, 0, 0.64, 0.05, Math.hypot(step, y1 - y0) + 0.012, k % 2 ? wood : wood2, -Math.atan2(y1 - y0, step));
+      const g = t.heightAt(mx, mz);
+      const lo = Math.min(g, my) - 0.04;
+      if (my - 0.05 - lo > 0.015) gb.box(0, lo, 0, 0.6, my - 0.05 - lo, step + 0.004, stone);
+      if (L >= 2) for (const s of [-1, 1]) gb.boxC(s * 0.31, my + 0.01, 0, 0.03, 0.03, step + 0.01, '#9a9284', -Math.atan2(y1 - y0, step));
+      gb.pop();
+    }
+    const base = Math.min(t.heightAt(ex, ez), CONFIG.WATER_LEVEL) - 0.35;
+    gb.push(ex, 0, ez, ry);
+    gb.box(0, base, 0.035, 0.74, bridgeDeckY() - 0.055 - base, 0.07, stone);
+    gb.pop();
   }
 
   _rail(gb, x, z) {
@@ -128,6 +229,7 @@ export class RoadsView {
   }
 
   dispose() {
+    this.surface.geometry.dispose(); this.scene.remove(this.surface);
     this.scene.remove(this.props);
     this.props.geometry.dispose();
   }

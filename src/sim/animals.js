@@ -10,15 +10,25 @@ import { GeoBuilder } from '../render/geo.js';
 import { RNG } from '../util/rng.js';
 import { workArea } from '../render/buildings.js';
 
+// speed / run: tiles per second at 1x · walk / idle: seconds · turn: how much
+// the heading wanders (radians per second) · per: habitat tiles per animal
 const SPECIES = {
-  deer: { name: 'Red deer', habitat: 'forest', speed: 0.3, run: 1.5, range: 6, idle: [2, 7], flee: 1.5, group: [2, 3], per: 28, max: 14, graze: true },
-  fox: { name: 'Fox', habitat: 'forest', speed: 0.38, run: 1.4, range: 10, idle: [1, 4], flee: 1.3, group: [1, 1], per: 110, max: 4 },
-  rabbit: { name: 'Rabbit', habitat: 'meadow', speed: 0.42, run: 1.4, range: 3, idle: [1, 5], flee: 1.0, group: [1, 3], per: 40, max: 18, hop: true },
-  duck: { name: 'Mallard', habitat: 'water', speed: 0.13, run: 0.5, range: 4, idle: [2, 6], flee: 0.9, group: [2, 4], per: 18, max: 14, swim: true },
-  sheep: { name: 'Sheep', habitat: 'farm', speed: 0.11, idle: [3, 9], graze: true },
-  cow: { name: 'Cow', habitat: 'farm', speed: 0.08, idle: [4, 12], graze: true },
-  chicken: { name: 'Chicken', habitat: 'farm', speed: 0.2, idle: [0.4, 2.5], peck: true },
+  deer: { name: 'Red deer', habitat: 'forest', speed: 0.12, run: 0.8, range: 5, walk: [2, 6], idle: [3, 9], turn: 2.2, flee: 1.3, group: [1, 2], per: 75, max: 6, graze: true },
+  fox: { name: 'Fox', habitat: 'forest', speed: 0.15, run: 0.8, range: 8, walk: [2, 5], idle: [2, 6], turn: 2.6, flee: 1.1, group: [1, 1], per: 220, max: 2 },
+  rabbit: { name: 'Rabbit', habitat: 'meadow', speed: 0.15, run: 0.8, range: 2.5, walk: [0.6, 2], idle: [2, 7], turn: 3.4, flee: 0.8, group: [1, 2], per: 100, max: 8, hop: true },
+  duck: { name: 'Mallard', habitat: 'water', speed: 0.06, run: 0.25, range: 3.5, walk: [2, 6], idle: [3, 8], turn: 1.6, flee: 0.7, group: [2, 3], per: 45, max: 7, swim: true },
+  sheep: { name: 'Sheep', habitat: 'farm', speed: 0.05, walk: [1.5, 4], idle: [4, 12], turn: 1.5, graze: true },
+  cow: { name: 'Cow', habitat: 'farm', speed: 0.035, walk: [1.5, 4], idle: [6, 16], turn: 1.2, graze: true },
+  chicken: { name: 'Chicken', habitat: 'farm', speed: 0.08, walk: [0.5, 1.5], idle: [1, 4], turn: 4, peck: true },
 };
+const SIZE = 0.7; // animals are drawn a bit smaller than life next to the buildings
+
+function angDiff(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
 const KEYS = Object.keys(SPECIES);
 const CAP = 160;
 
@@ -279,9 +289,9 @@ export class Animals {
     // livestock per farm
     const want = new Map();
     for (const b of w.buildings.values()) {
-      if (b.type !== 'farm') continue;
+      if (b.type !== 'farm' || (b.con && b.con.kind !== 'upgrade')) continue;
       if (!b.work) b.work = workArea(b);
-      want.set(b.id, { chicken: 3, sheep: b.level >= 1 ? 3 : 0, cow: b.level >= 2 ? 2 : 0 });
+      want.set(b.id, { chicken: 2, sheep: b.level >= 1 ? 2 : 0, cow: b.level >= 2 ? 1 : 0 });
     }
     const have = new Map();
     for (const a of this.list) if (a.farm != null) {
@@ -349,35 +359,51 @@ export class Animals {
       }
       for (const a of this.list) {
         const sp = SPECIES[a.sp];
+        const r = this.rng;
         if (a.state === 'idle') {
           a.t -= dt * speed;
           a.graze = (sp.graze || sp.peck) ? Math.min(1, a.graze + dt * 2) : 0;
           if (a.t <= 0) {
-            if (this._pickTarget(a)) { a.state = 'walk'; a.graze = 0; } else a.t = 0.6 + this.rng.next();
+            a.state = 'walk';
+            a.graze = 0;
+            a.t = sp.walk[0] + r.next() * (sp.walk[1] - sp.walk[0]);
+            a.wh = a.h + (r.next() - 0.5) * 2.4;
+            // wild animals only rarely wander across a road
+            a.crossing = !sp.swim && sp.habitat !== 'farm' && r.next() < 0.08;
           }
           continue;
         }
-        const run = a.state === 'flee';
-        const v = (run ? sp.run : sp.speed) * dt * speed;
-        const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
-        if (d <= v) {
-          a.x = a.tx; a.z = a.tz;
-          a.state = 'idle'; a.crossing = false;
-          a.t = sp.idle[0] + this.rng.next() * (sp.idle[1] - sp.idle[0]);
+        if (a.state === 'flee') {
+          const v = sp.run * dt * speed;
+          const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
+          if (d <= v) { a.x = a.tx; a.z = a.tz; this._rest(a); continue; }
+          const nx = a.x + (dx / d) * v, nz = a.z + (dz / d) * v;
+          if (!this._tileOk(a, nx, nz)) { this._rest(a, 0.4); continue; }
+          a.x = nx; a.z = nz;
+          a.h += angDiff(Math.atan2(dx, dz), a.h) * Math.min(1, dt * 8);
+          a.phase += dt * speed * 18 * (sp.hop ? 0.6 : 1);
           continue;
         }
-        const nx = a.x + (dx / d) * v, nz = a.z + (dz / d) * v;
-        if (!this._tileOk(a, nx, nz)) {
-          // something changed under its feet: stop and rethink
-          a.state = 'idle'; a.crossing = false; a.t = 0.3;
-          continue;
+        // walking: the heading drifts at random, with a gentle pull back home
+        a.t -= dt * speed;
+        if (a.t <= 0) { this._rest(a); continue; }
+        a.wh += (r.next() - 0.5) * sp.turn * 2 * Math.sqrt(dt * speed);
+        if (sp.range) {
+          const hx = a.hx - a.x, hz = a.hz - a.z;
+          if (Math.hypot(hx, hz) > sp.range) a.wh += angDiff(Math.atan2(hx, hz), a.wh) * Math.min(1, dt * speed * 0.6);
         }
-        a.x = nx; a.z = nz;
-        let dh = Math.atan2(dx, dz) - a.h;
-        while (dh > Math.PI) dh -= Math.PI * 2;
-        while (dh < -Math.PI) dh += Math.PI * 2;
-        a.h += dh * Math.min(1, dt * 8);
-        a.phase += dt * speed * (run ? 22 : 12) * (sp.hop ? 0.6 : 1);
+        a.h += angDiff(a.wh, a.h) * Math.min(1, dt * 2.5);
+        const v = sp.speed * dt * speed;
+        if (this._clear(a, a.h)) {
+          a.x += Math.sin(a.h) * v;
+          a.z += Math.cos(a.h) * v;
+          a.phase += dt * speed * 10 * (sp.hop ? 0.6 : 1);
+        } else {
+          // blocked: look for the nearest open direction, or stop and graze
+          const nh = this._freeHeading(a);
+          if (nh === null) this._rest(a, 0.5);
+          else { a.wh = nh; a.h += angDiff(nh, a.h) * 0.35; }
+        }
       }
     }
     this._render();
@@ -396,14 +422,14 @@ export class Animals {
       let y = sp.swim ? -0.02 + Math.sin(now * 2 + a.phase) * 0.006 : t.heightAt(a.x, a.z) + 0.004;
       let pitch = 0;
       if (moving && !sp.swim) {
-        y += sp.hop ? Math.abs(Math.sin(a.phase)) * 0.045 : Math.abs(Math.sin(a.phase)) * 0.006;
+        y += sp.hop ? Math.abs(Math.sin(a.phase)) * 0.028 : Math.abs(Math.sin(a.phase)) * 0.004;
         if (sp.hop) pitch = -Math.cos(a.phase) * 0.25;
       } else if (a.graze > 0) {
         pitch = sp.peck ? Math.max(0, Math.sin(now * 9 + a.phase)) * 0.6 * a.graze : (0.18 + Math.sin(now * 0.8 + a.phase) * 0.06) * a.graze;
       }
       _q.setFromEuler(_e.set(pitch, a.h, 0, 'YXZ'));
       _p.set(a.x, y, a.z);
-      _s.setScalar(a.s);
+      _s.setScalar(a.s * SIZE);
       mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
       mesh.setColorAt(i, _c.setRGB(a.tint[0], a.tint[1], a.tint[2]));
     }
@@ -413,6 +439,35 @@ export class Animals {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
+  }
+
+  _rest(a, t = null) {
+    const sp = SPECIES[a.sp];
+    a.state = 'idle';
+    a.t = t ?? sp.idle[0] + this.rng.next() * (sp.idle[1] - sp.idle[0]);
+    // never stop in the middle of a road: finish crossing first
+    const w = this.world, tx = Math.floor(a.x), tz = Math.floor(a.z);
+    if (a.crossing && w.inBounds(tx, tz) && w.roads[w.idx(tx, tz)]) { a.state = 'walk'; a.t = 1.5; return; }
+    a.crossing = false;
+  }
+
+  // Is the ground just ahead (a step and a bit beyond) somewhere it may go?
+  _clear(a, h) {
+    for (const d of [0.08, 0.2]) {
+      if (!this._tileOk(a, a.x + Math.sin(h) * d, a.z + Math.cos(h) * d)) return false;
+    }
+    return true;
+  }
+
+  _freeHeading(a) {
+    const side = this.rng.next() < 0.5 ? 1 : -1;
+    for (let k = 1; k <= 6; k++) {
+      for (const sgn of [side, -side]) {
+        const h = a.h + sgn * k * 0.5;
+        if (this._clear(a, h)) return h;
+      }
+    }
+    return null;
   }
 
   pick(clientX, clientY) {

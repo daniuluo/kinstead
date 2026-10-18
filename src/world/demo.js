@@ -3,7 +3,7 @@
 import { RNG } from '../util/rng.js';
 import { BUILDINGS } from '../defs.js';
 
-const FREE = { free: true, ignoreMoney: true, ignoreUnlock: true };
+const FREE = { free: true, ignoreMoney: true, ignoreUnlock: true, instant: true };
 
 export function growDemoTown(world, seed, size = 1) {
   const rng = new RNG(seed);
@@ -49,8 +49,8 @@ export function growDemoTown(world, seed, size = 1) {
   }
   spots.sort((a, b) => a[2] - b[2]);
   const weights = [
-    ['house', 34], ['market', 3], ['bakery', 2], ['tavern', 2], ['farm', 3], ['lumber', 2], ['fishery', 2],
-    ['workshop', 2], ['well', 3], ['clinic', 1], ['school', 1], ['watch', 1], ['chapel', 1], ['garden', 4],
+    ['house', 30], ['villa', 2], ['flats', 2], ['market', 3], ['bakery', 2], ['tavern', 2], ['farm', 3], ['lumber', 2], ['fishery', 2],
+    ['workshop', 2], ['builder', 1], ['well', 3], ['clinic', 1], ['school', 1], ['watch', 1], ['chapel', 1], ['garden', 4],
     ['plaza', 1], ['flowers', 2], ['statue', 1], ['coachstop', 1],
   ];
   const total = weights.reduce((s, w) => s + w[1], 0);
@@ -70,4 +70,17 @@ export function growDemoTown(world, seed, size = 1) {
     const r = world.placeBuilding(type, x, z, { ...FREE, level });
     if (r.ok) count[type] = (count[type] || 0) + 1;
   }
+
+  // join a few neighbours into terraces and shophouses
+  const money = world.money, instant = world.sandbox.instantBuild;
+  world.money = Infinity;
+  world.sandbox.instantBuild = true;
+  for (const b of [...world.buildings.values()]) {
+    if (!world.buildings.has(b.id) || !rng.chance(0.3)) continue;
+    const opts = world.mergeOptions(b);
+    if (opts.length) world.mergeBuildings(b.id, rng.pick(opts).other.id);
+  }
+  world.encroachPass(() => rng.next());
+  world.money = money;
+  world.sandbox.instantBuild = instant;
 }

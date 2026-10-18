@@ -9,8 +9,11 @@ import { Sim } from '../src/sim/sim.js';
 import { Agents } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
+import { Construction } from '../src/sim/construction.js';
+import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
-import { buildModel } from '../src/render/buildings.js';
+import { buildModel, STYLES } from '../src/render/buildings.js';
+import { fw, fd } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
 
 let failures = 0;
@@ -20,11 +23,24 @@ const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg);
 let verts = 0;
 for (const [type, def] of Object.entries(BUILDINGS)) {
   def.levels.forEach((_, level) => {
-    for (const variant of [1, 2, 3]) {
-      const m = buildModel({ type, level, variant, size: def.size, baseY: 0.5, minY: 0.2, rot: 1, rail: def.needsRail ? { x: 0, z: 0, dir: 0 } : null });
+    for (const variant of [1, 2, 3, 4]) {
+      const W = def.merged ? (variant % 2 ? 2 : 1) : def.size, D = def.merged ? (variant % 2 ? 1 : 2) : def.size;
+      const flavor = type === 'shophouse' ? ['market', 'bakery', 'tavern', 'market'][variant - 1] : null;
+      const look = variant === 4 ? STYLES[level % STYLES.length].id : null;
+      const ext = variant === 3 && def.size === 1 ? { x0: type === 'house' ? -0.25 : 0.25, x1: 0, z0: 0, z1: 0 } : null;
+      const b = { type, level, variant, flavor, look, ext, size: Math.max(W, D), w: W, d: D, baseY: 0.5, minY: 0.2, rot: variant % 4, rail: def.needsRail ? { x: 0, z: 0, dir: 0 } : null };
+      const m = buildModel(b);
       if (!m.geo || !m.geo.attributes.position.count) throw new Error(`empty model ${type} L${level}`);
       for (const v of m.geo.attributes.position.array) if (!Number.isFinite(v)) throw new Error(`NaN in ${type} L${level}`);
       verts += m.geo.attributes.position.count;
+      // and every stage of putting it up / taking it down
+      if (variant === 1) {
+        const box = bodyBox(m.geo);
+        for (const kind of ['build', 'merge', 'dismantle', 'upgrade']) for (const p of [0, 0.15, 0.5, 0.95]) {
+          const g = siteGeo({ target: m.geo, old: m.geo, box, oldBox: box, kind, p, wait: null, Ex: W / 2, Ez: D / 2, gy: () => 0, seed: 7 });
+          for (const v of g.attributes.position.array) if (!Number.isFinite(v)) throw new Error(`NaN in site ${type} ${kind}`);
+        }
+      }
     }
   });
 }
@@ -51,14 +67,18 @@ const game = {
   emit(e, d) { events[e] = (events[e] || 0) + 1; for (const f of this._ev[e] || []) f(d); },
 };
 const w = World.createNew({ N: 48, seed: 4242, name: 'Testbury' });
+ok([...w.buildings.values()].some(b => b.type === 'builder'), "new towns start with a builder's yard");
 growDemoTown(w, 99, 1);
+ok([...w.buildings.values()].some(b => b.type === 'terrace' || b.type === 'shophouse'), 'demo town has joined buildings');
 game.world = w;
 game.paths = new PathFinder(w);
 game.sim = new Sim(game);
 game.transit = new Transit(game);
 game.sim.seedFounders();
 game.agents = new Agents(game);
+game.construction = new Construction(game);
 game.on('day', () => game.transit.planCarts());
+const step = (dt) => { const g = game.sim.update(dt); game.agents.update(dt, g); game.construction.update(dt, g); game.transit.update(dt); return g; };
 game.transit.rebuild();
 game.transit.planCarts();
 const pop0 = w.population;
@@ -68,7 +88,7 @@ ok(pop0 > 10, `demo town seeded with ${pop0} villagers`);
 const stops = [];
 for (let z = 0; z < w.N && stops.length < 3; z++) for (let x = 0; x < w.N && stops.length < 3; x++) {
   if (stops.some(s => Math.abs(s.x - x) + Math.abs(s.z - z) < 8)) continue;
-  const r = w.placeBuilding('coachstop', x, z, { free: true, ignoreMoney: true });
+  const r = w.placeBuilding('coachstop', x, z, { free: true, ignoreMoney: true, instant: true });
   if (r.ok && r.building.connected) stops.push(r.building); else if (r.ok) w.removeBuilding(r.building.id, 0);
 }
 w.money += 1000;
@@ -79,9 +99,7 @@ game.transit.rebuild();
 let maxWalkers = 0, frames = 0;
 const startDay = w.day;
 while (w.day < startDay + 6 && frames < 40000) {
-  const gdt = game.sim.update(0.1);
-  game.agents.update(0.1, gdt);
-  game.transit.update(0.1);
+  step(0.1);
   maxWalkers = Math.max(maxWalkers, game.agents.walkers.size);
   frames++;
 }
@@ -92,44 +110,66 @@ const st = game.transit.stats[line.line?.id] || { riders: 0 };
 console.log('      coach riders:', st.riders, ' population:', pop0, '→', w.population, ' money:', Math.round(w.money), ' happiness:', Math.round(game.sim.happiness));
 ok(game.transit.vehicles.length === 1, 'one coach on the line');
 
-// 3b. railway: lay a straight track with a station at each end and run a train
+// 3b. railway: trains never reverse, so a dead-end line is refused and a
+// loop of track runs forward forever
 {
   w.setSandbox({ infiniteMoney: true, unlockAll: true });
-  let made = null;
-  for (let z = 2; z < w.N - 2 && !made; z++) {
-    for (let x = 2; x < w.N - 14 && !made; x++) {
-      const tiles = [];
-      for (let k = 0; k < 12; k++) tiles.push([x + k, z]);
-      if (!tiles.every(([tx, tz]) => w.checkRail(tx, tz).ok && !w.roadAt(tx, tz))) continue;
-      if (!w.checkRoad(x, z + 2, 1).ok || !w.checkRoad(x + 11, z + 2, 1).ok) continue;
-      w.placeRails(tiles);
-      w.placeRoads([[x, z + 2], [x + 11, z + 2]], 1);
-      const s1 = w.placeBuilding('station', x, z + 1, {});
-      const s2 = s1.ok ? w.placeBuilding('station', x + 11, z + 1, {}) : { ok: false };
-      if (s1.ok && s2.ok) made = [s1.building, s2.building];
-      else { if (s1.ok) w.removeBuilding(s1.building.id); for (const [tx, tz] of tiles) w.removeRail(tx, tz); }
+  const W = 10, H = 5;
+  let spot = null;
+  for (let z0 = 3; z0 < w.N - H - 3 && !spot; z0++) {
+    for (let x0 = 2; x0 < w.N - W - 2 && !spot; x0++) {
+      const ring = [];
+      for (let x = x0; x <= x0 + W; x++) ring.push([x, z0], [x, z0 + H]);
+      for (let z = z0 + 1; z < z0 + H; z++) ring.push([x0, z], [x0 + W, z]);
+      const okRing = ring.every(([tx, tz]) => w.checkRail(tx, tz).ok && !w.roadAt(tx, tz));
+      const st1 = [x0 + 3, z0 - 1], st2 = [x0 + W - 3, z0 + H + 1];
+      const okSt = w.checkRoad(st1[0], st1[1] - 1, 1).ok && w.checkRoad(st2[0], st2[1] + 1, 1).ok
+        && [st1, st2, [x0 + W - 2, z0 + 2], [x0 + W - 1, z0 + 2]].every(([tx, tz]) => w.inBounds(tx, tz) && !w.buildingOn(tx, tz) && !w.roadAt(tx, tz) && !w.terrain.isWater(tx, tz) && w.terrain.slope(tx, tz) < 0.5);
+      if (okRing && okSt) spot = { x0, z0, ring, st1, st2 };
     }
   }
-  if (made) {
-    const rl = game.transit.createLine('rail', made.map(b => b.id));
-    ok(rl.ok, `rail line created (${rl.reason || 'ok'})`);
+  if (spot) {
+    const { x0, z0, ring, st1, st2 } = spot;
+    const top = ring.filter(([, tz]) => tz === z0);
+    w.placeRails(top);
+    w.placeRoads([[st1[0], st1[1] - 1]], 1);
+    const s1 = w.placeBuilding('station', st1[0], st1[1], { instant: true });
+    // second station on a spur off the top row: a dead end the train would have to back out of
+    w.placeRails([[x0 + W - 3, z0 + 1], [x0 + W - 3, z0 + 2]]);
+    w.placeRoads([[x0 + W - 1, z0 + 2]], 1);
+    const s2tmp = w.placeBuilding('station', x0 + W - 2, z0 + 2, { instant: true });
+    ok(s1.ok && s2tmp.ok, 'stations placed beside the track');
+    const dead = game.transit.createLine('rail', [s1.building.id, s2tmp.building.id]);
+    ok(!dead.ok && /reverse/.test(dead.reason), `dead-end line refused ("${dead.reason}")`);
+    w.removeBuilding(s2tmp.building.id);
+    w.removeRail(x0 + W - 3, z0 + 1); w.removeRail(x0 + W - 3, z0 + 2);
+    // complete the loop and put the second station on the far side
+    w.placeRails(ring);
+    w.placeRoads([[st2[0], st2[1] + 1]], 1);
+    const s2 = w.placeBuilding('station', st2[0], st2[1], { instant: true });
+    const rl = game.transit.createLine('rail', [s1.building.id, s2.building.id]);
+    ok(rl.ok, `loop line created (${rl.reason || 'ok'})`);
     game.transit.rebuild();
     const v = game.transit.vehicles.find(v => v.line.mode === 'rail');
+    const L = v.route.length;
     const visited = new Set();
-    let minGap = Infinity, maxGap = 0, reversals = 0, lastDir = v ? v.dir : 1;
-    for (let i = 0; i < 2400; i++) {
-      game.sim.update(0.05); game.agents.update(0.05, 0.05); game.transit.update(0.05);
-      if (!v) break;
+    let backwards = 0, laps = 0, minGap = Infinity, maxGap = 0, prev = v.s;
+    for (let i = 0; i < 6000; i++) {
+      step(0.05);
+      const ds = ((v.s - prev) + L) % L;
+      if (ds > L / 2) backwards++;
+      if (v.s < prev - L / 2) laps++;
+      prev = v.s;
       if (v.state === 'dwell') visited.add(v.next);
-      if (v.dir !== lastDir) { reversals++; lastDir = v.dir; }
-      const a = v.meshes[0].position, b = v.meshes[1].position;
-      const gap = Math.hypot(a.x - b.x, a.z - b.z);
+      const p0 = v.meshes[0].position, p1 = v.meshes[1].position;
+      const gap = Math.hypot(p0.x - p1.x, p0.z - p1.z);
       minGap = Math.min(minGap, gap); maxGap = Math.max(maxGap, gap);
     }
-    ok(v && visited.size === 2, `train calls at both stations (${[...visited].join(', ')})`);
-    ok(reversals >= 2, `train shuttles back and forth (${reversals} reversals)`);
-    ok(minGap > 0.45 && maxGap < 0.62, `engine never runs into its carriages (gap ${minGap.toFixed(2)}–${maxGap.toFixed(2)})`);
-  } else console.log('      (no flat spot for a rail test on this map)');
+    ok(backwards === 0, `train only ever moves forward (${laps} laps of a ${L.toFixed(1)}-tile loop)`);
+    ok(laps >= 1, 'train completes laps of the loop');
+    ok(visited.size === 2, `train calls at both stations (${[...visited].join(', ')})`);
+    ok(minGap > 0.4 && maxGap < 0.62, `cars stay coupled (gap ${minGap.toFixed(2)}–${maxGap.toFixed(2)})`);
+  } else console.log('      (no room for a rail loop on this map)');
   w.setSandbox({ infiniteMoney: false, unlockAll: false });
   ok(Number.isFinite(w.money), 'sandbox can be switched off again');
 }
@@ -169,6 +209,110 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
   }
 }
 
+// 3d. construction: builders walk out, work on site, and finish the job
+const freeSpot = (W = 1, D = 1, skip = new Set()) => {
+  for (let z = 2; z < w.N - 3; z++) for (let x = 2; x < w.N - 3; x++) {
+    if (skip.has(`${x},${z}`)) continue;
+    const c = w.checkBuild('house', x, z, { w: W, d: D, ignoreMoney: true, ignoreUnlock: true });
+    if (c.ok && c.access.some(a => a.conn)) return { x, z };
+  }
+  return null;
+};
+const runUntil = (pred, days = 6) => {
+  const end = w.day + days;
+  let peak = 0;
+  while (w.day < end) {
+    step(0.1);
+    for (const c of game.construction.crew.values()) peak = Math.max(peak, c.onSite);
+    if (pred()) return { ok: true, peak };
+  }
+  return { ok: false, peak };
+};
+{
+  w.money = 1e6;
+  const spot = freeSpot();
+  const r = w.placeBuilding('house', spot.x, spot.z, {});
+  ok(r.ok && r.building.con && r.building.con.kind === 'build', 'a new cottage starts as a building site');
+  const t0 = w.day * 24 + w.hours;
+  const res = runUntil(() => !r.building.con);
+  const took = w.day * 24 + w.hours - t0;
+  ok(res.ok && res.peak > 0, `builders put it up on site (peak ${res.peak} on site, ${took.toFixed(1)} game hours)`);
+  ok(took > 2, 'construction takes a while');
+
+  // branching upgrade with a chosen style
+  w.setSandbox({ freeUpgrades: true, unlockAll: true });
+  const h = r.building;
+  h.level = 1;
+  const opts = w.upgradeOptions(h);
+  ok(opts.length === 2 && opts.map(o => o.type).join() === 'villa,flats', `a Family House can become: ${opts.map(o => o.type).join(' or ')}`);
+  const up = w.upgradeBuilding(h.id, 'villa', 'stone');
+  ok(up.ok && h.con && h.con.toType === 'villa', 'upgrade to a villa started');
+  const res2 = runUntil(() => !h.con);
+  ok(res2.ok && h.type === 'villa' && h.level === 0 && h.look === 'stone', `villa finished in stone (${h.type} L${h.level} ${h.look})`);
+
+  // joining two neighbours
+  let pair = null;
+  for (const a of w.buildings.values()) {
+    if (a.con) continue;
+    const m = w.mergeOptions(a).find(m => m.type === 'terrace' || m.type === 'shophouse');
+    if (m) { pair = [a, m]; break; }
+  }
+  if (pair) {
+    const [a, m] = pair;
+    const people = [...w.residents.values()].filter(r => r.home === a.id || r.home === m.other.id).length;
+    const mr = w.mergeBuildings(a.id, m.other.id);
+    const nb = mr.building;
+    ok(mr.ok && fw(nb) * fd(nb) === 2 && !w.buildings.has(a.id), `joined into a ${m.name} on a ${fw(nb)}×${fd(nb)} plot`);
+    const kept = [...w.residents.values()].filter(r => r.home === nb.id).length;
+    ok(kept === people, `everyone moved in (${kept}/${people})`);
+    ok(runUntil(() => !nb.con).ok, 'builders finished the joined building');
+  } else ok(false, 'no pair of neighbours to join');
+
+  // moving a house: taken down, carted over, rebuilt
+  const home = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);
+  const dest = freeSpot(1, 1, new Set([`${home.x},${home.z}`]));
+  const who = home.residents.slice();
+  const mv = w.moveBuilding(home.id, dest.x, dest.z);
+  ok(mv.ok && home.con && home.con.kind === 'dismantle' && mv.building.con.wait === 'dismantle', 'move: old house is being taken down');
+  ok(who.every(id => w.residents.get(id)?.home === mv.building.id), 'the household now belongs to the new plot');
+  let sawHaul = false;
+  const res3 = runUntil(() => { if (mv.building.con && mv.building.con.wait === 'haul') sawHaul = true; return !mv.building.con; }, 8);
+  ok(res3.ok && !w.buildings.has(home.id), `moved house rebuilt on its new plot (old plot cleared, cart ${sawHaul ? 'used' : 'skipped'})`);
+
+  // land deals never make plots overlap
+  w.setSandbox({ instantBuild: true });
+  let deals = 0;
+  for (let k = 0; k < 6; k++) w.encroachPass();
+  for (const b of w.buildings.values()) deals += (b.leases || []).filter(l => l.buyer).length;
+  if (!deals) {
+    // make one: a villa next to a cottage
+    for (const b of w.buildings.values()) {
+      if (b.type !== 'house' || b.con) continue;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const c = w.checkBuild('villa', b.x + dx, b.z + dz, { ignoreMoney: true, ignoreUnlock: true });
+        if (!c.ok) continue;
+        const v = w.placeBuilding('villa', b.x + dx, b.z + dz, { ignoreUnlock: true });
+        if (v.ok) w.tryEncroach(v.building);
+        break;
+      }
+      deals = [...w.buildings.values()].reduce((n, x) => n + (x.leases || []).filter(l => l.buyer).length, 0);
+      if (deals) break;
+    }
+  }
+  const rects = [...w.buildings.values()].map(b => {
+    const e = b.ext || { x0: 0, x1: 0, z0: 0, z1: 0 };
+    return [b.x - e.x0, b.z - e.z0, b.x + fw(b) + e.x1, b.z + fd(b) + e.z1, b.id];
+  });
+  let overlaps = 0;
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+    const a = rects[i], b = rects[j];
+    if (a[0] < b[2] - 1e-6 && b[0] < a[2] - 1e-6 && a[1] < b[3] - 1e-6 && b[1] < a[3] - 1e-6) overlaps++;
+  }
+  ok(deals > 0, `big homes bought garden land (${deals} deal${deals === 1 ? '' : 's'})`);
+  ok(overlaps === 0, `no two plots overlap after land deals (${overlaps})`);
+  w.setSandbox({ freeUpgrades: false, unlockAll: false, instantBuild: false });
+}
+
 // 4. save round-trip
 const data = serialize(w);
 const json = JSON.stringify(data);
@@ -177,6 +321,7 @@ ok(w2.buildings.size === w.buildings.size, `save round-trip buildings (${w.build
 ok(w2.residents.size === w.residents.size, `save round-trip residents (${w.residents.size})`);
 ok(w2.trees.length === w.trees.length, `save round-trip trees (${w.trees.length})`);
 ok(w2.lines.length === w.lines.length, 'save round-trip lines');
+ok([...w.buildings.values()].every(b => { const c = w2.buildings.get(b.id); return c && c.type === b.type && fw(c) === fw(b) && fd(c) === fd(b) && (c.look || null) === (b.look || null) && JSON.stringify(c.leases || []) === JSON.stringify(b.leases || []); }), 'save round-trip plots, styles and land deals');
 let same = true;
 for (let i = 0; i < w.terrain.H.length; i++) if (Math.abs(w.terrain.H[i] - w2.terrain.H[i]) > 0.001) same = false;
 ok(same, 'save round-trip heights');

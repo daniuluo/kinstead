@@ -36,9 +36,9 @@ export function serialize(world) {
     heights: toB64(new Uint8Array(q.buffer)),
     roads: toB64(world.roads),
     rails: toB64(world.rails),
-    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built]),
+    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null]),
     trees,
-    residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look]),
+    residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null]),
     lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
     state: {
       money: Number.isFinite(world.money) ? world.money : 0, sandbox: world.sandbox, taxRate: world.taxRate, day: world.day, hours: world.hours, nextId: world.nextId,
@@ -62,12 +62,16 @@ export function deserialize(data) {
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
-  for (const [id, type, level, x, z, variant, rot, built] of data.buildings) {
+  for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look] of data.buildings) {
+    if (type === 'house' && level >= 2) [type, level] = level === 2 ? ['flats', 0] : ['villa', level - 2];
     if (!BUILDINGS[type]) continue;
-    w.restoreBuilding({ id, type, level, x, z, variant, rot, built });
+    w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look });
   }
-  for (const [id, first, last, age, home, job, look] of data.residents) {
-    w.residents.set(id, { id, first, last, age, home: home >= 0 ? home : null, job: job >= 0 ? job : null, look, mood: 60 });
+  for (const [id, first, last, age, home, job, look, wealth, fam] of data.residents) {
+    const r = { id, first, last, age, home: home >= 0 ? home : null, job: job >= 0 ? job : null, look, mood: 60 };
+    if (wealth != null) r.wealth = wealth;
+    if (fam != null) r.fam = fam;
+    w.residents.set(id, r);
   }
   w.lines = (data.lines || []).map(l => ({ ...l, stops: l.stops.filter(s => w.buildings.has(s)) }));
   const s = data.state;

@@ -4,12 +4,13 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { BUILDINGS } from '../defs.js';
-import { doorPoint } from '../world/world.js';
+import { doorPoint, fw, fd, isOpen } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { MAT } from '../render/materials.js';
 import { workArea } from '../render/buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RNG } from '../util/rng.js';
+import { traitsOf } from './people.js';
 
 const SKIN = ['#f1c8a5', '#e0ac85', '#c68c63', '#9a6440', '#6e4630', '#f5d6bd', '#d9a07a'];
 const HAIR = ['#2b1d14', '#5a3a22', '#8a5a2b', '#c9a15a', '#1a1a1a', '#a0522d', '#6b4a35'];
@@ -94,7 +95,7 @@ export class Agents {
   // ------------------------------------------------------------- planning
   _candidates(pred) {
     const out = [];
-    for (const b of this.world.buildings.values()) if (b.access && b.connected && pred(BUILDINGS[b.type], b)) out.push(b);
+    for (const b of this.world.buildings.values()) if (b.access && b.connected && isOpen(b) && pred(BUILDINGS[b.type], b)) out.push(b);
     return out;
   }
 
@@ -113,41 +114,51 @@ export class Agents {
     const taverns = this._candidates(d => d.leisure && !d.park);
     const chapels = this._candidates(d => d.service === 'culture');
     const schools = this._candidates(d => d.service === 'education');
-    const leisure = parks.concat(taverns);
     const pick = (list) => this._nearest(r, list);
     const plan = [];
     const home = r.home;
     const push = (t, dest) => { if (dest != null) plan.push({ t, dest }); };
+    // personality: when they get up, how often they go out and where to
+    const T = traitsOf(r), has = (t) => T.includes(t);
+    const shopK = has('shopper') ? 1.8 : has('thrifty') ? 0.5 : 1;
+    const outK = has('homebody') ? 0.5 : has('social') || has('curious') ? 1.5 : 1;
+    const tavK = has('owl') ? 2.5 : has('social') ? 1.8 : has('homebody') ? 0.4 : 1;
+    const shift = has('early') ? -0.6 : has('owl') ? 0.6 : 0;
+    const leisure = has('outdoorsy') && parks.length ? parks : parks.concat(taverns);
+    const pickFar = (list) => has('curious') ? this._nearest(r, list, 8) : pick(list);
     if (r.age === 'adult' && r.job != null) {
       const job = this.world.buildings.get(r.job);
       const late = job && BUILDINGS[job.type].leisure;
-      const start = late ? 13 + R() * 1.5 : 6.4 + R() * 1.7;
-      const end = late ? 21.5 + R() * 1.2 : 16 + R() * 1.8;
+      const start = late ? 13 + R() * 1.5 : 6.4 + R() * 1.7 + shift;
+      const end = late ? 21.5 + R() * 1.2 : 16 + R() * 1.8 + shift + (has('diligent') ? 0.8 : 0);
       push(start, r.job);
-      const after = R();
-      if (!late && after < 0.38 && shops.length) { push(end, pick(shops)); push(end + 0.7 + R() * 1.2, home); }
-      else if (!late && after < 0.62 && leisure.length) { push(end, pick(leisure)); push(end + 1 + R() * 1.6, home); }
+      const after = R(), pShop = 0.38 * shopK * outK, pOut = pShop + 0.24 * outK;
+      if (!late && after < pShop && shops.length) { push(end, pick(shops)); push(end + 0.7 + R() * 1.2, home); }
+      else if (!late && after < pOut && leisure.length) { push(end, pickFar(leisure)); push(end + 1 + R() * 1.6, home); }
       else push(end, home);
-      if (!late && R() < 0.2 && taverns.length) { push(19.6 + R(), pick(taverns)); push(22 + R() * 1.4, home); }
+      if (!late && has('devout') && chapels.length && R() < 0.5) { push(18.4 + R() * 0.4, pick(chapels)); push(19.4 + R() * 0.4, home); }
+      else if (!late && R() < 0.2 * tavK && taverns.length) { push(19.6 + R() + shift, pick(taverns)); push(22 + R() * 1.4 + shift, home); }
     } else if (r.age === 'adult') {
-      push(8.5 + R() * 2.5, pick(shops) ?? pick(parks));
+      push(8.5 + R() * 2.5 + shift, R() < Math.min(1, 0.75 * shopK) ? pick(shops) ?? pick(parks) : pickFar(parks) ?? pick(shops));
       push(12 + R(), home);
-      if (R() < 0.55) { push(14.5 + R() * 2, pick(leisure)); push(18 + R(), home); }
+      if (R() < 0.55 * outK) { push(14.5 + R() * 2, has('devout') ? pick(chapels) ?? pickFar(leisure) : pickFar(leisure)); push(18 + R(), home); }
+      if (R() < 0.12 * tavK && taverns.length) { push(19.8 + R(), pick(taverns)); push(22.2 + R(), home); }
     } else if (r.age === 'child') {
+      const play = has('playful') ? 0.9 : has('bookish') ? 0.3 : 0.6;
       if (schools.length) {
         push(7.3 + R() * 0.7, pick(schools));
-        push(14 + R() * 0.8, R() < 0.6 ? pick(parks) ?? home : home);
+        push(14 + R() * 0.8, R() < play ? pickFar(parks) ?? home : home);
         push(17.5 + R(), home);
       } else {
-        push(9.5 + R() * 2, pick(parks));
+        push(9.5 + R() * 2, pickFar(parks));
         push(12.5 + R(), home);
-        push(15 + R(), pick(parks));
+        if (R() < play + 0.2) push(15 + R(), pickFar(parks));
         push(18 + R() * 0.5, home);
       }
     } else {
-      push(8.4 + R() * 2, pick(chapels) ?? pick(parks));
+      push(8.4 + R() * 2 + shift, has('devout') || R() < 0.6 ? pick(chapels) ?? pick(parks) : pickFar(parks));
       push(11.5 + R(), home);
-      if (R() < 0.6) { push(14 + R() * 2, pick(shops) ?? pick(parks)); push(16.6 + R(), home); }
+      if (R() < 0.6 * outK) { push(14 + R() * 2, R() < 0.6 * shopK ? pick(shops) ?? pick(parks) : pickFar(parks)); push(16.6 + R(), home); }
     }
     plan.sort((a, b) => a.t - b.t);
     r.plan = plan.filter((p, i) => i === 0 || p.dest !== plan[i - 1].dest);
@@ -178,6 +189,7 @@ export class Agents {
   go(r, destId) {
     const w = this.world;
     if (r.loc === 'walk' || r.loc === 'wait' || r.loc === 'ride') return;
+    if (r.site != null && destId !== r.site) r.site = null;
     let A = w.buildings.get(r.at);
     const B = w.buildings.get(destId);
     if (!A) { r.at = r.home; A = w.buildings.get(r.home); if (r.walk) this._drop(r.walk); r.loc = 'in'; }
@@ -229,16 +241,19 @@ export class Agents {
     const def = BUILDINGS[B.type];
     if (def.shop || (def.leisure && !def.park)) {
       const v = this.game.sim.recordVisit(B);
+      if (v && r.age !== 'child') r.wealth = Math.round(((r.wealth ?? 60) - v) * 10) / 10;
       if (v) this.game.emit('coins', { x: doorPoint(B).x, y: B.baseY + 0.4, z: doorPoint(B).z, v });
     }
     r.at = destId;
-    const outdoor = def.outdoor || (def.outdoorWork && r.job === B.id);
+    const site = !!(B.con && r.site === B.id);
+    const outdoor = def.outdoor || (def.outdoorWork && r.job === B.id) || site;
     if (outdoor && r.walk) {
       const wk = r.walk;
       wk.mode = 'wander';
-      wk.area = B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + B.size - 0.15, B.z + B.size - 0.15];
+      wk.area = site ? siteArea(B) : B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + fw(B) - 0.15, B.z + fd(B) - 0.15];
+      wk.ring = site;
       wk.baseY = B.baseY + 0.012;
-      wk.working = def.outdoorWork && r.job === B.id;
+      wk.working = (def.outdoorWork && r.job === B.id) || site;
       wk.idle = 0.3;
       wk.target = null;
       r.loc = 'out';
@@ -382,7 +397,11 @@ export class Agents {
         if (wk.idle > 0) { wk.idle -= dt * speed; wk.moving = false; if (wk.working && speed) wk.phase += dt * speed * 4; continue; }
         if (!wk.target) {
           const [x0, z0, x1, z1] = wk.area;
-          wk.target = [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
+          if (wk.ring) {
+            // builders work their way round the scaffolding
+            const wx = x1 - x0, wz = z1 - z0, t = Math.random() * 2 * (wx + wz);
+            wk.target = t < wx ? [x0 + t, z0] : t < wx + wz ? [x1, z0 + t - wx] : t < 2 * wx + wz ? [x1 - (t - wx - wz), z1] : [x0, z1 - (t - 2 * wx - wz)];
+          } else wk.target = [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
         }
         const dx = wk.target[0] - wk.x, dz = wk.target[1] - wk.z;
         const d = Math.hypot(dx, dz);
@@ -480,7 +499,7 @@ export class Agents {
     if (r.walk && this.walkers.has(r.walk)) return { x: r.walk.x, y: r.walk.y, z: r.walk.z };
     if (r.loc === 'ride') { const v = this.game.transit.vehicleOf(r); if (v) return v; }
     const b = this.world.buildings.get(r.at ?? r.home);
-    if (b) return { x: b.x + b.size / 2, y: b.baseY, z: b.z + b.size / 2 };
+    if (b) return { x: b.x + fw(b) / 2, y: b.baseY, z: b.z + fd(b) / 2 };
     return null;
   }
 
@@ -496,6 +515,12 @@ export class Agents {
       if (dest === r.job) return 'Walking to work';
       return `Walking to the ${name(dest)}`;
     }
+    const site = r.site != null ? w.buildings.get(r.site) : null;
+    if (site && site.con) {
+      const what = site.con.kind === 'dismantle' ? 'Taking down' : site.con.kind === 'upgrade' ? 'Upgrading' : 'Building';
+      if (r.loc === 'walk') return 'Heading to a building site';
+      if (r.loc === 'out' && r.at === site.id) return `${what} the ${name(site.id)}`;
+    }
     if (r.loc === 'out') {
       if (r.at === r.job) return `Working at the ${name(r.at)}`;
       return r.age === 'child' ? `Playing at the ${name(r.at)}` : `Relaxing at the ${name(r.at)}`;
@@ -506,6 +531,11 @@ export class Agents {
     if (b && BUILDINGS[b.type].service === 'education') return 'At school';
     return `Visiting the ${name(r.at)}`;
   }
+}
+
+// Where builders walk on a building site: a ring just inside the plot edge.
+export function siteArea(B) {
+  return [B.x + 0.1, B.z + 0.1, B.x + fw(B) - 0.1, B.z + fd(B) - 0.1];
 }
 
 function angDiff(a, b) {

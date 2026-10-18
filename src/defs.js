@@ -11,6 +11,13 @@
 //   appeal    park attractiveness
 //   unlock    population needed before this level becomes available
 //   req       requirements for upgrading into this level
+//   rate      (builder's yard) how fast each of its builders works
+//   tax       (homes) tax paid per working resident, relative to a cottage
+//
+// branches: at its top level a type can be rebuilt as one of these types
+// (a Family House becomes either a Villa or a Townhouse of flats).
+// Type flags: hidden types never appear in the build menu (merged buildings);
+// merged types occupy a 2×1 plot made from two neighbouring buildings.
 
 export const CATEGORIES = [
   { id: 'residential', name: 'Homes', icon: '🏡', key: '2' },
@@ -35,11 +42,40 @@ export const BUILDINGS = {
     name: 'House', cat: 'residential', size: 1, icon: '🏠',
     desc: 'Homes for your villagers. Upgrade them as services arrive.',
     levels: [
-      { name: 'Cottage', cost: 100, housing: 3 },
-      { name: 'Family House', cost: 260, housing: 6, unlock: 25, req: { happiness: 50, water: true } },
-      { name: 'Townhouse', cost: 650, housing: 10, unlock: 60, req: { happiness: 58, water: true, health: true } },
-      { name: 'Manor House', cost: 1400, housing: 15, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
-      { name: 'Grand Manor', cost: 2800, housing: 22, unlock: 200, req: { happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+      { name: 'Cottage', cost: 100, housing: 3, tax: 1 },
+      { name: 'Family House', cost: 260, housing: 6, tax: 1.25, unlock: 25, req: { happiness: 50, water: true } },
+    ],
+    branches: ['villa', 'flats'],
+  },
+  // grand path: few, wealthy residents who pay far more tax and lift the street
+  villa: {
+    name: 'Villa', cat: 'residential', size: 1, hidden: true, spacious: true, icon: '🏡', branch: 'Grand home',
+    desc: 'A grand family home: fewer residents, but wealthy ones who pay far more tax and make the street prettier.',
+    levels: [
+      { name: 'Villa', cost: 700, housing: 8, tax: 2, appeal: 3, radius: 2, unlock: 60, req: { happiness: 60, water: true, health: true } },
+      { name: 'Manor House', cost: 1500, housing: 12, tax: 2.6, appeal: 5, radius: 3, unlock: 120, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+      { name: 'Grand Manor', cost: 2900, housing: 16, tax: 3.2, appeal: 7, radius: 3, unlock: 200, req: { happiness: 74, water: true, health: true, education: true, safety: true, culture: true } },
+    ],
+  },
+  // multi-unit path: many households stacked into flats
+  flats: {
+    name: 'Flats', cat: 'residential', size: 1, hidden: true, spacious: true, icon: '🏘️', branch: 'Flats',
+    desc: 'Homes stacked into flats: room for many households on one plot.',
+    levels: [
+      { name: 'Townhouse Flats', cost: 650, housing: 12, tax: 1.3, unlock: 60, req: { happiness: 56, water: true, health: true } },
+      { name: 'Tenement', cost: 1300, housing: 22, tax: 1.25, unlock: 120, req: { happiness: 60, water: true, health: true, education: true } },
+      { name: 'Mansion Block', cost: 2600, housing: 34, tax: 1.3, unlock: 200, req: { happiness: 66, water: true, health: true, education: true, safety: true } },
+    ],
+  },
+
+  // Two neighbouring homes joined together (see World.mergeOptions).
+  terrace: {
+    name: 'Terrace', cat: 'residential', size: 2, merged: true, hidden: true, icon: '🏘️',
+    desc: 'Two neighbouring homes joined into one row of houses.',
+    levels: [
+      { name: 'Terrace Cottages', cost: 150, housing: 8 },
+      { name: 'Terraced Houses', cost: 700, housing: 16, unlock: 25, req: { happiness: 52, water: true } },
+      { name: 'Town Terrace', cost: 1500, housing: 26, unlock: 120, req: { happiness: 64, water: true, health: true, education: true } },
     ],
   },
 
@@ -73,7 +109,27 @@ export const BUILDINGS = {
     ],
   },
 
+  // A home joined with a shop, bakery or tavern: trade below, families above.
+  shophouse: {
+    name: 'Shophouse', cat: 'commercial', size: 2, merged: true, hidden: true, shop: true, icon: '🏪',
+    desc: 'Mixed use: a shop on the ground floor with homes above.',
+    levels: [
+      { name: 'Shophouse', cost: 150, housing: 6, jobs: 4, income: 6, visit: 6 },
+      { name: 'Market Row', cost: 900, housing: 12, jobs: 7, income: 6, visit: 8, unlock: 60, req: { happiness: 55, water: true } },
+      { name: 'Merchant Block', cost: 1900, housing: 18, jobs: 10, income: 7, visit: 10, unlock: 120, req: { happiness: 62, water: true, health: true } },
+    ],
+  },
+
   // ------------------------------------------------------------- industry
+  builder: {
+    name: "Builder's Yard", cat: 'industry', size: 1, builders: true, icon: '🧱',
+    desc: 'Home of the construction crews. Every new building, upgrade and move needs builders.',
+    levels: [
+      { name: "Builder's Yard", cost: 120, upkeep: 2, jobs: 3, rate: 1 },
+      { name: 'Master Builder', cost: 420, upkeep: 4, jobs: 5, rate: 1.25, unlock: 25 },
+      { name: "Masons' Lodge", cost: 950, upkeep: 6, jobs: 8, rate: 1.5, unlock: 120 },
+    ],
+  },
   farm: {
     name: 'Farm', cat: 'industry', size: 2, outdoorWork: true, icon: '🌾',
     desc: 'Fields and a farmhouse. Farmers work outdoors.',
@@ -215,8 +271,8 @@ export const BUILDINGS = {
 };
 
 export const TRANSIT = {
-  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 1.3, capacity: 8, stopType: 'coachstop', unlock: 0 },
-  rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 2.0, capacity: 24, stopType: 'station', unlock: 25 },
+  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.9, capacity: 8, stopType: 'coachstop', unlock: 0 },
+  rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25 },
 };
 export const RAIL_COST = 30;
 export const LINE_COLORS = ['#d9534f', '#3f7fbf', '#4f9a5a', '#e3a73b', '#8a5aa8', '#2fa3a3', '#d9734a', '#c75b9b'];
@@ -230,6 +286,12 @@ export function levelDef(type, level) {
 export function unlockOf(type, level = 0) {
   const d = BUILDINGS[type];
   return Math.max(d.unlock || 0, d.levels[level].unlock || 0);
+}
+
+// Builder-hours of work for a job of the given coin value.
+const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6 };
+export function workNeeded(cost, kind = 'build') {
+  return Math.round((4 + cost / 14) * (WORK_K[kind] ?? 1) * 10) / 10;
 }
 
 export function isShop(type) { return !!BUILDINGS[type].shop; }

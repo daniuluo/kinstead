@@ -39,7 +39,7 @@ body.pixel #app canvas { image-rendering: pixelated; }
   -webkit-font-feature-settings: 'liga'; font-feature-settings: 'liga';
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
 }
-.ms.coin { color: #8a6400; }
+.ms.coinico { color: #8a6400; }
 
 #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
 #hud > * { pointer-events: auto; }
@@ -262,3 +262,97 @@ table.budget tr.tot td { border-bottom: 0; font-weight: 700; background: #e8e8e8
   .inspector { width: calc(100vw - 16px); top: auto; bottom: 80px; max-height: 45vh; }
   .rci { display: none; }
 }
+
+/* construction progress */
+.meter.build i { background: repeating-linear-gradient(135deg, #d8a630 0 6px, #2f2a24 6px 12px) !important; }
+.actions.col { flex-direction: column; align-items: stretch; }
+.inspector .note { font-size: 12px; line-height: 1.4; margin: 2px 0 6px; opacity: 0.85; }
+
+/* style picker for upgrades */
+.inspector .uprow { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 4px; }
+.inspector .uprow .note { flex: 1; margin: 0; }
+.inspector .preview { flex: none; width: 112px; height: 84px; image-rendering: auto; background: #9fb08a; box-shadow: var(--sunken); }
+.inspector .styles { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 4px 0 6px; clear: none; }
+.inspector .styles > span { font-size: 12px; margin-right: 4px; }
+.inspector .styles .style { font: inherit; font-size: 12px; padding: 2px 6px; background: var(--face); box-shadow: var(--raised); border: 0; cursor: pointer; color: inherit; }
+.inspector .styles .style.on { box-shadow: var(--sunken); background: #e8e8e8; font-weight: bold; }
+
+/* villager directory */
+.modal-card.wide, #modalCard.wide { width: min(980px, calc(100vw - 32px)); max-width: none; }
+.pplbar { display: flex; gap: 8px; align-items: center; margin: 6px 0 8px; flex-wrap: wrap; }
+.pplbar input { flex: 1; min-width: 180px; }
+.pplbar #pplN { font-size: 12px; opacity: 0.8; }
+.pplwrap { max-height: min(60vh, 560px); overflow: auto; background: #fff; box-shadow: var(--field); }
+table.people { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.people th { position: sticky; top: 0; background: var(--face); box-shadow: var(--raised); text-align: left; padding: 4px 6px; cursor: pointer; white-space: nowrap; font-weight: 700; z-index: 1; }
+table.people td { padding: 3px 6px; border-bottom: 1px solid #e4e4e4; white-space: nowrap; }
+table.people td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.people td.traits { white-space: normal; font-size: 12px; color: #444; }
+table.people td .ms { font-size: 15px; vertical-align: -3px; }
+table.people tbody tr { cursor: pointer; }
+table.people tbody tr:hover td { background: #ffffe1; }
+table.people .bad, .inspector .neg { color: var(--brick, #a33); }
+.inspector .chip i { font-style: normal; opacity: 0.65; font-size: 11px; margin-left: 2px; }
+.inspector .muted { font-size: 12px; opacity: 0.7; }
+
+/* ---------------------------------------------------------------------------
+   Readability: running text uses the classic Windows UI faces (Tahoma /
+   Verdana) at comfortable sizes; the pixel font stays for headings, title
+   bars and the big numbers so the 90s look is unchanged. */
+:root { --font: Tahoma, Verdana, 'Segoe UI', sans-serif; --display: 'Pixelify Sans', Tahoma, sans-serif; }
+html, body { font-size: 14px; -webkit-font-smoothing: auto; }
+.town-name, .clock #clockTime, .stat b, .logo, .modal-card h2, .inspector::before, .title-card .titlebar,
+.inspector h3, .toast.big, .inspector .head .big { font-family: var(--display); }
+.town-title { font-family: var(--font); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sec h5 { font-family: var(--font); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.sec h5 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.rci span { font-family: var(--font); font-size: 9px; font-weight: 700; }
+.clock #clockDate, .stat small, .tool .l, .card .n, .card .c, .chip, .req, .inspector .sub, .save .m { font-size: 12px; }
+.card .lock { font-size: 11px; }
+.row, .tooltip, .label3d, .toast, .modal-card .lead, .help-grid, .field label, .overlay-menu button { font-size: 13px; }
+.btn { font-size: 13px; }
+.kbd { font-size: 12px; }
+.title-foot { font-size: 12px; }
+.inspector .note { font-size: 12px; opacity: 1; }
+
+.checkrow { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 3px; }
+.menu button.on { box-shadow: var(--sunken); background: #e0e0e0; }
+
+/* Spacing for the wider UI font: nothing clips, icons sit on the text line. */
+.ms { line-height: 1; }
+.tool { width: auto; min-width: 60px; padding: 5px 7px 4px; }
+.tool .l { font-size: 11px; line-height: 1.1; white-space: nowrap; }
+.tool .k { top: 1px; right: 3px; font-size: 7px; }
+.menu button { min-width: 34px; }
+.speed button { min-width: 32px; }
+.stat b { min-width: 2.2em; }
+.chip { display: inline-flex; align-items: center; gap: 3px; line-height: 1.35; padding: 1px 6px 2px; }
+.chip .ms { vertical-align: 0; }
+.btn { line-height: 1.2; }
+.btn .ms { vertical-align: 0; font-size: 1.15em; }
+.row { align-items: baseline; }
+.row b { display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.row b .ms { vertical-align: 0; }
+.overlay-menu button { display: flex; align-items: center; gap: 6px; white-space: nowrap; padding: 5px 12px 5px 10px; }
+.overlay-menu button .ms { margin-right: 0; }
+.card { width: 118px; }
+.card .n { min-height: 2.3em; display: flex; align-items: center; justify-content: center; overflow-wrap: anywhere; }
+.card .c, .card .lock { display: inline-flex; align-items: center; gap: 3px; }
+.toast { line-height: 1.35; }
+.toast .ms { vertical-align: -0.15em; }
+.clock #clockDate { white-space: nowrap; display: inline-flex; align-items: center; gap: 2px; }
+.inspector h3 { overflow-wrap: anywhere; }
+.inspector .styles .style { line-height: 1.3; }
+.field label.inline { display: inline-flex; align-items: center; gap: 6px; }
+.tabs button { display: inline-flex; align-items: center; gap: 4px; }
+.hint { white-space: normal; max-width: min(720px, calc(100vw - 32px)); text-align: center; line-height: 1.35; }
+
+/* upgrade comparison */
+table.cmp { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 2px; background: #fff; box-shadow: var(--field); }
+table.cmp th { text-align: left; font-weight: 700; font-size: 11px; color: var(--ink-2); padding: 2px 5px; background: #e8e8e8; }
+table.cmp td { padding: 2px 5px; border-top: 1px solid #ececec; white-space: nowrap; }
+table.cmp td:first-child { white-space: normal; color: var(--ink-2); }
+table.cmp td:nth-child(3) { color: #888; padding: 2px 0; }
+table.cmp tr.up td:last-child { color: var(--good); font-weight: 700; }
+table.cmp tr.down td:last-child { color: var(--bad); font-weight: 700; }
+table.cmp td .ms { font-size: 1em; vertical-align: -0.12em; }

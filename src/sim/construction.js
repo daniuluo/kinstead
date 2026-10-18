@@ -1,0 +1,146 @@
+// Building sites. New buildings, upgrades, merges and moves are put up by
+// builders from the Builder's Yard: they walk out to a site, work round the
+// scaffolding, and the job only advances while they are there. A town with no
+// builders makes do with slow hired hands from the next village, and plots
+// off the road (gardens, flower beds) are planted by volunteers.
+
+import { BUILDINGS } from '../defs.js';
+import { fw, fd, isOpen } from '../world/world.js';
+import { lookOf, siteArea } from './agents.js';
+
+const DAY_START = 6.5, DAY_END = 18;
+const HIRED_RATE = 0.5;
+
+// How many builders fit on a site at once.
+export function crewCap(b) { return Math.min(8, 2 + 2 * fw(b) * fd(b)); }
+
+export class Construction {
+  constructor(game) {
+    this.game = game;
+    this.world = game.world;
+    this.hands = new Map();   // site id → hired-hand walkers
+    this.crew = new Map();    // site id → { assigned, onSite, rate, hired }
+    this.hasBuilders = false;
+    this._dispatchT = 0;
+    // a materials cart that was on the road when the game was saved has arrived
+    for (const b of this.world.buildings.values()) if (b.con && b.con.wait === 'haul') b.con.wait = null;
+    this.world.on('building:remove', (b) => this._clearHands(b.id));
+    this.world.on('building:dismantled', ({ from, to }) => {
+      const arrived = () => { if (to.con && to.con.wait === 'haul') to.con.wait = null; };
+      if (!this.game.transit.haul(from, to, arrived)) arrived();
+    });
+  }
+
+  _now() { return this.world.day * 24 + this.world.hours; }
+
+  // Everything the inspector shows about a site.
+  status(b) {
+    const c = this.crew.get(b.id) || { assigned: 0, onSite: 0, rate: 0, hired: 0 };
+    const con = b.con;
+    const p = con ? Math.min(1, con.done / Math.max(con.work, 1e-6)) : 1;
+    return { ...c, progress: p, cap: crewCap(b), hasBuilders: this.hasBuilders, eta: con && c.rate > 0 ? (con.work - con.done) / c.rate : null };
+  }
+
+  update(dt, gameHours) {
+    const w = this.world, ag = this.game.agents;
+    const hours = w.hours;
+    const daytime = hours >= DAY_START && hours < DAY_END;
+    const sites = [];
+    this.crew.clear();
+    for (const b of w.buildings.values()) {
+      if (!b.con) continue;
+      sites.push(b);
+      this.crew.set(b.id, { assigned: 0, onSite: 0, rate: 0, hired: 0 });
+    }
+
+    // who is building where
+    const idle = [];
+    let builders = 0;
+    for (const r of w.residents.values()) {
+      const yard = r.job != null ? w.buildings.get(r.job) : null;
+      if (!yard || !BUILDINGS[yard.type].builders || !isOpen(yard)) { r.site = null; continue; }
+      builders++;
+      if (r.site != null) {
+        const s = w.buildings.get(r.site);
+        const c = s && s.con && !s.con.wait ? this.crew.get(s.id) : null;
+        if (c) {
+          c.assigned++;
+          if (r.loc === 'out' && r.at === s.id) { c.onSite++; c.rate += BUILDINGS[yard.type].levels[yard.level].rate || 1; }
+          continue;
+        }
+        r.site = null;
+      }
+      if (r.loc === 'in' && r.at === r.job) idle.push(r);
+      else if (r.loc === 'out' && r.at !== r.job && w.buildings.get(r.at)?.con) ag.go(r, r.job);
+    }
+    this.hasBuilders = builders > 0;
+
+    // send idle builders out, oldest site first
+    this._dispatchT -= gameHours;
+    if (daytime && idle.length && sites.length && this._dispatchT <= 0) {
+      this._dispatchT = 0.15;
+      const now = this._now();
+      const open = sites.filter(s => !s.con.wait && s.access && s.connected && !(s._unreach > now)).sort((a, b) => a.id - b.id);
+      for (const r of idle) {
+        const next = r.plan[r.pi];
+        if (next && next.t - hours < 0.75) continue;   // about to knock off for the day
+        const s = open.find(s => this.crew.get(s.id).assigned < crewCap(s));
+        if (!s) break;
+        r.site = s.id;
+        ag.go(r, s.id);
+        if (r.loc === 'walk') this.crew.get(s.id).assigned++;
+        else { r.site = null; s._unreach = now + 2; }
+      }
+    }
+
+    // progress
+    for (const s of sites) {
+      const con = s.con, c = this.crew.get(s.id);
+      if (con.wait) { this._clearHands(s.id); s._crew = 0; continue; }
+      const hands = daytime && (!this.hasBuilders || !s.access) ? (s.size > 1 ? 2 : 1) : 0;
+      this._setHands(s, hands);
+      c.hired = hands;
+      c.rate += hands * HIRED_RATE;
+      s._crew = c.onSite + hands;
+      if (gameHours > 0 && c.rate > 0) {
+        con.done += gameHours * c.rate;
+        if (con.done >= con.work) this._finish(s);
+      }
+    }
+  }
+
+  _finish(s) {
+    const w = this.world, ag = this.game.agents;
+    this._clearHands(s.id);
+    // send the crew back to the yard before the site turns into a building (or vanishes)
+    for (const r of w.residents.values()) {
+      if (r.site !== s.id) continue;
+      if (r.loc === 'out' && r.at === s.id) ag.go(r, r.job ?? r.home);
+      r.site = null;
+    }
+    w.finishConstruction(s);
+  }
+
+  _setHands(s, n) {
+    let list = this.hands.get(s.id);
+    if (!list && !n) return;
+    if (!list) { list = []; this.hands.set(s.id, list); }
+    const ag = this.game.agents;
+    while (list.length < n) {
+      const lk = lookOf({ look: (Math.random() * 1e9) | 0, age: 'adult' });
+      const area = siteArea(s);
+      const wk = ag._makeWalker(lk, [[area[0] + Math.random() * (area[2] - area[0]), area[3]]], null);
+      Object.assign(wk, { mode: 'wander', area, ring: true, baseY: s.baseY + 0.012, working: true, idle: Math.random() * 2, target: null, hand: true });
+      list.push(wk);
+    }
+    while (list.length > n) ag._drop(list.pop());
+    if (!list.length) this.hands.delete(s.id);
+  }
+
+  _clearHands(id) {
+    const list = this.hands.get(id);
+    if (!list) return;
+    for (const wk of list) this.game.agents._drop(wk);
+    this.hands.delete(id);
+  }
+}

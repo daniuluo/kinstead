@@ -23,16 +23,17 @@ function setup() {
   camera = new THREE.OrthographicCamera(-1, 1, 0.75, -0.75, 0.1, 50);
 }
 
-export function thumb(type, level = 0, variant = 777) {
-  const key = `${type}|${level}|${variant}`;
+export function thumb(type, level = 0, variant = 777, flavor = null, look = null) {
+  const key = `${type}|${level}|${variant}|${flavor}|${look}`;
   if (cache.has(key)) return cache.get(key);
   if (!R) setup();
   const def = BUILDINGS[type];
-  const b = { type, level, variant, size: def.size, baseY: 0, minY: 0, rot: 0, rail: def.needsRail ? { x: 0, z: 0, dir: 2 } : null };
+  const bw = def.merged ? 2 : def.size, bd = def.merged ? 1 : def.size;
+  const b = { type, level, variant, flavor, look, size: def.size, w: bw, d: bd, baseY: 0, minY: 0, rot: 0, rail: def.needsRail ? { x: 0, z: 0, dir: 2 } : null };
   const model = buildModel(b, { flat: true });
   const mesh = new THREE.Mesh(model.geo, MAT.building);
   scene.add(mesh);
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(def.size, 0.05, def.size), new THREE.MeshStandardMaterial({ color: '#8a9f5a', roughness: 1 }));
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.05, bd), new THREE.MeshStandardMaterial({ color: '#8a9f5a', roughness: 1 }));
   plate.position.y = -0.025;
   mesh.add(plate);
   const extras = [];

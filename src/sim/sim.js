@@ -3,7 +3,9 @@
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT } from '../defs.js';
 import { RNG } from '../util/rng.js';
+import { fw, fd, isOpen } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
+import { settleDay, startingWealth } from './people.js';
 
 const SERVICE_KEYS = Object.keys(SERVICES);
 
@@ -26,7 +28,7 @@ export class Sim {
     this.dirty = true;
     this._hourAcc = 0;
     const mark = () => { this.dirty = true; };
-    for (const e of ['building:add', 'building:remove', 'building:change', 'roads', 'trees', 'rails']) this.world.on(e, mark);
+    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
   }
 
@@ -68,6 +70,8 @@ export class Sim {
     w.history.push({ day: w.day - 1, pop: w.population, money: Number.isFinite(w.money) ? Math.round(w.money) : null, happy: Math.round(this.happiness), net: Math.round(this.budget.net + w.stats.todayVisitIncome) });
     if (w.history.length > 400) w.history.shift();
     w.stats.todayVisitIncome = 0;
+    settleDay(w);
+    w.encroachPass(() => this.rng.next());
     this.planMigration();
     this.game.emit('day', w.day);
     const s = seasonOf(w.day), ps = seasonOf(w.day - 1);
@@ -103,7 +107,7 @@ export class Sim {
     this.appeal.fill(0);
     this.pollution.fill(0);
     const stamp = (b, r, fn) => {
-      const cx = b.x + b.size / 2, cz = b.z + b.size / 2;
+      const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
       const R = Math.ceil(r);
       for (let z = Math.max(0, Math.floor(cz - R - 1)); z <= Math.min(N - 1, Math.ceil(cz + R)); z++) {
         for (let x = Math.max(0, Math.floor(cx - R - 1)); x <= Math.min(N - 1, Math.ceil(cx + R)); x++) {
@@ -113,9 +117,10 @@ export class Sim {
       }
     };
     for (const b of w.buildings.values()) {
+      if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
       if (def.service && b.connected) stamp(b, L.radius, (i) => { this.coverage[def.service][i] = 1; });
-      if (def.park) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * (1 - d / (L.radius + 1)); });
+      if (def.park || L.appeal) stamp(b, L.radius, (i, d) => { this.appeal[i] += L.appeal * (1 - d / (L.radius + 1)); });
       if (L.pollution) stamp(b, L.pollution, (i, d) => { this.pollution[i] += 16 * (1 - d / (L.pollution + 1)); });
     }
     // trees and water make places pleasant
@@ -131,10 +136,10 @@ export class Sim {
   }
 
   _near(b, pred, radius) {
-    const cx = b.x + b.size / 2, cz = b.z + b.size / 2;
+    const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
     for (const o of this.world.buildings.values()) {
-      if (o === b || !pred(o)) continue;
-      if (Math.hypot(o.x + o.size / 2 - cx, o.z + o.size / 2 - cz) <= radius) return true;
+      if (o === b || !isOpen(o) || !pred(o)) continue;
+      if (Math.hypot(o.x + fw(o) / 2 - cx, o.z + fd(o) / 2 - cz) <= radius) return true;
     }
     return false;
   }
@@ -163,6 +168,9 @@ export class Sim {
       if (f.transit) h += 3;
       f.pollution = Math.min(22, this.pollution[i]);
       h -= f.pollution;
+      // land deals: a bigger garden, or money in the bank for the seller
+      f.land = b.leases && b.leases.length ? (b.leases.some(l => l.buyer) ? 'buyer' : 'seller') : null;
+      if (f.land) h += f.land === 'buyer' ? 3 : 2;
       f.tax = tax > 10 ? -(tax - 10) * 1.6 : (10 - tax) * 0.8;
       h += f.tax;
       let adults = 0, unemployed = 0;
@@ -186,7 +194,7 @@ export class Sim {
     }
   }
 
-  jobsOf(b) { return BUILDINGS[b.type].levels[b.level].jobs || 0; }
+  jobsOf(b) { return isOpen(b) ? (BUILDINGS[b.type].levels[b.level].jobs || 0) : 0; }
 
   assignJobs() {
     const w = this.world;
@@ -213,7 +221,8 @@ export class Sim {
         let best = null, bd = Infinity;
         for (const b of open) {
           if (b.workers.length >= this.jobsOf(b)) continue;
-          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3;
+          // builders are hired first: nothing gets built without them
+          const d = Math.abs(b.x - home.x) + Math.abs(b.z - home.z) + this.rng.next() * 3 - (BUILDINGS[b.type].builders ? 1000 : 0);
           if (d < bd) { bd = d; best = b; }
         }
         if (!best) break;
@@ -234,11 +243,12 @@ export class Sim {
     const tk = (w.taxRate / 10) * (1 + bonus);
     for (const r of w.residents.values()) {
       const home = r.home != null ? w.buildings.get(r.home) : null;
-      const lvl = home ? home.level : 0;
-      if (r.age === 'adult') inc.taxes += (r.job ? 6 * (1 + 0.25 * lvl) : 1) * tk;
+      const hk = home ? (BUILDINGS[home.type].levels[home.level].tax ?? 1 + 0.25 * home.level) : 1;
+      if (r.age === 'adult') inc.taxes += (r.job ? 6 * hk : 1) * tk;
       else if (r.age === 'elder') inc.taxes += 1.5 * tk;
     }
     for (const b of w.buildings.values()) {
+      if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
       const workers = b.workers.length;
       if (L.income && workers) {
@@ -263,7 +273,7 @@ export class Sim {
   _treesNear(b, r) {
     const w = this.world;
     let n = 0;
-    for (let z = b.z - r; z <= b.z + b.size - 1 + r; z++) for (let x = b.x - r; x <= b.x + b.size - 1 + r; x++) {
+    for (let z = b.z - r; z <= b.z + fd(b) - 1 + r; z++) for (let x = b.x - r; x <= b.x + fw(b) - 1 + r; x++) {
       if (w.inBounds(x, z)) n += w.treeCount[w.idx(x, z)];
     }
     return n;
@@ -273,6 +283,7 @@ export class Sim {
     const w = this.world;
     let cap = 0, used = 0, comm = 0, ind = 0, adults = 0;
     for (const b of w.buildings.values()) {
+      if (!isOpen(b)) continue;
       const def = BUILDINGS[b.type], L = def.levels[b.level];
       if (L.housing) { cap += L.housing; used += b.residents.length; }
       if (def.cat === 'commercial') comm += L.jobs || 0;
@@ -306,7 +317,7 @@ export class Sim {
     const w = this.world, out = [];
     for (const b of w.buildings.values()) {
       const L = BUILDINGS[b.type].levels[b.level];
-      if (L.housing && b.connected && b.residents.length < L.housing) out.push(b);
+      if (L.housing && b.connected && isOpen(b) && b.residents.length < L.housing) out.push(b);
     }
     return out;
   }
@@ -344,6 +355,8 @@ export class Sim {
       else if (k === 1 && rng.chance(0.15)) age = 'elder';
       if (size === 1 && rng.chance(0.25)) age = 'elder';
       const r = { id: w.newId(), first: firstName(rng), last, age, home: home.id, job: null, look: (rng.next() * 1e9) | 0, mood: 60 };
+      r.fam = fam.length ? fam[0].id : r.id;
+      r.wealth = startingWealth(r, home);
       w.residents.set(r.id, r);
       home.residents.push(r.id);
       fam.push(r);
@@ -354,7 +367,7 @@ export class Sim {
   _arrive(a) {
     const w = this.world;
     const b = w.buildings.get(a.home);
-    if (!b || !b.connected) return;
+    if (!b || !b.connected || !isOpen(b)) return;
     const L = BUILDINGS[b.type].levels[b.level];
     const room = (L.housing || 0) - b.residents.length;
     if (room <= 0) return;

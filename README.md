@@ -10,14 +10,19 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map; zoom in and out with the wheel or the `+`/`−` buttons.
 - **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Pick a size: Small 32×32, Medium 48×48, Large 64×64 or Huge 80×80. Terraform by raising, lowering and levelling land, and plant trees.
 - **Organic village** — no two buildings look the same. Each one is generated from a seed: walls, roofs (thatch, tile, slate, shingle), half-timbering, chimneys, dormers, shutters, flower boxes, gardens and fences. Paths are worn into the grass and meander a little.
-- **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Homes have five levels: Cottage, Family House, Townhouse, Manor House and Grand Manor. Most other buildings have three or four levels, up to a Market Hall, Hospital, Academy or Minster. Upgrades need happiness and service coverage.
-- **Roads** — dirt paths, cobblestone and paved streets, plus wooden bridges over water. Street lamps light up at night.
-- **Transit** — horse-drawn **coach lines** loop between coach stops. **Railways** have track (with curves), stations, and a push-pull steam train that shuttles end to end and stops centred on each platform. Villagers on long trips walk to a stop, wait there, ride, and pay a fare.
-- **Animals** — deer and foxes roam the woods, rabbits the meadows, and mallards paddle on the lakes and river. Sheep, cows and chickens graze on the farms. Animals steer around buildings, mostly avoid roads and track, keep to their habitat, and bolt from villagers who get too close.
-- **Villagers** — every resident has a name, a home and maybe a job. They follow daily routines: work, school, shopping, the tavern, strolls in the park, and going home at night. Click anyone to see what they're doing, or follow them around.
+- **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop, builder's yard), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Most buildings have three or four levels, up to a Market Hall, Hospital, Academy or Minster. Upgrades need happiness and service coverage, and each option shows what changes (homes, jobs, earnings, reach, upkeep…) before you commit.
+- **Branching homes** — a Cottage becomes a Family House, which then goes one of two ways: a **grand home** (Villa → Manor House → Grand Manor: few, wealthy residents who pay much more tax) or **flats** (Townhouse Flats → Tenement → Mansion Block: many households on one plot). Pick a **style** for any home or shop upgrade — timber frame, limewash, painted, brick, stone or clapboard — and preview it in town before building.
+- **Construction** — nothing appears instantly. Builders from the **Builder's Yard** walk to each site and work round the scaffolding; a building goes up in stages (pegged-out plot and materials, foundations, walls rising, roof) and only progresses while builders are there. With no builders, slow hired hands come from the next village. A sandbox switch builds instantly.
+- **Joining and moving** — select a home next to another home or a shop to **join** them into a Terrace or a mixed-use **Shophouse** (shop below, flats above) on a double plot. **Move** any building for a fee: builders take it down, a cart hauls the materials, and it goes back up on the new plot.
+- **Gardens and land** — cottages sit at the front of their plot with a real back garden (vegetables, washing lines, sheds, hens). Big homes can buy a strip of a neighbouring cottage's garden; their owners pay the cottage's owners, both plots change size together and nothing ever overlaps.
+- **Roads** — dirt paths, cobblestone and paved streets drawn as crisp surfaces with edging stones, plus wooden bridges over water with sloped approaches. Street lamps light up at night.
+- **Transit** — horse-drawn **coach lines** loop between coach stops. **Railways** have track (with curves), stations and steam trains. Trains never reverse, so a rail line needs a loop of track through its stations; trains drive forward around it, ease in and out of stations, and stop centred on each platform (up to three trains per loop). Villagers on long trips walk to a stop, wait there, ride, and pay a fare.
+- **Animals** — a few deer and foxes roam the woods, rabbits the meadows, and mallards paddle on the lakes and river. Sheep, cows and chickens graze on the farms. They wander slowly and unpredictably, check the ground a step ahead so they steer around buildings, rarely cross roads, keep to their habitat, and bolt from villagers who get too close.
+- **Villagers** — every resident has a name, a home, maybe a job, a wage, savings, living costs, a family, friends (workmates, neighbours, playmates) and one or two personality traits (early riser, night owl, homebody, sociable, big spender, thrifty, outdoorsy, devout, hard-working…) that shape their daily routine. Press `P` for the **Villagers** directory: search, filter and sort everyone in town, then click a name to follow them.
 - **Economy** — taxes, shop visits, production, upkeep, a budget screen with charts, and RCI demand bars. New families arrive from the edge of the map when the village is attractive; unhappy households leave.
 - **Time and seasons** — sunrise and sunset, lit windows, lamps, lantern-carrying villagers, fireflies, then spring blossom, autumn leaves and winter snow.
-- **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Three sandbox switches, available for a new game or from Settings: unlimited coins, unlock every building, and upgrade without meeting needs.
+- **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Four sandbox switches, available for a new game or from Settings: unlimited coins, unlock every building, upgrade without meeting needs, and instant construction.
+- **Pop-ups** — coin pop-ups, notices, hover tips and the name tag over a followed villager can each be switched off in Settings, or all at once with the bell button or `N`.
 - **Saves** — in this browser (with an autosave every day), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
 
 ## Controls
@@ -32,10 +37,15 @@ A little isometric village builder that runs in your browser — pixel-art rende
 | `Tab` | Flip a building's entrance before placing |
 | `Space` | Pause / resume |
 | `[` / `]` | Slower / faster |
-| `O` · `B` · `L` · `H` | Overlays · budget · transit lines · help |
+| `O` · `B` · `L` · `P` · `H` | Overlays · budget · transit lines · villagers · help |
+| `N` | Hide / show pop-ups |
 | `Enter` / `Backspace` | Finish / undo stops while creating a transit line |
 | `Ctrl+S` · `Ctrl+Shift+S` | Quick save to the browser · download the save as `.json` |
 | `Esc` / right-click | Cancel the tool or close a window |
+
+## How the buildings are made
+
+Everything is generated in code — there are no model files, textures or sprites. [`src/render/geo.js`](src/render/geo.js) builds low-poly shapes (boxes, bevelled boxes, roof prisms, cylinders) and merges them into one mesh per building with per-vertex colours and a glow channel for lit windows. [`src/render/buildings.js`](src/render/buildings.js) has a recipe per building type and level, and every building's random seed picks its materials, colours, roof, windows and yard. Brick courses and roof tiles are drawn by a shader, and the pixel-art look comes from a low-resolution post-process pass.
 
 ## Running locally
 
@@ -89,7 +99,7 @@ npm install three@0.170.0 --no-save
 node scripts/check.js
 ```
 
-This builds every building model at every level, generates 25 valleys, simulates a town for six in-game days (walking villagers, a coach line, a shuttling train), checks that animals never enter buildings or leave their habitat, and round-trips a save.
+This builds every building model at every level, generates 25 valleys, simulates a town for six in-game days (walking villagers, a coach line, a train looping forward, a dead-end rail line refused), checks that animals never enter buildings or leave their habitat, and round-trips a save.
 
 ## Credits
 

@@ -8,6 +8,8 @@ import { NatureView } from './natureView.js';
 import { Overlay } from './overlay.js';
 import { Particles } from './particles.js';
 import { buildModel, workArea } from './buildings.js';
+import { siteGeo, bodyBox } from './construction.js';
+import { fw, fd } from '../world/world.js';
 
 const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
@@ -45,16 +47,28 @@ export class WorldView {
 
     this._h = {
       add: (b) => { this.addBuilding(b, true); this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      remove: (b) => { this.removeBuilding(b); this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      change: (b) => { this.removeBuilding(b, true); this.addBuilding(b, true, true); },
+      remove: (b) => { this._dropPreview(b); this.removeBuilding(b); this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
+      change: (b) => {
+        // a finished site swaps to the real building with a puff of dust and
+        // sparkle rather than the pop-up used for instant changes
+        this._dropPreview(b);
+        const prev = this.items.get(b.id);
+        const finished = !!(prev && prev.site && !b.con);
+        this.removeBuilding(b, true);
+        this.addBuilding(b, !finished, true);
+        if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
+        this.dirty.paint = true;
+      },
       roads: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
       rails: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
+      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; },
       trees: () => { this.dirty.nature = true; this.dirty.paint = true; },
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
     };
     world.on('building:add', this._h.add);
     world.on('building:remove', this._h.remove);
     world.on('building:change', this._h.change);
+    world.on('building:refit', this._h.refit);
     world.on('roads', this._h.roads);
     world.on('rails', this._h.rails);
     world.on('trees', this._h.trees);
@@ -65,11 +79,12 @@ export class WorldView {
 
   // ----------------------------------------------------------- buildings
   addBuilding(b, animate = false, upgrade = false) {
+    if (b.con) { this._addSite(b, animate); return; }
     const model = buildModel(b, { season: this.season, ground: this.groundFn });
     const mesh = new THREE.Mesh(model.geo, MAT.building);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.set(b.x + b.size / 2 + model.jitter.ox, b.baseY, b.z + b.size / 2 + model.jitter.oz);
+    mesh.position.set(b.x + (b.w ?? b.size) / 2 + model.jitter.ox, b.baseY, b.z + (b.d ?? b.size) / 2 + model.jitter.oz);
     mesh.rotation.y = (b.rot * Math.PI) / 2 + model.jitter.yaw;
     mesh.userData.buildingId = b.id;
     let spin = null;
@@ -102,16 +117,91 @@ export class WorldView {
     this.dirty.glows = true;
   }
 
+  // A building site: the finished model is kept and re-cut as work progresses.
+  _addSite(b, animate) {
+    const opts = { season: this.season, ground: this.groundFn };
+    const con = b.con;
+    const up = con.kind === 'upgrade';
+    const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look } : b, opts);
+    const old = up ? buildModel(b, opts) : null;
+    for (const m of [target, old]) if (m && m.spin) m.spin.geo.dispose();
+    const jit = target.jitter;
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), MAT.site);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.set(b.x + fw(b) / 2 + jit.ox, b.baseY, b.z + fd(b) / 2 + jit.oz);
+    mesh.rotation.y = (b.rot * Math.PI) / 2 + jit.yaw;
+    mesh.userData.buildingId = b.id;
+    this.group.add(mesh);
+    const th = mesh.rotation.y, co = Math.cos(th), si = Math.sin(th), cx = mesh.position.x, cz = mesh.position.z;
+    const t = this.world.terrain;
+    const gy = (lx, lz) => t.heightAt(cx + lx * co + lz * si, cz - lx * si + lz * co) - b.baseY;
+    const odd = (b.rot & 1) === 1;
+    const site = {
+      target: target.geo, old: old ? old.geo : null, box: bodyBox(target.geo), oldBox: old ? bodyBox(old.geo) : null,
+      gy, Ex: (odd ? fd(b) : fw(b)) / 2, Ez: (odd ? fw(b) : fd(b)) / 2, key: '', puff: 0,
+    };
+    const item = { b, mesh, spin: null, smoke: [], glows: [], fountain: null, work: null, site };
+    b.work = workArea(b);
+    this.items.set(b.id, item);
+    this._refreshSite(item);
+    if (animate) this.dust(cx, b.baseY, cz, b.size, false);
+    this.dirty.glows = true;
+  }
+
+  _refreshSite(item) {
+    const b = item.b, con = b.con, s = item.site;
+    if (!con) return;
+    const p = Math.min(1, con.done / Math.max(con.work, 1e-6));
+    const key = `${con.kind}|${con.wait || ''}|${Math.floor(p * 48)}`;
+    if (key === s.key) return;
+    s.key = key;
+    const geo = siteGeo({ target: s.target, old: s.old, box: s.box, oldBox: s.oldBox, kind: con.kind, p, wait: con.wait, Ex: s.Ex, Ez: s.Ez, gy: s.gy, seed: b.variant });
+    item.mesh.geometry.dispose();
+    item.mesh.geometry = geo;
+  }
+
   removeBuilding(b, quiet = false) {
     const it = this.items.get(b.id);
     if (!it) return;
     this.group.remove(it.mesh);
     it.mesh.geometry.dispose();
+    if (it.site) { it.site.target.dispose(); if (it.site.old) it.site.old.dispose(); }
     if (it.spin) it.spin.geometry.dispose();
     this.items.delete(b.id);
     if (!quiet) this.dust(it.mesh.position.x, b.baseY, it.mesh.position.z, b.size, false);
     this.dirty.glows = true;
   }
+
+  // Show what an upgrade (in a chosen style) will look like, in place of the
+  // building itself. spec: { type, level, look } or null to clear.
+  setPreview(b, spec) {
+    const key = b && spec ? `${b.id}|${spec.type}|${spec.level}|${spec.look}|${this.season}` : '';
+    if (key === this._previewKey) return;
+    this._previewKey = key;
+    if (this.preview) {
+      this.group.remove(this.preview.mesh);
+      this.preview.mesh.geometry.dispose();
+      const it = this.items.get(this.preview.id);
+      if (it) it.mesh.visible = true;
+      this.preview = null;
+    }
+    const it = b && spec ? this.items.get(b.id) : null;
+    if (!it || it.site) return;
+    const model = buildModel({ ...b, type: spec.type, level: spec.level, look: spec.look, con: null }, { season: this.season, ground: this.groundFn });
+    if (model.spin) model.spin.geo.dispose();
+    const mesh = new THREE.Mesh(model.geo, MAT.building);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.copy(it.mesh.position);
+    mesh.rotation.copy(it.mesh.rotation);
+    mesh.userData.buildingId = b.id;
+    it.mesh.visible = false;
+    this.group.add(mesh);
+    this.preview = { id: b.id, mesh };
+  }
+
+  _dropPreview(b) { if (this.preview && this.preview.id === b.id) this.setPreview(null, null); }
 
   pickBuilding(raycaster) {
     const hits = raycaster.intersectObjects(this.group.children, true);
@@ -214,6 +304,22 @@ export class WorldView {
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.time >= this.pending[i].at) { this.pending[i].fn(); this.pending.splice(i, 1); }
     }
+    // building sites: re-cut as the work advances, kick up dust while crews work
+    for (const it of this.items.values()) {
+      if (!it.site) continue;
+      this._refreshSite(it);
+      const b = it.b;
+      if (!b._crew || gameDt <= 0) continue;
+      it.site.puff += dt * b._crew * 0.7 * Math.min(3, Math.sqrt(gameDt / Math.max(dt, 1e-4)));
+      while (it.site.puff >= 1) {
+        it.site.puff -= 1;
+        const px = b.x + Math.random() * fw(b), pz = b.z + Math.random() * fd(b);
+        this.smoke.emit({
+          x: px, y: b.baseY + 0.03 + Math.random() * 0.2, z: pz, vx: (Math.random() - 0.5) * 0.15, vy: 0.08, vz: (Math.random() - 0.5) * 0.15,
+          drag: 2, wind: 0.3, life: 0.8 + Math.random() * 0.5, size: 0.05, size1: 0.18, r: 0.8, g: 0.74, b: 0.64, alpha: 0.42, alpha1: 0,
+        });
+      }
+    }
     for (let i = this.anims.length - 1; i >= 0; i--) {
       const a = this.anims[i];
       a.t += dt;
@@ -303,7 +409,11 @@ export class WorldView {
 
   dispose() {
     this.terrain.dispose(); this.roads.dispose(); this.nature.dispose(); this.overlay.dispose();
-    for (const it of this.items.values()) { it.mesh.geometry.dispose(); if (it.spin) it.spin.geometry.dispose(); }
+    for (const it of this.items.values()) {
+      it.mesh.geometry.dispose();
+      if (it.spin) it.spin.geometry.dispose();
+      if (it.site) { it.site.target.dispose(); if (it.site.old) it.site.old.dispose(); }
+    }
     this.scene.remove(this.group, this.pools);
     this.pools.geometry.dispose();
     for (const p of [this.smoke, this.glow, this.fx, this.weather]) p.dispose(this.scene);

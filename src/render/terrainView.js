@@ -7,7 +7,7 @@ import { CONFIG } from '../config.js';
 import { MAT } from './materials.js';
 import { BUILDINGS } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
-import { doorPoint } from '../world/world.js';
+import { doorPoint, fw, fd } from '../world/world.js';
 import { railArc } from './roadsView.js';
 
 export const SUB = 5;
@@ -180,18 +180,20 @@ export class TerrainView {
     const w = this.world, season = this.season;
     for (const b of w.buildings.values()) {
       const def = BUILDINGS[b.type];
-      const E = b.size / 2, cx = b.x + E, cz = b.z + E;
+      const odd = (b.rot & 1) === 1;
+      const Ex = (odd ? fd(b) : fw(b)) / 2, Ez = (odd ? fw(b) : fd(b)) / 2, E = Math.max(Ex, Ez);
+      const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
       const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
       const work = b.work;
-      const kind = b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
+      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
         : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
           : (def.park && b.type !== 'plaza') ? 'lawn'
             : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';
       const M = 0.14;
-      this._range(b.x - M, b.z - M, b.x + b.size + M, b.z + b.size + M, (vi, x, z, i, j) => {
+      this._range(b.x - M, b.z - M, b.x + fw(b) + M, b.z + fd(b) + M, (vi, x, z, i, j) => {
         const dx = x - cx, dz = z - cz;
         const lx = dx * co - dz * si, lz = dx * si + dz * co;
-        const edge = Math.min(E - Math.abs(lx), E - Math.abs(lz));
+        const edge = Math.min(Ex - Math.abs(lx), Ez - Math.abs(lz));
         const nz = this.n3(x * 2.3, z * 2.3) * 0.06;
         let a;
         switch (kind) {
