@@ -15,8 +15,10 @@
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
-// how much less the blur grows across the view than up and down it
-const WIDE = '0.45';
+// how much less the blur grows across the view than up and down it, and
+// below the middle than above it (so the sharp area reaches further down the
+// screen, over the nearer ground)
+const WIDE = '0.45', BELOW = '0.7';
 
 const VERT = /* glsl */`
 varying vec2 vUv;
@@ -24,13 +26,15 @@ void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(
 
 // How far out of focus (0 to 1) a point of the screen is: by its distance
 // from the focus in screen heights, counted at a little under half across
-// (WIDE) as up and down, so the sharp area is a wide oval. Barely any blur
+// (WIDE) as up and down and at seven tenths going down (BELOW), so the
+// sharp area is a wide oval reaching further down than up. Barely any blur
 // near the middle, easing in and then on to the full blur by the edges.
 const RAMP = /* glsl */`
 uniform vec2 focus;
 uniform float band, spread, aspect;
 float ramp(vec2 p) {
-  vec2 d = vec2((p.x - focus.x) * aspect * ${WIDE}, p.y - focus.y);
+  float dy = p.y - focus.y;
+  vec2 d = vec2((p.x - focus.x) * aspect * ${WIDE}, dy < 0.0 ? dy * ${BELOW} : dy);
   float t = clamp((length(d) - band) / spread, 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }`;
