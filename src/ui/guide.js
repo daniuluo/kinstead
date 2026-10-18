@@ -6,6 +6,7 @@ import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, servicesOf, unlockOf
 import { EDU } from '../sim/people.js';
 import { visitorCap, visitKind } from '../sim/agents.js';
 import { thumb } from './thumbs.js';
+import { showPathMap } from './pathMap.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const GUIDE = 'Building guide';
@@ -120,7 +121,7 @@ export function showBuildingGuide(ui, type) {
     const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;
     if (other) more.push(`Joined with a neighbouring ${other.map(o => esc(BUILDINGS[o].levels[0].name.toLowerCase())).join(' or ')}: <b>${esc(BUILDINGS[m.to].levels[0].name)}</b>`);
   }
-  if (more.length) h += `<div class="guide-more"><h5>Other paths</h5>${more.map(t => `<div>${t}</div>`).join('')}</div>`;
+  if (more.length) h += `<div class="guide-more"><h5>Other paths</h5>${more.map(t => `<div>${t}</div>`).join('')}<button class="btn small" data-paths="${type}">All paths as a tree</button></div>`;
   // and the 2×2 estates further along (Great Plots)
   const estates = estatesFrom(type);
   if (estates.length) {
@@ -140,7 +141,7 @@ export function showBuildingGuide(ui, type) {
   const known = ui.windows && ui.windows.has(GUIDE);
   let saved = null;
   try { saved = localStorage.getItem(`hearthvale.win.${GUIDE}`); } catch {}
-  ui.openModal(h, (c) => c.classList.add('guide'));
+  ui.openModal(h, (c) => { c.classList.add('guide'); for (const p of c.querySelectorAll('[data-paths]')) p.onclick = () => showPathMap(ui, null, p.dataset.paths); });
   // the first time, keep it to the left so the map stays clear for building
   const win = ui.windows.get(GUIDE);
   if (win && !known && !saved) { win.style.left = '8px'; win.style.top = '132px'; }
