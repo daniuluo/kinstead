@@ -175,7 +175,7 @@ export const BUILDINGS = {
     ],
   },
   fountaingarden: {
-    name: 'Fountain Garden', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, service: 'water', tech: 'fountains', icon: '⛲', branch: 'Fountain garden', accent: '#2f6a8a', pathIcon: 'water_drop',
+    name: 'Fountain Garden', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, service: 'water', tech: 'fountains', icon: '⛲', branch: 'Fountain garden', accent: '#2f6a8a', pathIcon: 'water_drop',
     desc: 'A walled garden round a fountain: water for the neighbours and a lovely place to sit.',
     levels: [
       { name: 'Fountain Garden', cost: 250, upkeep: 3, appeal: 12, radius: 6, supply: 60 },
@@ -183,7 +183,7 @@ export const BUILDINGS = {
     ],
   },
   park: {
-    name: 'Town Park', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, tech: 'gardening', icon: '🌳', branch: 'Park', accent: '#3f6a2f', pathIcon: 'park',
+    name: 'Town Park', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, tech: 'gardening', icon: '🌳', branch: 'Park', accent: '#3f6a2f', pathIcon: 'park',
     desc: 'Lawns, a pond and a bandstand.',
     levels: [
       { name: 'Town Park', cost: 200, upkeep: 3, appeal: 18, radius: 6 },
@@ -425,7 +425,7 @@ export const BUILDINGS = {
 
   // ---------------------------------------------------------------- parks
   garden: {
-    name: 'Garden', cat: 'parks', size: 1, park: true, outdoor: true, icon: '🌷',
+    name: 'Garden', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 3, icon: '🌷',
     desc: 'Green space for strolling. Boosts happiness nearby.',
     levels: [
       { name: 'Village Green', cost: 40, upkeep: 1, appeal: 5, radius: 3 },
@@ -434,7 +434,7 @@ export const BUILDINGS = {
     ],
   },
   plaza: {
-    name: 'Plaza', cat: 'parks', size: 2, park: true, outdoor: true, unlock: 25, tech: 'architecture', icon: '⛲',
+    name: 'Plaza', cat: 'parks', size: 2, park: true, outdoor: true, visitors: 4, unlock: 25, tech: 'architecture', icon: '⛲',
     desc: 'A cobbled square where villagers meet.',
     levels: [
       { name: 'Plaza', cost: 420, upkeep: 4, appeal: 12, radius: 5 },

@@ -6,11 +6,11 @@ export const CONFIG = {
   // under Settings, which stores it in this browser only.
   GOOGLE_CLIENT_ID: '',
 
-  DAY_SECONDS: 240,        // real seconds per in-game day at 1x speed
+  DAY_SECONDS: 480,        // real seconds per in-game day at 1x speed (an unhurried walking pace needs a long day)
   DAYS_PER_SEASON: 6,
   WATER_LEVEL: 0,
   START_MONEY: 4000,
-  WALK_SPEED: 0.55,        // tiles per real second at 1x
+  WALK_SPEED: 0.275,       // tiles per real second at 1x
   CART_SPEED: 0.75,
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,

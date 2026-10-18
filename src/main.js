@@ -12,6 +12,9 @@ try {
   window.hearthvale = game;
   game.startDemo();
   game.showTitle();
+  // an invite link (…?join=ABC-DEF) opens the Multiplayer window with the code filled in
+  const join = new URLSearchParams(location.search).get('join');
+  if (join) game.ui.showMultiplayer({ code: join });
 } catch (e) {
   console.error(e);
   fail('Hearthvale could not start: ' + (e && e.message ? e.message : e) + ' — it needs a browser with WebGL.');

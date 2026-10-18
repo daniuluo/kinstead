@@ -21,7 +21,11 @@ const SPECIES = {
   cow: { name: 'Cow', habitat: 'farm', speed: 0.035, walk: [1.5, 4], idle: [6, 16], turn: 1.2, graze: true },
   chicken: { name: 'Chicken', habitat: 'farm', speed: 0.08, walk: [0.5, 1.5], idle: [1, 4], turn: 4, peck: true },
 };
-const SIZE = 0.7; // animals are drawn a bit smaller than life next to the buildings
+// Drawn life-size against the villagers and buildings (a storey is about
+// 0.28 units, ~3 m, so 1 m is about 0.093): a cow stands about 1.4 m and is
+// 2 m long, a sheep about 1 m, a deer 1.2 m at the shoulder, a fox 0.4 m,
+// a chicken or a duck about 0.35 m, a rabbit about 0.25 m.
+const SIZE = { deer: 0.95, fox: 0.62, rabbit: 0.48, duck: 0.62, sheep: 0.9, cow: 1.05, chicken: 0.52 };
 
 function angDiff(a, b) {
   let d = a - b;
@@ -429,7 +433,7 @@ export class Animals {
       }
       _q.setFromEuler(_e.set(pitch, a.h, 0, 'YXZ'));
       _p.set(a.x, y, a.z);
-      _s.setScalar(a.s * SIZE);
+      _s.setScalar(a.s * (SIZE[a.sp] ?? 0.8));
       mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
       mesh.setColorAt(i, _c.setRGB(a.tint[0], a.tint[1], a.tint[2]));
     }

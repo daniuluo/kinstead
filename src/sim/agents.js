@@ -19,23 +19,36 @@ const PANTS = ['#3a3f4a', '#5a4a3a', '#4a4f3a', '#5e5a55', '#2f3238', '#6e5e48',
 const HATS = ['#b89a5a', '#5e3a2a', '#d8cfbf', '#3a4250', '#4e3828'];
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
+// Villagers are little abstract figures, sized against the buildings: a
+// storey is about 0.28 units (~3 m), so a grown-up stands about 0.16 tall.
+// Two stubby legs swing from the hip so they really walk on the ground, a
+// trouser-coloured hip, a shirt-coloured body with rounded shoulders, a small
+// head, sometimes a hat, and a soft shadow where they stand.
+const HIP = 0.06, SWING = 0.5;
 const GEO = {
-  leg: flat(new THREE.BoxGeometry(0.022, 0.065, 0.026).translate(0, -0.0325, 0)),
-  arm: flat(new THREE.BoxGeometry(0.016, 0.06, 0.018).translate(0, -0.03, 0)),
-  body: flat(new THREE.CylinderGeometry(0.03, 0.042, 0.085, 7).translate(0, 0.0425, 0)),
-  head: flat(new THREE.IcosahedronGeometry(0.03, 1)),
-  hair: flat(new THREE.IcosahedronGeometry(0.032, 1).scale(1, 0.62, 1).translate(0, 0.006, -0.004)),
-  hat: flat(mergeGeometries([
-    flat(new THREE.CylinderGeometry(0.046, 0.046, 0.006, 10)),
-    flat(new THREE.CylinderGeometry(0.026, 0.03, 0.03, 10).translate(0, 0.018, 0)),
+  leg: flat(new THREE.CylinderGeometry(0.0085, 0.0075, HIP, 6).translate(0, -HIP / 2, 0)),
+  base: flat(new THREE.CylinderGeometry(0.018, 0.019, 0.022, 8).translate(0, HIP, 0)),
+  body: flat(mergeGeometries([
+    flat(new THREE.CylinderGeometry(0.017, 0.018, 0.05, 8).translate(0, 0.093, 0)),
+    flat(new THREE.SphereGeometry(0.017, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.118, 0)),
   ])),
+  head: flat(new THREE.IcosahedronGeometry(0.02, 1)),
+  hat: flat(mergeGeometries([
+    flat(new THREE.CylinderGeometry(0.03, 0.03, 0.005, 10)),
+    flat(new THREE.CylinderGeometry(0.016, 0.019, 0.018, 10).translate(0, 0.011, 0)),
+  ])),
+  shadow: new THREE.CircleGeometry(0.026, 12).rotateX(-Math.PI / 2),
 };
+const HEAD_Y = 0.155, HAT_Y = 0.168;
+// one full stride (two steps) covers this much ground, so feet never slide
+const strideLen = (s) => HIP * s * SWING;
 
 export function lookOf(r) {
   const g = new RNG(r.look >>> 0);
   const elder = r.age === 'elder';
   return {
     skin: new THREE.Color(g.pick(SKIN)),
+    // (hair is no longer drawn, but still drawn from the seed so everyone keeps their colours)
     hair: new THREE.Color(elder ? (g.chance(0.5) ? '#d8d4cc' : '#b8b4ac') : g.pick(HAIR)),
     shirt: new THREE.Color(g.pick(SHIRT)),
     pants: new THREE.Color(g.pick(PANTS)),
@@ -44,6 +57,14 @@ export function lookOf(r) {
     lane: 0.07 + g.next() * 0.13,
     speed: (r.age === 'elder' ? 0.72 : r.age === 'child' ? 1.15 : 1) * (0.9 + g.next() * 0.2),
   };
+}
+
+// How many villagers an open-air place holds at once: so many per tile,
+// and a little more with each upgrade.
+export function visitorCap(b) {
+  const def = BUILDINGS[b.type];
+  if (!def.outdoor || !def.park) return Infinity;
+  return Math.max(2, Math.round((def.visitors || 3) * fw(b) * fd(b) * (1 + 0.3 * b.level)));
 }
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -67,8 +88,14 @@ export class Agents {
       scene.add(m);
       return m;
     };
-    this.parts = { body: mk(GEO.body), head: mk(GEO.head), hair: mk(GEO.hair), legL: mk(GEO.leg), legR: mk(GEO.leg), armL: mk(GEO.arm), armR: mk(GEO.arm), hat: mk(GEO.hat) };
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
+    this.parts = { legL: mk(GEO.leg), legR: mk(GEO.leg), base: mk(GEO.base), body: mk(GEO.body), head: mk(GEO.head), hat: mk(GEO.hat) };
+    // contact shadows: soft dark spots on the ground under each villager
+    const sh = new THREE.InstancedMesh(GEO.shadow, new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false }), max);
+    sh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    sh.count = 0; sh.frustumCulled = false; sh.renderOrder = 1;
+    scene.add(sh);
+    this.parts.shadow = sh;
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
     this.ring.renderOrder = 8;
     this.ring.visible = false;
     scene.add(this.ring);
@@ -242,6 +269,7 @@ export class Agents {
     const wk = this._makeWalker(r.lk, pts, onArrive);
     wk.doorOut = out ? out.length : 0;
     wk.doorIn = into ? into.length : 0;
+    wk.dest = B.id;
     if (out) wk.delay = Math.random() * 0.25;
     wk.r = r;
     r.walk = wk;
@@ -284,10 +312,46 @@ export class Agents {
       wk.idle = 0.3;
       wk.target = null;
       r.loc = 'out';
+      if (!wk.working && this._occupancy().get(B.id) > visitorCap(B)) { this._occ = null; this.go(r, r.home); }
     } else {
       if (r.walk) this._drop(r.walk);
       r.loc = 'in';
     }
+  }
+
+  // ------------------------------------------------------------ crowding
+  // Villagers at each open-air place, counting those already on their way.
+  _occupancy() {
+    if (this._occ) return this._occ;
+    const occ = this._occ = new Map();
+    for (const wk of this.walkers) {
+      const r = wk.r;
+      if (!r || wk.ghost || wk.working) continue;
+      const id = wk.mode === 'wander' ? r.at : wk.mode === 'path' ? wk.dest : null;
+      if (id != null) occ.set(id, (occ.get(id) || 0) + 1);
+    }
+    return occ;
+  }
+
+  visitorsAt(b) { return { now: this._occupancy().get(b.id) || 0, cap: visitorCap(b) }; }
+
+  // Where a villager actually goes: a park or square that's full sends them
+  // to the nearest one with room, or keeps them at home.
+  _roomFor(r, id) {
+    const w = this.world, B = w.buildings.get(id);
+    if (!B || r.job === id || visitorCap(B) === Infinity) return id;
+    const occ = this._occupancy();
+    if ((occ.get(id) || 0) < visitorCap(B)) { occ.set(id, (occ.get(id) || 0) + 1); return id; }
+    const from = w.buildings.get(r.at) || w.buildings.get(r.home) || B;
+    let best = null, bd = 14;
+    for (const o of w.buildings.values()) {
+      if (o === B || visitorCap(o) === Infinity || !o.access || !o.connected || !isOpen(o)) continue;
+      if ((occ.get(o.id) || 0) >= visitorCap(o)) continue;
+      const d = Math.abs(o.x - from.x) + Math.abs(o.z - from.z);
+      if (d < bd) { bd = d; best = o; }
+    }
+    if (best) { occ.set(best.id, (occ.get(best.id) || 0) + 1); return best.id; }
+    return r.at === r.home ? null : r.home;
   }
 
   // Called by transit when a passenger alights.
@@ -397,13 +461,15 @@ export class Agents {
       else this.newDay();
     }
     const hours = w.hours;
+    this._occ = null;
     if (gameDt > 0) {
       for (const r of w.residents.values()) {
         if (!r.lk) this._initResident(r);
         if (r.loc === 'walk' || r.loc === 'wait' || r.loc === 'ride') continue;
         if (r.pi < r.plan.length && hours >= r.plan[r.pi].t) {
           const p = r.plan[r.pi++];
-          this.go(r, p.dest);
+          const dest = this._roomFor(r, p.dest);
+          if (dest != null) this.go(r, dest);
         }
       }
     }
@@ -416,6 +482,7 @@ export class Agents {
       if (wk.mode === 'path') {
         const atDoor = (wk.doorOut && wk.seg < wk.doorOut - 1) || (wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1);
         let rem = move * wk.speedK * (atDoor ? 0.45 : 1);
+        const want = rem;
         while (rem > 0 && wk.seg < wk.pts.length - 1) {
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
           const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -436,7 +503,7 @@ export class Agents {
         const hd = Math.atan2(b[0] - a[0], b[1] - a[1]);
         wk.heading += angDiff(hd, wk.heading) * Math.min(1, dt * 12);
         wk.y = w.walkHeight(wk.x, wk.z);
-        if (speed) wk.phase += dt * speed * 13 * wk.speedK;
+        wk.phase += (want - rem) / strideLen(wk.lk.scale);
         wk.moving = speed > 0;
       } else if (wk.mode === 'wander') {
         wk.y = wk.baseY;
@@ -458,7 +525,7 @@ export class Agents {
         } else {
           wk.x += (dx / d) * step; wk.z += (dz / d) * step;
           wk.heading += angDiff(Math.atan2(dx, dz), wk.heading) * Math.min(1, dt * 10);
-          if (speed) wk.phase += dt * speed * 9;
+          wk.phase += step / strideLen(wk.lk.scale);
         }
         wk.moving = speed > 0;
       } else if (wk.mode === 'wait') {
@@ -479,33 +546,37 @@ export class Agents {
       if (i >= max) break;
       if (wk.delay > 0) continue;
       const lk = wk.lk, s = lk.scale;
-      const swing = wk.moving ? Math.sin(wk.phase) * 0.65 : (wk.working ? Math.sin(wk.phase) * 0.9 : 0);
-      const bob = wk.moving ? Math.abs(Math.sin(wk.phase)) * 0.008 * s : 0;
+      // Legs swing from the hip; the body dips a touch at mid-stride so the
+      // planted foot stays on the ground. Workers bend to their task, elders stoop.
+      const swing = wk.moving ? Math.sin(wk.phase) * SWING : wk.working ? Math.sin(wk.phase) * 0.12 : 0;
+      const dip = -HIP * s * (1 - Math.cos(swing));
+      const lean = wk.moving ? 0.05 : wk.working ? 0.08 + Math.max(0, Math.sin(wk.phase)) * 0.14 : (wk.r?.age === 'elder' ? 0.12 : 0);
       const idleSway = wk.moving ? 0 : Math.sin(t * 1.5 + wk.phase) * 0.04;
-      _q.setFromAxisAngle(YAXIS, wk.heading + idleSway);
-      const ch = Math.cos(wk.heading), sh = Math.sin(wk.heading);
-      const local = (lx, ly, lz) => _p.set(wk.x + (lx * ch + lz * sh) * s, wk.y + ly * s + bob, wk.z + (-lx * sh + lz * ch) * s);
+      const hd = wk.heading + idleSway;
+      _q.setFromAxisAngle(YAXIS, hd);
+      const ch = Math.cos(hd), sh = Math.sin(hd);
+      const local = (lx, ly, lz) => _p.set(wk.x + (lx * ch + lz * sh) * s, wk.y + ly * s + dip, wk.z + (-lx * sh + lz * ch) * s);
       _s.set(s, s, s);
-      // body & head
-      P.body.setMatrixAt(i, _m.compose(local(0, 0.06, 0), _q, _s));
-      P.head.setMatrixAt(i, _m.compose(local(0, 0.172, 0), _q, _s));
-      P.hair.setMatrixAt(i, _m.compose(local(0, 0.18, 0), _q, _s));
-      if (lk.hat) P.hat.setMatrixAt(i, _m.compose(local(0, 0.198, 0), _q, _s));
-      else P.hat.setMatrixAt(i, _m.makeScale(0, 0, 0));
-      // limbs
+      // legs
       _q2.setFromAxisAngle(XAXIS, swing); _q2.premultiply(_q);
-      P.legL.setMatrixAt(i, _m.compose(local(-0.016, 0.066, 0), _q2, _s));
-      P.armR.setMatrixAt(i, _m.compose(local(0.044, 0.142, 0), _q2, _s));
+      P.legL.setMatrixAt(i, _m.compose(local(-0.0095, HIP, 0), _q2, _s));
       _q2.setFromAxisAngle(XAXIS, -swing); _q2.premultiply(_q);
-      P.legR.setMatrixAt(i, _m.compose(local(0.016, 0.066, 0), _q2, _s));
-      P.armL.setMatrixAt(i, _m.compose(local(-0.044, 0.142, 0), _q2, _s));
-      P.body.setColorAt(i, lk.shirt);
-      P.armL.setColorAt(i, lk.shirt);
-      P.armR.setColorAt(i, lk.shirt);
-      P.head.setColorAt(i, lk.skin);
-      P.hair.setColorAt(i, lk.hair);
+      P.legR.setMatrixAt(i, _m.compose(local(0.0095, HIP, 0), _q2, _s));
+      // upper body leans about the hip
+      _q2.setFromAxisAngle(XAXIS, lean); _q2.premultiply(_q);
+      const cl = Math.cos(lean), sl = Math.sin(lean);
+      const up = (h) => local(0, HIP + (h - HIP) * cl, (h - HIP) * sl);
+      P.base.setMatrixAt(i, _m.compose(up(0), _q2, _s));
+      P.body.setMatrixAt(i, _m.compose(up(0), _q2, _s));
+      P.head.setMatrixAt(i, _m.compose(up(HEAD_Y), _q2, _s));
+      if (lk.hat) P.hat.setMatrixAt(i, _m.compose(up(HAT_Y), _q2, _s));
+      else P.hat.setMatrixAt(i, _m.makeScale(0, 0, 0));
+      P.shadow.setMatrixAt(i, _m.compose(_p.set(wk.x, wk.y + 0.004, wk.z), _q, _s));
       P.legL.setColorAt(i, lk.pants);
       P.legR.setColorAt(i, lk.pants);
+      P.base.setColorAt(i, lk.pants);
+      P.body.setColorAt(i, lk.shirt);
+      P.head.setColorAt(i, lk.skin);
       if (lk.hat) P.hat.setColorAt(i, lk.hat);
       wk._i = i;
       i++;
@@ -529,7 +600,7 @@ export class Agents {
     let best = null, bd = 16;
     for (const wk of this.walkers) {
       if (!wk.r || wk.ghost || wk.delay > 0) continue;
-      _v.set(wk.x, wk.y + 0.1 * wk.lk.scale, wk.z);
+      _v.set(wk.x, wk.y + 0.08 * wk.lk.scale, wk.z);
       const p = this.game.renderer.worldToScreen(_v);
       const d = Math.hypot(p.x - clientX, p.y - clientY);
       if (d < bd) { bd = d; best = wk.r; }

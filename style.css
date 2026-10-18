@@ -480,3 +480,41 @@ table.hap tr.tip td { border-top: 0; padding-top: 0; font-size: 11px; color: var
 table.hap .sub { font-size: 11px; color: var(--ink-2); }
 table.hap.big td { padding: 4px 8px; }
 .inspector .hh { font-size: 12px; font-weight: 700; margin: 6px 0 3px; }
+
+/* ------------------------------------------------- new village: start from */
+.starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.starter { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 5px; border: 0; background: var(--face); box-shadow: var(--raised); cursor: pointer; font: inherit; color: var(--ink); }
+.starter:hover { background: #cfcfcf; }
+.starter.on { box-shadow: var(--sunken); background: #b4b4b4; outline: 1px dotted #000; outline-offset: -4px; }
+.starter:disabled { opacity: 0.6; cursor: default; }
+.starter canvas { width: 100%; height: auto; aspect-ratio: 3 / 2; image-rendering: pixelated; box-shadow: var(--field); background: #9fb383; }
+.starter b { font-size: 13px; }
+.starter .d { font-size: 12px; color: var(--ink-2); line-height: 1.25; }
+.starter .m { font-size: 11px; color: var(--navy); margin-top: auto; padding-top: 2px; }
+
+/* ------------------------------------------------------------ multiplayer */
+.netbox { cursor: pointer; gap: 6px !important; padding: 4px 8px !important; }
+.netbox > .ms { font-size: 18px; color: var(--navy); }
+.netbox b { font-family: var(--small); font-size: 11px; font-weight: 400; letter-spacing: 0.06em; }
+.mp-dots { display: flex; }
+.mp-dots i { width: 20px; height: 20px; margin-left: -4px; border: 2px solid var(--face); border-radius: 50%; color: #fff; font-style: normal; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45); }
+.mp-dots i:first-child { margin-left: 0; }
+.mp-win h5 { margin: 12px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.mp-cols h5 { margin-top: 4px; }
+.mp-p { margin: 0 0 8px; font-size: 13px; line-height: 1.35; }
+.mp-cols .btn { margin: 0 4px 4px 0; }
+.mp-code-in { width: 120px; font: inherit; font-size: 18px; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 6px; border: 0; background: #fff; box-shadow: var(--sunken); color: #000; border-radius: 0; }
+.mp-code { margin: 4px 0 2px; padding: 10px; background: #fff; box-shadow: var(--sunken); text-align: center; font-family: var(--display); font-size: 40px; letter-spacing: 0.18em; user-select: all; }
+.mp-status { display: flex; align-items: center; gap: 6px; margin: 10px 0; font-size: 13px; }
+.mp-status.bad { color: var(--bad); font-weight: 700; }
+.mp-status .spin { animation: mpspin 1s linear infinite; }
+@keyframes mpspin { to { transform: rotate(360deg); } }
+.mp-players { display: grid; gap: 2px; margin-bottom: 8px; }
+.mp-player { display: flex; align-items: center; gap: 8px; padding: 3px 6px; background: #fff; box-shadow: var(--field); font-size: 14px; }
+.mp-player i { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.mp-player span { margin-left: auto; font-size: 12px; color: var(--ink-2); }
+.mp-win .note + .actions { margin-top: 10px; }
+.netcur { position: absolute; transform: translate(-50%, -100%); display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 4px; background: #fff; border: 2px solid #000; font-size: 12px; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.netcur i { width: 9px; height: 9px; border-radius: 50%; }
+.netcur small { font-weight: 400; color: var(--ink-2); }
+@media (max-width: 900px) { .netbox b { display: none; } }
