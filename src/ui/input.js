@@ -9,6 +9,7 @@ import { MAT } from '../render/materials.js';
 import { fmt, esc } from './ui.js';
 import { householdsIn } from '../sim/people.js';
 import { roadRun, roadsInBox, roadsAt, planRoadEdit } from '../world/roadEdit.js';
+import { planDress } from '../world/roadDress.js';
 import { selTiles } from './roadSelect.js';
 
 const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a', WARN = '#ffa64a';
@@ -372,7 +373,8 @@ export class Input {
       // picked tiles in gold; while an action is hovered in the panel, the
       // tiles it changes in green, those it leaves alone in red, and the
       // buildings it would cut off
-      const plan = t.action && t.action !== 'clear' ? planRoadEdit(w, selTiles(w, t), t.action, { paths: g.paths }) : null;
+      const act = t.action && t.action !== 'clear' ? t.action : null;
+      const plan = !act ? null : act.startsWith('dress:') ? planDress(w, selTiles(w, t), Number(act.slice(6))) : planRoadEdit(w, selTiles(w, t), act, { paths: g.paths });
       if (plan) {
         for (const p of plan.tiles) tiles.push({ x: p.x, z: p.z, color: p.reason ? BAD : p.line ? WARN : OK, alpha: p.reason ? 0.3 : 0.45 });
         const mark = (ids, color) => {

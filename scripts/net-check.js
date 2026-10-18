@@ -249,6 +249,17 @@ let ended = null;
   ok(tf.ok && pl.ok && Math.abs(gw().terrain.ch(land.x, land.z) - hw.terrain.ch(land.x, land.z)) < 0.002 && gw().treeCount[gw().idx(land.x + 3, land.z)] === hw.treeCount[hw.idx(land.x + 3, land.z)], 'a guest raises land and plants a tree');
   const bd = await ask(guest, { t: 'bulldoze', tiles: [[land.x + 3, land.z]] });
   ok(bd.ok && gw().treeCount[gw().idx(land.x + 3, land.z)] === 0, 'a guest clears the tree again');
+  // dress a street with hedges, then upgrade that stretch of road
+  const { planDress } = await import('../src/world/roadDress.js');
+  const street = [];
+  for (let i = 0; i < hw.N * hw.N && street.length < 4; i++) {
+    const x = i % hw.N, z = (i / hw.N) | 0;
+    if (hw.roads[i] && hw.roads[i] < 3 && planDress(hw, [[x, z]], 2).n) street.push([x, z]);
+  }
+  const dr = await ask(guest, { t: 'dress', kind: 2, tiles: street });
+  ok(dr.ok && dr.n === street.length && street.every(([x, z]) => gw().dress[gw().idx(x, z)] === 2 && hw.dress[hw.idx(x, z)] === 2), 'a guest plants hedges along a street, and everyone sees them');
+  const re = await ask(guest, { t: 'roadedit', op: 'up', tiles: street });
+  ok(re.ok && street.every(([x, z]) => gw().roadAt(x, z) === hw.roadAt(x, z) && hw.roadAt(x, z) >= 2), 'a guest upgrades that stretch of road in one go');
   // a coach line between two stops
   const stops = [];
   for (let z = 1; z < hw.N - 1 && stops.length < 2; z++) for (let x = 1; x < hw.N - 1 && stops.length < 2; x++) {

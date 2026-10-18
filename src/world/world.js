@@ -1,7 +1,7 @@
 // World state and the rules for changing it (placing, upgrading, bulldozing).
 // Rendering and simulation listen to the events emitted here.
 
-import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund } from '../config.js';
+import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund } from '../config.js';
 import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel, growsInto, BURY_COST } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
@@ -84,6 +84,7 @@ export class World {
     this.roads = new Uint8Array(N * N);
     this.rails = new Uint8Array(N * N);
     this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
+    this.dress = new Uint8Array(N * N);    // how the street is dressed: an index into DRESSINGS (0: plain)
     this.lines = [];
     this.sandbox = { infiniteMoney: false, unlockAll: false, freeUpgrades: false, instantBuild: false };
     this.buildingAt = new Int32Array(N * N).fill(-1);
@@ -888,8 +889,9 @@ export class World {
     if (!L) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
-    this.money += roadRefund(L, 0, this.terrain.isWater(x, z));
+    this.money += roadRefund(L, 0, this.terrain.isWater(x, z)) + dressRefund(this.dress[this.idx(x, z)]);
     this.buried[this.idx(x, z)] = 0;
+    this.dress[this.idx(x, z)] = 0;
     this.updateRoadNetwork();
     return true;
   }

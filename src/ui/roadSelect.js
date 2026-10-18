@@ -1,11 +1,13 @@
 // The road selection tool's panel: what is picked, what upgrading,
 // downgrading or taking it up would cost or pay back, what can't change and
-// why, and who would be cut off. The picking itself (clicks, drags, Shift,
+// why, and who would be cut off; and dressing the street with trees,
+// hedges, lamps or a planted median (world/roadDress.js). The picking itself (clicks, drags, Shift,
 // Backspace, Tab) is in input.js; the rules are in world/roadEdit.js.
 
-import { ROAD_LEVELS } from '../config.js';
+import { ROAD_LEVELS, DRESSINGS } from '../config.js';
 import { BUILDINGS } from '../defs.js';
 import { planRoadEdit } from '../world/roadEdit.js';
+import { planDress } from '../world/roadDress.js';
 import { fmt } from './ui.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -53,12 +55,12 @@ export function roadSelHTML(game) {
     h += `<div class="note">Click a road to pick the stretch between junctions, Shift-click to add more stretches, or drag to pick every road in a ${t.box ? 'box' : 'line'} (Tab switches to a ${t.box ? 'line' : 'box'}). Works in the 2D map too.</div>`;
     return h;
   }
-  const count = [0, 0, 0, 0];
+  const count = [0, 0, 0, 0], dressed = DRESSINGS.map(() => 0);
   let bridges = 0;
-  for (const [x, z] of list) { count[w.roadAt(x, z)]++; if (w.terrain.isWater(x, z)) bridges++; }
-  h += `<div class="chips">${[1, 2, 3].filter(L => count[L]).map(L => `<span class="chip">${count[L]} × ${esc(ROAD_LEVELS[L].name)}</span>`).join('')}${bridges ? `<span class="chip">${plural(bridges, 'bridge tile')}</span>` : ''}</div>`;
-  const btn = (op, label, icon, cls, p, price) => {
-    const why = p.short || (p.n ? '' : (p.blocked[0] && p.blocked[0].reason) || '');
+  for (const [x, z] of list) { count[w.roadAt(x, z)]++; dressed[w.dress[w.idx(x, z)]]++; if (w.terrain.isWater(x, z)) bridges++; }
+  h += `<div class="chips">${[1, 2, 3].filter(L => count[L]).map(L => `<span class="chip">${count[L]} × ${esc(ROAD_LEVELS[L].name)}</span>`).join('')}${bridges ? `<span class="chip">${plural(bridges, 'bridge tile')}</span>` : ''}${DRESSINGS.map((D, k) => (D && dressed[k] ? `<span class="chip">${ms(D.icon)} ${dressed[k]} × ${esc(D.name)}</span>` : '')).join('')}</div>`;
+  const btn = (op, label, icon, cls, p, price, tip = '') => {
+    const why = p.short || (p.n ? tip : (p.blocked[0] && p.blocked[0].reason) || '');
     return `<span class="rsel-op" data-op="${op}"><button class="btn ${cls}" data-act="rsel" data-op="${op}" ${p.n && !p.short ? '' : 'disabled'} title="${esc(why)}">${ms(icon)} ${label} · ${price}</button></span>`;
   };
   const up = P.up, down = P.down, rm = P.remove;
@@ -76,6 +78,7 @@ export function roadSelHTML(game) {
   skip(up, 'Upgrade');
   if (down.n) lines.push(`<div class="ok">Downgrade: each tile one level down, a quarter of the difference back</div>`);
   skip(down, 'Downgrade');
+  if (down.undressed) lines.push(`<div class="no">Downgrading takes the planted median off ${plural(down.undressed, 'tile')} (a quarter of its price back)</div>`);
   skip(rm, 'Taking up');
   h += `<div class="req">${lines.join('')}</div>`;
   if (rm.n) {
@@ -86,12 +89,27 @@ export function roadSelHTML(game) {
     for (const id of rm.detour) { const l = w.lines.find(x => x.id === id); if (l) info.push(`${esc(l.name)} runs along here and would take a detour`); }
     if (rm.back.length) info.push(`${plural(rm.back.length, 'building')} standing forward into the street would step back`);
     if (rm.bridges) info.push(`Includes ${plural(rm.bridges, 'bridge tile')}`);
+    if (rm.undressed) info.push(`Their trees, hedges, lamps or medians go too (a quarter of their price back)`);
     if (warn.length || info.length) {
       h += `<div class="sec"><h5>Taking these up</h5><div class="req">${warn.map(s => `<div class="no warn">${s}</div>`).join('')}${info.map(s => `<div class="no">${s}</div>`).join('')}</div>`;
       if (confirm) h += '<div class="note">Click <b>Take up anyway</b> again to go ahead.</div>';
       h += '</div>';
     }
   }
+  // dressing the street: one price per tile, a quarter back for what it replaces
+  const dl = [];
+  let dh = '<div class="actions">';
+  for (let k = 1; k < DRESSINGS.length; k++) {
+    const D = DRESSINGS[k], p = planDress(w, list, k), net = p.cost - p.refund;
+    dh += btn(`dress:${k}`, esc(D.name), D.icon, '', p, `$${fmt(net)}`, `${D.desc} · $${D.cost} a tile, upkeep ${D.upkeep}/day · homes and shops beside it like it`);
+    if (!p.n && p.blocked.length) dl.push(`<div class="no">${esc(D.name)}: ${esc(p.blocked[0].reason)}</div>`);
+    else for (const b of p.blocked) dl.push(`<div class="no">${esc(D.name)} skips ${plural(b.n, 'tile')}: ${esc(b.reason)}</div>`);
+    if (p.short && p.n) dl.push(`<div class="no">${esc(D.name)} needs $${fmt(net)}, you have $${fmt(w.money)}</div>`);
+  }
+  const bare = planDress(w, list, 0);
+  if (bare.n) dh += btn('dress:0', 'Plain', 'block', '', bare, `+$${fmt(bare.refund)}`, 'Take the dressing away (a quarter of its price back)');
+  dh += '</div>';
+  h += `<div class="sec"><h5>Dress the street</h5>${dh}<div class="req"><div class="ok">Junctions, bends and driveways are left open</div>${dl.join('')}</div></div>`;
   h += `<div class="actions"><button class="btn" data-act="rsel" data-op="clear">${ms('deselect')} Clear</button></div>`;
   return h;
 }
@@ -100,10 +118,14 @@ export function roadSelHTML(game) {
 // which it would leave alone (red), and who it would cut off.
 export function bindRoadSel(ui, el) {
   const input = ui.game.input;
+  let over = null;
   for (const s of el.querySelectorAll('.rsel-op')) {
     s.onmouseenter = () => { if (input.tool.kind === 'roadsel') { input.tool.action = s.dataset.op; input.refresh(); } };
     s.onmouseleave = () => { if (input.tool.kind === 'roadsel') { input.tool.action = null; input.refresh(); } };
+    if (s.matches(':hover')) over = s.dataset.op;
   }
+  // the panel was just redrawn: preview only what the pointer is really over
+  if (input.tool.kind === 'roadsel' && input.tool.action !== over) { input.tool.action = over; input.refresh(); }
 }
 
 export function roadSelAct(ui, data) {
@@ -113,6 +135,17 @@ export function roadSelAct(ui, data) {
   if (op === 'clear') { input.pickRoads([], false); return; }
   const list = selTiles(w, t);
   if (!list.length) return;
+  if (op.startsWith('dress:')) {
+    const kind = Number(op.slice(6)), D = DRESSINGS[kind];
+    g.cmd({ t: 'dress', kind, tiles: list }, (r) => {
+      if (!r.ok) { ui.toast(r.reason || "Those streets can't be dressed", 'bad'); ui.renderInspector(true); return; }
+      g.sfx('build');
+      const money = r.spent ? ` · $${fmt(r.spent - (r.refund || 0))}` : r.refund ? ` · $${fmt(r.refund)} back` : '';
+      ui.toast(`${D ? `${D.name} along ${plural(r.n, 'tile')}` : `Took the dressing off ${plural(r.n, 'tile')}`}${money}${r.skipped ? ` · ${r.skipped} left as ${r.skipped === 1 ? 'it was' : 'they were'}` : ''}`, 'good', '🌳');
+      if (input.tool === t) ui.inspect({ kind: 'roadsel' });
+    });
+    return;
+  }
   // cutting anything off takes a second click
   if (op === 'remove' && t.confirm !== 'remove' && risky(planRoadEdit(w, list, 'remove'))) {
     t.confirm = 'remove';

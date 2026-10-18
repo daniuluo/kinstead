@@ -1,6 +1,6 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
-import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf } from '../config.js';
+import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf, sizeK } from '../world/world.js';
@@ -28,7 +28,7 @@ export class Sim {
     this.dirty = true;
     this._hourAcc = 0;
     const mark = () => { this.dirty = true; };
-    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines']) this.world.on(e, mark);
+    for (const e of ['building:add', 'building:remove', 'building:change', 'building:refit', 'roads', 'trees', 'rails', 'lines', 'dress']) this.world.on(e, mark);
     this.world.on('building:remove', (b) => this._onRemoved(b));
     this.world.on('building:vacate', (b) => { this.dirty = true; this._onRemoved(b); });
   }
@@ -187,6 +187,18 @@ export class Sim {
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx, nz = z + dz;
         if (nx >= 0 && nz >= 0 && nx < N && nz < N) this.appeal[nz * N + nx] += 0.8;
+      }
+    }
+    // dressed streets cheer the homes and shops beside them (lamps only
+    // as much as the town can light them)
+    const dress = w.dress;
+    if (dress) for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const D = DRESSINGS[dress[z * N + x]];
+      if (!D || !w.roads[z * N + x]) continue;
+      const a = D.appeal * (D.key === 'lamps' ? 0.4 + 0.6 * (this.lampShare ?? 0) : 1);
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, nz = z + dz;
+        if (nx >= 0 && nz >= 0 && nx < N && nz < N) this.appeal[nz * N + nx] += a;
       }
     }
     // trees and water make places pleasant
@@ -554,7 +566,7 @@ export class Sim {
       }
     }
     for (let i = 0; i < w.roads.length; i++) {
-      if (w.roads[i]) exp.roads += ROAD_LEVELS[w.roads[i]].upkeep;
+      if (w.roads[i]) exp.roads += ROAD_LEVELS[w.roads[i]].upkeep + (w.dress && w.dress[i] ? DRESSINGS[w.dress[i]].upkeep : 0);
       if (w.rails[i]) exp.roads += 0.25;
     }
     for (const line of w.lines) exp.transit += TRANSIT[line.mode].upkeep * line.vehicles;

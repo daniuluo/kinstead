@@ -7,7 +7,7 @@
 // up) who would be cut off. applyRoadEdit() makes the change; it runs as the
 // 'roadedit' command, so multiplayer guests use it the same way.
 
-import { roadRefund } from '../config.js';
+import { roadRefund, DRESSINGS, dressRefund } from '../config.js';
 import { fw, fd } from './world.js';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -63,14 +63,15 @@ function roadsBeside(b, has) {
 // level down) or 'remove'. paths (optional, a PathFinder) also marks the
 // tiles that coach lines run along.
 // Returns { op, tiles: [{ x, z, L, to, cost, refund, reason, water, line }],
-//   n (tiles that change), cost, refund, bridges, blocked: [{ reason, n }],
+//   n (tiles that change), cost, refund, bridges, undressed (dressings that
+//   would go), blocked: [{ reason, n }],
 //   short (why it can't be afforded), and for 'remove':
 //   lost / cut / back (building ids: left with no road at all, no longer
 //   joined to the way out of town, stepping back from the street),
 //   lines / detour (coach line ids: losing their route / taking a detour) }
 export function planRoadEdit(w, list, op, { paths = null } = {}) {
   const seen = new Set(), tiles = [], blocked = new Map();
-  let n = 0, cost = 0, refund = 0, bridges = 0;
+  let n = 0, cost = 0, refund = 0, bridges = 0, undressed = 0;
   const block = (t, reason) => { t.reason = reason; blocked.set(reason, (blocked.get(reason) || 0) + 1); };
   for (const [x, z] of list) {
     if (!w.inBounds(x, z)) continue;
@@ -92,9 +93,12 @@ export function planRoadEdit(w, list, op, { paths = null } = {}) {
       else { t.to = L - 1; t.refund = roadRefund(L, L - 1, water); }
     } else if (x === w.entry.x && z === w.entry.z) block(t, 'The road to the outside world must stay');
     else { t.to = 0; t.refund = roadRefund(L, 0, water); }
+    // a street's dressing goes with it, or when the road is too narrow for it
+    const D = w.dress && DRESSINGS[w.dress[i]];
+    if (!t.reason && D && (t.to === 0 || (D.minLevel && t.to < D.minLevel))) { t.undress = true; t.refund += dressRefund(w.dress[i]); undressed++; }
     if (!t.reason) { n++; cost += t.cost; refund += t.refund; if (water) bridges++; }
   }
-  const plan = { op, tiles, n, cost, refund, bridges, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
+  const plan = { op, tiles, n, cost, refund, bridges, undressed, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
   if (op === 'up' && n && cost > w.money) plan.short = 'Not enough money';
   if (op === 'remove') Object.assign(plan, removalEffects(w, tiles.filter(t => !t.reason), paths));
   return plan;
@@ -179,6 +183,7 @@ export function applyRoadEdit(w, list, op) {
     w.roads[i] = t.to;
     // anything laid along a road that is taken up goes with it
     if (!t.to && w.buried) w.buried[i] = 0;
+    if (t.undress) w.dress[i] = 0;
   }
   w.money += plan.refund - plan.cost;
   w.updateRoadNetwork();

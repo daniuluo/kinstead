@@ -61,18 +61,22 @@ export class WorldView {
         this.removeBuilding(b, true);
         this.addBuilding(b, !finished, true);
         this.dirty.roads = true;
+        // street trees and hedges leave room for the new front door
+        if (this.nature.dressed) this.dirty.nature = true;
         if (finished) { const p = this.items.get(b.id).mesh.position; this.dust(p.x, b.baseY, p.z, b.size, true); }
         this.dirty.paint = true;
       },
       roads: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
       rails: () => { this.dirty.roads = true; this.dirty.nature = true; this.dirty.paint = true; },
-      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; this.dirty.roads = true; },
+      refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; this.dirty.roads = true; if (this.nature.dressed) this.dirty.nature = true; },
       trees: () => { this.dirty.nature = true; this.dirty.paint = true; },
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
       // the street lamps follow the town's power supply
       power: (sim) => { this.roads.lit = (x, z) => sim.lampLit(x, z); this.dirty.roads = true; },
       // power lines laid underground: their poles come down
       lines: () => { this.dirty.roads = true; },
+      // streets dressed with trees, hedges, lamps or a planted median
+      dress: () => { this.dirty.roads = true; this.dirty.nature = true; },
     };
     world.on('building:add', this._h.add);
     world.on('building:remove', this._h.remove);
@@ -84,6 +88,7 @@ export class WorldView {
     world.on('terrain', this._h.terrain);
     world.on('power', this._h.power);
     world.on('lines', this._h.lines);
+    world.on('dress', this._h.dress);
     this.fireflyTimer = 0;
     this.time = 0;
   }

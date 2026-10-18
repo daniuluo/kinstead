@@ -3,7 +3,7 @@
 import { World } from '../world/world.js';
 import { Terrain } from '../world/terrain.js';
 import { BUILDINGS, TECHS } from '../defs.js';
-import { titleFor } from '../config.js';
+import { titleFor, DRESSINGS } from '../config.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
@@ -38,6 +38,7 @@ export function serialize(world) {
     roads: toB64(world.roads),
     rails: toB64(world.rails),
     ...(world.buried && world.buried.some((v, i) => v && world.roads[i]) ? { buried: toB64(world.buried.map((v, i) => (v && world.roads[i] ? 1 : 0))) } : {}),
+    ...(world.dress && world.dress.some((v, i) => v && world.roads[i]) ? { dress: toB64(world.dress.map((v, i) => (world.roads[i] ? v : 0))) } : {}),
     buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null]),
     trees,
     residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
@@ -63,6 +64,7 @@ export function deserialize(data) {
   w.roads.set(fromB64(data.roads).subarray(0, N * N));
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
   if (typeof data.buried === 'string') w.buried.set(fromB64(data.buried).subarray(0, N * N).map(v => (v ? 1 : 0)));
+  if (typeof data.dress === 'string') w.dress.set(fromB64(data.dress).subarray(0, N * N).map((v, i) => (v < DRESSINGS.length && w.roads[i] ? v : 0)));
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
   for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look] of data.buildings) {

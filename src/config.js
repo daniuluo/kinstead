@@ -52,6 +52,18 @@ export function roadRefund(from, to, water) {
   return Math.round((price(from) - price(to)) * ROAD_SALVAGE);
 }
 
+// Ways to dress a street (world.dress, one per road tile; see roadDress.js):
+// a price per tile, a little upkeep a day, and appeal for the homes and
+// shops beside it. minLevel: the road it needs (the median needs a wide one).
+export const DRESSINGS = [
+  null,
+  { key: 'trees', name: 'Tree-lined avenue', icon: 'park', cost: 28, upkeep: 0.1, appeal: 1, unlock: 25, desc: 'Street trees on the verges either side' },
+  { key: 'hedges', name: 'Hedged lane', icon: 'grass', cost: 12, upkeep: 0.05, appeal: 0.5, unlock: 0, desc: 'Low clipped hedges along both sides' },
+  { key: 'lamps', name: 'Lamp-lit street', icon: 'emoji_objects', cost: 24, upkeep: 0.12, appeal: 0.7, unlock: 25, desc: 'A street lamp every other tile, lit at night when the town has power' },
+  { key: 'median', name: 'Planted boulevard', icon: 'nature', cost: 36, upkeep: 0.12, appeal: 1.2, unlock: 120, minLevel: 3, desc: 'A planted strip down the middle of a paved street' },
+];
+export const dressRefund = (kind) => (kind && DRESSINGS[kind] ? Math.round(DRESSINGS[kind].cost * ROAD_SALVAGE) : 0);
+
 export function titleFor(pop) {
   let t = TITLES[0];
   for (const x of TITLES) if (pop >= x.pop) t = x;

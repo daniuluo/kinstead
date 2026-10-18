@@ -14,6 +14,7 @@ const KERB = [null, null, new THREE.Color('#bbb3a2'), new THREE.Color('#cfc9bc')
 const CELL = 0.125, ARC = 8;
 import { HALF, BAND, SIDES, roadTile, cornerFrame, shapeAt } from '../world/roadShape.js';
 import { bridgeDeckY, RAMP, isOpen } from '../world/world.js';
+import { plainLamp, dressSpots } from '../world/roadDress.js';
 import { BUILDINGS } from '../defs.js';
 import { CONFIG } from '../config.js';
 
@@ -49,17 +50,15 @@ export class RoadsView {
         for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           if (w.roadAt(x + dx, z + dz) && w.inBounds(x + dx, z + dz) && t.isWater(x + dx, z + dz)) this._ramp(gb, x, z, dx, dz, L);
         }
-        if (L >= 2 && !w.railAt(x, z)) {
-          const straightNS = n.N && n.S && !n.E && !n.W, straightEW = n.E && n.W && !n.N && !n.S;
-          if ((straightNS || straightEW) && hash2(x, z, 91) < 0.4) {
-            const side = hash2(x, z, 92) < 0.5 ? -1 : 1;
-            const lx = x + 0.5 + (straightNS ? side * 0.31 : 0);
-            const lz = z + 0.5 + (straightEW ? side * 0.31 : 0);
-            this._lamp(gb, lx, t.heightAt(lx, lz), lz);
-          }
-        }
+        const lamp = plainLamp(w, x, z);
+        if (lamp) this._lamp(gb, lamp.x, t.heightAt(lamp.x, lamp.z), lamp.z);
       }
     }
+    // lamp-lit streets and planted medians (their trees and hedges grow in
+    // NatureView)
+    const dressed = dressSpots(w);
+    for (const l of dressed.lamps) this._lamp(gb, l.x, t.heightAt(l.x, l.z), l.z);
+    for (const m of dressed.medians) this._median(gb, m);
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (w.rails[w.idx(x, z)]) this._rail(gb, x, z);
     if ([...w.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b))) this._powerLines(gb);
     const pg = gb.build();
@@ -235,6 +234,29 @@ export class RoadsView {
           else gb.boxC(mx + s, my, mz, 0.005, 0.005, len, '#2a2622', -Math.atan2(qy - py, qz - pz));
         }
       }
+    }
+  }
+
+  // A planted median: a low strip of edging stones down the middle of a
+  // paved street, filled with soil and grass, laid in short pieces that
+  // follow the ground and narrowed to a nose where it ends.
+  _median(gb, m) {
+    const t = this.world.terrain;
+    const alongX = Math.abs(m.x1 - m.x0) > Math.abs(m.z1 - m.z0);
+    const len = Math.hypot(m.x1 - m.x0, m.z1 - m.z0), n = Math.max(1, Math.round(len / 0.125));
+    const end = (v) => Math.abs(v - Math.round(v)) > 0.05;   // not at a tile edge: the median stops here
+    const nose0 = end(alongX ? m.x0 : m.z0), nose1 = end(alongX ? m.x1 : m.z1);
+    const P = (a) => [m.x0 + (m.x1 - m.x0) * a, m.z0 + (m.z1 - m.z0) * a];
+    for (let k = 0; k < n; k++) {
+      const seg = len / n + 0.002;
+      const [mx, mz] = P((k + 0.5) / n);
+      const y = t.heightAt(mx, mz) + 0.012;
+      const wide = (k === 0 && nose0) || (k === n - 1 && nose1) ? 0.075 : 0.11;
+      gb.box(mx, y, mz, alongX ? seg : wide, 0.03, alongX ? wide : seg, '#cfc9bc');
+      // the planted bed inside, stopping short of the stones at a nose
+      const i0 = k === 0 && nose0 ? 0.015 / len : 0, i1 = k === n - 1 && nose1 ? 0.015 / len : 0;
+      const [gx, gz] = P((k + 0.5) / n + (i0 - i1) / 2), inner = seg - (i0 + i1) * len;
+      gb.box(gx, y, gz, alongX ? inner : wide - 0.03, 0.036, alongX ? wide - 0.03 : inner, k % 2 ? '#6c8744' : '#66803f');
     }
   }
 

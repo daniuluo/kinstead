@@ -5,6 +5,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { MAT } from './materials.js';
 import { TREE } from '../world/world.js';
 import { hash2 } from '../util/rng.js';
+import { dressSpots } from '../world/roadDress.js';
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 
@@ -64,6 +65,8 @@ const FOLIAGE = {
   birch: [['#8aa556', '#93ad5e'], ['#7f9a4f', '#738f47'], ['#d4ac3c', '#dcb94a', '#c79c34'], ['#8a7e70', '#968a7c']],
   bush: [['#617f43', '#57773d', '#6a8748'], ['#4f6e3a', '#57763e', '#48663a'], ['#8a7a3a', '#97713a', '#6f6f3a'], ['#666b5a', '#6f7462']],
 };
+// clipped box hedges stay green the year round, a little duller in winter
+const HEDGE = [['#4c7a3a', '#477238', '#52803e'], ['#46703a', '#416a36', '#4b763c'], ['#4f6e38', '#4a6834', '#557438'], ['#4b5f45', '#475a41', '#506449']];
 const TUFT = ['#6f9447', '#5f8a40', '#9a8f4a', '#7a8068'];
 const BLOOMS = ['#f2ede0', '#e2b84a', '#c9536b', '#9c74c9', '#e3a0b4'];
 
@@ -144,6 +147,27 @@ export class NatureView {
         case TREE.PEBBLE:
           put('rock', tr.x, y, tr.z, tr.s * 0.45, tr.r, '#a39e94');
           break;
+      }
+    }
+    // dressed streets: avenue trees, hedges, and shrubs and flowers on a
+    // planted median (positions from roadDress.js)
+    this.dressed = !!(w.dress && w.dress.some(Boolean));
+    if (this.dressed) {
+      const sp = dressSpots(w);
+      for (const tr of sp.trees) {
+        const y = t.heightAt(tr.x, tr.z) - 0.01, h = hash2(Math.floor(tr.x * 100), Math.floor(tr.z * 100), 3);
+        const bare = s === 3, leaves = FOLIAGE.round[s];
+        put('trunk', tr.x, y, tr.z, tr.s, tr.r, '#6e4d31', 1.3);
+        put('round', tr.x, y + 0.03 + (bare ? 0.04 : 0), tr.z, tr.s * (bare ? 0.7 : 1), tr.r, leaves[Math.floor(h * Math.min(3, leaves.length))]);
+      }
+      for (const hg of sp.hedges) {
+        const c = HEDGE[s][Math.floor(hash2(Math.floor(hg.x * 40), Math.floor(hg.z * 40), 5) * 3)];
+        put('bush', hg.x, t.heightAt(hg.x, hg.z) - 0.005, hg.z, 0.62, hg.r, c, 0.9);
+      }
+      for (const sh of sp.shrubs) {
+        const y = t.heightAt(sh.x, sh.z) + 0.04, h = hash2(Math.floor(sh.x * 100), Math.floor(sh.z * 100), 7);
+        put('bush', sh.x, y, sh.z, 0.5, sh.r, FOLIAGE.bush[s][Math.floor(h * 3)]);
+        if (s <= 1) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
       }
     }
     // grass tufts and wildflowers on open land

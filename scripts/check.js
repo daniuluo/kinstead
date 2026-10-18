@@ -655,6 +655,88 @@ const runUntil = (pred, days = 6) => {
   ok(tw.removeRoad(...P(2, 5)) === true && tw.money === one + roadRefund(1, 0, false) && ux >= 0, 'taking up a single tile pays back too');
 }
 
+// 3h. dressing a street: trees, hedges, lamps or a planted median priced per
+// tile, kept off junctions, bends and driveways, liked by the neighbours,
+// saved, and taken away with the road
+{
+  const { planDress, applyDress, dressSpots, plainLamp } = await import('../src/world/roadDress.js');
+  const { planRoadEdit, applyRoadEdit } = await import('../src/world/roadEdit.js');
+  const { runCommand } = await import('../src/commands.js');
+  const { DRESSINGS, dressRefund, roadRefund } = await import('../src/config.js');
+  const { doorPoint } = await import('../src/world/world.js');
+  const tw = World.createNew({ N: 48, seed: 12, name: 'Avenue End' });
+  tw.money = 1e6;
+  let o = null;
+  for (let z = 1; z < tw.N - 10 && !o; z++) for (let x = 1; x < tw.N - 11 && !o; x++) {
+    let free = true;
+    for (let dz = -1; dz < 9 && free; dz++) for (let dx = -1; dx < 11 && free; dx++) {
+      const X = x + dx, Z = z + dz;
+      if (tw.terrain.isWater(X, Z) || tw.roadAt(X, Z) || tw.railAt(X, Z) || tw.buildingOn(X, Z) || tw.terrain.slope(X, Z) > 0.5) free = false;
+    }
+    if (free) o = { x, z };
+  }
+  ok(!!o, 'found a free patch for the street-dressing checks');
+  const P = (x, z) => [o.x + x, o.z + z];
+  // a paved street (0..8, 2), a cobbled one down from it (4, 3..6) turning
+  // east (5..6, 6), and a cottage beside the paved street at (2, 3)
+  tw.setSandbox({ unlockAll: true });
+  const paved = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(x => P(x, 2)), cob = [...[3, 4, 5, 6].map(z => P(4, z)), P(5, 6), P(6, 6)];
+  tw.placeRoads(paved, 3);
+  tw.placeRoads(cob, 2);
+  const H = tw.placeBuilding('house', ...P(2, 3), { instant: true }).building;
+  tw.setSandbox({ unlockAll: false });
+  const all = [...paved, ...cob];
+  const early = planDress(tw, all, 1);
+  ok(!early.n && /Unlocks at 25/.test(early.blocked[0].reason) && planDress(tw, all, 2).n === all.length, 'avenues wait for a village; hedges can go in from the start');
+  tw.setSandbox({ unlockAll: true });
+  const med = planDress(tw, all, 4);
+  ok(med.n === paved.length && med.blocked[0].reason === 'Only on paved streets', 'a planted median only goes down paved streets');
+  const trees = planDress(tw, all, 1);
+  ok(trees.n === all.length && trees.cost === all.length * DRESSINGS[1].cost, `an avenue costs $${DRESSINGS[1].cost} a tile ($${trees.cost} for ${all.length})`);
+  // the town hall's appeal before and after (the sim adds it up)
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  sim.recompute();
+  const hi = tw.idx(H.x, H.z), before = sim.appeal[hi], m0 = tw.money;
+  sim._budget();
+  const upkeep0 = sim.budget.expense.roads;
+  ok(applyDress(tw, all, 1).ok && tw.money === m0 - trees.cost && tw.dress[tw.idx(...P(1, 2))] === 1, 'the avenue is planted and paid for');
+  sim.recompute();
+  sim._budget();
+  ok(sim.appeal[hi] > before + 1, `the cottage beside it likes it (appeal ${before.toFixed(1)} → ${sim.appeal[hi].toFixed(1)})`);
+  ok(Math.abs(sim.budget.expense.roads - upkeep0 - all.length * DRESSINGS[1].upkeep) < 1e-6, 'and the avenue has its upkeep');
+  let sp = dressSpots(tw);
+  const tileOf = (p) => [Math.floor(p.x), Math.floor(p.z)];
+  const at = (list, [x, z]) => list.filter(p => tileOf(p)[0] === x && tileOf(p)[1] === z);
+  ok(sp.trees.length > 10 && !at(sp.trees, P(4, 2)).length && !at(sp.trees, P(4, 6)).length, `street trees (${sp.trees.length}) stand clear of the junction and the bend`);
+  const door = doorPoint(H);
+  const nearDoor = (list, gap) => list.filter(p => p.z > door.z - 0.5 && Math.abs(p.x - door.x) < gap && tileOf(p)[1] === o.z + 2);
+  ok(!nearDoor(sp.trees, 0.2).length && (!H.front || !sp.trees.some(p => tileOf(p)[1] === o.z + 2 && tileOf(p)[0] === o.x + 2 && p.z > o.z + 2.5)), 'and leave the cottage its driveway');
+  // hedges instead along the paved street: a quarter of the trees back
+  const m1 = tw.money, hedge = applyDress(tw, paved, 2);
+  ok(hedge.ok && hedge.refund === paved.length * dressRefund(1) && tw.money === m1 - hedge.spent + hedge.refund, 'swapping trees for hedges pays back a quarter of the trees');
+  sp = dressSpots(tw);
+  ok(sp.hedges.length > 50 && !nearDoor(sp.hedges, 0.13).length && !at(sp.hedges, P(4, 2)).length, `hedges (${sp.hedges.length} plants) run along the street with gaps at the junction and the driveway`);
+  // lamps down the cobbled street, instead of its plain ones
+  applyDress(tw, cob, 3);
+  sp = dressSpots(tw);
+  ok(sp.lamps.length >= 1 && cob.every(([x, z]) => !plainLamp(tw, x, z)), `a lamp-lit street has its own lamps (${sp.lamps.length}) and none of the plain ones`);
+  // a planted median down the paved street
+  applyDress(tw, paved, 4);
+  sp = dressSpots(tw);
+  ok(sp.medians.length === 6 && !at(sp.medians.map(m => ({ x: (m.x0 + m.x1) / 2, z: (m.z0 + m.z1) / 2 })), P(4, 2)).length && sp.shrubs.length > 6, 'the median runs down the straight paved tiles, stopping short of the junction and the ends');
+  ok(planRoadEdit(tw, paved, 'down').undressed === paved.length, 'downgrading below paving would take the median off');
+  applyRoadEdit(tw, [P(1, 2)], 'down');
+  ok(tw.dress[tw.idx(...P(1, 2))] === 0 && tw.roadAt(...P(1, 2)) === 2, 'and does');
+  // saved, sent to guests through the command, and gone with the road
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
+  ok(back.dress.every((v, i) => v === tw.dress[i]) && back.dress.some(Boolean), 'saves keep the dressed streets');
+  const g2 = { world: tw, demo: false, emit() {} };
+  ok(!runCommand(g2, { t: 'dress', kind: 9, tiles: cob }).ok && runCommand(g2, { t: 'dress', kind: 0, tiles: [P(4, 6)] }).ok && !tw.dress[tw.idx(...P(4, 6))], 'the dress command refuses unknown kinds and can take a dressing away');
+  const m2 = tw.money, lampTile = P(4, 4);
+  ok(tw.removeRoad(...lampTile) === true && !tw.dress[tw.idx(...lampTile)] && tw.money === m2 + roadRefund(2, 0, false) + dressRefund(3), 'taking a lamp-lit tile up takes its lamp too (a quarter of both back)');
+}
+
 // 3z. every method the UI, game and input code call on themselves exists
 // (a missing one only shows up as a frozen game in the browser)
 {

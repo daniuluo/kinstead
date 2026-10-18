@@ -9,6 +9,8 @@
 import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
+import { applyDress } from './world/roadDress.js';
+import { DRESSINGS } from './config.js';
 import { cleanText, hasKey } from './util/text.js';
 
 const SPEEDS = [0, 1, 2, 4, 8, 16, 32];
@@ -45,6 +47,11 @@ export const COMMANDS = {
   roadedit: {
     check: (w, c) => ROAD_OPS.includes(c.op) && tiles(w, c.tiles, w.N * w.N),
     run: (g, c) => applyRoadEdit(g.world, c.tiles, c.op),
+  },
+  // dress a selection of road tiles (trees, hedges, lamps, a median; 0: plain)
+  dress: {
+    check: (w, c) => int(c.kind, 0, DRESSINGS.length - 1) && tiles(w, c.tiles, w.N * w.N),
+    run: (g, c) => applyDress(g.world, c.tiles, c.kind),
   },
   unrail: {
     check: tile,

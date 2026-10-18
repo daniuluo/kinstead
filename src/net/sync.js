@@ -104,6 +104,7 @@ export class Tracker {
     this.roads = w.roads.slice();
     this.rails = w.rails.slice();
     this.buried = w.buried.slice();
+    this.dress = w.dress.slice();
     this.H = heights(w);
     this.trees = new Map([...treeTiles(w)].map(([t, a]) => [t, a.join()]));
     this.ln = JSON.stringify(linesRec(w));
@@ -155,6 +156,8 @@ export class Tracker {
     if (rl) d.rl = rl;
     const bu = gridDiff(this.buried, w.buried);
     if (bu) d.bu = bu;
+    const ds = gridDiff(this.dress, w.dress);
+    if (ds) d.ds = ds;
     if (this.hDirty) {
       this.hDirty = false;
       const H = heights(w), out = [];
@@ -257,6 +260,8 @@ export function applyDelta(game, d) {
   const rails = d.rl ? grid(w.rails, d.rl) : false;
   // power lines laid underground
   if (d.bu && grid(w.buried, d.bu)) w.emit('lines');
+  // streets dressed with trees, hedges, lamps or a median
+  if (d.ds && grid(w.dress, d.ds)) w.emit('dress');
   let land = null;
   if (d.h) {
     const S = w.N + 1, H = w.terrain.H;

@@ -1,6 +1,6 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
-import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
+import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, scaledLevel } from '../world/world.js';
 import { thumb } from './thumbs.js';
@@ -657,7 +657,7 @@ export class UI {
     if (L) {
       const d = ROAD_LEVELS[L];
       h += `<div class="head"><div class="big">${['', '🟫', '🪨', '⬛'][L]}</div><div><h3>${d.name}</h3><div class="sub">${w.terrain.isWater(x, z) ? 'Bridge' : 'Road'} · upkeep ${d.upkeep}/day</div></div></div>`;
-      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}</div>`;
+      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${DRESSINGS[w.dress[w.idx(x, z)]] ? `<span class="chip"><span class="ms">${DRESSINGS[w.dress[w.idx(x, z)]].icon}</span> ${DRESSINGS[w.dress[w.idx(x, z)]].name}</span>` : ''}</div>`;
       h += buryHTML(this.game, x, z);
       if (L < 3) {
         const c = w.checkRoad(x, z, L + 1);
