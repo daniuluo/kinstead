@@ -295,6 +295,18 @@ export class Sim {
     return false;
   }
 
+  // Is there an open building matching pred whose own reach (its level's
+  // radius) takes in b?
+  _reaches(b, pred) {
+    const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
+    for (const o of this.world.buildings.values()) {
+      if (o === b || !isOpen(o) || !pred(o)) continue;
+      const R = BUILDINGS[o.type].levels[o.level].radius || 0;
+      if (Math.hypot(o.x + fw(o) / 2 - cx, o.z + fd(o) / 2 - cz) <= R + 0.5) return true;
+    }
+    return false;
+  }
+
   _happiness() {
     const w = this.world, N = w.N;
     const tax = w.taxRate;
@@ -323,6 +335,11 @@ export class Sim {
       add('appeal', f.appeal, 16);
       f.shops = this._near(b, o => BUILDINGS[o.type].shop || BUILDINGS[o.type].leisure, 7);
       add('shops', f.shops ? 5 : 0, 5);
+      // somewhere for the children to play, for homes with children
+      if (b.residents.some(id => { const r = w.residents.get(id); return r && r.age === 'child'; })) {
+        f.play = this._reaches(b, o => !!BUILDINGS[o.type].play);
+        add('play', f.play ? 4 : 0, 4);
+      }
       f.transit = this._near(b, o => !!BUILDINGS[o.type].stop, 4);
       add('transit', f.transit ? 3 : 0, 3);
       f.pollution = Math.min(22, this.pollution[i]);

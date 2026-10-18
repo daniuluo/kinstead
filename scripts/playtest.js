@@ -114,7 +114,7 @@ const placeUseful = (type, near) => place(idleType(type) ? 'house' : type, near)
 function botDay() {
   const sim = game.sim;
   if (w.money < 150) return;
-  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'well']); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
+  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well']); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
   const issues = computeIssues(game);
   const has = (t) => issues.some(i => i.text.includes(t));
   // research: cheapest available project, but water and power once the

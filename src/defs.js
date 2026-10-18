@@ -25,6 +25,8 @@
 // branches: at its top level a type can be rebuilt as one of these types
 // (a Family House becomes either a Villa or a Townhouse of flats).
 // Type flags: hidden types never appear in the build menu (merged buildings);
+// play: somewhere children play (homes with children within its reach are
+// happier, and children head there after school);
 // merged types occupy a 2×1 plot made from two neighbouring buildings;
 // estate types a 2×2 plot grown from a double plot (see ESTATE).
 
@@ -725,6 +727,44 @@ export const BUILDINGS = {
     desc: 'A monument to your founders.',
     levels: [{ name: 'Statue', cost: 260, upkeep: 1, appeal: 8, radius: 4 }],
   },
+  // Places to play and to play games.
+  playground: {
+    name: 'Play Area', cat: 'parks', size: 1, park: true, outdoor: true, play: true, visitors: 4, icon: '🛝',
+    desc: 'Somewhere for the children to play: they run here after school, and families with children nearby are happier.',
+    levels: [
+      { name: 'Swing Green', cost: 70, upkeep: 1, appeal: 3, radius: 4 },
+      { name: 'Playground', cost: 200, upkeep: 2, appeal: 5, radius: 5, unlock: 25 },
+      { name: 'Adventure Playground', cost: 420, upkeep: 4, appeal: 7, radius: 6, unlock: 60 },
+    ],
+  },
+  courts: {
+    name: 'Ball Games', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 4, unlock: 25, tech: 'gardening', icon: '🎾',
+    desc: 'A lawn kept for games: bowls at first, then croquet, then lawn tennis behind a wire fence.',
+    levels: [
+      { name: 'Bowling Green', cost: 90, upkeep: 2, appeal: 6, radius: 4 },
+      { name: 'Croquet Lawn', cost: 240, upkeep: 3, appeal: 9, radius: 5, unlock: 60 },
+      { name: 'Tennis Courts', cost: 480, upkeep: 5, appeal: 12, radius: 6, unlock: 120 },
+    ],
+  },
+  sportsground: {
+    name: 'Playing Field', cat: 'parks', size: 2, park: true, outdoor: true, play: true, visitors: 5, unlock: 60, tech: 'parks2', icon: '⚽',
+    desc: 'A big field for games on a 2×2 plot: the children play here, and the town turns out to watch the matches.',
+    levels: [
+      { name: 'Playing Field', cost: 350, upkeep: 4, appeal: 8, radius: 6 },
+      { name: 'Cricket Ground', cost: 900, upkeep: 7, appeal: 14, radius: 8, unlock: 120 },
+      { name: 'Football Ground', tech: 'railways', cost: 1800, upkeep: 12, appeal: 18, radius: 10, unlock: 200 },
+    ],
+  },
+  // A play area joined with another, a games lawn or a green: room for the
+  // whole family.
+  recground: {
+    name: 'Recreation Ground', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, play: true, visitors: 4, tech: 'gardening', icon: '🛝', branch: 'Recreation ground', accent: '#4f7a2f', pathIcon: 'sports_soccer',
+    desc: 'A playground, a lawn for games and a shelter side by side, with a paddling pool later: somewhere for the whole family.',
+    levels: [
+      { name: 'Recreation Ground', cost: 300, upkeep: 4, appeal: 10, radius: 6 },
+      { name: "People's Park", cost: 800, upkeep: 7, appeal: 16, radius: 8, unlock: 60 },
+    ],
+  },
 
   // -------------------------------------------------------------- transit
   coachstop: {
@@ -783,9 +823,9 @@ export const TECHS = {
   arcades: { name: 'Arcades', cost: 270, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
   trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades, savings banks, department stores joined from a draper and the shop next door, and exchanges joined from two offices.' },
   civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, town banks, grand department stores, stock exchanges, the Grand Hall, grand squares and covered markets.' },
-  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks.' },
+  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks, bowling greens, and recreation grounds joined from play areas and games lawns.' },
   hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, and brewhouses joined from a tavern and a workshop.' },
-  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
+  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, and playing fields.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
   industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), ironmongers to sell their wares, and craftsman's houses joined from a cottage and a workshop." },
   woodwork: { name: 'Joinery', cost: 115, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
@@ -810,7 +850,7 @@ export const TECHS = {
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
-  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
+  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains, and football grounds with a stand for the crowds the trains bring.' },
 };
 
 // Upgrade levels unlock by research too. Unless a level names its own
@@ -846,6 +886,7 @@ export const MERGES = [
   { a: ['well', 'pump'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
   { a: ['workshop', 'lumber'], b: ['workshop', 'lumber'], to: 'joinery' },
   { a: ['garden', 'flowers'], b: ['garden', 'flowers', 'statue'], to: 'park' },
+  { a: ['playground', 'courts'], b: ['playground', 'courts', 'garden'], to: 'recground' },
   // a grand home or a block of flats takes in the house next door (lead: the
   // first one's look carries on, not the cottage's)
   { a: ['villa'], b: ['villa', 'house', 'garden', 'flowers'], to: 'mansion', lead: true },
@@ -867,7 +908,7 @@ export const LARGE = {
   market: ['arcade'], bakery: ['arcade'], grocer: ['arcade'], butcher: ['arcade'], draper: ['deptstore'], offices: ['exchange'],
   tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
   school: ['parishschool', 'boardschool'], clinic: ['almshouse', 'cottagehospital'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
-  chapel: ['vicarage'], builder: ['contractor'],
+  chapel: ['vicarage'], builder: ['contractor'], playground: ['recground'], courts: ['recground'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).

@@ -475,6 +475,28 @@ const placePair = (tw, ta, tb) => {
   ok(tradesOf({ type: 'shophouse', flavor: 'butcher' }).join() === 'meat' && tradesOf({ type: 'deptstore' }).includes('clothes') && !tradesOf({ type: 'deptstore' }).includes('banking'), 'a shophouse sells its own trade, a department store every trade but banking');
 }
 
+// 3d0d. somewhere to play: a home with children and a play area in reach is
+// happier for it, one without children isn't asked, and children mostly
+// head for somewhere to play
+{
+  const tw = World.createNew({ N: 48, seed: 37, name: 'Playford' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [home, pg] = placePair(tw, 'house', 'playground');
+  const [other, gd] = placePair(tw, 'house', 'garden');
+  const kid = { id: tw.newId(), first: 'Pip', last: 'Swing', age: 'child', years: 8, edu: 0, home: home.id, job: null, look: 12345, mood: 60 };
+  tw.residents.set(kid.id, kid); home.residents.push(kid.id);
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  const play = (b) => { sim.recompute(); sim._happiness(); const p = b.factors.parts.find(q => q[0] === 'play'); return p ? p[1] : null; };
+  ok(play(home) === 4 && play(other) === null, 'a home with a child beside a play area gets +4 for somewhere to play; a home without children isn\'t asked');
+  const A = { world: tw, _nearest: Agents.prototype._nearest, _shopFor: Agents.prototype._shopFor, _candidates: (pred) => [...tw.buildings.values()].filter(b => pred(BUILDINGS[b.type], b)) };
+  let toPlay = 0, outings = 0;
+  for (let i = 0; i < 400; i++) { Agents.prototype.planDay.call(A, kid, null); for (const p of kid.plan) if (p.dest === pg.id || p.dest === gd.id) { outings++; if (p.dest === pg.id) toPlay++; } }
+  ok(outings > 100 && toPlay / outings > 0.6, `children mostly head for somewhere to play (${Math.round((toPlay / outings) * 100)}% of ${outings} outings to the play area, the rest to the garden)`);
+  tw.removeBuilding(pg.id, 0);
+  ok(play(home) === 0, 'without the play area the home misses it');
+}
+
 // 3d1. taking a neighbouring plot: the land first (no builders, the building
 // stays its size), then what to build across it
 {

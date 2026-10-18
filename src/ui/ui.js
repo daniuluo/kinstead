@@ -18,6 +18,7 @@ const HAPPY = {
   culture: { want: 'a chapel or hall nearby', label: 'Culture', icon: 'church', tip: 'Build a chapel or music hall within reach', act: { label: 'Services', cat: 'services' } },
   power: { want: 'electricity', label: 'Electricity', icon: 'bolt', tip: (f, g) => (g.sim.utility && g.sim.utility.power.gen ? 'Not enough power — build more generators' : 'Build a generator (Utilities)'), act: { label: 'Utilities', cat: 'utilities' } },
   appeal: { want: 'nicer scenery', label: 'Scenery', icon: 'park', tip: 'Plant trees, or build gardens and parks nearby', act: { label: 'Parks', cat: 'parks' } },
+  play: { want: 'somewhere to play', label: 'Play', icon: 'toys', tip: 'Build a play area or playing field within reach of homes with children', act: { label: 'Parks', cat: 'parks' } },
   shops: { want: 'shops nearby', label: 'Shops nearby', icon: 'storefront', tip: 'Build a shop, café or tavern within 7 tiles', act: { label: 'Commerce', cat: 'commercial' } },
   transit: { want: 'a coach stop nearby', label: 'Transport', icon: 'directions_bus', tip: 'Put a coach stop within 4 tiles', act: { label: 'Transit', cat: 'transit' } },
   pollution: { want: 'less smoke', label: 'Smoke', icon: 'factory', tip: 'Industry is too close — move it, or plant trees between', act: { label: 'Show homes' } },
@@ -61,7 +62,7 @@ const ICONS = {
   '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
   '🏪': 'store', '⚡': 'bolt', '🔬': 'science', '🎓': 'school', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
   '🥕': 'nutrition', '🥩': 'kebab_dining', '👞': 'steps', '🧵': 'checkroom', '🔧': 'build', '💊': 'medication', '📖': 'menu_book',
-  '☕': 'local_cafe', '🏦': 'savings', '✉': 'mail', '🏢': 'business_center', '🏬': 'local_mall',
+  '☕': 'local_cafe', '🏦': 'savings', '✉': 'mail', '🏢': 'business_center', '🏬': 'local_mall', '🛝': 'toys', '🎾': 'sports_tennis', '⚽': 'sports_soccer',
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {

@@ -178,6 +178,7 @@ export class Agents {
     const R = Math.random;
     const shops = this._candidates(d => d.shop);
     const parks = this._candidates(d => d.park && d.outdoor);
+    const plays = this._candidates(d => d.play);
     const taverns = this._candidates(d => d.leisure && !d.park);
     const chapels = this._candidates(d => servicesOf(d).includes('culture'));
     const schools = this._candidates(d => servicesOf(d).includes('education'));
@@ -194,6 +195,8 @@ export class Agents {
     const shift = has('early') ? -0.6 : has('owl') ? 0.6 : 0;
     const leisure = has('outdoorsy') && parks.length ? parks : parks.concat(taverns);
     const pickFar = (list) => has('curious') ? this._nearest(r, list, 8) : pick(list);
+    // children mostly head for somewhere to play
+    const playPick = () => pickFar(plays.length && R() < 0.75 ? plays : parks);
     if (r.age === 'adult' && r.school != null && this.world.buildings.get(r.school)) {
       // a student: lectures, then the library or the tavern
       push(8 + R() * 1.2, r.school);
@@ -223,12 +226,12 @@ export class Agents {
       const school = r.school != null && this.world.buildings.get(r.school) ? r.school : null;
       if (school != null) {
         push(7.3 + R() * 0.7, school);
-        push(14 + R() * 0.8, R() < play ? pickFar(parks) ?? home : home);
+        push(14 + R() * 0.8, R() < play ? playPick() ?? home : home);
         push(17.5 + R(), home);
       } else {
-        push(9.5 + R() * 2, pickFar(parks));
+        push(9.5 + R() * 2, playPick());
         push(12.5 + R(), home);
-        if (R() < play + 0.2) push(15 + R(), pickFar(parks));
+        if (R() < play + 0.2) push(15 + R(), playPick());
         push(18 + R() * 0.5, home);
       }
     } else {

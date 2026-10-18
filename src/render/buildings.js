@@ -2457,6 +2457,335 @@ MODELS.statue = (c) => {
   bench(c, -0.3, 0.42, Math.PI);
 };
 
+// ----------------------------------------------------- play and games
+// Play areas, games lawns and playing fields: the parks people use rather
+// than stroll in. Each lays itself out round the middle of its plot.
+
+const PAINT = ['#c8423a', '#3f6a8f', '#4f7a45', '#d8a630', '#7a5a8a'];
+const SAND = '#e0cf9a', LINE = '#f2efe6';
+
+// An A-frame swing with n seats hanging from its beam, the beam along x.
+function swings(c, x, z, ry, n = 2, color = '#6e5034') {
+  const { gb } = c;
+  const w = 0.07 + n * 0.07, h = 0.2;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const s of [-1, 1]) for (const k of [-1, 1]) gb.boxC(s * w / 2, h / 2, k * 0.035, 0.012, h + 0.01, 0.012, color, k * 0.32);
+  gb.box(0, h - 0.004, 0, w + 0.02, 0.014, 0.014, color);
+  for (let i = 0; i < n; i++) {
+    const sx = -w / 2 + 0.07 * (i + 1);
+    for (const s of [-1, 1]) gb.box(sx + s * 0.016, 0.055, 0, 0.003, h - 0.06, 0.003, '#8a8a84');
+    gb.box(sx, 0.05, 0, 0.044, 0.008, 0.022, PAINT[i % PAINT.length]);
+  }
+  gb.pop();
+}
+// A slide: a ladder up to a little platform and the chute down, facing +z.
+function slide(c, x, z, ry, color = '#c8423a') {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const s of [-1, 1]) gb.box(s * 0.022, 0, -0.1, 0.01, 0.17, 0.01, '#5a5a5e');
+  for (let y = 0.03; y < 0.16; y += 0.035) gb.box(0, y, -0.1, 0.044, 0.006, 0.008, '#5a5a5e');
+  gb.box(0, 0.16, -0.08, 0.06, 0.012, 0.05, '#5a5a5e');
+  gb.boxC(0, 0.09, 0.03, 0.05, 0.01, 0.22, color, 0.72);
+  for (const s of [-1, 1]) gb.boxC(s * 0.026, 0.1, 0.03, 0.006, 0.02, 0.22, shade(color, 0.8), 0.72);
+  gb.pop();
+}
+function seesaw(c, x, z, ry, color = '#3f6a8f') {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  gb.box(0, 0, 0, 0.03, 0.04, 0.03, '#5e432c');
+  gb.boxC(0, 0.045, 0, 0.24, 0.01, 0.03, color, 0, 0, 0.16);
+  for (const s of [-1, 1]) gb.box(s * 0.1, 0.045 + s * -0.016 + 0.008, 0, 0.006, 0.03, 0.026, '#3a3a3e');
+  gb.pop();
+}
+function roundabout(c, x, z, color = '#d8a630') {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.012, 0.012, 0.03, 6, '#3a3a3e');
+  gb.cyl(x, y + 0.03, z, 0.075, 0.075, 0.01, 10, color);
+  for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2; gb.box(x + Math.cos(a) * 0.055, y + 0.04, z + Math.sin(a) * 0.055, 0.006, 0.04, 0.006, '#3a3a3e'); }
+  gb.cyl(x, y + 0.075, z, 0.058, 0.058, 0.006, 10, '#3a3a3e');
+}
+function sandpit(c, x, z, w, d) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cbox(x, y - 0.01, z, w, 0.035, d, '#7a5a3c', 0, 0.006);
+  gb.box(x, y, z, w - 0.03, 0.03, d - 0.03, SAND);
+  gb.box(x - w * 0.2, y + 0.03, z + d * 0.1, 0.03, 0.02, 0.03, '#c8423a');
+  gb.cone(x + w * 0.2, y + 0.03, z - d * 0.15, 0.03, 0.03, 6, shade(SAND, 0.95));
+}
+// A wooden climbing fort: a platform on posts with a pyramid roof, a
+// scramble net up one side and a slide off the other, facing +z.
+function fort(c, x, z, roof) {
+  const { gb } = c;
+  const y = c.gy(x, z), h = 0.16;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(x + sx * 0.07, y, z + sz * 0.07, 0.016, h + 0.14, 0.016, '#6e5034');
+  gb.box(x, y + h, z, 0.17, 0.016, 0.17, '#86663f');
+  for (const sx of [-1, 1]) gb.box(x + sx * 0.08, y + h + 0.016, z, 0.008, 0.04, 0.16, '#86663f');
+  gb.box(x, y + h + 0.016, z - 0.08, 0.16, 0.04, 0.008, '#86663f');
+  gb.roof(x, y + h + 0.14, z, 0.21, 0.21, 0.09, 0, roof);
+  for (let i = 0; i < 4; i++) gb.boxC(x - 0.06 + i * 0.04, y + h / 2, z + 0.12, 0.004, h + 0.02, 0.004, '#c8b088', 0.5);
+  for (let k = 0; k < 3; k++) gb.boxC(x, y + 0.03 + k * 0.05, z + 0.105 + k * 0.01, 0.14, 0.004, 0.004, '#c8b088');
+  slide(c, x + 0.17, z, Math.PI / 2, '#d8a630');
+}
+// A shelter: posts carrying a hipped roof over a bench.
+function shelter(c, x, z, w, d, roof, ry = 0) {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * (w / 2 - 0.015), 0, sz * (d / 2 - 0.015), 0.018, 0.2, 0.018, '#5e432c');
+  gb.box(0, 0, -d / 2 + 0.03, w - 0.04, 0.12, 0.012, '#6e5034');
+  gb.box(0, 0.035, -d / 2 + 0.06, w - 0.06, 0.01, 0.05, '#7a5636');
+  gb.hip(0, 0.2, 0, w + 0.02, d + 0.02, 0.08, roof, 0.03);
+  gb.pop();
+}
+// Mown stripes over a lawn (w across x, d across z), at the ground.
+function stripes(c, x, z, w, d, n, a = '#7fb04f', b = '#8fbd5a', alongZ = false) {
+  for (let i = 0; i < n; i++) {
+    const u = -0.5 + (i + 0.5) / n;
+    const sx = alongZ ? x + u * w : x, sz = alongZ ? z : z + u * d;
+    c.gb.box(sx, c.gy(sx, sz) - 0.006, sz, alongZ ? w / n : w, 0.01, alongZ ? d : d / n, i % 2 ? b : a);
+  }
+}
+// A small timber pavilion with a veranda, facing +z.
+function pavilion(c, x, z, w, d, wall, roof, clock = false) {
+  const { gb } = c;
+  house(c, { x, z, w, d, h: 0.22, floors: 1, wall, roof, roofType: 'gable', rh: 0.14, nFront: 2, doorX: 0, chimney: false, fancy: false, lit: 0.7 });
+  gb.box(x, -0.005, z + d / 2 + 0.05, w, 0.02, 0.1, '#86663f');
+  for (const s of [-1, 1]) gb.box(x + s * (w / 2 - 0.015), 0, z + d / 2 + 0.09, 0.014, 0.18, 0.014, '#ece6da');
+  gb.wedge(x, 0.18, z + d / 2 + 0.05, w + 0.02, 0.12, 0.04, roof, 0);
+  if (clock) {
+    // a clock turret on the ridge
+    gb.cbox(x, 0.3, z, 0.07, 0.07, 0.07, '#ece6da', 0, 0.004);
+    wallClock(c, x, 0.335, z + 0.036, 0.022);
+    gb.roof(x, 0.37, z, 0.09, 0.09, 0.05, 0, roof);
+  }
+}
+
+// Swing Green: a pair of swings on a green, a see-saw and a bench under a
+// tree. The Playground has a sandpit, a slide, a roundabout and railings
+// round it; the Adventure Playground a wooden fort with a scramble net and
+// a slide, big swings and a shelter for the parents.
+MODELS.playground = (c, L) => {
+  const { gb, rng, pal } = c;
+  c.work = [-0.4, -0.4, 0.4, 0.4];
+  if (L === 0) {
+    swings(c, -0.12, -0.1, 0.2);
+    seesaw(c, 0.2, 0.2, 0.6);
+    smallTree(c, 0.3, -0.3, 1.2);
+    bench(c, -0.28, 0.3, Math.PI + 0.3);
+    flowers(c, 0.34, 0.36, 4, 0.05);
+  } else {
+    sandpit(c, -0.22, 0.2, 0.26, 0.2);
+    if (L === 1) {
+      swings(c, -0.12, -0.24, 0, 3, '#3a3a3e');
+      slide(c, 0.24, -0.1, 0, rng.pick(PAINT));
+      roundabout(c, 0.2, 0.26, rng.pick(PAINT));
+      seesaw(c, -0.32, -0.02, Math.PI / 2);
+      lamp(c, 0.4, 0.42, 0.28);
+    } else {
+      fort(c, 0.06, -0.18, pal.roof);
+      swings(c, -0.28, -0.28, Math.PI / 2, 2, '#3a3a3e');
+      roundabout(c, 0.22, 0.24, rng.pick(PAINT));
+      shelter(c, 0.32, -0.32, 0.18, 0.14, pal.slate, -Math.PI / 2);
+      lamp(c, -0.42, 0.42, 0.28);
+    }
+    fence(c, -0.46, -0.46, 0.46, 0.46, '#3a3a3e', { x: 0, z: 0.46, w: 0.1 });
+    bench(c, 0.02, 0.36, Math.PI);
+  }
+};
+
+// Bowling Green: a level lawn mown in stripes inside a low hedge, bowls and
+// the jack on the grass, a little hut for the woods. The Croquet Lawn has
+// hoops and a peg and a pavilion with a veranda; the Tennis Courts a court
+// with its net and lines inside a wire fence, a clubhouse and an umpire's
+// chair.
+MODELS.courts = (c, L) => {
+  const { gb, rng, pal } = c;
+  c.work = [-0.4, -0.4, 0.4, 0.4];
+  if (L < 2) {
+    const z0 = 0.12, w = 0.8, d = 0.6;
+    stripes(c, 0, z0, w, d, L ? 6 : 8, L ? '#6fa848' : '#7fb04f', L ? '#82b85a' : '#90c060');
+    hedge(c, 0, z0 - d / 2 - 0.02, w + 0.04, 0.04, 0.05);
+    for (const s of [-1, 1]) hedge(c, s * (w / 2 + 0.02), z0, 0.04, d, 0.05);
+    for (const s of [-1, 1]) hedge(c, s * 0.26, z0 + d / 2 + 0.02, 0.32, 0.04, 0.05);
+    if (L === 0) {
+      for (let i = 0; i < 6; i++) { const x = rng.float(-0.3, 0.3), z = rng.float(-0.2, 0.3); gb.sphere(x, c.gy(x, z) + 0.012, z, 0.013, i % 2 ? '#2a2420' : '#5a2a22', 0); }
+      gb.sphere(0.02, c.gy(0.02, 0.1) + 0.007, 0.1, 0.007, '#f2ede0', 0);
+      const hx = -0.3, hz = -0.36;
+      gb.cbox(hx, c.gy(hx, hz), hz, 0.16, 0.13, 0.12, pal.wood, 0, 0.008);
+      gb.wedge(hx, c.gy(hx, hz) + 0.13, hz, 0.19, 0.15, 0.05, pal.roof, 0);
+      bench(c, 0.2, -0.36, 0);
+    } else {
+      for (const [x, z] of [[-0.25, -0.08], [0.25, -0.08], [-0.25, 0.32], [0.25, 0.32], [0, 0.04], [0, 0.2]]) {
+        const y = c.gy(x, z);
+        for (const s of [-1, 1]) gb.box(x + s * 0.012, y, z, 0.004, 0.026, 0.004, LINE);
+        gb.box(x, y + 0.024, z, 0.028, 0.004, 0.004, LINE);
+      }
+      gb.cyl(0, c.gy(0, 0.12), 0.12, 0.006, 0.006, 0.05, 5, '#c8423a');
+      for (let i = 0; i < 4; i++) { const x = rng.float(-0.25, 0.25), z = rng.float(-0.06, 0.32); gb.sphere(x, c.gy(x, z) + 0.01, z, 0.01, PAINT[i], 0); }
+      pavilion(c, 0, -0.39, 0.4, 0.1, rng.chance(0.5) ? '#ece6da' : pal.wall, pal.roof);
+      for (const x of [-0.33, 0.33]) {
+        const z = -0.3, y = c.gy(x, z);
+        gb.boxC(x, y + 0.03, z, 0.04, 0.004, 0.06, '#d8c8a0', -0.5);
+        gb.boxC(x, y + 0.04, z + 0.004, 0.036, 0.05, 0.003, rng.pick(['#3f6a8f', '#c8423a', '#4f7a45']), -0.3);
+      }
+    }
+  } else {
+    // the court, its lines, the net, and a wire fence round it
+    const cx = 0, cz = 0.1, cw = 0.74, cd = 0.56;
+    gb.box(cx, c.gy(cx, cz) - 0.006, cz, cw, 0.01, cd, rng.chance(0.5) ? '#6fa848' : '#b8673e');
+    const ly = c.gy(cx, cz) + 0.004, iw = cw - 0.14, id = cd - 0.1;
+    for (const s of [-1, 1]) { gb.box(cx + s * iw / 2, ly, cz, 0.008, 0.003, id, LINE); gb.box(cx, ly, cz + s * id / 2, iw, 0.003, 0.008, LINE); gb.box(cx + s * iw * 0.36, ly, cz, 0.006, 0.003, id, LINE); }
+    gb.box(cx, ly, cz, 0.006, 0.003, id * 0.5, LINE);
+    for (const s of [-1, 1]) gb.box(cx, ly, cz + s * id / 4, iw * 0.72, 0.003, 0.006, LINE);
+    for (const s of [-1, 1]) gb.box(cx + s * (iw / 2 + 0.03), ly - 0.004, cz, 0.012, 0.06, 0.012, '#3a3a3e');
+    gb.box(cx, ly + 0.012, cz, iw + 0.05, 0.035, 0.004, '#4a4a4e');
+    gb.box(cx, ly + 0.047, cz, iw + 0.05, 0.007, 0.006, LINE);
+    const fx = cw / 2 + 0.03, fz0 = cz - cd / 2 - 0.03, fz1 = cz + cd / 2 + 0.03, fh = 0.2;
+    const post = (x, z) => gb.box(x, c.gy(x, z) - 0.01, z, 0.01, fh + 0.01, 0.01, '#2f3a2f');
+    for (let i = 0; i <= 6; i++) { const x = -fx + (i * 2 * fx) / 6; post(x, fz0); post(x, fz1); }
+    for (let i = 1; i < 5; i++) { const z = fz0 + (i * (fz1 - fz0)) / 5; post(-fx, z); post(fx, z); }
+    for (const y of [0.06, 0.13, fh - 0.006]) {
+      gb.box(0, y, fz0, 2 * fx, 0.004, 0.004, '#3a463a'); gb.box(0, y, fz1, 2 * fx, 0.004, 0.004, '#3a463a');
+      gb.box(-fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a'); gb.box(fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a');
+    }
+    // the umpire's chair, and the clubhouse behind
+    const ux = cx + iw / 2 + 0.06, uy = c.gy(ux, cz);
+    for (const s of [-1, 1]) gb.box(ux, uy, cz + s * 0.015, 0.008, 0.11, 0.008, '#ece6da');
+    gb.box(ux, uy + 0.11, cz, 0.03, 0.008, 0.04, '#ece6da');
+    pavilion(c, -0.08, -0.39, 0.5, 0.1, pal.wall, pal.slate, true);
+  }
+};
+
+// Playing Field: a big field mown in stripes, goalposts at each end, a hut
+// to change in and trees round the edge. The Cricket Ground has a wicket
+// with its stumps in the middle, sightscreens, a boundary rope, a
+// scoreboard and a white pavilion with a clock; the Football Ground a marked
+// pitch with netted goals, a covered grandstand along the back, a bank of
+// terracing at one end, and a turnstile gate on the street.
+MODELS.sportsground = (c, L) => {
+  const { gb, rng, pal } = c;
+  c.work = [-0.85, -0.85, 0.85, 0.85];
+  if (L === 0) {
+    stripes(c, 0, 0.06, 1.6, 1.5, 10, '#7fb04f', '#8cbc58', true);
+    for (const s of [-1, 1]) goal(c, s * 0.72, 0.06, s > 0 ? -Math.PI / 2 : Math.PI / 2, false);
+    const hx = -0.7, hz = -0.82;
+    gb.cbox(hx, c.gy(hx, hz), hz, 0.26, 0.15, 0.14, pal.wood, 0, 0.008);
+    gb.gable(hx, c.gy(hx, hz) + 0.15, hz, 0.26, 0.14, 0.07, pal.wood, pal.roof, 0.03);
+    for (const [x, z] of [[0.8, -0.8], [0.45, -0.82], [-0.82, 0.45], [0.82, 0.55], [-0.25, -0.84]]) smallTree(c, x, z, rng.float(1.05, 1.2));
+    bench(c, 0.1, -0.84, 0); bench(c, -0.4, 0.88, Math.PI);
+  } else if (L === 1) {
+    stripes(c, 0, 0.04, 1.7, 1.66, 12, '#76ac4a', '#86b956', true);
+    // the wicket and its stumps
+    const wy = c.gy(0, 0.04);
+    gb.box(0, wy - 0.003, 0.04, 0.08, 0.008, 0.46, '#c8b27a');
+    for (const s of [-1, 1]) { for (const k of [-1, 0, 1]) gb.box(k * 0.01, wy, 0.04 + s * 0.2, 0.004, 0.035, 0.004, LINE); gb.box(0, wy + 0.035, 0.04 + s * 0.2, 0.026, 0.004, 0.004, '#d8b060'); }
+    for (const s of [-1, 1]) gb.box(0, wy + 0.005, 0.04 + s * 0.16, 0.08, 0.002, 0.004, LINE);
+    // the boundary rope, a ring of white
+    for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2, x = Math.cos(a) * 0.8, z = 0.04 + Math.sin(a) * 0.76; gb.box(x, c.gy(x, z), z, 0.012, 0.008, 0.012, LINE); }
+    for (const s of [-1, 1]) { const z = 0.04 + s * 0.88 - (s > 0 ? 0.03 : 0); const y = c.gy(0, z); for (const x of [-0.1, 0.1]) gb.box(x, y, z, 0.012, 0.08, 0.012, '#5e432c'); gb.box(0, y + 0.03, z, 0.26, 0.12, 0.012, LINE); }
+    pavilion(c, -0.55, -0.82, 0.5, 0.18, '#ece6da', pal.slate, true);
+    gb.box(-0.76, 0.3, -0.82, 0.008, 0.18, 0.008, IRON_D);
+    gb.box(-0.715, 0.43, -0.82, 0.09, 0.05, 0.004, rng.pick(['#3f6a8f', '#a8473a', '#2f6a4a']));
+    // the scoreboard
+    const sx = 0.62, sz = -0.86, sy = c.gy(sx, sz);
+    for (const s of [-1, 1]) gb.box(sx + s * 0.1, sy, sz, 0.014, 0.12, 0.014, '#5e432c');
+    gb.box(sx, sy + 0.1, sz, 0.26, 0.12, 0.02, '#2a2a30');
+    for (let i = 0; i < 4; i++) gb.box(sx - 0.09 + i * 0.06, sy + 0.14, sz + 0.012, 0.035, 0.045, 0.003, LINE);
+    for (const [x, z, r] of [[0.32, -0.86, 0], [-0.88, 0.2, Math.PI / 2], [0.88, 0.3, -Math.PI / 2], [0.4, 0.88, Math.PI]]) bench(c, x, z, r);
+    for (const [x, z] of [[0.82, -0.82], [-0.82, 0.8], [0.82, 0.8]]) smallTree(c, x, z, 1.15);
+  } else {
+    // the pitch and its markings
+    const px = 0, pz = 0.16, pw = 1.56, pd = 0.98;
+    stripes(c, px, pz, pw + 0.1, pd + 0.1, 12, '#6fa848', '#7db654', true);
+    const ly = c.gy(px, pz) + 0.001;
+    for (const s of [-1, 1]) { gb.box(px, ly, pz + s * pd / 2, pw, 0.003, 0.01, LINE); gb.box(px + s * pw / 2, ly, pz, 0.01, 0.003, pd, LINE); }
+    gb.box(px, ly, pz, 0.01, 0.003, pd, LINE);
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; gb.box(px + Math.cos(a) * 0.13, ly, pz + Math.sin(a) * 0.13, 0.05, 0.003, 0.01, LINE, -a + Math.PI / 2); }
+    for (const s of [-1, 1]) {
+      const ex = px + s * pw / 2, bx = ex - s * 0.12;
+      gb.box(bx, ly, pz, 0.01, 0.003, 0.44, LINE);
+      for (const k of [-1, 1]) gb.box((ex + bx) / 2, ly, pz + k * 0.22, 0.24, 0.003, 0.01, LINE);
+      goal(c, ex, pz, s > 0 ? -Math.PI / 2 : Math.PI / 2, true);
+    }
+    // the grandstand: tiers of benches under a roof on iron columns
+    const gx = 0.1, gz = -0.78, gw = 1.3, gd = 0.3;
+    footing(c, gx, gz, gw, gd);
+    for (let k = 0; k < 4; k++) gb.box(gx, 0, gz - gd / 2 + 0.04 + k * 0.06, gw, 0.06 * (4 - k), 0.06, k % 2 ? '#8a7a62' : '#7a6a52');
+    gb.box(gx, 0, gz - gd / 2 + 0.01, gw + 0.02, 0.36, 0.02, pal.brick);
+    for (const s of [-1, 1]) gb.box(gx + s * (gw / 2), 0, gz, 0.02, 0.32, gd, pal.brick);
+    for (let i = 0; i <= 6; i++) gb.box(gx - gw / 2 + (i * gw) / 6, 0, gz + gd / 2 - 0.01, 0.012, 0.32, 0.012, '#2f3a4a');
+    gb.wedge(gx, 0.32, gz, gw + 0.06, gd + 0.08, 0.08, pal.slate, 0);
+    gb.cbox(gx, 0.36, gz - 0.02, 0.24, 0.1, 0.12, pal.brick, 0, 0.006);
+    gb.gable(gx, 0.46, gz - 0.02, 0.26, 0.12, 0.08, pal.brick, pal.slate, 0.02, true);
+    wallClock(c, gx, 0.42, gz + 0.042, 0.03);
+    for (const s of [-1, 1]) { gb.box(gx + s * 0.6, 0.4, gz, 0.008, 0.2, 0.008, IRON_D); gb.box(gx + s * 0.6 + 0.045, 0.54, gz, 0.08, 0.05, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#e8e0d0'])); }
+    // terracing at the far end
+    const tx = -0.84;
+    for (let k = 0; k < 3; k++) gb.box(tx + 0.05 - k * 0.045, 0, -0.32, 0.05, 0.03 * (k + 1), 0.58, STONE);
+    // the turnstile gate on the street, railings either side
+    const fz = 0.86;
+    frontage(c, -0.95, -0.12, fz, [], 'railings');
+    frontage(c, 0.12, 0.95, fz, [], 'railings');
+    gb.cbox(0, c.gy(0, fz), fz, 0.2, 0.18, 0.08, pal.brick, 0, 0.006);
+    gb.box(0, c.gy(0, fz), fz + 0.041, 0.07, 0.12, 0.004, '#3a2f28');
+    gb.gable(0, c.gy(0, fz) + 0.18, fz, 0.22, 0.1, 0.05, pal.brick, pal.slate, 0.015);
+    lamp(c, -0.2, fz + 0.04, 0.3); lamp(c, 0.2, fz + 0.04, 0.3);
+  }
+};
+// Goalposts on the goal line at (x, z), the goal opening along z and the
+// net (if any) behind, the way ry turns +z.
+function goal(c, x, z, ry, net) {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  for (const s of [-1, 1]) gb.box(s * 0.09, 0, 0, 0.012, 0.1, 0.012, LINE);
+  gb.box(0, 0.094, 0, 0.19, 0.012, 0.012, LINE);
+  if (net) {
+    gb.boxC(0, 0.05, -0.05, 0.18, 0.004, 0.11, '#c8c8c0', -0.75);
+    for (const s of [-1, 1]) gb.boxC(s * 0.09, 0.045, -0.035, 0.003, 0.09, 0.07, '#c8c8c0');
+  }
+  gb.pop();
+}
+
+// Recreation Ground: a playground at one end, a lawn with goalposts at the
+// other, a shelter between them and railings round. The People's Park
+// adds a paddling pool, a drinking fountain, flower beds and lamps.
+MODELS.recground = (c, L) => {
+  const { gb, rng, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.1, D = f.dep - 0.1, x0 = -W / 2, x1 = W / 2;
+  // the play end
+  const px = x0 + 0.34;
+  sandpit(c, px - 0.08, 0.2, 0.26, 0.18);
+  swings(c, px - 0.1, -0.24, 0, 2, '#3a3a3e');
+  slide(c, px + 0.22, -0.06, 0, rng.pick(PAINT));
+  roundabout(c, px + 0.22, 0.26, rng.pick(PAINT));
+  // the games end
+  const gx = x1 - 0.42;
+  stripes(c, gx, 0.02, 0.7, D - 0.1, 6, '#7fb04f', '#8cbc58', true);
+  for (const s of [-1, 1]) goal(c, gx + s * 0.3, 0.02, s > 0 ? -Math.PI / 2 : Math.PI / 2, false);
+  // the shelter between, and a path across
+  gb.box(0.02, c.gy(0.02, 0) - 0.006, 0, 0.12, 0.012, D - 0.04, '#c8b894');
+  if (L) {
+    // an octagonal shelter, a paddling pool, a drinking fountain, beds and lamps
+    const sx = 0.02, sz = -0.26, sy = c.gy(sx, sz);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; gb.box(sx + Math.cos(a) * 0.1, sy, sz + Math.sin(a) * 0.1, 0.014, 0.18, 0.014, '#ece6da'); }
+    gb.cyl(sx, sy + 0.18, sz, 0.13, 0.13, 0.02, 8, '#ece6da');
+    gb.cone(sx, sy + 0.2, sz, 0.14, 0.1, 8, pal.slate, Math.PI / 8);
+    const py = c.gy(0.02, 0.26);
+    gb.cyl(0.02, py - 0.01, 0.26, 0.14, 0.15, 0.03, 12, STONE);
+    gb.cyl(0.02, py + 0.02, 0.26, 0.125, 0.125, 0.004, 12, POOL);
+    const fx = -0.2, fz = -0.36, fy = c.gy(fx, fz);
+    gb.cyl(fx, fy, fz, 0.02, 0.026, 0.1, 8, STONE); gb.cyl(fx, fy + 0.1, fz, 0.03, 0.022, 0.02, 8, STONE);
+    flowers(c, 0.2, 0.32, 6, 0.06); flowers(c, -0.16, 0.34, 6, 0.06);
+    lamp(c, 0.12, 0.42, 0.28); lamp(c, -0.1, -0.42, 0.28);
+  } else {
+    shelter(c, 0.02, -0.28, 0.22, 0.16, pal.roof);
+    bench(c, 0.02, 0.3, Math.PI);
+  }
+  fence(c, x0, -D / 2 - 0.02, x1, D / 2 + 0.02, '#3a3a3e', { x: 0.02, z: D / 2 + 0.02, w: 0.1 });
+  if (f.turned) gb.pop();
+};
+
 MODELS.coachstop = (c) => {
   const { gb, pal } = c;
   const z = 0.22;
@@ -5163,8 +5492,8 @@ export function jitterOf(b) {
 export function workArea(b) {
   let r = null;
   if (b.type === 'farm') r = [-0.88, b.level >= 1 ? -0.08 : 0.08, 0.88, 0.88];
-  else if (b.type === 'garden') r = [-0.4, -0.4, 0.4, 0.4];
-  else if (b.type === 'plaza') r = [-0.85, -0.85, 0.85, 0.85];
+  else if (b.type === 'garden' || b.type === 'playground' || b.type === 'courts') r = [-0.4, -0.4, 0.4, 0.4];
+  else if (b.type === 'plaza' || b.type === 'sportsground') r = [-0.85, -0.85, 0.85, 0.85];
   if (!r) return null;
   const E = b.size / 2, j = jitterOf(b);
   const th = (b.rot * Math.PI) / 2 + j.yaw, co = Math.cos(th), si = Math.sin(th);
