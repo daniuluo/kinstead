@@ -10,8 +10,8 @@ export const CONFIG = {
   DAYS_PER_SEASON: 6,
   WATER_LEVEL: 0,
   START_MONEY: 4000,
-  WALK_SPEED: 0.275,       // tiles per real second at 1x
-  CART_SPEED: 0.36,        // a horse and cart at a walk, a little quicker than people on foot
+  WALK_SPEED: 0.1375,      // tiles per real second at 1x: an unhurried stroll
+  CART_SPEED: 0.18,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
   AUTOSAVE_SECONDS: 90,     // also this often in real time, paused or not

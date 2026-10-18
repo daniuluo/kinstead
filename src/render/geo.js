@@ -25,6 +25,14 @@ function cylGeo(rt, rb, seg) {
   if (!g) { g = prep(new THREE.CylinderGeometry(rt, rb, 1, seg, 1).translate(0, 0.5, 0)); cylCache.set(key, g); }
   return g;
 }
+// The upper half of a unit disc, one unit deep: stood upright (see arch())
+// it rounds off the top of a window or doorway.
+function archGeo(seg) {
+  const key = `arch|${seg}`;
+  let g = cylCache.get(key);
+  if (!g) { g = prep(new THREE.CylinderGeometry(1, 1, 1, seg, 1, false, Math.PI / 2, Math.PI).translate(0, 0.5, 0)); cylCache.set(key, g); }
+  return g;
+}
 
 // Roof prism: base w×d at y=0, ridge of length `ridge` along x at height h.
 // ridge = w → gable, ridge = 0 → pyramid, in between → hip.
@@ -165,6 +173,11 @@ export class GeoBuilder {
     return this.add(cylGeo(rTop / r, rBot / r, seg), color, this._local(x, y, z, r, h, r, rx, ry, rz));
   }
   cone(x, y, z, r, h, seg, color, ry = 0) { return this.cyl(x, y, z, 0, r, h, seg, color, ry); }
+  // An upright half disc facing ±z: its flat side lies along y, centred on
+  // x, and it runs from z to z + depth (the round head of an arched window).
+  arch(x, y, z, r, depth, seg, color) {
+    return this.add(archGeo(seg), color, this._local(x, y, z, r, depth, r, Math.PI / 2));
+  }
   sphere(x, y, z, r, color, detail = 0, sy = 1) {
     return this.add(detail ? PRIM.ico1 : PRIM.ico0, color, this._local(x, y, z, r, r * sy, r));
   }
