@@ -352,6 +352,15 @@ function house(c, o) {
   const fancy = o.fancy !== false;
   const fh = h / floors;
   gb.push(o.x || 0, o.y || 0, o.z || 0, o.ry || 0);
+  // where it stands in the model's frame, so an extension can be built on to it
+  if (c.houses) {
+    const pts = [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]].map(([x, z]) => new THREE.Vector3(x, 0, z).applyMatrix4(gb.M));
+    const turned = Math.abs(Math.sin(o.ry || 0)) > 0.5;
+    c.houses.push({
+      x0: Math.min(...pts.map(p => p.x)), x1: Math.max(...pts.map(p => p.x)), z0: Math.min(...pts.map(p => p.z)), z1: Math.max(...pts.map(p => p.z)),
+      h, floors, rh: o.rh ?? 0.24, roofType: o.roofType, ridgeX: !o.alongZ !== turned, wall: o.wall, roof: o.roof, timber: o.timber, plinth: o.plinth || null,
+    });
+  }
   footing(c, 0, 0, w, d, o.footColor || STONE);
   if (o.plinth) gb.cbox(0, 0, 0, w + 0.035, 0.08, d + 0.035, o.plinth, 0, 0.015);
   const mixedLower = fancy && pal.style === 'mixed' && floors >= 2;
@@ -4087,6 +4096,7 @@ export function buildModel(b, opts = {}) {
   const makeCtx = (gb, rng) => {
   const c = {
     gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
+    houses: [],   // every house() drawn, where it stands (see annexes)
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
     smoke: [], glows: [], spin: null, work: null, fountain: null,
     season: opts.season ?? 1,
@@ -4144,11 +4154,44 @@ export function buildModel(b, opts = {}) {
     const c2 = makeCtx(gb2, new RNG((b.variant * 2654435761 + 7) >>> 0));
     c2.smoke = c.smoke; c2.glows = c.glows;
     c2.doorAt = c.doorAt || { x: 0, y: 0, z: 0, dx: 0, dz: 1 };   // the building's own door stays the way in
-    for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y, !!b.spare);
+    // the building's main house (the biggest it drew), for an extension to join on to
+    const main = c.houses.reduce((m, hs) => (!m || (hs.x1 - hs.x0) * (hs.z1 - hs.z0) > (m.x1 - m.x0) * (m.z1 - m.z0) ? hs : m), null);
+    for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y, !!b.spare, main);
     const g2 = gb2.build();
     if (g2) { weather(g2); tint(g2, pal.tint); geo = mergeGeometries([geo, g2], false); geo.computeBoundingSphere(); }
   }
   return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null };
+}
+
+// A home, shop or service built out across the land it took: the house itself
+// goes on. Beside it, an extension on the same front line with the same
+// walls, eaves, roof and timbering, its ridge running on a little lower;
+// behind it, a back wing a storey lower with its ridge running back (an L, or
+// with both on a 2×2 estate, a U). No second door or chimney. Returns false
+// when there's no room, and a free-standing wing is built instead.
+function extendHouse(c, def, A, m) {
+  const style = { wall: m.wall, roof: m.roof, timber: m.timber, plinth: m.plinth, chimney: false };
+  const roofType = ['thatch', 'hip', 'flat'].includes(m.roofType) ? m.roofType : 'gable';
+  if (A.where === 'beside') {
+    const right = (A.x0 + A.x1) / 2 > (m.x0 + m.x1) / 2;
+    const near = right ? m.x1 - 0.01 : m.x0 + 0.01, far = right ? A.x1 - 0.1 : A.x0 + 0.1;
+    const w = Math.abs(far - near), d = m.z1 - m.z0 - 0.03;
+    if (w < 0.25 || d < 0.2) return false;
+    house(c, {
+      ...style, x: (near + far) / 2, z: (m.z0 + m.z1) / 2 - 0.015, w, d, h: m.h, floors: m.floors, roofType, rh: m.rh * 0.88,
+      alongZ: !m.ridgeX, noDoor: def.cat !== 'commercial', shopWindow: def.cat === 'commercial',
+    });
+    return true;
+  }
+  const near = m.z0 + 0.01, far = A.z0 + 0.1, d = near - far;
+  const w = Math.min(m.x1 - m.x0, A.x1 - A.x0 - 0.16) * 0.62;
+  if (d < 0.22 || w < 0.22) return false;
+  const floors = Math.max(1, m.floors - 1);
+  house(c, {
+    ...style, x: (m.x0 + m.x1) / 2, z: (near + far) / 2, w, d, h: m.h * floors / m.floors, floors,
+    roofType: roofType === 'thatch' ? 'thatch' : 'gable', rh: m.rh * 0.8, alongZ: true, noDoor: true,
+  });
+  return true;
 }
 
 // --------------------------------------------------------------- annexes
@@ -4178,8 +4221,11 @@ function annexPlan(def, b, Ex, Ez, B) {
 
 // One annex in area A (local frame, street side at +z). `top` is how tall the
 // main building stands, so a wing can match it a storey lower. spare: land
-// taken but not built on yet, kept as a garden.
-function buildAnnex(c, def, A, top, spare = false) {
+// taken but not built on yet, kept as a garden. main: the building's main
+// house, so a home, shop or service is extended rather than given a second
+// building (see extendHouse).
+function buildAnnex(c, def, A, top, spare = false, main = null) {
+  if (!spare && main && !def.park && def.cat !== 'industry' && def.cat !== 'utilities' && extendHouse(c, def, A, main)) return;
   const { gb, rng, pal } = c;
   const aw = A.x1 - A.x0, ad = A.z1 - A.z0, cx = (A.x0 + A.x1) / 2;
   const beside = A.where === 'beside';
