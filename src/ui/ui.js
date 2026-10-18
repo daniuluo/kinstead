@@ -120,11 +120,15 @@ export class UI {
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
     const insp = $('inspector');
+    // where it was dragged to (on a smaller screen it is brought back on when it opens)
     try { const p = JSON.parse(localStorage.getItem('hearthvale.win.inspector') || 'null'); if (p) { insp.style.left = `${p.x}px`; insp.style.top = `${p.y}px`; insp.style.right = 'auto'; } } catch {}
     insp.addEventListener('pointerdown', (e) => {
       const r = insp.getBoundingClientRect();
-      if (e.button === 0 && e.clientY - r.top < 24 && !e.target.closest('button')) this._drag(insp, e, 'hearthvale.win.inspector');
+      if (e.button === 0 && e.clientY - r.top < 24 && !e.target.closest('button') && !this._docked()) this._drag(insp, e, 'hearthvale.win.inspector');
     });
+    this._watchFit(insp);
+    // a smaller browser window or a turned phone brings every window back on screen
+    addEventListener('resize', () => requestAnimationFrame(() => { for (const w of [insp, ...(this.windows || new Map()).values()]) this._fitWin(w); }));
     $('happy').parentElement.style.cursor = 'pointer';
     $('happy').parentElement.title = 'Happiness: what helps and what hurts (click)';
     $('happy').parentElement.onclick = () => this.showHappiness();
@@ -930,6 +934,7 @@ export class UI {
       $('windows').appendChild(win);
       this.windows.set(key, win);
       win.addEventListener('pointerdown', () => this._focusWin(win), true);
+      this._watchFit(win);
     }
     win.classList.toggle('locked', locked);
     win.innerHTML = (locked ? '' : '<button class="x" data-close>✕</button>') + ico(html);
@@ -940,27 +945,52 @@ export class UI {
     this._focusWin(win);
     if (mount) mount(win);
     if (fresh) this._placeWin(win, key);
-    else this._clampWin(win);
+    else this._fitWin(win);
   }
 
   _placeWin(win, key) {
     let pos = null;
     try { pos = JSON.parse(localStorage.getItem(`hearthvale.win.${key}`) || 'null'); } catch {}
     const r = win.getBoundingClientRect();
+    // a window as wide as the screen (a phone) opens in the middle, wherever it was left on a bigger one
+    if (r.width > innerWidth - 48) pos = null;
     const n = this.windows.size - 1;
     win.style.left = `${pos ? pos.x : Math.max(8, (innerWidth - r.width) / 2 + n * 26)}px`;
     win.style.top = `${pos ? pos.y : Math.max(8, Math.min(90, (innerHeight - r.height) / 2) + n * 26)}px`;
-    this._clampWin(win);
+    this._fitWin(win);
   }
 
-  // keep the whole window on screen when it fits (and its title bar always)
-  _clampWin(win) {
-    const r = win.getBoundingClientRect();
-    const left = Math.min(Math.max(0, r.left), Math.max(0, innerWidth - r.width));
-    const top = Math.min(Math.max(0, r.top), Math.max(0, innerHeight - r.height));
-    win.style.left = `${left}px`;
-    win.style.top = `${top}px`;
+  // Keep a window (or the properties panel) on screen: all of it when there is
+  // room, and its title bar always. One nearly as wide as the screen sits in the
+  // middle, and one too tall for the room below it moves up. The properties
+  // panel, a new size with every building clicked, stays put and scrolls inside
+  // while at least half the screen is left below it.
+  _fitWin(el) {
+    if (!el || !el.isConnected || el.classList.contains('hidden') || (el.id === 'inspector' && this._docked())) return;
+    const W = innerWidth, H = innerHeight, scroll = el.scrollTop;
+    el.style.maxHeight = '';
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const left = r.width > W - 48 ? (W - r.width) / 2 : Math.min(Math.max(0, r.left), Math.max(0, W - r.width));
+    let top = Math.min(Math.max(0, r.top), H - 30);
+    if (top + r.height > H) {
+      if (el.id !== 'inspector' || H - top < Math.min(r.height, H / 2)) top = Math.max(0, H - r.height);
+      if (top + r.height > H) el.style.maxHeight = `${H - 8 - top}px`;
+    }
+    // only move what has to move, so the properties panel keeps to its corner
+    if (Math.abs(left - r.left) > 0.5) { el.style.left = `${left}px`; el.style.right = 'auto'; }
+    if (Math.abs(top - r.top) > 0.5) el.style.top = `${top}px`;
+    el.scrollTop = scroll;
   }
+
+  // fit it again whenever it changes size (new content, pictures loading in)
+  _watchFit(el) {
+    this._fitRO ||= new ResizeObserver((es) => requestAnimationFrame(() => { for (const e of es) this._fitWin(e.target); }));
+    this._fitRO.observe(el);
+  }
+
+  // on a narrow screen the properties panel sits along the bottom (see style.css)
+  _docked() { return matchMedia('(max-width: 900px)').matches; }
 
   _focusWin(win) {
     this._z = (this._z || 60) + 1;
@@ -980,6 +1010,7 @@ export class UI {
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
+      this._fitWin(el);
       try { localStorage.setItem(storeKey, JSON.stringify({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) })); } catch {}
     };
     window.addEventListener('pointermove', move);

@@ -217,7 +217,7 @@ export class MergePlacement {
     document.body.appendChild(p);
     // just under the menu bar at the top right
     const bar = document.getElementById('btnSave')?.closest('.panel');
-    if (bar) p.style.top = `${Math.round(bar.getBoundingClientRect().bottom + 8)}px`;
+    if (bar) { const top = Math.round(bar.getBoundingClientRect().bottom + 8); p.style.top = `${top}px`; p.style.maxHeight = `calc(100dvh - ${top + 8}px)`; }
     d.win = p;
     d.cv = null;
     for (const b of p.querySelectorAll('[data-side]')) b.onclick = () => { Object.assign(d.arr, besideOffset(this.NA, this.NB, b.dataset.side)); this._changed(); };
