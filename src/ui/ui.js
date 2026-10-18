@@ -39,7 +39,7 @@ import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
 import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel } from './roadSelect.js';
 import { roadRun } from '../world/roadEdit.js';
-import { perfHTML, bindPerf, readPerf } from './perfSettings.js';
+import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1308,59 +1308,76 @@ export class UI {
   }
 
   // ------------------------------------------------------- settings/help
+  // Settings, in group boxes: how the town looks, how hard the computer
+  // works, sound, pop-ups, the game, and this town's sandbox switches (and,
+  // tucked away, the Google Drive key). Every change applies as it's made.
   showSettings() {
     const g = this.game;
     const s = g.settings;
+    const town = g.world && !g.demo, guest = !!g.isGuest, sb = town ? g.world.sandbox : {};
+    const display = group('Display', `
+      ${check('stPix', s.pixelArt, 'Pixel-art look', 'Drawn small with outlines, then scaled up crisply')}
+      ${seg('stPixSize', 'Pixel size', [[1, '1×', 'Finest'], [2, '2×', 'Classic'], [3, '3×', 'Chunky'], [4, '4×', 'Retro']], s.pixelSize || 2)}
+      ${check('stAO', s.ao, 'Soft contact shadows', 'Ambient occlusion: shade where walls meet the ground')}`);
+    const sound = group('Sound', `
+      ${check('stSound', s.sound, 'Sound effects')}
+      ${check('stMusic', s.music !== false, 'Music')}
+      <div class="set-row"><span class="set-label">Music volume</span><input type="range" id="stMusicVol" min="0" max="1" step="0.05" value="${s.musicVol ?? 0.5}"></div>`);
+    const pops = group('Pop-ups', `
+      ${check('stCoins', s.popCoins, 'Coins over buildings as they earn')}
+      ${check('stToasts', s.popToasts, 'Notices')}
+      ${check('stTips', s.popTips, 'Tips when hovering')}
+      ${check('stLabels', s.popLabels, 'Name tag over the selected villager')}
+      ${check('stBlocked', s.popBlocked !== false, 'Warnings over buildings', 'With no power, water or workers')}`);
+    const game = group('Game', check('stAuto', s.autosave, 'Autosave every in-game day'));
+    const sandbox = town ? group('Sandbox · this town only', `
+      ${guest ? '<p class="set-hint">Only the host can change these.</p>' : ''}
+      ${check('stInf', sb.infiniteMoney, 'Unlimited money', '', guest)}
+      ${check('stAll', sb.unlockAll, 'Every building unlocked', '', guest)}
+      ${check('stFree', sb.freeUpgrades, 'Upgrades without their needs', '', guest)}
+      ${check('stInst', sb.instantBuild, 'Instant building', 'No builders needed', guest)}`) : '';
     this.openModal(`<h2>Settings</h2>
-      <div class="field"><label class="inline"><input type="checkbox" id="stAO" ${s.ao ? 'checked' : ''}> Ambient occlusion (soft contact shadows)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stAuto" ${s.autosave ? 'checked' : ''}> Autosave every in-game day</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stSound" ${s.sound ? 'checked' : ''}> Sound effects</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stMusic" ${s.music !== false ? 'checked' : ''}> Music</label><label class="inline">Music volume <input type="range" id="stMusicVol" min="0" max="1" step="0.05" value="${s.musicVol ?? 0.5}"></label></div>
-      <div class="field"><label>Pop-ups</label><div class="checkrow">
-        <label class="inline"><input type="checkbox" id="stCoins" ${s.popCoins ? 'checked' : ''}> Coin pop-ups</label>
-        <label class="inline"><input type="checkbox" id="stToasts" ${s.popToasts ? 'checked' : ''}> Notices</label>
-        <label class="inline"><input type="checkbox" id="stTips" ${s.popTips ? 'checked' : ''}> Hover tips</label>
-        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label>
-        <label class="inline"><input type="checkbox" id="stBlocked" ${s.popBlocked !== false ? 'checked' : ''}> Warnings over buildings with no power, water or workers</label></div></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
-      <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
-      ${perfHTML(s)}
-      ${g.world && !g.demo ? `${g.isGuest ? '<div class="note">Only the host can change the sandbox switches of this town.</div>' : ''}
-      <div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlimited money (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlock every building (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
-      <div class="field"><label>Google OAuth Client ID (for Drive saves)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div>
-      <div class="actions"><button class="btn primary" id="stOk">Done</button><button class="btn" id="stMenu">Quit to title</button></div>`, (c) => {
+      <p class="lead">Changes apply as you make them.</p>
+      <div class="set-cols"><div>${display}${perfHTML(s)}</div><div>${sound}${pops}${game}${sandbox}</div></div>
+      <details class="set-more"><summary>Advanced</summary>
+        <div class="field"><label for="stGcid">Google OAuth client ID (for saving to Google Drive)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div></details>
+      <div class="actions set-actions"><button class="btn" id="stMenu">Quit to title</button><span style="flex:1"></span><button class="btn primary" id="stOk">Close</button></div>`, (c) => {
+      c.classList.add('settings-win');
+      bindSegs(c);
       bindPerf(c);
-      c.querySelector('#stOk').onclick = () => {
+      const val = (id) => c.querySelector(`#${id}`);
+      const syncPixel = () => { for (const b of val('stPixSize').querySelectorAll('button')) b.disabled = !val('stPix').checked; };
+      syncPixel();
+      const apply = (e) => {
         readPerf(c, s);
-        s.ao = c.querySelector('#stAO').checked;
-        s.pixelArt = c.querySelector('#stPix').checked;
-        s.pixelSize = Number(c.querySelector('#stPixSize').value);
-        const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll'), free = c.querySelector('#stFree'), inst = c.querySelector('#stInst');
-        if (inf && all && free && !g.isGuest) {
-          const opts = { infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked, instantBuild: !!inst?.checked };
-          if (Object.entries(opts).some(([k, v]) => !!g.world.sandbox[k] !== v)) g.cmd({ t: 'sandbox', opts }, (r) => { if (r.ok) this.refreshAfterSandbox(); });
-        }
-        s.autosave = c.querySelector('#stAuto').checked;
-        s.sound = c.querySelector('#stSound').checked;
-        s.music = c.querySelector('#stMusic').checked;
-        s.musicVol = Number(c.querySelector('#stMusicVol').value);
+        s.pixelArt = val('stPix').checked;
+        s.pixelSize = Number(segValue(c, 'stPixSize'));
+        s.ao = val('stAO').checked;
+        s.sound = val('stSound').checked;
+        s.music = val('stMusic').checked;
+        s.musicVol = Number(val('stMusicVol').value);
+        s.popCoins = val('stCoins').checked;
+        s.popToasts = val('stToasts').checked;
+        s.popTips = val('stTips').checked;
+        s.popLabels = val('stLabels').checked;
+        s.popBlocked = val('stBlocked').checked;
+        s.autosave = val('stAuto').checked;
+        syncPixel();
         g.music.apply();
         this.syncMusicButton();
-        s.popCoins = c.querySelector('#stCoins').checked;
-        s.popToasts = c.querySelector('#stToasts').checked;
-        s.popTips = c.querySelector('#stTips').checked;
-        s.popLabels = c.querySelector('#stLabels').checked;
-        s.popBlocked = c.querySelector('#stBlocked').checked;
         this.syncPopButton();
-        const id = c.querySelector('#stGcid').value.trim();
-        if (id !== g.drive.clientId) g.drive.setClientId(id);
         g.applySettings();
-        this.closeModal();
+        // this town's sandbox switches go through the host
+        if (town && !guest && e && /^st(Inf|All|Free|Inst)$/.test(e.target.id)) {
+          const opts = { infiniteMoney: val('stInf').checked, unlockAll: val('stAll').checked, freeUpgrades: val('stFree').checked, instantBuild: val('stInst').checked };
+          if (Object.entries(opts).some(([k, v]) => !!g.world.sandbox[k] !== v)) g.cmd({ t: 'sandbox', opts }, (r) => { if (r.ok) this.refreshAfterSandbox(); });
+        }
+        if (e && e.target.id === 'stGcid') { const id = val('stGcid').value.trim(); if (id !== g.drive.clientId) g.drive.setClientId(id); }
       };
-      c.querySelector('#stMenu').onclick = () => { this.closeModal(); g.toTitle(); };
+      c.addEventListener('change', apply);
+      val('stMusicVol').addEventListener('input', apply);
+      val('stOk').onclick = () => this.closeModal();
+      val('stMenu').onclick = () => { this.closeModal(); g.toTitle(); };
     });
   }
 

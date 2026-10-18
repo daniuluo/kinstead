@@ -662,3 +662,28 @@ table.hap.big td { padding: 4px 8px; }
 .sec.farm .produce { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4px; }
 .sec.farm .produce .btn.on { background: #fff1c0; box-shadow: 0 0 0 2px #d8a630, var(--raised); font-weight: 700; }
 .sec.farm h5 + .note, .sec.farm .note { margin-bottom: 4px; }
+
+/* Settings: group boxes in two columns, rows of buttons for a choice of a few */
+.modal-card.settings-win { width: min(760px, calc(100vw - 16px)); }
+.set-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: start; }
+.set-group { border: 1px solid var(--lo); box-shadow: 1px 1px 0 var(--hi), inset 1px 1px 0 var(--hi); margin: 0 0 10px; padding: 4px 10px 8px; min-width: 0; }
+.set-group legend { font-size: 12px; font-weight: 700; padding: 0 4px; }
+.set-check { display: grid; grid-template-columns: auto 1fr; gap: 0 7px; align-items: start; margin: 5px 0; font-size: 13px; cursor: pointer; }
+.set-check input { margin: 1px 0 0; accent-color: var(--navy); }
+.set-check small { display: block; font-size: 11px; color: var(--ink-2); line-height: 1.3; margin-top: 1px; }
+.set-check:has(input:disabled) { opacity: 0.55; cursor: default; }
+.set-row { display: grid; grid-template-columns: 7.6em 1fr; gap: 6px; align-items: center; margin: 6px 0; font-size: 13px; }
+.set-row input[type=range] { width: 100%; margin: 0; accent-color: var(--navy); }
+.set-hint { font-size: 12px; color: var(--ink-2); margin: 2px 0 6px; line-height: 1.35; }
+.set-presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg { display: flex; gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: var(--face); box-shadow: var(--raised); height: 24px; padding: 0 8px; font: inherit; font-size: 12px; cursor: pointer; flex: 1 1 auto; }
+.seg button.on { box-shadow: var(--sunken); background: #b5b5b5; font-weight: 700; }
+.seg button:disabled { color: #888; cursor: default; }
+.set-more { margin: 2px 0 8px; font-size: 13px; }
+.set-more summary { cursor: pointer; font-weight: 700; font-size: 12px; }
+.set-actions { display: flex; align-items: center; }
+@media (max-width: 640px) {
+  .set-cols { grid-template-columns: 1fr; }
+  .set-row { grid-template-columns: 1fr; gap: 3px; }
+}
