@@ -14,6 +14,7 @@ export const CONFIG = {
   CART_SPEED: 0.36,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
+  PLOT_PRICE: 60,           // a neighbouring plot of land, bought to grow a building's plot
   AUTOSAVE_SECONDS: 90,     // also this often in real time, paused or not
   VIEW_HEIGHT: 22,         // world units visible vertically at zoom 1
 };

@@ -2,7 +2,7 @@
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES } from '../defs.js';
-import { isOpen, capOf, isExpanded, sizeK, scaledLevel } from '../world/world.js';
+import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
@@ -397,24 +397,26 @@ export class UI {
     const cards = options.map((o, i) => {
       const td = BUILDINGS[o.type];
       const restylable = td.cat === 'residential' || td.cat === 'commercial';
-      const up = w.upgradeCheck(b, o.type, restylable && this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : undefined);
+      const up = w.upgradeCheck(b, o.extend ? 'extend' : o.type, restylable && this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : undefined);
       const n = up.next;
       const accent = branching ? (td.accent || '#4f6a3a') : '#3c6e3c';
       const icon = branching ? (td.pathIcon || 'alt_route') : 'upgrade';
       const bigger = o.type === b.type && (n.seats || 0) > (cur.seats || 0) && n.teaches === cur.teaches;
-      const tabName = branching ? `Path ${'ABCD'[i]} · ${bigger ? 'Larger' : o.type === b.type ? 'Next level' : esc(td.branch || td.name)}` : 'Next level';
+      const tabName = o.extend ? 'Extend across the plot' : branching ? `Path ${'ABCDEFGH'[i]} · ${bigger ? 'Larger' : o.type === b.type ? 'Next level' : esc(td.branch || td.name)}` : 'Next level';
       const unmet = up.reqs.filter(r => !r.met);
       const status = up.ok ? '✓ Ready' : unmet.some(r => r.tech) ? '🔒 Research' : `${unmet.length} to go`;
       // where this path leads
-      const later = o.type === b.type ? td.levels.slice(o.level + 1) : td.levels.slice(1);
-      const chain = [`<span class="now">${esc(cur.name)}</span>`, `<span class="next">${esc(n.name)}</span>`, ...later.map(L => `<span>${esc(L.name)}</span>`)].join('<i>▸</i>');
+      const later = td.levels.slice(o.level + 1);
+      const chain = o.extend ? `<span class="now">${esc(cur.name)}</span><i>▸</i><span class="next">${esc(n.name)}, built out across its plot</span>`
+        : [`<span class="now">${esc(cur.name)}</span>`, `<span class="next">${esc(n.name)}</span>`, ...later.map(L => `<span>${esc(L.name)}</span>`)].join('<i>▸</i>');
       const styled = td.cat === 'residential' || td.cat === 'commercial';
       const look = styled ? (this.lookChoice.has(b.id) ? this.lookChoice.get(b.id) : b.look || null) : null;
       let c = `<div class="path" style="--accent:${accent}">`;
       c += `<div class="path-tab"><span class="ms">${icon}</span><span>${tabName}</span><span class="tag ${up.ok ? 'ok' : ''}">${status}</span></div><div class="path-body">`;
       c += '<div class="path-top">';
       if (styled) c += `<img class="preview" src="${thumb(o.type, o.level, b.variant, b.flavor, look)}" alt="">`;
-      c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${cur.name.toLowerCase()}.`)}</div></div></div>`;
+      const who = cur.housing ? 'households' : cur.seats ? 'pupils' : td.park ? 'visitors' : 'workers';
+      c += `<div><div class="path-name">${o.extend ? `Extend the ${esc(cur.name.toLowerCase())}` : esc(n.name)}</div><div class="path-desc">${esc(o.extend ? `Build the ${cur.name.toLowerCase()} out across the land it took: room for ${Math.round((sizeKFor(b.type, b.w ?? b.size, b.d ?? b.size) / sizeK(b) - 1) * 100)}% more ${who}.` : o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${cur.name.toLowerCase()}.`)}</div></div></div>`;
       c += `<div class="chain">${chain}</div>`;
       c += this._tilesHTML(cur, n);
       c += needsNoteHTML(b, o.type, o.level);
@@ -425,7 +427,7 @@ export class UI {
       }
       c += `<div class="req">${[...unmet, ...up.reqs.filter(r => r.met)].map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
       if (up.moveOut) c += `<div class="warnline">⚠ Room for fewer people: ${up.moveOut} resident${up.moveOut > 1 ? 's' : ''} will move out</div>`;
-      c += `<button class="btn primary path-go" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? `Build ${esc(n.name)}` : `Upgrade to ${esc(n.name)}`} · $${fmt(up.cost ?? n.cost)}</button>`;
+      c += `<button class="btn primary path-go" data-act="upgrade" data-type="${o.extend ? 'extend' : o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${o.extend ? 'Extend it' : branching ? `Build ${esc(n.name)}` : `Upgrade to ${esc(n.name)}`} · $${fmt(up.cost ?? n.cost)}</button>`;
       if (up.restyle) c += `<div class="note">Includes $${fmt(up.restyle)} for the new style. Keeping the current style costs $${fmt(n.cost)}.</div>`;
       return c + '</div></div>';
     });
@@ -514,7 +516,10 @@ export class UI {
     if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
     if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
     if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
-    if (isExpanded(b)) rows.push(['Plot', `${(b.w ?? b.size) * (b.d ?? b.size) >= 4 ? '2×2 estate' : 'Double plot'} · room for ${Math.round((sizeK(b) - 1) * 100)}% more`]);
+    if (isExpanded(b)) {
+      const plot = (b.w ?? b.size) * (b.d ?? b.size) >= 4 ? '2×2 estate' : 'Double plot';
+      rows.push(['Plot', b.spare ? `${plot} · not built on yet (see Upgrade)` : `${plot} · room for ${Math.round((sizeK(b) - 1) * 100)}% more`]);
+    }
     else if (def.estate) rows.push(['Plot', '2×2 estate']);
     if (L.income) {
       let v = sim.incomeOf(b);
@@ -580,7 +585,7 @@ export class UI {
         const estate = grow[0].kind === 'estate';
         const into = growsInto(b.type, (b.w ?? b.size) * (b.d ?? b.size) * 2).map(t => BUILDINGS[t].levels[estate ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
         const who = L.housing ? 'households' : L.seats ? 'students' : def.park ? 'visitors' : 'workers';
-        h += `<div class="sec"><h5>⇲ ${estate ? 'Grow into a 2×2 estate' : 'Expand onto a neighbouring plot'}</h5><div class="note">${estate ? 'A 2×2 estate' : 'A double plot'} holds 50% more ${who} and opens up ${into.length ? `the ${esc(into.join(' or the '))}` : 'bigger buildings'} to upgrade into. Builders extend it while it stays open.</div><div class="actions col">`;
+        h += `<div class="sec"><h5>⇲ ${estate ? 'Take land for a 2×2 estate' : 'Take a neighbouring plot'}</h5><div class="note">Buy the land first: the ${esc(L.name.toLowerCase())} stays as it is and the new land becomes its garden. Then choose what to build across ${estate ? 'the 2×2 estate' : 'the double plot'} under Upgrade: ${into.length ? `the ${esc(into.join(' or the '))}, or ` : ''}the ${esc(L.name.toLowerCase())} extended to hold 50% more ${who}.</div><div class="actions col">`;
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
           const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · $${fmt(o.cost)}`;
@@ -699,7 +704,7 @@ export class UI {
             this.lookChoice.delete(id);
             g.sfx('upgrade');
             if (r.instant || !b.con) this.toast(`Upgraded to ${BUILDINGS[b.type].levels[b.level].name}!`, 'good', '⬆️');
-            else this.toast(`Builders will rebuild it as a ${BUILDINGS[b.con.toType || b.type].levels[b.con.to].name}`, 'good', '🏗️');
+            else this.toast(b.con.extend ? 'Builders will extend it across its plot' : `Builders will rebuild it as a ${BUILDINGS[b.con.toType || b.type].levels[b.con.to].name}`, 'good', '🏗️');
           } else if (!r.ok) this.toast(r.reason || 'Cannot upgrade yet', 'bad');
           if (this.selection) this.renderInspector(true);
         });
@@ -725,7 +730,7 @@ export class UI {
         g.cmd({ t: 'expand', id: sel.id, dir: Number(data.dir), kind: data.kind }, (r) => {
           if (!r.ok) { this.toast(r.reason || "Can't expand that way", 'bad'); return; }
           g.sfx('build');
-          this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'Builders will extend it onto the new plot', 'good', '🏗️');
+          this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'The plot is yours: choose what to build on it under Upgrade', 'good', '🏡');
           if (this.selection) this.renderInspector(true);
         });
         break;
