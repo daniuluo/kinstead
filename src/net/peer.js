@@ -95,7 +95,7 @@ export async function listen({ onLink, onTrouble = null }) {
   const Peer = await loadPeerJS();
   for (let tries = 0; ; tries++) {
     const code = newCode();
-    const peer = new Peer(PREFIX + code, { debug: 1 });
+    const peer = new Peer(PREFIX + code, { debug: 0 });
     try { await whenOpen(peer); } catch (e) {
       try { peer.destroy(); } catch {}
       if (e && e.type === 'unavailable-id' && tries < 4) continue;
@@ -116,7 +116,7 @@ export async function listen({ onLink, onTrouble = null }) {
 // Guest: connect to the town with this invite code.
 export async function connect(code) {
   const Peer = await loadPeerJS();
-  const peer = new Peer({ debug: 1 });
+  const peer = new Peer({ debug: 0 });
   try { await whenOpen(peer); } catch (e) { try { peer.destroy(); } catch {} throw new Error(friendly(e)); }
   const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'raw' });
   return new Promise((resolve, reject) => {
