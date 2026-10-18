@@ -19,9 +19,10 @@ export class Overlay {
     this.world = world;
     this.scene = scene;
     this.cursor = tileMesh(6);
+    this.remote = tileMesh(5);
     this.map = tileMesh(3);
     this.routes = new THREE.Group();
-    scene.add(this.cursor, this.map, this.routes);
+    scene.add(this.cursor, this.remote, this.map, this.routes);
     this._c = new THREE.Color();
   }
 
@@ -46,7 +47,12 @@ export class Overlay {
   }
 
   // tiles: [{x, z, color, alpha, border}]
-  setCursor(tiles) {
+  setCursor(tiles) { this._tiles(this.cursor, tiles); }
+
+  // Other players' pointers and selections in multiplayer (same tiles, own layer).
+  setRemote(tiles) { this._tiles(this.remote, tiles); }
+
+  _tiles(mesh, tiles) {
     const pos = [], col = [];
     const c = this._c;
     for (const tl of tiles) {
@@ -58,7 +64,7 @@ export class Overlay {
         this._rim(pos, col, tl.x, tl.z, c, Math.min(1, (tl.alpha ?? 0.35) + 0.45));
       }
     }
-    this._apply(this.cursor, pos, col);
+    this._apply(mesh, pos, col);
   }
 
   _rim(pos, col, x, z, color, alpha) {
@@ -133,7 +139,7 @@ export class Overlay {
 
   dispose() {
     this.setRoutes([]);
-    this.scene.remove(this.cursor, this.map, this.routes);
-    this.cursor.geometry.dispose(); this.map.geometry.dispose();
+    this.scene.remove(this.cursor, this.remote, this.map, this.routes);
+    this.cursor.geometry.dispose(); this.remote.geometry.dispose(); this.map.geometry.dispose();
   }
 }

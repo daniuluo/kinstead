@@ -32,6 +32,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Time and seasons** — sunrise and sunset, lit windows, lamps, lantern-carrying villagers, fireflies, then spring blossom, autumn leaves and winter snow.
 - **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Four sandbox switches, available for a new game or from Settings: unlimited money, unlock every building, upgrade without meeting needs, and instant construction.
 - **Pop-ups** — money pop-ups, notices, hover tips and the name tag over a followed villager can each be switched off in Settings, or all at once with the bell button or `N`.
+- **Multiplayer** — host your town and send friends a short invite code; they join from their own browsers and build the same town with you, live. Everyone sees each other's cursors and what they are building. See [Multiplayer](#multiplayer).
 - **Saves** — in this browser (with an autosave every day), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
 
 ## Controls
@@ -50,9 +51,38 @@ A little isometric village builder that runs in your browser — pixel-art rende
 | `O` · `B` · `L` · `P` · `H` | Overlays · budget · transit lines · villagers · help |
 | `N` | Hide / show pop-ups |
 | `U` · `K` · `I` | Utilities menu · research · issues panel |
+| `M` | Multiplayer: host this town or join one |
 | `Enter` / `Backspace` | Finish / undo stops while creating a transit line |
 | `Ctrl+S` · `Ctrl+Shift+S` | Quick save to the browser · download the save as `.json` |
 | `Esc` / right-click | Cancel the tool or close the front window |
+
+## Multiplayer
+
+Build one town together, live, with up to eight players.
+
+**To host:** open the town you want to share and press `M` (or the people button in the top bar), then **Host this town**. On the title screen, **Multiplayer…** offers *New village and host* or *Continue and host*. You get a six-character invite code such as `K7Q-M2P`. Send it to your friends, or use **Copy invite link** to send a link that opens the game with the code filled in. Keep your tab open: your computer runs the town for everyone.
+
+**To join:** open the game, choose **Multiplayer…** on the title screen (or press `M` in a town of your own, which is autosaved first), type your name and the code, and press **Join**. The host's town loads and from then on follows the host's live. Everything you do (building, roads, track, terrain and trees, demolishing, upgrades with a chosen style, expanding, joining and moving buildings, research, taxes, transit lines, the town's name and the game speed) is sent to the host and applied for everyone. The sandbox switches stay with the host.
+
+The players box in the top bar shows who is connected. Each player's cursor appears in the others' towns as a ring in their colour with their name and what they are holding, and whatever building they have selected is outlined. If a guest leaves, everyone else carries on. If the host stops hosting or closes the tab, the guests are told and can keep playing the town on their own, save it in their browser or download it.
+
+### How it works
+
+- **Host-authoritative.** Only the host runs the simulation: the clock and speed, money, construction, villagers' homes, jobs and schools, arrivals and departures, transit and research. Guests don't run their own copy of the economy, which would drift apart (the simulation uses `Math.random` in many places).
+- **One command dispatcher.** Every player action, in single-player too, is a small command object such as `{ t: 'place', type: 'house', x: 10, z: 12 }`, handled by [`src/commands.js`](src/commands.js). Single-player and the host apply it at once. A guest sends it to the host, which checks it with exactly the same `World` rules it uses for its own actions. A command carries only what the player chose, never options that bend the rules, and malformed ones are refused.
+- **Snapshot, then deltas.** A guest joins with a snapshot of the town: an ordinary save plus each building's entrance and each villager's school place. Five times a second the host compares the town with what it last sent and sends only what changed: buildings and building sites, villagers, roads, track, land heights, trees per tile, transit lines, money, research and the clock. Every 15 seconds it sends every building and villager in full (a keyframe), so nothing can drift for long. A ready-grown town of 200 buildings and 650 villagers costs the host about 0.6 ms per update and under 20 KB/s at 32× speed ([`src/net/sync.js`](src/net/sync.js)).
+- **Villagers on guests are simulated locally, for looks.** Who lives and works where, and who arrives, leaves, is born or dies, comes from the host. A guest's own copy of the routines then walks them about, puts builders to work on the scaffolding and runs the coaches and trains, so its streets look alive without streaming hundreds of positions. Individual villagers may therefore be in a different spot on each screen. The money from shop visits and fares is always the host's ([`src/net/replica.js`](src/net/replica.js)).
+- **A tab in the background.** A browser gives a background tab no animation frames, so a host whose tab is hidden keeps the town running for its guests in larger, undrawn steps. Browsers may slow such a tab down further after a while, so a host should keep the game in view.
+
+### Why PeerJS
+
+The site is static (GitHub Pages), so players need a public way to find each other. Hearthvale uses [PeerJS](https://peerjs.com/) 1.5.5, loaded from jsDelivr with a pinned version and a Subresource Integrity checksum, the first time someone hosts or joins. It was picked over Trystero and similar options for three reasons:
+
+- Its free cloud signalling server lets the host claim a chosen peer id, so the invite code simply *is* the peer id: `K7Q-M2P` is the peer `hearthvale-K7QM2P`.
+- It reports an unknown id explicitly, so a wrong or expired code gets a clear "no town is open with that code" message rather than an empty room.
+- It configures STUN and PeerJS's public TURN relay by default, so players behind awkward home networks can usually still connect.
+
+The signalling server only introduces the browsers. The town itself travels directly between them over a WebRTC data channel, or through the TURN relay when no direct route exists. Problems get a plain message: the library couldn't load, the PeerJS server can't be reached, no town has that code, the connection couldn't be opened (a strict firewall), or the town is full.
 
 ## How the buildings are made
 
@@ -93,6 +123,7 @@ A Client ID isn't a secret, so committing it is fine.
 ```
 index.html, style.css     page shell and the 90s-desktop UI
 src/main.js, game.js      boot + game orchestrator (loop, saving, overlays)
+src/commands.js           every player action as a checked command (local and multiplayer)
 src/config.js, defs.js    tunables and the building catalogue
 src/world/                terrain generation, world rules, demo-town grower
 src/sim/                  economy & migration, villagers, transit, pathfinding
@@ -100,7 +131,9 @@ src/render/               renderer & pixel pass, sky, terrain painter,
                           procedural buildings, nature, particles, overlays
 src/ui/                   HUD & dialogs, input/tools, thumbnails, sound
 src/save/                 save format + local slots, Google Drive
+src/net/                  multiplayer: sessions, sync, guests' replica sim, PeerJS links, cursors
 scripts/check.js          headless smoke test
+scripts/net-check.js      headless multiplayer test
 scripts/playtest.js       headless playtest bot
 ```
 
@@ -112,6 +145,12 @@ node scripts/check.js
 ```
 
 This builds every building model at every level, generates 25 valleys, simulates a town for six in-game days (walking villagers, a coach line, a train looping forward, a dead-end rail line refused), checks that animals never enter buildings or leave their habitat, and round-trips a save.
+
+```bash
+node scripts/net-check.js
+```
+
+The multiplayer test runs a host and two guests in one process, joined by in-memory links. It checks the command dispatcher (malformed or rule-bending commands are refused, the sandbox switches are host-only), has a guest build, lay roads, research, set taxes and speed, upgrade in a style, join, expand, move, terraform, plant and demolish, and open a coach line. It runs three days at 8× and checks that the towns stay identical throughout, that a keyframe repairs anything that drifted, that a second guest can join mid-game, that cursors are relayed, and that guests are told when the host closes the town. `npm run check` runs both tests.
 
 ### Playtest
 

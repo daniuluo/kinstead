@@ -22,6 +22,10 @@ import { serialize, deserialize, LocalSaves, downloadJSON, readJSONFile, saveFil
 import { Drive } from './save/gdrive.js';
 import { randomSeed, RNG } from './util/rng.js';
 import { townName } from './util/names.js';
+import { runCommand } from './commands.js';
+import { ReplicaSim, ReplicaConstruction } from './net/replica.js';
+import { worldFromSnapshot } from './net/sync.js';
+import { RemoteCursors } from './net/cursors.js';
 
 const SETTINGS_KEY = 'hearthvale.settings';
 
@@ -44,10 +48,13 @@ export class Game {
     this._overlayT = 0;
     this._toastT = { arrived: -99, departed: -99 };
     this.time = 0;
+    this.net = null;         // a multiplayer session (src/net/session.js), when hosting or joined
+    this.replica = false;    // true while this town is a guest's copy of the host's
     this.audio = new Sfx();
     this.lantern = new Particles(this.renderer.scene, 400, { additive: true });
     this.ui = new UI(this);
     this.input = new Input(this);
+    this.cursors = new RemoteCursors(this);
 
     this.on('coins', (c) => this.ui.coin(c.x, c.y, c.z, c.v));
     this.on('day', () => this._onDay());
@@ -81,31 +88,59 @@ export class Game {
     this.on('transit:routes', () => this.updateRouteOverlay());
 
     this._bindFileDrop();
+    // closing or reloading the tab: say goodbye rather than leave the others waiting
+    window.addEventListener('pagehide', () => { if (this.net) this.net.close(); });
     this.clock = performance.now();
     // one bad frame must never stop the game: log it and carry on
     const loop = () => {
+      this._raf = performance.now();
       try { this.frame(); } catch (e) { if (!this._frameErr) { this._frameErr = true; console.error('Frame error (the game keeps running):', e); } }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+    // a tab in the background gets no animation frames: a host keeps its town
+    // running for its guests in steps of at most a tenth of a second, without drawing
+    setInterval(() => {
+      if (!this.net || !this.net.isHost || performance.now() - (this._raf || 0) < 500) return;
+      try {
+        for (let behind = Math.min(3000, performance.now() - this.clock); behind > 1; behind -= 100) {
+          this.clock = performance.now() - Math.min(100, behind);
+          this.frame(false);
+        }
+      } catch (e) { console.error('Background frame error:', e); }
+    }, 250);
   }
 
   on(e, fn) { (this._ev[e] ||= []).push(fn); }
+  off(e, fn) { const l = this._ev[e]; if (l) this._ev[e] = l.filter(f => f !== fn); }
   emit(e, d) { for (const fn of this._ev[e] || []) fn(d); }
 
+  get isGuest() { return !!(this.net && this.net.isGuest); }
+
+  // Every change a player makes goes through here (see commands.js): applied
+  // at once in single-player and by a host, or sent to the host by a guest.
+  // done(result) runs when it has been applied (for a guest, when the host answers).
+  cmd(c, done = null) {
+    if (this.isGuest) { this.net.request(c, done); return null; }
+    const r = runCommand(this, c);
+    if (done) done(r);
+    return r;
+  }
+
   // ------------------------------------------------------------ lifecycle
-  load(world, { fresh = false, demo = false } = {}) {
+  load(world, { fresh = false, demo = false, replica = false } = {}) {
     this._teardown();
     this.world = world;
     this.demo = demo;
+    this.replica = replica;
     this.paths = new PathFinder(world);
     this.view = new WorldView(world, this.renderer);
-    this.sim = new Sim(this);
+    this.sim = replica ? new ReplicaSim(this) : new Sim(this);
     this.transit = new Transit(this);
     if (fresh) this.sim.seedFounders(); else this.sim.recompute();
     this.agents = new Agents(this);
     this.animals = new Animals(this);
-    this.construction = new Construction(this);
+    this.construction = replica ? new ReplicaConstruction(this) : new Construction(this);
     world.on('building:done', (e) => this._onBuilt(e));
     world.on('land:sold', (e) => this._onLand(e));
     world.on('research:done', (id) => this._onResearch(id));
@@ -151,6 +186,7 @@ export class Game {
   }
 
   newGame({ name, seed, N, sandbox }) {
+    this.endNet();
     const w = World.createNew({ N, seed, name, sandbox });
     this.load(w, { fresh: true });
     document.getElementById('title').classList.add('hidden');
@@ -160,14 +196,39 @@ export class Game {
 
   loadData(data) {
     const w = deserialize(data);
+    this.endNet();
     this.load(w, { fresh: false });
     document.getElementById('title').classList.add('hidden');
   }
 
   toTitle() {
-    if (this.world && !this.demo && this.settings.autosave) this.saveLocal('autosave', true);
+    if (this.world && !this.demo && !this.replica && this.settings.autosave) this.saveLocal('autosave', true);
+    this.endNet();
     this.startDemo();
     this.showTitle();
+  }
+
+  // ---------------------------------------------------------- multiplayer
+  // A guest's copy of the host's town has arrived (see net/session.js).
+  joinTown(snap, session) {
+    if (this.world && !this.demo && !this.replica && this.settings.autosave) this.saveLocal('autosave', true);
+    const w = worldFromSnapshot(snap);
+    if (this.net && this.net !== session) this.endNet();
+    this.net = session;
+    this.load(w, { replica: true });
+    this.applySpeed(snap.clock ? snap.clock[2] : 1);
+    this.sim.syncClock(w.day, w.hours);
+    document.getElementById('title').classList.add('hidden');
+  }
+
+  // Stop hosting (guests are told the town has closed), or leave the host's town.
+  endNet() {
+    const n = this.net;
+    if (!n) return;
+    this.net = null;
+    n.close();
+    this.cursors.clear();
+    this.ui.renderNetBox?.();
   }
 
   showTitle() {
@@ -183,6 +244,7 @@ export class Game {
     };
     document.getElementById('btnNew').onclick = () => this.ui.showNewGame((o) => this.newGame(o));
     document.getElementById('btnLoad').onclick = () => this.ui.showSaves('local');
+    document.getElementById('btnMulti').onclick = () => this.ui.showMultiplayer();
   }
 
   // --------------------------------------------------------------- saving
@@ -252,7 +314,8 @@ export class Game {
       if (U.water.demand > U.water.supply) this.ui.toast(`Water runs short: ${U.water.demand} villagers, enough for ${U.water.supply}. Build wells, a pump or a water tower.`, 'bad', '💧');
     }
     this.transit.planCarts();
-    if (this.settings.autosave && (this.world.day % CONFIG.AUTOSAVE_DAYS === 0)) this.saveLocal('autosave', true);
+    // a guest's copy of someone else's town is not their autosave
+    if (this.settings.autosave && !this.replica && (this.world.day % CONFIG.AUTOSAVE_DAYS === 0)) this.saveLocal('autosave', true);
   }
 
   _onMilestone(t) {
@@ -272,7 +335,10 @@ export class Game {
   }
 
   // ------------------------------------------------------------- controls
-  setSpeed(s) {
+  // The clock belongs to the town (in multiplayer the host's), so speed is a command too.
+  setSpeed(s) { this.cmd({ t: 'speed', s }); }
+
+  applySpeed(s) {
     if (s === 0 && this.speed) this.prevSpeed = this.speed;
     this.speed = s;
   }
@@ -411,7 +477,7 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- frame
-  frame() {
+  frame(render = true) {
     const now = performance.now();
     let dt = (now - this.clock) / 1000;
     this.clock = now;
@@ -447,9 +513,12 @@ export class Game {
       }
       this._overlayT += dt;
       if (this.overlayMode && this._overlayT > 1) { this._overlayT = 0; this.refreshOverlay(); }
+      if (this.net) this.net.update(dt);
+      if (render) this.cursors.update();
       this.input.update(dt);
       if (!this.demo) this.ui.update(dt);
     }
+    if (!render) return;
     this.renderer.updateCamera(dt);
     this.renderer.render();
   }

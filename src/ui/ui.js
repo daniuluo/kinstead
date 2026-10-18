@@ -28,6 +28,7 @@ const HAPPY = {
 };
 
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
+import { showMultiplayer, renderNetBox } from './multiplayer.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 
@@ -123,6 +124,8 @@ export class UI {
     this._issueCycle = {};
     this.syncPopButton();
     $('btnSave').onclick = () => this.showSaves();
+    $('btnNet').onclick = () => this.showMultiplayer();
+    $('netBox').onclick = () => this.showMultiplayer();
     $('btnSettings').onclick = () => this.showSettings();
     $('btnHelp').onclick = () => this.showHelp();
     $('townBox').onclick = () => this.showRename();
@@ -630,27 +633,30 @@ export class UI {
         break;
       }
       case 'upgrade': {
-        const look = this.lookChoice.has(sel.id) ? this.lookChoice.get(sel.id) : undefined;
+        const id = sel.id;
+        const look = this.lookChoice.has(id) ? this.lookChoice.get(id) : undefined;
         this.preview = null;
         g.view.setPreview(null, null);
-        const r = w.upgradeBuilding(sel.id, data.type || null, look);
-        if (r.ok) this.lookChoice.delete(sel.id);
-        if (r.ok) {
+        g.cmd({ t: 'upgrade', id, to: data.type || null, look }, (r) => {
           const b = r.building;
-          g.sfx('upgrade');
-          if (r.instant) this.toast(`Upgraded to ${BUILDINGS[b.type].levels[b.level].name}!`, 'good', '⬆️');
-          else this.toast(`Builders will rebuild it as a ${BUILDINGS[b.con.toType || b.type].levels[b.con.to].name}`, 'good', '🏗️');
-        } else this.toast(r.reason || 'Cannot upgrade yet', 'bad');
-        this.renderInspector(true);
+          if (r.ok && b) {
+            this.lookChoice.delete(id);
+            g.sfx('upgrade');
+            if (r.instant || !b.con) this.toast(`Upgraded to ${BUILDINGS[b.type].levels[b.level].name}!`, 'good', '⬆️');
+            else this.toast(`Builders will rebuild it as a ${BUILDINGS[b.con.toType || b.type].levels[b.con.to].name}`, 'good', '🏗️');
+          } else if (!r.ok) this.toast(r.reason || 'Cannot upgrade yet', 'bad');
+          if (this.selection) this.renderInspector(true);
+        });
         break;
       }
       case 'merge': {
-        const r = w.mergeBuildings(sel.id, Number(data.id));
-        if (r.ok) {
-          g.sfx('build');
-          this.toast(`Joining them into a ${BUILDINGS[r.building.type].levels[r.building.level].name}`, 'good', '🏗️');
-          this.inspect({ kind: 'building', id: r.building.id });
-        } else this.toast(r.reason || "Can't join these", 'bad');
+        g.cmd({ t: 'merge', a: sel.id, b: Number(data.id) }, (r) => {
+          if (r.ok && r.building) {
+            g.sfx('build');
+            this.toast(`Joining them into a ${BUILDINGS[r.building.type].levels[r.building.level].name}`, 'good', '🏗️');
+            this.inspect({ kind: 'building', id: r.building.id });
+          } else if (!r.ok) this.toast(r.reason || "Can't join these", 'bad');
+        });
         break;
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
@@ -660,11 +666,12 @@ export class UI {
         if ((data.kind === 'takeover' || data.kind === 'strip') && this.confirmExpand !== key) { this.confirmExpand = key; this.renderInspector(true); break; }
         this.confirmExpand = null;
         g.input.previewTiles = null;
-        const r = w.expandBuilding(sel.id, Number(data.dir), data.kind);
-        if (!r.ok) { this.toast(r.reason, 'bad'); break; }
-        g.sfx('build');
-        this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'Builders will extend it onto the new plot', 'good', '🏗️');
-        this.renderInspector(true);
+        g.cmd({ t: 'expand', id: sel.id, dir: Number(data.dir), kind: data.kind }, (r) => {
+          if (!r.ok) { this.toast(r.reason || "Can't expand that way", 'bad'); return; }
+          g.sfx('build');
+          this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'Builders will extend it onto the new plot', 'good', '🏗️');
+          if (this.selection) this.renderInspector(true);
+        });
         break;
       }
       case 'look':
@@ -682,24 +689,31 @@ export class UI {
       case 'demolish': {
         const b = w.buildings.get(sel.id);
         if (!b) break;
-        const r = w.demolishBuilding(b.id);
-        if (!r.ok) { this.toast(r.reason || "Can't demolish that", 'bad'); break; }
-        g.sfx('demolish');
-        if (r.instant) this.inspect(null);
-        else { this.toast('A demolition crew is on its way; the people inside have moved out', 'info', '🏗️'); this.renderInspector(true); }
+        g.cmd({ t: 'demolish', id: b.id }, (r) => {
+          if (!r.ok) { this.toast(r.reason || "Can't demolish that", 'bad'); return; }
+          g.sfx('demolish');
+          if (r.instant) { if (this.selection === sel) this.inspect(null); }
+          else { this.toast('A demolition crew is on its way; the people inside have moved out', 'info', '🏗️'); if (this.selection) this.renderInspector(true); }
+        });
         break;
       }
       case 'follow': g.setFollow(g.follow === sel.id ? null : sel.id); this.renderInspector(true); break;
       case 'people': this.showPeople(); break;
       case 'roadup': {
         const L = w.roadAt(sel.x, sel.z);
-        const r = w.placeRoads([[sel.x, sel.z]], L + 1);
-        if (!r.placed) this.toast(r.failed || 'Cannot upgrade', 'bad');
-        this.renderInspector(true);
+        g.cmd({ t: 'roads', tiles: [[sel.x, sel.z]], level: L + 1 }, (r) => {
+          if (!r.placed) this.toast(r.failed || 'Cannot upgrade', 'bad');
+          if (this.selection) this.renderInspector(true);
+        });
         break;
       }
-      case 'roaddel': { const r = w.removeRoad(sel.x, sel.z); if (r !== true) this.toast(r || 'Cannot remove', 'bad'); else this.inspect(null); break; }
-      case 'raildel': w.removeRail(sel.x, sel.z); this.inspect(null); break;
+      case 'roaddel':
+        g.cmd({ t: 'unroad', x: sel.x, z: sel.z }, (r) => {
+          if (!r.ok) this.toast(r.reason || 'Cannot remove', 'bad');
+          else if (this.selection === sel) this.inspect(null);
+        });
+        break;
+      case 'raildel': g.cmd({ t: 'unrail', x: sel.x, z: sel.z }); this.inspect(null); break;
     }
   }
 
@@ -866,7 +880,7 @@ export class UI {
       <div class="actions"><button class="btn primary" id="renameOk">Save name</button></div>`, (c) => {
       const inp = c.querySelector('#renameIn');
       inp.focus(); inp.select();
-      const ok = () => { const v = inp.value.trim(); if (v) this.world.townName = v; this.closeModal(); };
+      const ok = () => { const v = inp.value.trim(); if (v) this.game.cmd({ t: 'rename', name: v }); this.closeModal(); };
       c.querySelector('#renameOk').onclick = ok;
       inp.onkeydown = (e) => { if (e.key === 'Enter') ok(); };
     });
@@ -1062,7 +1076,11 @@ export class UI {
       };
       fill();
       const tax = c.querySelector('#tax');
-      tax.oninput = () => { w.taxRate = Number(tax.value); c.querySelector('#taxV').textContent = `${w.taxRate}%`; sim.recompute(); fill(); };
+      tax.oninput = () => {
+        const rate = Number(tax.value);
+        c.querySelector('#taxV').textContent = `${rate}%`;
+        g.cmd({ t: 'tax', rate }, () => { if (g.sim.dirty) g.sim.recompute(); if (c.isConnected) fill(); });
+      };
       const hist = w.history.concat([{ day: w.day, pop: w.population, money: Math.round(w.money) }]);
       drawChart(c.querySelector('#chPop'), hist.map(h => h.pop), '#5f8f4e');
       drawChart(c.querySelector("#chMoney"), hist.map(h => (Number.isFinite(h.money) ? h.money : 0)), "#d9a23b");
@@ -1089,13 +1107,15 @@ export class UI {
       c.querySelector('#nlRail').onclick = () => { this.closeModal(); this.openFlyout('transit'); g.input.setTool({ kind: 'line', mode: 'rail', stops: [] }); };
       for (const b of c.querySelectorAll('[data-veh]')) b.onclick = () => {
         const l = w.lines.find(x => x.id === Number(b.dataset.veh));
-        const r = g.transit.setVehicles(l.id, l.vehicles + Number(b.dataset.d));
-        if (r.reason) this.toast(r.reason, 'bad');
-        this.showLines();
+        if (!l) return;
+        g.cmd({ t: 'vehicles', id: l.id, n: Math.max(0, l.vehicles + Number(b.dataset.d)) }, (r) => {
+          if (r.reason) this.toast(r.reason, 'bad');
+          this.showLines();
+        });
       };
       for (const b of c.querySelectorAll('[data-ldel]')) b.onclick = () => {
         if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'Delete?'; return; }
-        g.transit.deleteLine(Number(b.dataset.ldel)); this.showLines();
+        g.cmd({ t: 'unline', id: Number(b.dataset.ldel) }, () => this.showLines());
       };
     });
   }
@@ -1116,10 +1136,11 @@ export class UI {
         <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
-      ${g.world && !g.demo ? `<div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''}> Sandbox: unlimited money (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''}> Sandbox: unlock every building (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>
-      <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
+      ${g.world && !g.demo ? `${g.isGuest ? '<div class="note">Only the host can change the sandbox switches of this town.</div>' : ''}
+      <div class="field"><label class="inline"><input type="checkbox" id="stInf" ${g.world.sandbox.infiniteMoney ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlimited money (this town)</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stAll" ${g.world.sandbox.unlockAll ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: unlock every building (this town)</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stFree" ${g.world.sandbox.freeUpgrades ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: upgrade without meeting needs (this town)</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stInst" ${g.world.sandbox.instantBuild ? 'checked' : ''} ${g.isGuest ? 'disabled' : ''}> Sandbox: build instantly, no builders (this town)</label></div>` : ''}
       <div class="field"><label>Google OAuth Client ID (for Drive saves)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div>
       <div class="actions"><button class="btn primary" id="stOk">Done</button><button class="btn" id="stMenu">Quit to title</button></div>`, (c) => {
       c.querySelector('#stOk').onclick = () => {
@@ -1128,11 +1149,9 @@ export class UI {
         s.pixelArt = c.querySelector('#stPix').checked;
         s.pixelSize = Number(c.querySelector('#stPixSize').value);
         const inf = c.querySelector('#stInf'), all = c.querySelector('#stAll'), free = c.querySelector('#stFree'), inst = c.querySelector('#stInst');
-        if (inf && all && free) {
-          g.world.setSandbox({ infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked, instantBuild: !!inst?.checked });
-          g.sim.recompute();
-          if (this.category) this.openFlyout(this.category);
-          if (this.selection) this.renderInspector(true);
+        if (inf && all && free && !g.isGuest) {
+          const opts = { infiniteMoney: inf.checked, unlockAll: all.checked, freeUpgrades: free.checked, instantBuild: !!inst?.checked };
+          if (Object.entries(opts).some(([k, v]) => !!g.world.sandbox[k] !== v)) g.cmd({ t: 'sandbox', opts }, (r) => { if (r.ok) this.refreshAfterSandbox(); });
         }
         s.autosave = c.querySelector('#stAuto').checked;
         s.sound = c.querySelector('#stSound').checked;
@@ -1149,6 +1168,16 @@ export class UI {
       c.querySelector('#stMenu').onclick = () => { this.closeModal(); g.toTitle(); };
     });
   }
+
+  // Unlocks and limits may have changed: redraw what shows them.
+  refreshAfterSandbox() {
+    if (this.category) this.openFlyout(this.category);
+    if (this.selection) this.renderInspector(true);
+  }
+
+  // ---------------------------------------------------------- multiplayer
+  showMultiplayer(opts) { showMultiplayer(this.game, opts); }
+  renderNetBox() { renderNetBox(this.game); }
 
   // What each research project unlocks, worked out from the definitions.
   // What a project unlocks: [{ text, img }] (img is a thumbnail, if any).
@@ -1225,7 +1254,9 @@ export class UI {
       };
       requestAnimationFrame(draw);
       for (const el of c.querySelectorAll('[data-node]')) el.onclick = () => { this._techSel = el.dataset.node; this.showResearch(); };
-      for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => { if (w.startResearch(btn.dataset.tech)) { g.sfx('click'); this.showResearch(); } };
+      for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => g.cmd({ t: 'research', id: btn.dataset.tech }, (r) => {
+        if (r.ok) { g.sfx('click'); if (c.isConnected) this.showResearch(); } else if (r.reason) this.toast(r.reason, 'bad');
+      });
     });
   }
 
@@ -1433,6 +1464,7 @@ export class UI {
         ${k('N')}<span>Hide / show pop-ups (coins, notices, tips)</span>
         ${k('I')}<span>Show / hide the town issues list (lower left)</span>
         ${k('K')}<span>Research: unlock buildings, upgrade paths and styles</span>
+        ${k('M')}<span>Multiplayer: host this town, or join a friend's with their code</span>
         ${k('Esc')}<span>Cancel / close</span>
       </div><div style="font-size:13px;line-height:1.5">
         <b>Getting started</b><br>

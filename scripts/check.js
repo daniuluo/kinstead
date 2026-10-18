@@ -439,7 +439,7 @@ const runUntil = (pred, days = 6) => {
   const fsm = await import('node:fs');
   const missing = [];
   const esc = (s) => s.replace(/[$]/g, '[$]');
-  for (const f of ['src/ui/ui.js', 'src/game.js', 'src/ui/input.js', 'src/render/worldView.js', 'src/sim/construction.js', 'src/world/world.js', 'src/sim/sim.js', 'src/sim/agents.js']) {
+  for (const f of ['src/ui/ui.js', 'src/game.js', 'src/ui/input.js', 'src/render/worldView.js', 'src/sim/construction.js', 'src/world/world.js', 'src/sim/sim.js', 'src/sim/agents.js', 'src/net/session.js', 'src/net/sync.js', 'src/net/cursors.js']) {
     const src = fsm.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     const called = new Set([...src.matchAll(/this\.([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]));
     for (const name of called) {
