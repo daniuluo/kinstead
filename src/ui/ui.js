@@ -28,6 +28,7 @@ const HAPPY = {
 };
 
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
+import { MergeDialog } from './mergeUI.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 
@@ -898,6 +899,8 @@ export class UI {
   }
 
   // ---------------------------------------------------------- save/load
+  showMerge() { (this._merge ||= new MergeDialog(this)).open(); }
+
   showSaves(tab = 'local') {
     const g = this.game;
     const inGame = !!g.world && !g.demo;
@@ -906,11 +909,13 @@ export class UI {
       <div class="actions" style="margin:0 0 10px">
         ${inGame ? '<button class="btn primary" id="svDownload" title="Ctrl+Shift+S">⬇ Download save (.json)</button>' : ''}
         <label class="btn" title="You can also drop a .json save onto the game"><input type="file" id="svUpload" accept=".json,application/json" hidden>⬆ Open a .json save…</label>
+        <button class="btn" id="svMerge" title="Join two saved towns into one">🔗 Merge villages…</button>
       </div>
       <div class="tabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div><div id="saveBody"></div>`, (c) => {
       for (const b of c.querySelectorAll('[data-tab]')) b.onclick = () => this.showSaves(b.dataset.tab);
       const dl = c.querySelector('#svDownload');
       if (dl) dl.onclick = () => g.downloadSave();
+      c.querySelector('#svMerge').onclick = () => this.showMerge();
       c.querySelector('#svUpload').onchange = async (e) => {
         const f = e.target.files[0];
         if (!f) return;

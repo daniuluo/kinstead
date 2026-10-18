@@ -183,6 +183,7 @@ export class Game {
     };
     document.getElementById('btnNew').onclick = () => this.ui.showNewGame((o) => this.newGame(o));
     document.getElementById('btnLoad').onclick = () => this.ui.showSaves('local');
+    document.getElementById('btnMerge').onclick = () => this.ui.showMerge();
   }
 
   // --------------------------------------------------------------- saving

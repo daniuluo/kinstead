@@ -33,6 +33,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Four sandbox switches, available for a new game or from Settings: unlimited money, unlock every building, upgrade without meeting needs, and instant construction.
 - **Pop-ups** — money pop-ups, notices, hover tips and the name tag over a followed villager can each be switched off in Settings, or all at once with the bell button or `N`.
 - **Saves** — in this browser (with an autosave every day), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
+- **Merge villages** — join two saved towns into one valley, from the Save window or the title menu. See [Merging villages](#merging-villages).
 
 ## Controls
 
@@ -57,6 +58,23 @@ A little isometric village builder that runs in your browser — pixel-art rende
 ## How the buildings are made
 
 Everything is generated in code — there are no model files, textures or sprites. [`src/render/geo.js`](src/render/geo.js) builds low-poly shapes (boxes, bevelled boxes, roof prisms, cylinders) and merges them into one mesh per building with per-vertex colours and a glow channel for lit windows. [`src/render/buildings.js`](src/render/buildings.js) has a recipe per building type and level, and every building's random seed picks its materials, colours, roof, windows and yard. Brick courses and roof tiles are drawn by a shader, and the pixel-art look comes from a low-resolution post-process pass.
+
+## Merging villages
+
+**Save → Merge villages…** (or **Merge villages…** on the title menu) joins two saved towns into a new one. Neither save is changed.
+
+1. **Pick town A and town B.** Each can be a save in this browser, the town you are playing, or a `.json` save you upload or drop onto its column. Town A keeps its name, its place and its road out of the valley; town B joins it.
+2. **Arrange them.** A 2D map shows both valleys. Use **Left / Right / Above / Below** to set B beside A (the map grows to fit), drag B anywhere to overlap it or leave a gap, and **Turn B 90°** in quarter turns. B snaps to A's edges and centre as you drag. The picture becomes the actual merged valley a moment after you stop, and the panel shows the merged map size and everything that will be settled. A merged map can be up to 96×96: two big valleys side by side lose some empty countryside from their outer edges, never buildings. An arrangement too wide for that is refused with a reason.
+3. **Merge.** The merged town loads, and a report lists what was moved, refunded, changed or dropped. If you were playing a town, it is saved in this browser first. The merged town is autosaved straight away and can be downloaded as `.json`.
+
+How the join is made:
+
+- **Ground** — each town keeps the land around its own buildings and streets. Where the two maps overlap, the join runs halfway between them, and any part of the square map that neither town covers becomes new countryside with its own hills and woods. In a band a few tiles wide each side of every join (auto-sized, or set **Blend width**), the heights are re-solved so each side keeps its own slopes and bumps while the difference in level is spread smoothly across the band (a Poisson blend). Buildings in the band rise or sink as rigid blocks, so their ground keeps its shape. A last pass eases any step steeper than the steepest in either valley. Ground colour (grass, sand, rock, shore) follows the blended heights. **Rivers and lakes** that reach a join are carried across: a river meeting water on the other side within a few tiles is joined to it by a curving channel; otherwise it runs on through new countryside to the map edge, or ends in a pool before the other town. Carried-on rivers keep clear of streets, and a street flooded by the blend gets a low embankment.
+- **Buildings** — where two plots overlap, the more valuable one stays. The other moves to the nearest free plot with a road (turning a double plot if needed), or is refunded at full value if none is near. Buildings left in water, on ground too steep, beside water no longer (fishery, pump, water wheel), off their railway track, or cut off from every road are handled the same way. There is one town hall: the second becomes a **Plaza** of the same level, and the difference in value is refunded. Half-finished demolitions and buildings being moved away are dropped. Land deals survive only between two plots that both stayed put.
+- **Roads** — a building beats a road, so streets under the other town's buildings are removed. Every separate piece of road is then joined to the network that leads out of the valley along the cheapest buildable route (bridges cost more than land). Stray scraps with nothing on them are cleared, a piece boxed in by buildings is removed, and a building left with no street gets a short lane, or moves. If neither town's road out of the valley still reaches the map edge, a new one is laid.
+- **Ids and people** — town B's buildings, villagers and transit lines get new ids, and every reference moves with them: homes, jobs, families, transit stops, land deals and building moves. Villagers whose home vanished move into homes with room, households together where possible. If there is no room at all, they move away. Villagers whose workplace vanished look for new work. Nobody shares a whole name: the usual rule for newcomers picks a fresh first name.
+- **Transit** — stops that are gone are dropped from their lines, and a line left with fewer than two stops closes, refunding its vehicles. Clashing line names and colours are changed.
+- **Town** — research is everything either town discovered. Money is the two treasuries added together, plus refunds. The day and season are the later town's. Daily history is added up day by day, and sandbox switches carry over if either town had them on.
 
 ## Running locally
 
@@ -99,9 +117,11 @@ src/sim/                  economy & migration, villagers, transit, pathfinding
 src/render/               renderer & pixel pass, sky, terrain painter,
                           procedural buildings, nature, particles, overlays
 src/ui/                   HUD & dialogs, input/tools, thumbnails, sound
-src/save/                 save format + local slots, Google Drive
+src/save/                 save format + local slots, Google Drive, merging towns
 scripts/check.js          headless smoke test
 scripts/playtest.js       headless playtest bot
+scripts/merge-test.js     headless test for merging villages
+scripts/audit.js          town invariants shared by the playtest and merge test
 ```
 
 ### Smoke test
@@ -120,6 +140,14 @@ node scripts/playtest.js 50 48 2024 economy
 ```
 
 A bot plays a fresh town for a number of days (arguments: days, map size, seed, mode), building, laying roads, researching, upgrading, joining, expanding, moving and demolishing. Modes: `economy` (real money), `stress` (unlimited money, everything unlocked, lots of building every day), `chaos` (the same with instant construction, so far more upgrades, joins and moves) and `scale` (a big ready-grown town on an 80×80 map, to measure speed). Every day it audits the town (no overlapping buildings, no broken references, capacities respected, building sites always progressing, no builders idle while sites wait) and it prints anything wrong at the end.
+
+### Merge test
+
+```bash
+node scripts/merge-test.js
+```
+
+This merges grown towns in every kind of arrangement: beside on each side, turned 90°, 180° and 270°, overlapping at several offsets, right on top of each other, apart with a gap, a small valley inside a big one, two big ones trimmed to fit, a town with itself, and two valleys whose rivers meet at the join. After each merge it checks the town invariants the playtest uses (no overlapping plots, no broken references, capacities). It also checks that every id is unique, there is one town hall, there is one road network that reaches the map edge and every building, nothing stands in water or on a cliff, no step on the map is steeper than in either valley, streets weren't flooded, everyone has a home, and buildings and villagers add up with the report. Research, money and the calendar must be combined correctly, and the save must round-trip. Several merges then run the simulation for a day. Add `--write <dir>` to save the test towns and a merged one as `.json` files to try in the browser.
 
 ## Credits
 
