@@ -176,7 +176,7 @@ export const BUILDINGS = {
   },
   fountaingarden: {
     name: 'Fountains', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, service: 'water', tech: 'fountains', icon: '⛲', branch: 'Fountain garden', accent: '#2f6a8a', pathIcon: 'water_drop',
-    desc: 'A walled garden round a fountain: water for the neighbours and a lovely place to sit.',
+    desc: 'A walled garden round a fountain: it draws water for the mains, and it is a lovely place to sit.',
     levels: [
       { name: 'Fountain Garden', cost: 250, upkeep: 3, appeal: 12, radius: 6, supply: 60 },
       { name: 'Water Garden', cost: 700, upkeep: 6, appeal: 20, radius: 8, supply: 150, unlock: 60 },
@@ -303,19 +303,19 @@ export const BUILDINGS = {
   // ------------------------------------------------------------- services
   well: {
     name: 'Water Supply', cat: 'utilities', size: 1, service: 'water', icon: '💧',
-    desc: 'Supplies water to nearby homes — but only as many people as it can draw for.',
+    desc: 'Draws water into the mains under the streets, for every building on the roads — but only for so many people.',
     levels: [
-      { name: 'Well', cost: 80, upkeep: 2, radius: 4, supply: 30 },
-      { name: 'Water Tower', tech: 'hydraulics', cost: 420, upkeep: 6, radius: 8, supply: 120, unlock: 60 },
-      { name: 'Waterworks', tech: 'steam', cost: 900, upkeep: 10, jobs: 3, radius: 12, supply: 300, unlock: 120, req: { power: true } },
+      { name: 'Well', cost: 80, upkeep: 2, supply: 30 },
+      { name: 'Water Tower', tech: 'hydraulics', cost: 420, upkeep: 6, supply: 120, unlock: 60 },
+      { name: 'Waterworks', tech: 'steam', cost: 900, upkeep: 10, jobs: 3, supply: 300, unlock: 120, req: { power: true } },
     ],
   },
   pump: {
     name: 'Water Pump', cat: 'utilities', size: 1, service: 'water', needsWater: true, unlock: 25, tech: 'hydraulics', icon: '💧',
-    desc: 'Pumps river or lake water for a lot of people. Must be built next to water.',
+    desc: 'Pumps river or lake water into the mains for a lot of people. Must be built next to water.',
     levels: [
-      { name: 'Pump House', cost: 350, upkeep: 4, jobs: 1, radius: 6, supply: 150 },
-      { name: 'Pumping Station', tech: 'steam', cost: 900, upkeep: 8, jobs: 3, radius: 9, supply: 400, unlock: 120, req: { power: true } },
+      { name: 'Pump House', cost: 350, upkeep: 4, jobs: 1, supply: 150 },
+      { name: 'Pumping Station', tech: 'steam', cost: 900, upkeep: 8, jobs: 3, supply: 400, unlock: 120, req: { power: true } },
     ],
   },
   watermill: {
@@ -470,7 +470,7 @@ export const BUILDINGS = {
 };
 
 export const TRANSIT = {
-  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.9, capacity: 8, stopType: 'coachstop', unlock: 0 },
+  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.45, capacity: 8, stopType: 'coachstop', unlock: 0 },
   rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25 },
 };
 export const RAIL_COST = 30;
@@ -524,6 +524,7 @@ export const TECHS = {
   fountains: { name: 'Fountains', cost: 135, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
   electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets.' },
   steam: { name: 'Steam Power', cost: 750, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
+  cables: { name: 'Underground Cables', cost: 800, tier: 4, branch: 'power', needs: ['steam'], desc: 'Bury the power lines under the streets, street by street or the whole town: no more poles and wires, and prettier streets.' },
   services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings: guardhouses, churches, water towers.' },
   medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, and almshouses.' },
   firefighting: { name: 'Fire Brigades', cost: 270, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
@@ -552,7 +553,10 @@ export function techForLevel(type, level) {
   return t ? t[Math.min(level, 2) - 1] : null;
 }
 // Abilities that research unlocks (not buildings).
-export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots to 2×2' };
+export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots to 2×2', cables: 'Bury the power lines under the streets' };
+
+// Burying the power lines under a street, per road tile.
+export const BURY_COST = 12;
 
 // Which neighbours can be joined, and into what. Either order works.
 export const MERGES = [
@@ -573,6 +577,11 @@ export const LARGE = {
   market: ['arcade'], bakery: ['arcade'], tavern: ['inn'], workshop: ['joinery'], lumber: ['joinery'],
   school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'],
 };
+// ...and what a double plot can become as a 2×2 estate (nothing needs one yet).
+export const ESTATE = {};
+// A plot may only grow when the bigger plot opens up a bigger building to
+// upgrade into: these are the options for a plot growing to `area` tiles.
+export const growsInto = (type, area) => (area >= 4 ? ESTATE[type] : LARGE[type]) || [];
 
 // Every service a building provides (combined buildings can provide two).
 export const servicesOf = (def) => def.services || (def.service ? [def.service] : []);
@@ -580,8 +589,8 @@ export const servicesOf = (def) => def.services || (def.service ? [def.service] 
 // What a building needs to work, from a given level up (see Sim._working).
 //   power  use 'machines': powered machinery, or 'lights': electric light
 //          for trade after dark
-//   water  running water: within reach of a well or pump, with enough to
-//          go round
+//   water  running water: on the mains (road-connected to the town's
+//          wells and pumps), with enough to go round
 //   without  how much of its work it still does without it (0: it stops)
 //   what     what the need is for, in the building panel
 // It also needs its workers: services, schools and utilities only work as

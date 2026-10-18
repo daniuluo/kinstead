@@ -38,6 +38,7 @@ export class RoadsView {
     const gb = new GeoBuilder();
     this.lamps = [];
     this.darkLamps = 0;
+    this.poles = 0;
     for (let z = 0; z < N; z++) {
       for (let x = 0; x < N; x++) {
         const L = w.roads[w.idx(x, z)];
@@ -127,19 +128,22 @@ export class RoadsView {
 
   // Once the town makes electricity, poles and wires follow the streets:
   // a pole on every other road tile (near its corner), wired to the next pole
-  // two tiles along when the road runs straight between them.
+  // two tiles along when the road runs straight between them. Streets whose
+  // lines have been buried (w.buried) have neither.
   _powerLines(gb) {
     const w = this.world, t = w.terrain, N = w.N;
-    const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0;
+    const up = (x, z) => !(w.buried && w.buried[w.idx(x, z)]);
+    const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0 && up(x, z);
     const H = 0.5, at = (x, z) => [x + 0.81, t.heightAt(x + 0.81, z + 0.81) + H - 0.05, z + 0.81];
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       if (!has(x, z)) continue;
       const [px, py, pz] = at(x, z);
       const g = py - H + 0.05;
       gb.cyl(px, g - 0.02, pz, 0.011, 0.015, H + 0.02, 6, '#5e4630');
+      this.poles++;
       gb.box(px, g + H - 0.06, pz, 0.15, 0.013, 0.015, '#5e4630', Math.PI / 4);
       for (const [dx, dz] of [[2, 0], [0, 2]]) {
-        if (!has(x + dx, z + dz) || !w.roadAt(x + dx / 2, z + dz / 2)) continue;
+        if (!has(x + dx, z + dz) || !w.roadAt(x + dx / 2, z + dz / 2) || !up(x + dx / 2, z + dz / 2)) continue;
         const [qx, qy, qz] = at(x + dx, z + dz);
         const len = Math.hypot(qx - px, qy - py, qz - pz), mx = (px + qx) / 2, my = (py + qy) / 2 - 0.02, mz = (pz + qz) / 2;
         for (const s of [-0.045, 0.045]) {

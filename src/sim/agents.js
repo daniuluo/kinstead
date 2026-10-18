@@ -20,11 +20,13 @@ const HATS = ['#b89a5a', '#5e3a2a', '#d8cfbf', '#3a4250', '#4e3828'];
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 // Villagers are little abstract figures, sized against the buildings: a
-// storey is about 0.28 units (~3 m), so a grown-up stands about 0.16 tall.
+// storey is about 0.28 units (~3 m), so a grown-up stands about 0.14 tall.
 // Two stubby legs swing from the hip so they really walk on the ground, a
 // trouser-coloured hip, a shirt-coloured body with rounded shoulders, a small
 // head, sometimes a hat, and a soft shadow where they stand.
-const HIP = 0.06, SWING = 0.5;
+// FIG sets the overall size against the buildings: a grown-up comes up to
+// about four fifths of a front door.
+const HIP = 0.06, SWING = 0.5, FIG = 0.88;
 const GEO = {
   leg: flat(new THREE.CylinderGeometry(0.0085, 0.0075, HIP, 6).translate(0, -HIP / 2, 0)),
   base: flat(new THREE.CylinderGeometry(0.018, 0.019, 0.022, 8).translate(0, HIP, 0)),
@@ -41,7 +43,7 @@ const GEO = {
 };
 const HEAD_Y = 0.155, HAT_Y = 0.168;
 // one full stride (two steps) covers this much ground, so feet never slide
-const strideLen = (s) => HIP * s * SWING;
+const strideLen = (s) => HIP * s * FIG * SWING;
 
 export function lookOf(r) {
   const g = new RNG(r.look >>> 0);
@@ -588,7 +590,7 @@ export class Agents {
     for (const wk of this.walkers) {
       if (i >= max) break;
       if (wk.delay > 0) continue;
-      const lk = wk.lk, s = lk.scale;
+      const lk = wk.lk, s = lk.scale * FIG;
       // Legs swing from the hip; the body dips a touch at mid-stride so the
       // planted foot stays on the ground. Workers bend to their task, elders stoop.
       const swing = wk.moving ? Math.sin(wk.phase) * SWING : wk.working ? Math.sin(wk.phase) * 0.12 : 0;

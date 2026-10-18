@@ -29,7 +29,7 @@ import { ReplicaSim, ReplicaConstruction } from './net/replica.js';
 import { worldFromSnapshot } from './net/sync.js';
 import { RemoteCursors } from './net/cursors.js';
 
-const SETTINGS_KEY = 'hearthvale.settings';
+const SETTINGS_KEY = 'hearthvale.settings';   // storage keys keep the game's old name so saves and settings carry over
 
 export class Game {
   constructor() {
@@ -290,7 +290,7 @@ export class Game {
       const f = e.dataTransfer?.files?.[0];
       if (!f) return;
       e.preventDefault();
-      if (!/\.json$/i.test(f.name) && f.type !== 'application/json') { this.ui.toast('Drop a Hearthvale .json save to load it', 'bad'); return; }
+      if (!/\.json$/i.test(f.name) && f.type !== 'application/json') { this.ui.toast('Drop a Kinstead .json save to load it', 'bad'); return; }
       try {
         this.loadData(await readJSONFile(f));
         this.ui.closeAllWindows();

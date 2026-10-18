@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel, growsInto, BURY_COST } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
@@ -21,13 +21,30 @@ export const isOpen = (b) => !b.con || b.con.kind === 'upgrade' || b.con.kind ==
 
 // A building that has grown onto a neighbouring plot (see World.expandOptions)
 // holds half as many people / jobs again.
+// restyling a building as it is upgraded costs this much of the upgrade on top
+const RESTYLE = 0.3;
 const baseArea = (b) => (BUILDINGS[b.type].merged ? 2 : BUILDINGS[b.type].size ** 2);
 export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 // each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
   const v = BUILDINGS[b.type].levels[b.level][key] || 0;
-  const k = 1 + 0.5 * (fw(b) * fd(b) / baseArea(b) - 1);
+  const k = sizeK(b);
   return k > 1 ? Math.round(v * k) : v;
+}
+// How much bigger than usual a building of this type is on a w × d plot. Its
+// capacity, output, upkeep, value and upgrade prices all scale by this.
+export function sizeKFor(type, w, d) {
+  const def = BUILDINGS[type];
+  return Math.max(1, 1 + 0.5 * ((w * d) / (def.merged ? 2 : def.size ** 2) - 1));
+}
+export const sizeK = (b) => sizeKFor(b.type, fw(b), fd(b));
+// A level's figures for a building of that size: capacities, outputs, upkeep, price.
+const SCALED = ['housing', 'jobs', 'seats', 'supply', 'kw', 'upkeep', 'cost'];
+export function scaledLevel(L, k) {
+  if (!(k > 1)) return L;
+  const out = { ...L };
+  for (const key of SCALED) if (L[key]) out[key] = Math.round(L[key] * k);
+  return out;
 }
 
 // Neighbouring buildings that can be joined into one mixed-use building.
@@ -66,6 +83,7 @@ export class World {
     this.terrain = terrain;
     this.roads = new Uint8Array(N * N);
     this.rails = new Uint8Array(N * N);
+    this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
     this.lines = [];
     this.sandbox = { infiniteMoney: false, unlockAll: false, freeUpgrades: false, instantBuild: false };
     this.buildingAt = new Int32Array(N * N).fill(-1);
@@ -80,7 +98,7 @@ export class World {
     this.hours = 7;
     this.nextId = 1;
     this.entry = { x: 0, z: 0 };
-    this.townName = 'Hearthvale';
+    this.townName = 'Kinstead';
     this.history = [];
     this.titleIdx = 0;
     this.stats = { visits: 0, visitIncome: 0, todayVisitIncome: 0, arrivals: 0, departures: 0 };
@@ -353,7 +371,7 @@ export class World {
     const def = BUILDINGS[b.type];
     let v = 0;
     for (let l = 0; l <= b.level; l++) v += def.levels[l].cost;
-    return v;
+    return Math.round(v * sizeK(b));
   }
 
   // Called by Construction when the builders have done all the work.
@@ -458,7 +476,7 @@ export class World {
     const def = BUILDINGS[b.type];
     if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
     // a double plot can grow into a 2×2 estate onto two empty plots beside it
-    if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop) {
+    if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop && growsInto(b.type, 4).length) {
       const along = fw(b) === 2;
       for (const s of [-1, 1]) {
         const tiles = along ? [[b.x, s < 0 ? b.z - 1 : b.z + 1], [b.x + 1, s < 0 ? b.z - 1 : b.z + 1]] : [[s < 0 ? b.x - 1 : b.x + 1, b.z], [s < 0 ? b.x - 1 : b.x + 1, b.z + 1]];
@@ -472,6 +490,8 @@ export class World {
       return out;
     }
     if (!b || b.con || def.merged || def.park || def.stop || fw(b) !== 1 || fd(b) !== 1 || def.size !== 1) return out;
+    // only where the double plot opens up something bigger to upgrade into
+    if (!growsInto(b.type, 2).length) return out;
     const base = Math.round(80 + 0.35 * def.levels[b.level].cost);
     const front = DIRS[b.rot];
     const sideOf = (k) => (k === b.rot ? 'in front' : (k + 2) % 4 === b.rot ? 'behind' : 'beside');
@@ -698,12 +718,17 @@ export class World {
     return out;
   }
 
-  upgradeCheck(b, toType = null) {
+  // look: the style chosen for the upgrade (undefined: keep the building's own).
+  // A new style means new fronts and roofs, so it costs more than keeping the old one.
+  upgradeCheck(b, toType = null, look = undefined) {
     const opts = this.upgradeOptions(b);
     const target = opts.find(o => o.type === toType) || opts[0];
     if (!target) return { ok: false, reason: 'Fully upgraded', max: true };
-    const next = BUILDINGS[target.type].levels[target.level];
-    if (b.con) return { ok: false, reason: 'Construction under way', busy: true, next, target, reqs: [] };
+    // a building on a grown plot is that much bigger, and so is its upgrade
+    const next = scaledLevel(BUILDINGS[target.type].levels[target.level], sizeKFor(target.type, fw(b), fd(b)));
+    const restyle = look !== undefined && (look || null) !== (b.look || null) ? Math.round(next.cost * RESTYLE) : 0;
+    const cost = next.cost + restyle;
+    if (b.con) return { ok: false, reason: 'Construction under way', busy: true, next, target, cost, restyle, reqs: [] };
     const unlock = unlockOf(target.type, target.level);
     const tech = techForLevel(target.type, target.level);
     const reqs = [];
@@ -720,18 +745,18 @@ export class World {
     if (tech) reqs.unshift({ label: `Research: ${this.techName(tech)}`, met: this.hasTech(tech), tech });
     // the bigger stages need a double plot: expand onto the plot next door first
     if (BUILDINGS[target.type].size > 1 && fw(b) * fd(b) < 2) reqs.unshift({ label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
-    reqs.push({ label: `$${next.cost}`, met: this.money >= next.cost });
+    reqs.push({ label: restyle ? `$${cost} (with $${restyle} for the new style)` : `$${cost}`, met: this.money >= cost });
     const ok = reqs.every(r => r.met);
-    return { ok, next, target, reqs, reason: ok ? null : 'Requirements not met' };
+    return { ok, next, target, cost, restyle, reqs, reason: ok ? null : 'Requirements not met' };
   }
 
   upgradeBuilding(id, toType = null, look = undefined) {
     if (look && !this.hasTech(STYLE_TECH_OF(look))) look = undefined;
     const b = this.buildings.get(id);
     if (!b) return { ok: false };
-    const chk = this.upgradeCheck(b, toType);
+    const chk = this.upgradeCheck(b, toType, look);
     if (!chk.ok) return chk;
-    this.money -= chk.next.cost;
+    this.money -= chk.cost;
     const { type, level } = chk.target;
     if (this.sandbox.instantBuild) {
       b.type = type;
@@ -740,7 +765,7 @@ export class World {
       this.emit('building:change', b);
       return { ok: true, building: b, instant: true };
     }
-    b.con = { kind: 'upgrade', to: level, toType: type, work: workNeeded(chk.next.cost, 'upgrade'), done: 0 };
+    b.con = { kind: 'upgrade', to: level, toType: type, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
     if (look !== undefined) b.con.look = look;
     this.emit('building:change', b);
     return { ok: true, building: b };
@@ -761,7 +786,7 @@ export class World {
     const def = BUILDINGS[b.type];
     let value = 0;
     for (let l = 0; l <= b.level; l++) value += def.levels[l].cost;
-    this.money += Math.round(value * refund);
+    this.money += Math.round(value * sizeK(b) * refund);
     this.emit('building:remove', b);
     this._updateFronts();
     if (def.stop) {
@@ -862,8 +887,37 @@ export class World {
     if (!this.roadAt(x, z)) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
+    this.buried[this.idx(x, z)] = 0;
     this.updateRoadNetwork();
     return true;
+  }
+
+  // ---------------------------------------------------- buried power lines
+  // The street through (x, z): the straight runs of road along it, both
+  // ways at a crossing.
+  streetTiles(x, z) {
+    if (!this.roadAt(x, z)) return [];
+    const out = [[x, z]];
+    for (const [dx, dz] of DIRS) for (let k = 1; this.roadAt(x + dx * k, z + dz * k); k++) out.push([x + dx * k, z + dz * k]);
+    return out;
+  }
+
+  // Lay the power lines under the given road tiles (Underground Cables):
+  // their poles and wires come down, and the street looks the better for it.
+  buryCost(tiles) {
+    return tiles.filter(([x, z]) => this.roadAt(x, z) && !this.buried[this.idx(x, z)]).length * BURY_COST;
+  }
+
+  buryLines(tiles) {
+    if (!this.hasTech('cables')) return { ok: false, reason: `Research ${this.techName('cables')} first` };
+    const todo = tiles.filter(([x, z]) => this.roadAt(x, z) && !this.buried[this.idx(x, z)]);
+    if (!todo.length) return { ok: false, reason: 'Those lines are already underground' };
+    const cost = todo.length * BURY_COST;
+    if (this.money < cost) return { ok: false, reason: 'Not enough money' };
+    this.money -= cost;
+    for (const [x, z] of todo) this.buried[this.idx(x, z)] = 1;
+    this.emit('lines');
+    return { ok: true, n: todo.length, cost };
   }
 
   updateRoadNetwork() {
@@ -1001,7 +1055,7 @@ export class World {
   static createNew({ N = 48, seed, name, sandbox = null }) {
     const { terrain, start, entryPath } = generateTerrain(N, seed);
     const w = new World(N, seed, terrain);
-    w.townName = name || 'Hearthvale';
+    w.townName = name || 'Kinstead';
     if (sandbox) w.setSandbox(sandbox);
     for (const [x, z] of entryPath) w.roads[w.idx(x, z)] = 1;
     const last = entryPath[entryPath.length - 1];

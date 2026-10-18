@@ -1,11 +1,12 @@
 // Google Drive cloud saves using Google Identity Services (OAuth token flow)
 // and the Drive v3 REST API. Uses the narrow `drive.file` scope, so the game
-// can only see files it created itself, kept in a "Hearthvale Saves" folder.
+// can only see files it created itself, kept in a "Kinstead Saves" folder
+// (or the "Hearthvale Saves" folder from before the game was renamed).
 
 import { CONFIG } from '../config.js';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const FOLDER = 'Hearthvale Saves';
+const FOLDER = 'Kinstead Saves', OLD_FOLDER = 'Hearthvale Saves';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const CLIENT_KEY = 'hearthvale.googleClientId';
@@ -86,7 +87,7 @@ export class Drive {
 
   async _folderId() {
     if (this.folder) return this.folder;
-    const q = encodeURIComponent(`name='${FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+    const q = encodeURIComponent(`(name='${FOLDER}' or name='${OLD_FOLDER}') and mimeType='application/vnd.google-apps.folder' and trashed=false`);
     const res = await this._req(`${API}/files?q=${q}&fields=files(id,name)&spaces=drive`);
     const j = await res.json();
     if (j.files && j.files.length) { this.folder = j.files[0].id; return this.folder; }
@@ -109,7 +110,7 @@ export class Drive {
   async save(data, existingId = null) {
     const folder = await this._folderId();
     const meta = {
-      name: `${data.name} — Day ${data.meta.day}.hearthvale.json`,
+      name: `${data.name} — Day ${data.meta.day}.kinstead.json`,
       mimeType: 'application/json',
       appProperties: { town: String(data.name).slice(0, 60), day: String(data.meta.day), pop: String(data.meta.pop), money: String(data.meta.money) },
     };

@@ -57,11 +57,14 @@ w.on('research:done', () => { counts.research++; });
 
 // ------------------------------------------------------------ bot helpers
 const center = (() => { const th = [...w.buildings.values()].find(b => b.type === 'townhall'); return { x: th.x + 1, z: th.z + 1 }; })();
+// the tile just beyond the end of a street: kept free so the street can grow
+const streetEnd = (x, z) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.roadAt(x - dx, z - dz) && w.roadAt(x - 2 * dx, z - 2 * dz) && !w.roadAt(x - dx + dz, z - dz + dx) && !w.roadAt(x - dx - dz, z - dz - dx));
 function spots(type, near = center, max = 14) {
   const out = [];
   for (let r = 1; r <= max; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
     const x = near.x + dx, z = near.z + dz;
+    if (streetEnd(x, z)) continue;
     const c = w.checkBuild(type, x, z);
     if (c.ok && c.access.some(a => a.conn)) out.push({ x, z });
     if (out.length >= 3) return out;
@@ -83,7 +86,7 @@ function growRoads() {
   const starts = [];
   for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
     if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)]) continue;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (w.checkRoad(x + dx, z + dz, 1).ok && !w.buildingOn(x + dx, z + dz)) starts.push([x, z, dx, dz]);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!w.roadAt(x + dx, z + dz) && w.checkRoad(x + dx, z + dz, 1).ok && !w.buildingOn(x + dx, z + dz)) starts.push([x, z, dx, dz]);
   }
   // a proper street if there's room for one, else a short spur
   for (let t = 0; t < 60 && starts.length; t++) {
@@ -91,7 +94,7 @@ function growRoads() {
     const tiles = [];
     for (let k = 1; k <= 6; k++) {
       const x = sx + dx * k, z = sz + dz * k;
-      if (!w.checkRoad(x, z, 1).ok || w.buildingOn(x, z)) break;
+      if (w.roadAt(x, z) || !w.checkRoad(x, z, 1).ok || w.buildingOn(x, z)) break;
       tiles.push([x, z]);
     }
     if (tiles.length >= (t < 40 ? 3 : 1)) { const r = w.placeRoads(tiles, 1); if (r.placed) { counts.roads += r.placed; return true; } }

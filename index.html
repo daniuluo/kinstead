@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Hearthvale — a cozy isometric town builder</title>
+  <title>Kinstead — a cozy isometric town builder</title>
   <meta name="description" content="Build a little village in your browser: roads, homes, services, parks, transit, seasons and day/night — with villagers going about their lives.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><path d=%22M8 30 32 10l24 20v26H8z%22 fill=%22%23d8c29a%22/><path d=%22M4 32 32 8l28 24-4 4L32 15 8 36z%22 fill=%22%239c4a32%22/><rect x=%2227%22 y=%2240%22 width=%2210%22 height=%2216%22 fill=%22%235c3d26%22/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,7 +29,7 @@
   <div id="hud" class="hidden">
     <div class="topbar">
       <div class="panel town" id="townBox" title="Rename your town">
-        <div class="town-name" id="townName">Hearthvale</div>
+        <div class="town-name" id="townName">Kinstead</div>
         <div class="town-title" id="townTitle">Hamlet</div>
       </div>
       <div class="panel clock">
@@ -87,6 +87,7 @@
         <button id="btnMusic" title="Turn off the music"><span class="ms">music_note</span></button>
         <button id="btnBudget" title="Budget & statistics (B)"><span class="ms">bar_chart</span></button>
         <button id="btnNet" title="Multiplayer: host this town or join one (M)"><span class="ms">group_add</span></button>
+        <button id="btnMergeIn" title="Merge a village into this town"><span class="ms">add_location_alt</span></button>
         <button id="btnSave" title="Save & load (Ctrl+S)"><span class="ms">save</span></button>
         <button id="btnSettings" title="Settings"><span class="ms">settings</span></button>
         <button id="btnHelp" title="How to play (H)"><span class="ms">help</span></button>
@@ -117,8 +118,8 @@
 
   <div id="title" class="title-screen">
     <div class="title-card panel">
-      <div class="titlebar">Hearthvale</div>
-      <div class="logo">Hearthvale</div>
+      <div class="titlebar">Kinstead</div>
+      <div class="logo">Kinstead</div>
       <div class="tagline">A little village builder</div>
       <button class="btn primary" id="btnContinue">Continue</button>
       <button class="btn gold" id="btnNew">New village</button>
@@ -129,7 +130,7 @@
     </div>
   </div>
 
-  <noscript>Hearthvale needs JavaScript and WebGL.</noscript>
+  <noscript>Kinstead needs JavaScript and WebGL.</noscript>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

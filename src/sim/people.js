@@ -131,6 +131,13 @@ export const wealthOf = (r) => (r.wealth ?? (r.age === 'child' ? 0 : 20 + (r.loo
 // it, so fall back to "same home and surname".
 export function familyOf(r) { return r.fam ?? `${r.home}|${r.last}`; }
 
+// How many households live in a home (families, and anyone living on their own).
+export function householdsIn(w, b) {
+  const fams = new Set();
+  for (const id of b.residents) { const r = w.residents.get(id); if (r) fams.add(familyOf(r)); }
+  return fams.size;
+}
+
 // Relatives living under the same roof, with how they relate to r.
 export function relativesOf(world, r) {
   const fam = familyOf(r);

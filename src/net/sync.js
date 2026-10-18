@@ -103,6 +103,7 @@ export class Tracker {
     for (const r of w.residents.values()) this.r.set(r.id, JSON.stringify(residentRec(r)));
     this.roads = w.roads.slice();
     this.rails = w.rails.slice();
+    this.buried = w.buried.slice();
     this.H = heights(w);
     this.trees = new Map([...treeTiles(w)].map(([t, a]) => [t, a.join()]));
     this.ln = JSON.stringify(linesRec(w));
@@ -152,6 +153,8 @@ export class Tracker {
     const rd = gridDiff(this.roads, w.roads), rl = gridDiff(this.rails, w.rails);
     if (rd) d.rd = rd;
     if (rl) d.rl = rl;
+    const bu = gridDiff(this.buried, w.buried);
+    if (bu) d.bu = bu;
     if (this.hDirty) {
       this.hDirty = false;
       const H = heights(w), out = [];
@@ -252,6 +255,8 @@ export function applyDelta(game, d) {
   const grid = (arr, list) => { for (let i = 0; i < list.length; i += 2) arr[list[i]] = list[i + 1]; return list.length > 0; };
   const roads = d.rd ? grid(w.roads, d.rd) : false;
   const rails = d.rl ? grid(w.rails, d.rl) : false;
+  // power lines laid underground
+  if (d.bu && grid(w.buried, d.bu)) w.emit('lines');
   let land = null;
   if (d.h) {
     const S = w.N + 1, H = w.terrain.H;

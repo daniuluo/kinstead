@@ -7,6 +7,7 @@ import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
 import { fmt, esc } from './ui.js';
+import { householdsIn } from '../sim/people.js';
 
 const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a';
 
@@ -304,7 +305,7 @@ export class Input {
           const def = BUILDINGS[b.type], L = def.levels[b.level];
           tip = `<b>${L.name}</b>`;
           if (b.con) tip += `<br>🏗️ ${b.con.kind === 'dismantle' || b.con.kind === 'demolish' ? 'coming down' : 'being built'} · ${Math.round(Math.min(1, b.con.done / b.con.work) * 100)}%`;
-          else if (L.housing) tip += `<br>${b.residents.length}/${capOf(b, 'housing')} residents · ${b.happiness}% happy`;
+          else if (L.housing) { const hh = householdsIn(this.world, b); tip += `<br>${b.residents.length}/${capOf(b, 'housing')} residents · ${hh} household${hh === 1 ? '' : 's'} · ${b.happiness}% happy`; }
           else if (L.jobs) tip += `<br>${b.workers.length}/${capOf(b, 'jobs')} workers`;
           const v = !b.con && g.agents.visitorsAt(b);
           if (v && Number.isFinite(v.cap)) tip += `<br>${v.now}/${v.cap} visitors${v.now >= v.cap ? ' · <span class="bad">full</span>' : ''}`;

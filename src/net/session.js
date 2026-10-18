@@ -243,7 +243,7 @@ export class HostSession extends Peerish {
   // answer, or are turned away.
   _hello(link, m) {
     if (this.guests.has(link) || this.waiting.has(link)) return;
-    if (m.proto !== PROTOCOL) { this._refuse(link, 'This town is running a different version of Hearthvale. Reload both pages and try again.'); return; }
+    if (m.proto !== PROTOCOL) { this._refuse(link, 'This town is running a different version of Kinstead. Reload both pages and try again.'); return; }
     const name = cleanName(m.name), key = nameKey(name);
     if (this.locked) { this._refuse(link, LOCKED); return; }
     if (this.players.length >= MAX_PLAYERS) { this._refuse(link, FULL); return; }

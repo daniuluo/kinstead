@@ -6,7 +6,7 @@ import { BUILDINGS, TECHS } from '../defs.js';
 import { titleFor } from '../config.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
-export const SAVE_FORMAT = 'hearthvale-save';
+export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
 export const SAVE_VERSION = 1;
 
 function toB64(u8) {
@@ -37,6 +37,7 @@ export function serialize(world) {
     heights: toB64(new Uint8Array(q.buffer)),
     roads: toB64(world.roads),
     rails: toB64(world.rails),
+    ...(world.buried && world.buried.some((v, i) => v && world.roads[i]) ? { buried: toB64(world.buried.map((v, i) => (v && world.roads[i] ? 1 : 0))) } : {}),
     buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null]),
     trees,
     residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
@@ -50,17 +51,18 @@ export function serialize(world) {
 }
 
 export function deserialize(data) {
-  if (!data || data.format !== SAVE_FORMAT) throw new Error('This file is not a Hearthvale save.');
-  if (data.version > SAVE_VERSION) throw new Error('This save was made by a newer version of Hearthvale.');
+  if (!data || data.format !== SAVE_FORMAT) throw new Error('This file is not a Kinstead save.');
+  if (data.version > SAVE_VERSION) throw new Error('This save was made by a newer version of Kinstead.');
   const N = data.N;
   const raw = fromB64(data.heights);
   const q = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
   const H = new Float32Array(q.length);
   for (let i = 0; i < q.length; i++) H[i] = q[i] / 1000;
   const w = new World(N, data.seed, new Terrain(N, H));
-  w.townName = cleanText(data.name, 40) || 'Hearthvale';
+  w.townName = cleanText(data.name, 40) || 'Kinstead';
   w.roads.set(fromB64(data.roads).subarray(0, N * N));
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
+  if (typeof data.buried === 'string') w.buried.set(fromB64(data.buried).subarray(0, N * N).map(v => (v ? 1 : 0)));
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
   for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look] of data.buildings) {
@@ -170,5 +172,5 @@ export function saveFileNameFor(data) {
 
 function fileNameOf(name, day) {
   const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'town';
-  return `${slug}-day${day}.hearthvale.json`;
+  return `${slug}-day${day}.kinstead.json`;
 }

@@ -6,7 +6,7 @@ $rootFull = [IO.Path]::GetFullPath($Root)
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
-Write-Host "Hearthvale is running at http://localhost:$Port/  (Ctrl+C to stop)"
+Write-Host "Kinstead is running at http://localhost:$Port/  (Ctrl+C to stop)"
 
 $mime = @{
   '.html' = 'text/html; charset=utf-8'; '.js' = 'text/javascript; charset=utf-8'

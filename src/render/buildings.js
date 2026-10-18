@@ -6,6 +6,8 @@
 
 import * as THREE from 'three';
 import { GeoBuilder, shade } from './geo.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BUILDINGS } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
@@ -2613,6 +2615,7 @@ export function buildModel(b, opts = {}) {
   const th = (b.rot * Math.PI) / 2 + jit.yaw, co = Math.cos(th), si = Math.sin(th);
   const cx = b.x + fw(b) / 2 + jit.ox, cz = b.z + fd(b) / 2 + jit.oz;
   const ground = opts.ground;
+  const makeCtx = (gb, rng) => {
   const c = {
     gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
@@ -2630,8 +2633,16 @@ export function buildModel(b, opts = {}) {
     addSmoke(x, y, z, kind = 'home') { const v = new THREE.Vector3(x, y, z).applyMatrix4(gb.M); c.smoke.push({ x: v.x, y: v.y, z: v.z, kind }); },
     addGlow(x, y, z, kind = 'lamp') { const v = new THREE.Vector3(x, y, z).applyMatrix4(gb.M); c.glows.push({ x: v.x, y: v.y, z: v.z, kind }); },
   };
+  return c;
+  };
+  const c = makeCtx(gb, rng);
+  // on a plot bigger than its own footprint the building keeps its usual size
+  // and an annex takes the rest (see annexPlan)
+  const def = BUILDINGS[b.type];
+  const annex = def && !opts.noAnnex ? annexPlan(def, b, Ex, Ez, c.box) : null;
+  if (annex) { c.box = annex.main; c.Ex = annex.Ex; c.Ez = annex.Ez; }
   MODELS[b.type](c, b.level);
-  const geo = gb.build();
+  let geo = gb.build();
   if (geo) { weather(geo); tint(geo, pal.tint); }
   // Never poke into the neighbours: shrink the model sideways if, after its
   // small random offset and turn, any part would leave its own plot.
@@ -2657,5 +2668,115 @@ export function buildModel(b, opts = {}) {
       if (c.doorAt) sc(c.doorAt);
     }
   }
+  if (annex && geo) {
+    geo.computeBoundingBox();
+    const gb2 = new GeoBuilder();
+    gb2.vary = 0.09;
+    const c2 = makeCtx(gb2, new RNG((b.variant * 2654435761 + 7) >>> 0));
+    c2.smoke = c.smoke; c2.glows = c.glows;
+    c2.doorAt = c.doorAt || { x: 0, y: 0, z: 0, dx: 0, dz: 1 };   // the building's own door stays the way in
+    for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y);
+    const g2 = gb2.build();
+    if (g2) { weather(g2); tint(g2, pal.tint); geo = mergeGeometries([geo, g2], false); geo.computeBoundingSphere(); }
+  }
   return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null };
 }
+
+// --------------------------------------------------------------- annexes
+// A plot that has grown past the building's own footprint (a 1×1 building on
+// a 2×1 or 1×2 plot, anything on a 2×2 estate) keeps the building at its
+// usual size at the front, on one side, and puts an annex in the same style on
+// the new land: a wing for homes, shops and services, a work shed with goods
+// for industry, a tank or transformer house for utilities, more garden for
+// parks. Returns null when the plot is the building's usual size.
+function annexPlan(def, b, Ex, Ez, B) {
+  const bw = def.merged ? 2 : def.size, bd = def.merged ? 1 : def.size;
+  if (4 * Ex * Ez <= bw * bd + 0.01) return null;
+  // the base footprint as it lies on this plot (a row building may be turned)
+  const [lw, ld] = Ez > Ex + 1e-6 && bw !== bd ? [bd, bw] : [bw, bd];
+  const extraW = 2 * Ex - lw, extraD = 2 * Ez - ld;
+  if (extraW < 0.5 && extraD < 0.5) return null;
+  const side = (b.variant >>> 4) & 1 ? 1 : -1;     // which end the building itself keeps
+  const main = { x0: B.x0, x1: B.x1, z0: B.z0, z1: B.z1 };
+  const areas = [];
+  if (extraW >= 0.5) {
+    if (side < 0) { main.x1 = B.x1 - extraW; areas.push({ x0: main.x1, x1: B.x1, z0: B.z0, z1: B.z1, where: 'beside' }); }
+    else { main.x0 = B.x0 + extraW; areas.push({ x0: B.x0, x1: main.x0, z0: B.z0, z1: B.z1, where: 'beside' }); }
+  }
+  if (extraD >= 0.5) { main.z0 = B.z0 + extraD; areas.push({ x0: main.x0, x1: main.x1, z0: B.z0, z1: main.z0, where: 'behind' }); }
+  return { main, areas, Ex: lw / 2, Ez: ld / 2 };
+}
+
+// One annex in area A (local frame, street side at +z). `top` is how tall the
+// main building stands, so a wing can match it a storey lower.
+function buildAnnex(c, def, A, top) {
+  const { gb, rng, pal } = c;
+  const aw = A.x1 - A.x0, ad = A.z1 - A.z0, cx = (A.x0 + A.x1) / 2;
+  const beside = A.where === 'beside';
+  const L = def.levels[c.level] || def.levels[0];
+  if (def.park) {
+    // more garden: a gravel walk, trees, beds and a bench, inside a hedge
+    hedge(c, cx, A.z0 + 0.06, aw - 0.12, 0.05);
+    gb.box(cx, c.gy(cx, (A.z0 + A.z1) / 2) - 0.008, (A.z0 + A.z1) / 2, 0.09, 0.012, ad - 0.2, '#c8b894');
+    for (const sx of [-1, 1]) {
+      smallTree(c, cx + sx * aw * 0.28, A.z0 + ad * 0.3, rng.float(0.9, 1.2));
+      flowers(c, cx + sx * aw * 0.25, A.z0 + ad * 0.72, rng.int(5, 8), 0.08);
+    }
+    bench(c, cx + aw * 0.16, (A.z0 + A.z1) / 2, -Math.PI / 2);
+    return;
+  }
+  if (def.cat === 'industry') {
+    // a work shed of planks with a big door, and goods stacked in the yard
+    const w = Math.min(0.78, aw - 0.24), d = Math.min(0.48, ad - 0.36);
+    if (w < 0.25 || d < 0.2) return;
+    const z = beside ? A.z1 - 0.3 - d / 2 : A.z0 + 0.1 + d / 2;
+    house(c, { x: cx, z, w, d, h: 0.3, floors: 1, wall: pal.wood, roof: pal.slate, roofType: 'gable', rh: 0.14, chimney: false, noDoor: true, noBack: true, fancy: false, nFront: 2, lit: 0.5 });
+    gb.box(cx, 0, z + d / 2 + 0.006, Math.min(0.22, w * 0.4), 0.21, 0.012, '#4e3828');
+    const yz = z + d / 2 + 0.11;
+    if (yz < A.z1 - 0.04) {
+      crate(c, cx - w * 0.38, yz); crate(c, cx - w * 0.38 + 0.07, yz + 0.02, 0.9); barrel(c, cx + w * 0.36, yz);
+      logs(c, cx + w * 0.12, yz + 0.03, 2, 0);
+    }
+    return;
+  }
+  if (def.cat === 'utilities') {
+    if (L.kw) {
+      // a transformer house with insulators, behind a low fence
+      const z = (A.z0 + A.z1) / 2;
+      gb.cbox(cx, 0, z, 0.3, 0.26, 0.24, pal.brick, 0, 0.012);
+      gb.hip(cx, 0.26, z, 0.3, 0.24, 0.1, pal.slate, 0.03);
+      for (const sx of [-1, 0, 1]) { gb.cyl(cx + sx * 0.08, 0.36, z, 0.012, 0.016, 0.06, 6, '#e8e2d4'); }
+      fence(c, cx - 0.24, z - 0.2, cx + 0.24, z + 0.2, '#6a6a70', { x: cx, z: z + 0.2, w: 0.06 });
+    } else {
+      // a round water tank on legs and a little pump hut
+      const z = (A.z0 + A.z1) / 2;
+      for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(cx + lx * 0.09, 0, z + lz * 0.09, 0.025, 0.3, 0.025, '#5e432c');
+      gb.cyl(cx, 0.3, z, 0.15, 0.15, 0.2, 12, pal.wood);
+      gb.cone(cx, 0.5, z, 0.16, 0.08, 12, pal.slate);
+      house(c, { x: cx + Math.min(0.28, aw * 0.3), z: z + 0.16, w: 0.2, d: 0.18, h: 0.2, floors: 1, wall: pal.stoneWall, roof: pal.slate, roofType: 'gable', rh: 0.1, chimney: false, fancy: false, nFront: 1 });
+    }
+    return;
+  }
+  // homes, shops and services: a wing in the same materials, a storey lower
+  // than the building if it's tall, level with the street front when it's
+  // beside the building and tucked up behind it otherwise
+  const floors = top > 0.75 ? 2 : 1;
+  const w = Math.min(0.86, aw - 0.24), d = Math.min(beside ? 0.5 : 0.54, ad - 0.3);
+  if (w < 0.25 || d < 0.2) return;
+  const z = beside ? A.z1 - 0.22 - d / 2 : A.z1 - 0.1 - d / 2;
+  const thatch = pal.thatched && floors === 1;
+  house(c, {
+    x: cx, z, w, d, h: floors * 0.27, floors, wall: pal.wall, roof: thatch ? pal.thatch : pal.roof,
+    roofType: thatch ? 'thatch' : pal.hip ? 'hip' : 'gable', rh: 0.2, timber: pal.timber,
+    chimney: def.cat === 'residential' && rng.chance(0.6), noDoor: !beside,
+    shopWindow: def.cat === 'commercial' && beside, plinth: def.cat === 'services' ? STONE : null,
+  });
+  if (beside && def.cat === 'residential') {
+    const fz = z + d / 2 + 0.1;
+    if (fz < A.z1 - 0.04) { bush(c, cx - w * 0.3, fz, 0.8); flowers(c, cx + w * 0.25, fz, 5, 0.06); }
+  } else if (!beside) {
+    const gz = A.z0 + 0.12;
+    if (gz < z - d / 2 - 0.08) { smallTree(c, cx - aw * 0.3, gz + 0.02, 0.9); bench(c, cx + aw * 0.15, gz, 0); }
+  }
+}
+
