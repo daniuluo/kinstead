@@ -139,7 +139,8 @@ function botDay() {
     if (yard) { if (w.upgradeBuilding(yard.id).ok) counts.upgrades++; } else place('builder');
   }
   // homes
-  const free = sim.housing.cap - sim.housing.used;
+  // room a new household can move into (a single-family home with a family in has none)
+  const free = sim.housing.open ?? sim.housing.cap - sim.housing.used;
   if (free < 4) { for (let i = 0; i < 2; i++) if (!place('house')) { growRoads(); break; } }
   // jobs
   const jobless = [...w.residents.values()].filter(r => r.age === 'adult' && r.job == null && r.school == null).length;

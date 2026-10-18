@@ -643,7 +643,8 @@ export class Sim {
     const vac = this.vacantHomes().filter(b => b.happiness >= 38);
     const freeJobs = this.jobs.total - this.jobs.filled;
     const attract = Math.max(0, Math.min(1, (this.happiness - 38) / 40)) * 0.6 + (freeJobs > 0 ? 0.45 : 0.08);
-    let n = Math.min(vac.length, Math.round(rng.next() * 0.8 + vac.length * attract * 0.55), 7);
+    // each newcomer household takes a home of its own, so more of them come
+    let n = Math.min(vac.length, Math.round(rng.next() * 0.8 + vac.length * attract * CONFIG.ARRIVE_RATE), CONFIG.ARRIVE_MAX);
     if (w.population < 8 && vac.length) n = Math.max(n, 1);
     for (let k = 0; k < n; k++) {
       const b = vac[k % vac.length];
@@ -686,7 +687,7 @@ export class Sim {
       let age = 'adult';
       // past the first two: children, and in a big family grown-up sons and
       // daughters, a brother or sister, a grandparent
-      if (k >= 2) age = rng.chance(size >= 4 ? 0.55 : 0.8) ? 'child' : rng.chance(0.65) ? 'adult' : 'elder';
+      if (k >= 2) age = rng.chance(size >= 4 ? CONFIG.FAMILY_KIDS_BIG : CONFIG.FAMILY_KIDS) ? 'child' : rng.chance(0.65) ? 'adult' : 'elder';
       else if (k === 1 && rng.chance(0.15)) age = 'elder';
       if (size === 1 && rng.chance(0.25)) age = 'elder';
       const r = { id: w.newId(), first: firstName(rng, used.first), last, age, home: home.id, job: null, look: (rng.next() * 1e9) | 0, mood: 60 };

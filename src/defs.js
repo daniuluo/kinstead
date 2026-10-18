@@ -53,8 +53,8 @@ export const BUILDINGS = {
     name: 'House', cat: 'residential', size: 1, icon: '🏠',
     desc: 'Homes for your villagers. Upgrade them as services arrive.',
     levels: [
-      { name: 'Cottage', cost: 100, housing: 3, households: 1, tax: 1 },
-      { name: 'Family House', cost: 260, housing: 6, households: 1, tax: 1.25, unlock: 25, req: { happiness: 50, water: true } },
+      { name: 'Cottage', cost: 75, housing: 3, households: 1, tax: 1 },
+      { name: 'Family House', cost: 200, housing: 6, households: 1, tax: 1.25, unlock: 25, req: { happiness: 50, water: true } },
     ],
     branches: ['villa', 'flats'],
   },
