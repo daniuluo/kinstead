@@ -7,6 +7,7 @@
 import { BUILDINGS } from '../defs.js';
 import { fw, fd, isOpen } from '../world/world.js';
 import { lookOf, siteArea } from './agents.js';
+import { doorPoint } from '../world/world.js';
 
 const DAY_START = 6.5, DAY_END = 18;
 const HIRED_RATE = 0.5;
@@ -48,7 +49,9 @@ export class Construction {
     const sites = [];
     this.crew.clear();
     for (const b of w.buildings.values()) {
-      if (!b.con) continue;
+      if (!b.con) { b._queued = null; continue; }
+      // jobs are served in the order they were ordered, not by building
+      if (b._queued == null || b._queuedFor !== b.con) { b._queued = this._now(); b._queuedFor = b.con; }
       sites.push(b);
       this.crew.set(b.id, { assigned: 0, onSite: 0, rate: 0, hired: 0 });
     }
@@ -80,13 +83,23 @@ export class Construction {
     if (daytime && idle.length && sites.length && this._dispatchT <= 0) {
       this._dispatchT = 0.15;
       const now = this._now();
-      const open = sites.filter(s => !s.con.wait && s.access && s.connected && !(s._unreach > now)).sort((a, b) => a.id - b.id);
+      const open = sites.filter(s => !s.con.wait && s.access && s.connected && !(s._unreach > now)).sort((a, b) => a._queued - b._queued);
       for (const r of idle) {
         const next = r.plan[r.pi];
         if (next && next.t - hours < 0.75) continue;   // about to knock off for the day
         const s = open.find(s => this.crew.get(s.id).assigned < crewCap(s));
         if (!s) break;
         r.site = s.id;
+        if (s.id === r.at) {
+          // already standing at it (their own yard being upgraded): step outside and start
+          const p = doorPoint(s);
+          if (r.walk) ag._drop(r.walk);
+          r.walk = ag._makeWalker(r.lk, [[p.x, p.z]], null);
+          r.walk.r = r;
+          ag._arrive(r, s.id);
+          this.crew.get(s.id).assigned++;
+          continue;
+        }
         ag.go(r, s.id);
         if (r.loc === 'walk') this.crew.get(s.id).assigned++;
         else { r.site = null; s._unreach = now + 2; }

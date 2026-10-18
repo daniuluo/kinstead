@@ -1,12 +1,32 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES } from '../defs.js';
 import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
 import { STYLES } from '../render/buildings.js';
-import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf } from '../sim/people.js';
+import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf } from '../sim/people.js';
+// What feeds a home's happiness, and what to do about each.
+const HAPPY = {
+  base: { label: 'Everyday life', icon: 'cottage', tip: '' },
+  water: { want: 'water', label: 'Water', icon: 'water_drop', tip: (f) => (f.dry ? 'Water runs short here — build more wells or a pump' : 'Build a well or water tower within reach'), act: { label: 'Utilities', cat: 'utilities' } },
+  health: { want: 'a clinic nearby', label: 'Health care', icon: 'medical_services', tip: 'Build a clinic within reach', act: { label: 'Services', cat: 'services' } },
+  education: { want: 'a school nearby', label: 'Schooling', icon: 'school', tip: 'Build a school within reach', act: { label: 'Services', cat: 'services' } },
+  safety: { want: 'a watch post nearby', label: 'Safety', icon: 'shield', tip: 'Build a watch post or fire station within reach', act: { label: 'Services', cat: 'services' } },
+  culture: { want: 'a chapel or hall nearby', label: 'Culture', icon: 'church', tip: 'Build a chapel or music hall within reach', act: { label: 'Services', cat: 'services' } },
+  power: { want: 'electricity', label: 'Electricity', icon: 'bolt', tip: (f, g) => (g.sim.utility && g.sim.utility.power.gen ? 'Not enough power — build more generators' : 'Build a generator (Utilities)'), act: { label: 'Utilities', cat: 'utilities' } },
+  appeal: { want: 'nicer scenery', label: 'Scenery', icon: 'park', tip: 'Plant trees, or build gardens and parks nearby', act: { label: 'Parks', cat: 'parks' } },
+  shops: { want: 'shops nearby', label: 'Shops nearby', icon: 'storefront', tip: 'Build a shop, bakery or tavern within 7 tiles', act: { label: 'Commerce', cat: 'commercial' } },
+  transit: { want: 'a coach stop nearby', label: 'Transport', icon: 'directions_bus', tip: 'Put a coach stop within 4 tiles', act: { label: 'Transit', cat: 'transit' } },
+  pollution: { want: 'less smoke', label: 'Smoke', icon: 'factory', tip: 'Industry is too close — move it, or plant trees between', act: { label: 'Show homes' } },
+  land: { label: 'Garden deal', icon: 'yard', tip: '' },
+  tax: { want: 'lower taxes', label: 'Taxes', icon: 'payments', tip: 'Lower the tax rate in the budget', act: { label: 'Budget', budget: true } },
+  crowded: { want: 'more room', label: 'Crowding', icon: 'groups', tip: 'More people than rooms — upgrade or expand the home', act: { label: 'Show homes' } },
+  jobs: { want: 'work for the household', label: 'Work', icon: 'work', tip: 'Some grown-ups here are looking for work — build workplaces', act: { label: 'Industry', cat: 'industry' } },
+  road: { want: 'a road', label: 'Road', icon: 'add_road', tip: "Not connected to the town's roads — lay a road to it", act: { label: 'Show homes' } },
+};
+
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
@@ -31,7 +51,7 @@ const ICONS = {
   '🐟': 'set_meal', '🌾': 'grass', '🪓': 'carpenter', '🔨': 'hardware', '🥖': 'bakery_dining', '🍺': 'sports_bar',
   '🧺': 'shopping_basket', '🏛': 'account_balance', '🌷': 'local_florist', '🌼': 'filter_vintage', '🚉': 'train', '🏠': 'home',
   '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
-  '🏪': 'store', '⚡': 'bolt', '🔬': 'science', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
+  '🏪': 'store', '⚡': 'bolt', '🔬': 'science', '🎓': 'school', '🔗': 'link', '↔': 'open_with', '🌿': 'yard', '🪚': 'carpenter',
 };
 const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
 export function ico(html) {
@@ -86,6 +106,15 @@ export class UI {
     $('btnLines').onclick = () => this.showLines();
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
+    const insp = $('inspector');
+    try { const p = JSON.parse(localStorage.getItem('hearthvale.win.inspector') || 'null'); if (p) { insp.style.left = `${p.x}px`; insp.style.top = `${p.y}px`; insp.style.right = 'auto'; } } catch {}
+    insp.addEventListener('pointerdown', (e) => {
+      const r = insp.getBoundingClientRect();
+      if (e.button === 0 && e.clientY - r.top < 24 && !e.target.closest('button')) this._drag(insp, e, 'hearthvale.win.inspector');
+    });
+    $('happy').parentElement.style.cursor = 'pointer';
+    $('happy').parentElement.title = 'Happiness: what helps and what hurts (click)';
+    $('happy').parentElement.onclick = () => this.showHappiness();
     $('btnResearch').onclick = () => this.showResearch();
     $('btnPops').onclick = () => this.togglePopups();
     $('issuesHead').onclick = () => this.toggleIssues();
@@ -95,7 +124,6 @@ export class UI {
     $('btnSettings').onclick = () => this.showSettings();
     $('btnHelp').onclick = () => this.showHelp();
     $('townBox').onclick = () => this.showRename();
-    $('modal').addEventListener('pointerdown', (e) => { if (e.target.id === 'modal' && !this._modalLocked) this.closeModal(); });
     const om = $('overlayMenu');
     om.innerHTML = ico(OVERLAYS.map(o => `<button data-o="${o.id ?? ''}">${o.name}</button>`).join(''));
     for (const b of om.querySelectorAll('button')) b.onclick = () => { g.setOverlay(b.dataset.o || null); this.toggleOverlayMenu(false); };
@@ -309,7 +337,7 @@ export class UI {
     for (const a of el.querySelectorAll('[data-act]')) a.onclick = (e) => this._act(a.dataset.act, a.dataset, e);
     // hovering an expansion option shows the plot it would take
     for (const a of el.querySelectorAll('[data-act="expand"]')) {
-      a.onmouseenter = () => { this.game.input.previewTiles = [{ x: Number(a.dataset.x), z: Number(a.dataset.z), color: a.dataset.kind === 'land' ? '#7fdc6a' : '#ff6b5a', alpha: 0.45 }]; this.game.input.refresh(); };
+      a.onmouseenter = () => { this.game.input.previewTiles = a.dataset.tiles.split(';').map(t => { const [x, z] = t.split(',').map(Number); return { x, z, color: a.dataset.kind === 'takeover' ? '#ff6b5a' : a.dataset.kind === 'strip' ? '#ffd84a' : '#7fdc6a', alpha: 0.45 }; }); this.game.input.refresh(); };
       a.onmouseleave = () => { this.game.input.previewTiles = null; this.game.input.refresh(); };
     }
   }
@@ -328,7 +356,8 @@ export class UI {
       const td = BUILDINGS[o.type], n = up.next;
       const accent = branching ? (td.accent || '#4f6a3a') : '#3c6e3c';
       const icon = branching ? (td.pathIcon || 'alt_route') : 'upgrade';
-      const tabName = branching ? `Path ${'ABCD'[i]} · ${esc(td.branch || td.name)}` : 'Next level';
+      const bigger = o.type === b.type && (n.seats || 0) > (cur.seats || 0) && n.teaches === cur.teaches;
+      const tabName = branching ? `Path ${'ABCD'[i]} · ${bigger ? 'Larger' : o.type === b.type ? 'Next level' : esc(td.branch || td.name)}` : 'Next level';
       const unmet = up.reqs.filter(r => !r.met);
       const status = up.ok ? '✓ Ready' : unmet.some(r => r.tech) ? '🔒 Research' : `${unmet.length} to go`;
       // where this path leads
@@ -358,7 +387,7 @@ export class UI {
   // Before → after tiles for everything the upgrade changes.
   _tilesHTML(cur, n) {
     const F = [
-      ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['income', 'Earnings / worker', (v) => `$${v}`],
+      ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['seats', 'Student places', (v) => v], ['teaches', 'Teaches', (v) => EDU[v]], ['income', 'Earnings / worker', (v) => `$${v}`],
       ['tax', 'Tax / worker', (v) => `${v}×`], ['visit', 'Per visit', (v) => `$${v}`], ['radius', 'Reach', (v) => `${v} tiles`],
       ['appeal', 'Scenery', (v) => `+${v}`], ['supply', 'Water for', (v) => `${v}`], ['kw', 'Power', (v) => `${v} kW`],
       ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax', (v) => `+${Math.round(v * 100)}%`],
@@ -432,7 +461,7 @@ export class UI {
     }
     if (L.jobs) rows.push(['Workers', `${b.workers.length} / ${capOf(b, 'jobs')}`]);
     if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
-    if (L.seats) rows.push(['Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')} · teaches to ${EDU[L.edu || 1].toLowerCase()}`]);
+    if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
     if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
     if (L.income) {
       let v = b.workers.length * L.income;
@@ -468,22 +497,19 @@ export class UI {
     if (L.housing && open) {
       const f = b.factors || {};
       h += `<div class="sec"><h5>Happiness ${b.happiness}%</h5><div class="meter"><i style="width:${b.happiness}%;background-position:${-300 + b.happiness * 3}px 0"></i></div>`;
-      const fc = [];
-      for (const [k, s] of Object.entries(SERVICES)) fc.push(`<span class="chip ${f[k] ? 'ok' : 'no'}">${s.icon} ${s.name}</span>`);
-      if (f.dry) fc.push('<span class="chip no">💧 Water runs short</span>');
-      if (f.shops) fc.push('<span class="chip ok">🛍️ Shops nearby</span>');
-      if (f.transit) fc.push('<span class="chip ok">🚏 Transit nearby</span>');
-      if (f.appeal > 3) fc.push(`<span class="chip ok">🌳 Pretty (+${Math.round(f.appeal)})</span>`);
-      if (f.pollution > 2) fc.push(`<span class="chip no">🏭 Smoky (−${Math.round(f.pollution)})</span>`);
-      if (f.unemployed > 0.3) fc.push('<span class="chip no">🧰 Needs jobs</span>');
-      if (f.tax < -2) fc.push('<span class="chip no">💸 High taxes</span>');
-      if (f.land) fc.push(`<span class="chip ok">🌿 ${f.land === 'buyer' ? 'Big garden' : 'Paid for a garden strip'}</span>`);
-      h += `<div class="chips" style="margin-top:6px">${fc.join('')}</div></div>`;
+      h += this._happyTable(f);
+      h += '</div>';
+      // residents, grouped by household
       if (b.residents.length) {
-        h += `<div class="sec"><h5>Household</h5><div class="chips">${b.residents.map(id => {
-          const r = w.residents.get(id);
-          return r ? `<span class="chip link" data-act="resident" data-id="${id}">${ageIcon(r)} ${esc(r.first)}</span>` : '';
-        }).join('')}</div></div>`;
+        const fams = new Map();
+        for (const id of b.residents) { const r = w.residents.get(id); if (!r) continue; const k = familyOf(r); if (!fams.has(k)) fams.set(k, []); fams.get(k).push(r); }
+        const many = fams.size > 1;
+        h += `<div class="sec"><h5>${many ? `${fams.size} households` : 'Household'}</h5>`;
+        for (const members of fams.values()) {
+          if (many) h += `<div class="hh">The ${esc(members[0].last)} ${members.length > 1 ? 'family' : 'household'} <span class="muted">· ${members.length}</span></div>`;
+          h += `<div class="chips">${members.map(r => `<span class="chip link" data-act="resident" data-id="${r.id}">${ageIcon(r)} ${esc(r.first)} <i>${Math.floor(yearsOf(r))}</i></span>`).join('')}</div>`;
+        }
+        h += '</div>';
       }
     }
     if (L.jobs && b.workers.length) {
@@ -501,7 +527,7 @@ export class UI {
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
           const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · $${fmt(o.cost)}`;
-          h += `<button class="btn ${o.warn ? 'warn' : ''} ${confirm ? 'gold' : ''}" data-act="expand" data-dir="${o.dir}" data-kind="${o.kind}" data-x="${o.x}" data-z="${o.z}" ${w.money >= o.cost ? '' : 'disabled'}>${label}</button>`;
+          h += `<button class="btn ${o.warn ? 'warn' : ''} ${confirm ? 'gold' : ''}" data-act="expand" data-dir="${o.dir}" data-kind="${o.kind}" data-tiles="${(o.tiles || [[o.x, o.z]]).map(t => t.join(',')).join(';')}" ${w.money >= o.cost ? '' : 'disabled'}>${label}</button>`;
           if (o.warn) h += `<div class="warnline">⚠ ${esc(o.warn)}</div>`;
         }
         h += '</div></div>';
@@ -518,7 +544,9 @@ export class UI {
       }
     }
     h += `<div class="actions">`;
-    if (!b.con) h += `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · $${fmt(w.moveCost(b))}</button>`;
+    if (!b.con) h += w.hasTech('relocation')
+      ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
+      : '<button class="btn" disabled title="Research House Moving to move buildings">↔ Move 🔒</button>';
     if ((b.type !== 'townhall' || b.con) && !(b.con && b.con.kind === 'demolish')) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
     h += `</div>`;
     return h;
@@ -548,6 +576,17 @@ export class UI {
       h += `<div class="row"><span>Savings</span><b class="${wl < 0 ? 'neg' : ''}">$${fmt(wl)}</b></div>`;
     }
     h += '</div>';
+    if (home && home.factors) {
+      const job = r.age === 'adult' ? (r.job ? 4 : r.school != null ? 0 : -8) : 0;
+      const jobless = r.age === 'adult' && !r.job && r.school == null;
+      const lacks = (home.factors.parts || []).map(([k, v, max]) => ({ k, gap: Math.max(0, max - v) })).filter(x => x.gap > 0.4 && HAPPY[x.k] && !(jobless && x.k === 'jobs')).sort((a, b) => b.gap - a.gap).slice(0, 3);
+      h += `<div class="sec"><h5>Mood ${mood}%</h5><div class="row"><span>Home happiness</span><b>${home.happiness}%</b></div>`;
+      if (r.age === 'adult') h += `<div class="row"><span>${r.job ? 'Has a job' : r.school != null ? 'Studying' : 'Looking for work'}</span><b class="${job < 0 ? 'neg' : ''}">${job > 0 ? '+' : job < 0 ? '−' : ''}${Math.abs(job)}</b></div>`;
+      const wants = lacks.map(x => `${esc(HAPPY[x.k].want || HAPPY[x.k].label.toLowerCase())} (+${Math.round(x.gap)})`);
+      if (jobless) wants.unshift('a job (+12)');
+      if (wants.length) h += `<div class="note">Would be happier with: ${wants.join(', ')}.</div>`;
+      h += '</div>';
+    }
     const traits = traitsOf(r);
     h += `<div class="sec"><h5>Personality</h5><div class="chips">${traits.map(t => `<span class="chip" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`).join('')}</div>`;
     h += `<div class="note">${traits.map(t => esc(TRAITS[t].desc)).join('. ')}.</div></div>`;
@@ -616,7 +655,7 @@ export class UI {
       case 'expand': {
         const key = `${sel.id}:${data.dir}:${data.kind}`;
         // anything that shrinks or demolishes a neighbour needs a second click
-        if (data.kind !== 'land' && this.confirmExpand !== key) { this.confirmExpand = key; this.renderInspector(true); break; }
+        if ((data.kind === 'takeover' || data.kind === 'strip') && this.confirmExpand !== key) { this.confirmExpand = key; this.renderInspector(true); break; }
         this.confirmExpand = null;
         g.input.previewTiles = null;
         const r = w.expandBuilding(sel.id, Number(data.dir), data.kind);
@@ -730,18 +769,95 @@ export class UI {
     $('btnOverlay').classList.toggle('on', !!this.game.overlayMode);
   }
 
-  // -------------------------------------------------------------- modals
+  // ------------------------------------------------------------- windows
+  // Every dialog is a window: drag it by its title bar, keep several open,
+  // click one to bring it to the front. A window is identified by its title,
+  // so opening the same one again refreshes it in place.
   openModal(html, mount, locked = false) {
-    const card = $('modalCard');
-    card.innerHTML = (locked ? '' : '<button class="x" data-close>✕</button>') + ico(html);
-    $('modal').classList.remove('hidden');
-    this._modalLocked = locked;
-    const x = card.querySelector('[data-close]');
-    if (x) x.onclick = () => this.closeModal();
-    if (mount) mount(card);
+    this.windows ||= new Map();
+    const key = ((html.match(/<h2>([\s\S]*?)<\/h2>/) || [])[1] || 'Window').replace(/<[^>]+>/g, '').trim();
+    let win = this.windows.get(key);
+    const fresh = !win;
+    if (fresh) {
+      win = document.createElement('div');
+      win.className = 'modal-card panel win';
+      win.dataset.key = key;
+      $('windows').appendChild(win);
+      this.windows.set(key, win);
+      win.addEventListener('pointerdown', () => this._focusWin(win), true);
+    }
+    win.classList.toggle('locked', locked);
+    win.innerHTML = (locked ? '' : '<button class="x" data-close>✕</button>') + ico(html);
+    const x = win.querySelector('[data-close]');
+    if (x) x.onclick = () => this.closeWindow(win);
+    const bar = win.querySelector('h2');
+    if (bar) bar.onpointerdown = (e) => { if (e.button === 0) this._drag(win, e, `hearthvale.win.${key}`); };
+    this._focusWin(win);
+    if (mount) mount(win);
+    if (fresh) this._placeWin(win, key);
+    else this._clampWin(win);
   }
-  closeModal() { $('modal').classList.add('hidden'); $('modalCard').innerHTML = ''; $('modalCard').classList.remove('wide'); this._modalLocked = false; }
-  get modalOpen() { return !$('modal').classList.contains('hidden'); }
+
+  _placeWin(win, key) {
+    let pos = null;
+    try { pos = JSON.parse(localStorage.getItem(`hearthvale.win.${key}`) || 'null'); } catch {}
+    const r = win.getBoundingClientRect();
+    const n = this.windows.size - 1;
+    win.style.left = `${pos ? pos.x : Math.max(8, (innerWidth - r.width) / 2 + n * 26)}px`;
+    win.style.top = `${pos ? pos.y : Math.max(8, Math.min(90, (innerHeight - r.height) / 2) + n * 26)}px`;
+    this._clampWin(win);
+  }
+
+  // keep the whole window on screen when it fits (and its title bar always)
+  _clampWin(win) {
+    const r = win.getBoundingClientRect();
+    const left = Math.min(Math.max(0, r.left), Math.max(0, innerWidth - r.width));
+    const top = Math.min(Math.max(0, r.top), Math.max(0, innerHeight - r.height));
+    win.style.left = `${left}px`;
+    win.style.top = `${top}px`;
+  }
+
+  _focusWin(win) {
+    this._z = (this._z || 60) + 1;
+    win.style.zIndex = this._z;
+    this._top = win;
+    for (const w of this.windows.values()) w.classList.toggle('inactive', w !== win);
+  }
+
+  // Drag a window (or the properties panel) by its title bar.
+  _drag(el, e, storeKey) {
+    e.preventDefault();
+    const r = el.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+    el.style.right = 'auto';
+    const move = (ev) => {
+      el.style.left = `${Math.min(Math.max(0, r.left + ev.clientX - sx), innerWidth - 60)}px`;
+      el.style.top = `${Math.min(Math.max(0, r.top + ev.clientY - sy), innerHeight - 30)}px`;
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      try { localStorage.setItem(storeKey, JSON.stringify({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) })); } catch {}
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+
+  closeWindow(win) {
+    if (!win) return false;
+    win.remove();
+    this.windows.delete(win.dataset.key);
+    if (this._top === win) {
+      this._top = [...this.windows.values()].sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))[0] || null;
+      if (this._top) this._focusWin(this._top);
+    }
+    return true;
+  }
+
+  // Closes the front window (the one the player last clicked in).
+  closeModal() { return this.closeWindow(this._top && this._top.isConnected ? this._top : null); }
+  closeAllWindows() { for (const w of [...(this.windows || new Map()).values()]) this.closeWindow(w); }
+  // only a window that must be answered (no close button) blocks the game
+  get modalOpen() { return [...(this.windows || new Map()).values()].some(w => w.classList.contains('locked')); }
+  get anyWindow() { return !!(this.windows && this.windows.size); }
 
   showRename() {
     this.openModal(`<h2>Rename your town</h2><div class="field"><label>Town name</label><input id="renameIn" maxlength="40" value="${esc(this.world.townName)}"></div>
@@ -861,7 +977,7 @@ export class UI {
     body.innerHTML = `<div class="empty">Loading your Drive saves…</div>`;
     let files = [];
     try { files = await drive.list(); } catch (e) { body.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-    if (!this.modalOpen) return;
+    if (!body.isConnected) return;
     let h = `<div class="actions" style="margin:0 0 12px">${inGame ? '<button class="btn primary" id="gSave">☁️ Save to Drive</button>' : ''}<button class="btn" id="gOut">Disconnect</button></div>`;
     if (!files.length) h += `<div class="empty">No Hearthvale saves in your Drive yet.</div>`;
     h += `<div class="saves">${files.map(f => {
@@ -1033,15 +1149,22 @@ export class UI {
   }
 
   // What each research project unlocks, worked out from the definitions.
+  // What a project unlocks: [{ text, img }] (img is a thumbnail, if any).
   _techUnlocks(id) {
-    const out = [];
+    const out = [], seen = new Set();
+    const add = (text, img = null) => { if (!seen.has(text)) { seen.add(text); out.push({ text, img }); } };
+    if (CAPABILITIES[id]) add(CAPABILITIES[id]);
     for (const [type, def] of Object.entries(BUILDINGS)) {
-      if (def.tech === id) out.push(def.merged ? `${def.name} (join neighbours)` : def.branch ? `${def.branch} upgrade path` : def.name);
-      def.levels.forEach((L) => { if (L.tech === id) out.push(`${L.name} upgrade`); });
+      def.levels.forEach((L, i) => {
+        if (techForLevel(type, i) !== id) return;
+        if (i === 0) {
+          const m = MERGES.find(m => m.to === type);
+          add(m ? `${def.name} — join ${BUILDINGS[m.a[0]].name.toLowerCase()} + ${BUILDINGS[m.b[0]].name.toLowerCase()}` : def.hidden && def.branch ? `${L.name} (new path)` : def.name, thumb(type, 0));
+        } else add(`${L.name} (upgrade)`, thumb(type, i));
+      });
     }
-    for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) out.push(`${STYLES.find(s => s.id === style).name} style`);
-    for (const m of MERGES) if (BUILDINGS[m.to].tech === id && !out.some(o => o.startsWith(BUILDINGS[m.to].name))) out.push(`${BUILDINGS[m.to].name} (join ${m.a[0]} + ${m.b[0]})`);
-    if (id === 'railways') out.push('Railway track and lines');
+    for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) add(`${STYLES.find(s => s.id === style).name} style`, thumb('house', 1, 4242, null, style));
+    if (id === 'railways') add('Railway track and lines');
     return out;
   }
 
@@ -1054,16 +1177,21 @@ export class UI {
     const tiers = Math.max(...Object.values(TECHS).map(t => t.tier)) + 1;
     const rows = BRANCHES.filter(([b]) => Object.values(TECHS).some(t => t.branch === b));
     if (!this._techSel || !TECHS[this._techSel]) this._techSel = R.current || Object.keys(TECHS).find(id => state(id) === 'can') || 'carpentry';
+    const HUES = ['#8a6a3a', '#6a3f8a', '#7a7468', '#9a4a32', '#b0708a', '#a0522d', '#7a2a5a', '#5a4a3a', '#5a7a2a', '#2f6a8a', '#b08a1a', '#8a2f2f', '#2f5a8a', '#3a3a3a'];
+    const hue = (b) => HUES[rows.findIndex(r => r[0] === b) % HUES.length];
+    // only same-branch links are drawn; anything else a project needs shows as a tag
     const node = (id) => {
       const t = TECHS[id], s = state(id);
-      const tail = s === 'done' ? '✓' : s === 'cur' ? `${Math.round((R.progress / t.cost) * 100)}%` : s === 'can' ? `🔬 ${t.cost}` : `🔒 ${t.cost}`;
-      return `<div class="tnode ${s} ${this._techSel === id ? 'sel' : ''}" data-node="${id}" style="grid-row:${rows.findIndex(r => r[0] === t.branch) + 1};grid-column:${t.tier + 2}"><b>${esc(t.name)}</b><span>${tail}</span>${s === 'cur' ? `<i style="width:${Math.round((R.progress / t.cost) * 100)}%"></i>` : ''}</div>`;
+      const tail = s === 'done' ? '✓ done' : s === 'cur' ? `${Math.round((R.progress / t.cost) * 100)}%` : `${s === 'can' ? '🔬' : '🔒'} ${t.cost}`;
+      const cross = t.needs.filter(n => TECHS[n].branch !== t.branch).map(n => `<em class="${R.done.includes(n) || all ? 'ok' : ''}">+ ${esc(TECHS[n].name)}</em>`).join('');
+      return `<div class="tnode ${s} ${this._techSel === id ? 'sel' : ''}" data-node="${id}" style="--hue:${hue(t.branch)};grid-row:${rows.findIndex(r => r[0] === t.branch) + 1};grid-column:${t.tier + 2}"><b>${esc(t.name)}</b><span>${tail}</span>${cross ? `<div class="tx">${cross}</div>` : ''}${s === 'cur' ? `<i style="width:${Math.round((R.progress / t.cost) * 100)}%"></i>` : ''}</div>`;
     };
     const sel = TECHS[this._techSel], ss = state(this._techSel);
     const days = rate > 0 ? Math.max(1, Math.ceil((sel.cost - (ss === 'cur' ? R.progress : 0) - (ss === 'cur' ? 0 : R.bank)) / rate)) : null;
     let detail = `<div class="tdetail"><div><b>${esc(sel.name)}</b> <span class="tcost">${sel.cost} points</span><div class="tdesc">${esc(sel.desc)}</div>`;
     if (sel.needs.length) detail += `<div class="tneeds">Needs: ${sel.needs.map(n => `<span class="${R.done.includes(n) || all ? 'ok' : 'no'}">${esc(TECHS[n].name)}</span>`).join(' + ')}</div>`;
-    detail += `</div><ul>${this._techUnlocks(this._techSel).map(u => `<li>${esc(u)}</li>`).join('') || '<li>—</li>'}</ul><div class="tact">`;
+    const un = this._techUnlocks(this._techSel);
+    detail += `</div><div class="tunlocks">${un.map(u => `<div class="tu">${u.img ? `<img src="${u.img}" alt="">` : '<div class="tu-ph"><span class="ms">auto_awesome</span></div>'}<span>${esc(u.text)}</span></div>`).join('') || '<div class="tsub">—</div>'}</div><div class="tact">`;
     if (ss === 'done') detail += '<div class="tdone">✓ Researched</div>';
     else if (ss === 'cur') detail += `<div class="meter build"><i style="width:${Math.round((R.progress / sel.cost) * 100)}%"></i></div><div class="tsub">${R.progress}/${sel.cost} · ${days ? `about ${days} day${days === 1 ? '' : 's'}` : 'no research yet'}</div>`;
     else if (ss === 'can') detail += `<button class="btn primary" data-tech="${this._techSel}">🔬 Research · ${sel.cost} points${days ? ` · ~${days} days` : ''}</button>`;
@@ -1072,9 +1200,9 @@ export class UI {
     const sources = [];
     for (const b of w.buildings.values()) if (['townhall', 'school', 'chapel', 'parishschool'].includes(b.type) && b.connected) sources.push(BUILDINGS[b.type].levels[b.level].name);
     this.openModal(`<h2>Research</h2><p class="lead">🔬 ${rate} point${rate === 1 ? '' : 's'} a day from ${sources.length ? esc([...new Set(sources)].join(', ')) : 'nowhere yet'} and your villagers${R.bank ? ` · ${R.bank} banked` : ''}${R.current ? ` · researching <b>${esc(TECHS[R.current].name)}</b>` : ''}. Schools and chapels speed research up.${all ? ' <b>Sandbox: everything is unlocked.</b>' : ''}</p>
-      <div class="ttree-wrap"><div class="ttree" style="grid-template-columns: 96px repeat(${tiers}, 132px); grid-template-rows: repeat(${rows.length}, 44px)">
+      <div class="ttree-wrap"><div class="ttree" style="grid-template-columns: 104px repeat(${tiers}, 136px); grid-template-rows: repeat(${rows.length}, minmax(44px, auto))">
         <svg class="tlinks"></svg>
-        ${rows.map(([, name], i) => `<div class="tbranch" style="grid-row:${i + 1};grid-column:1">${esc(name)}</div>`).join('')}
+        ${rows.map(([b, name], i) => `<div class="tbranch" style="--hue:${hue(b)};grid-row:${i + 1};grid-column:1">${esc(name)}</div>`).join('')}
         ${Object.keys(TECHS).map(node).join('')}
       </div></div>${detail}`, (c) => {
       c.classList.add('wide');
@@ -1085,6 +1213,7 @@ export class UI {
         const at = (id) => { const r = tree.querySelector(`[data-node="${id}"]`).getBoundingClientRect(); return { l: r.left - box.left, r: r.right - box.left, y: r.top - box.top + r.height / 2 }; };
         let p = '';
         for (const [id, t] of Object.entries(TECHS)) for (const n of t.needs) {
+          if (TECHS[n].branch !== t.branch) continue;
           const a = at(n), b = at(id), s = state(id);
           const col = s === 'done' ? '#2c7a2c' : s === 'can' || s === 'cur' ? '#000080' : '#9a9a9a';
           const mx = (a.r + b.l) / 2;
@@ -1095,6 +1224,66 @@ export class UI {
       requestAnimationFrame(draw);
       for (const el of c.querySelectorAll('[data-node]')) el.onclick = () => { this._techSel = el.dataset.node; this.showResearch(); };
       for (const btn of c.querySelectorAll('[data-tech]')) btn.onclick = () => { if (w.startResearch(btn.dataset.tech)) { g.sfx('click'); this.showResearch(); } };
+    });
+  }
+
+  // ----------------------------------------------------------- happiness
+  // What a home's happiness is made of: the gaps first, each with what to do.
+  _happyTable(f) {
+    const parts = (f && f.parts) || [];
+    const rows = parts.map(([k, v, max]) => ({ k, v, gap: Math.max(0, max - v), info: HAPPY[k] })).filter(r => r.info);
+    rows.sort((a, b) => b.gap - a.gap || b.v - a.v);
+    const tip = (r) => (typeof r.info.tip === 'function' ? r.info.tip(f, this.game) : r.info.tip);
+    let html = '<table class="hap">';
+    for (const r of rows) {
+      const missing = r.gap > 0.4;
+      if (!missing && r.v === 0 && r.k !== 'base') continue;
+      const val = r.v > 0 ? `+${Math.round(r.v)}` : r.v < 0 ? `−${Math.round(-r.v)}` : '0';
+      const of = missing && r.v >= 0 && r.k !== 'tax' ? ` <em>of ${Math.round(r.v + r.gap)}</em>` : '';
+      html += `<tr class="${missing ? (r.v < 0 ? 'bad' : 'miss') : 'ok'}"><td><span class="ms">${r.info.icon}</span>${esc(r.info.label)}</td><td class="pts">${val}${of}</td></tr>`;
+      if (missing && tip(r)) html += `<tr class="tip"><td colspan="2">${esc(tip(r))}</td></tr>`;
+    }
+    return html + '</table>';
+  }
+
+  // The whole town's happiness: what pulls it down most, and where.
+  showHappiness() {
+    const g = this.game, w = this.world, sim = g.sim;
+    if (!w || g.demo) return;
+    const homes = [...w.buildings.values()].filter(b => b.factors && b.residents.length);
+    const people = homes.reduce((n, b) => n + b.residents.length, 0) || 1;
+    const agg = {};
+    for (const b of homes) for (const [k, v, max] of b.factors.parts || []) {
+      const a = agg[k] || (agg[k] = { v: 0, lost: 0, homes: [] });
+      const lost = Math.max(0, max - v);
+      a.v += v * b.residents.length;
+      a.lost += lost * b.residents.length;
+      if (lost > 0.4) a.homes.push(b.id);
+    }
+    const rows = Object.entries(agg).filter(([k]) => HAPPY[k]).map(([k, a]) => ({ k, avg: a.v / people, lost: a.lost / people, homes: a.homes, info: HAPPY[k] })).sort((a, b) => b.lost - a.lost);
+    const bands = [[75, 101, 'Very happy'], [55, 75, 'Content'], [40, 55, 'Unsettled'], [0, 40, 'Unhappy — may leave']];
+    const dist = bands.map(([lo, hi, name]) => `<span class="chip ${lo >= 55 ? 'ok' : lo >= 40 ? '' : 'no'}">${name}: ${homes.filter(b => b.happiness >= lo && b.happiness < hi).length} homes</span>`).join('');
+    const avg = Math.round(sim.happiness);
+    let table = '<table class="hap big"><tr><th>What matters</th><th>Average now</th><th>Could gain</th><th>Homes missing out</th><th></th></tr>';
+    rows.forEach((r, i) => {
+      const val = Math.abs(r.avg) < 0.05 ? '0' : r.avg > 0 ? `+${r.avg.toFixed(1)}` : `−${(-r.avg).toFixed(1)}`;
+      const tip = r.lost > 0.2 ? (typeof r.info.tip === 'function' ? r.info.tip({}, g) : r.info.tip) : '';
+      const act = r.lost > 0.2 && r.info.act ? `<button class="btn small" data-hap="${i}">${esc(r.info.act.label)}</button>` : '';
+      table += `<tr class="${r.lost > 2 ? 'miss' : 'ok'}"><td><span class="ms">${r.info.icon}</span>${esc(r.info.label)}<div class="sub">${esc(tip)}</div></td><td class="pts">${val}</td><td class="pts">${r.lost > 0.05 ? '+' + r.lost.toFixed(1) : '—'}</td><td class="pts">${r.homes.length || '—'}</td><td>${act}</td></tr>`;
+    });
+    table += '</table>';
+    this.openModal(`<h2>Happiness</h2><p class="lead">The town is <b>${avg}%</b> happy on average (each home counts by how many live there). <i>Could gain</i> is how many points the average villager would add if that need were fully met. A villager's mood is their home's happiness, plus 4 with a job or minus 8 while looking for work.</p><div class="chips" style="margin-bottom:8px">${dist}</div>${table}`, (c) => {
+      c.classList.add('wide');
+      for (const btn of c.querySelectorAll('[data-hap]')) btn.onclick = () => {
+        const r = rows[Number(btn.dataset.hap)], a = r.info.act;
+        if (a.cat) this.openFlyout(a.cat);
+        else if (a.budget) this.showBudget();
+        else if (r.homes.length) {
+          this._hapCycle = ((this._hapCycle ?? -1) + 1) % r.homes.length;
+          const b = w.buildings.get(r.homes[this._hapCycle]);
+          if (b) { this.inspect({ kind: 'building', id: b.id }); g.renderer.lookAt(b.x + (b.w ?? b.size) / 2, b.z + (b.d ?? b.size) / 2); }
+        }
+      };
     });
   }
 

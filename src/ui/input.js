@@ -404,7 +404,9 @@ export class Input {
     if (down) this.keys.add(k); else { this.keys.delete(k); return; }
     const g = this.game, ui = this.ui;
     if (!g.world || g.demo) return;
-    if (ui.modalOpen) { if (k === 'escape') ui.closeModal(); return; }
+    if (ui.modalOpen) return;
+    // Esc closes the front window first
+    if (k === 'escape' && ui.anyWindow && ui.closeModal()) return;
     if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); if (e.shiftKey) g.downloadSave(); else g.quickSave(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (k) {

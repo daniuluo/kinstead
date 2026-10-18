@@ -2309,6 +2309,178 @@ MODELS.apartments = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// --------------------------------------------------- schools by stage
+
+MODELS.middleschool = (c, L) => {
+  const { gb, rng, pal } = c;
+  const wall = L ? pal.brick : rng.pick(['#b8704a', '#cfae86', '#a8573a']);
+  const H = L ? 0.62 : 0.48;
+  house(c, { z: -0.14, w: L ? 0.88 : 0.8, d: 0.5, h: H, floors: 2, wall, roof: pal.slate, roofType: 'hip', rh: 0.22, doorX: 0, doorW: 0.12, nFront: 4, lit: 0.6, plinth: STONE, fancy: false, chimney: true });
+  // bell cote and a clock on the front
+  gb.cbox(0, H + 0.12, -0.14, 0.14, 0.16, 0.14, '#e9e0cc', 0, 0.01);
+  gb.roof(0, H + 0.28, -0.14, 0.18, 0.18, 0.12, 0, pal.slate);
+  gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, H - 0.1, 0.115, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+  // playground: hopscotch, a climbing frame, a fence
+  const py = c.gy(-0.3, 0.32);
+  gb.box(-0.3, py - 0.004, 0.32, 0.22, 0.01, 0.14, '#9a9284');
+  for (const x of [0.18, 0.36]) gb.box(x, c.gy(x, 0.32), 0.32, 0.014, 0.16, 0.014, '#5e432c');
+  gb.box(0.27, c.gy(0.27, 0.32) + 0.15, 0.32, 0.2, 0.014, 0.014, '#5e432c');
+  fence(c, -0.47, 0.18, 0.47, 0.47, FENCE, { x: 0, z: 0.47, w: 0.12 });
+};
+
+MODELS.highschool = (c, L) => {
+  const { gb, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.14, D = 0.56, z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2;
+  const floors = L ? 3 : 2, h = floors * 0.26;
+  house(c, { x: 0, z: z0, w: W, d: D, h, floors, wall: pal.brick, roof: pal.slate, roofType: 'hip', rh: 0.26, plinth: STONE, doorX: 0, doorW: 0.14, nFront: Math.round(W / 0.17), fancy: false, chimney: true, lit: 0.7 });
+  // central tower with a clock and flag
+  gb.cbox(0, 0, fz - 0.05, 0.22, h + 0.32, 0.16, pal.stoneWall, 0, 0.014);
+  gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, h + 0.16, fz + 0.035, 0.06, 0.06, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+  gb.roof(0, h + 0.32, fz - 0.05, 0.24, 0.18, 0.22, 0, pal.slate);
+  gb.box(0, h + 0.54, fz - 0.05, 0.01, 0.22, 0.01, '#3a3a3e'); gb.box(0.05, h + 0.7, fz - 0.05, 0.1, 0.06, 0.004, '#3f6a8f');
+  door(c, 0, fz + 0.03, 0.1, 0.18, '#3f2f28');
+  // a sports field in front
+  const sz = f.dep / 2 - 0.18;
+  gb.box(0, c.gy(0, sz) - 0.006, sz, W * 0.7, 0.012, 0.24, '#7fae4f');
+  for (const s of [-1, 1]) { gb.box(s * W * 0.33, c.gy(s * W * 0.33, sz), sz, 0.01, 0.12, 0.01, '#f2ede0'); gb.box(s * W * 0.33, c.gy(s * W * 0.33, sz) + 0.11, sz, 0.01, 0.01, 0.12, '#f2ede0'); }
+  if (f.turned) gb.pop();
+};
+
+MODELS.college = (c, L) => {
+  const { gb, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, z0 = -f.dep / 2 + 0.34;
+  const stone = pal.stoneWall, h = L ? 0.84 : 0.66;
+  // a gothic hall with corner towers, pointed windows and a quad
+  house(c, { x: 0, z: z0, w: W * 0.62, d: 0.52, h, floors: L ? 3 : 2, wall: stone, roof: pal.slate, roofType: 'gable', rh: 0.34, plinth: STONE_D, doorX: 0, doorW: 0.12, nFront: 5, fancy: false, lit: 0.85 });
+  for (const s of [-1, 1]) {
+    const tx = s * (W / 2 - 0.16);
+    footing(c, tx, z0, 0.26, 0.26);
+    gb.cbox(tx, 0, z0, 0.26, h + 0.2, 0.26, stone, 0, 0.014);
+    for (const a of [-1, 1]) for (const b2 of [-1, 1]) gb.cone(tx + a * 0.1, h + 0.2, z0 + b2 * 0.1, 0.035, 0.16, 6, pal.slate);
+    for (let k = 0; k < 3; k++) win(c, tx, 0.12 + k * 0.22, z0 + 0.131, 0.06, 0.12, 'f', 0.8);
+  }
+  // the quad: lawn and paths
+  const qz = f.dep / 2 - 0.22;
+  gb.box(0, c.gy(0, qz) - 0.006, qz, W * 0.7, 0.012, 0.3, '#7fae4f');
+  gb.box(0, c.gy(0, qz) - 0.002, qz, 0.08, 0.012, 0.3, '#cdbf9e');
+  gb.box(0, c.gy(0, qz) - 0.002, qz, W * 0.7, 0.012, 0.06, '#cdbf9e');
+  smallTree(c, -W * 0.25, qz, 0.9); smallTree(c, W * 0.25, qz, 0.9);
+  lamp(c, -0.1, f.dep / 2 - 0.06, 0.3); lamp(c, 0.1, f.dep / 2 - 0.06, 0.3);
+  if (f.turned) gb.pop();
+};
+
+MODELS.university = (c, L) => {
+  const { gb, pal } = c;
+  const f = rowFrame(c);
+  const W = f.len - 0.12, z0 = -f.dep / 2 + 0.34, trim = '#ece6da';
+  // a domed main hall with a portico, wings, and an observatory
+  house(c, { x: 0, z: z0, w: 0.62, d: 0.52, h: 0.74, floors: 3, wall: trim, roof: pal.slate, roofType: 'flat', plinth: STONE_D, doorX: 0, doorW: 0.14, nFront: 3, fancy: false, lit: 0.9 });
+  gb.cyl(0, 0.76, z0, 0.2, 0.22, 0.12, 14, trim);
+  gb.sphere(0, 0.88, z0, 0.2, '#5f7f86', 1, 0.8);
+  gb.cyl(0, 1.04, z0, 0.03, 0.04, 0.1, 8, trim);
+  for (let i = 0; i < 6; i++) gb.cyl(-0.2 + i * 0.08, 0.02, z0 + 0.32, 0.016, 0.018, 0.44, 8, trim);
+  gb.gable(0, 0.46, z0 + 0.3, 0.52, 0.14, 0.1, trim, pal.slate, 0.02);
+  for (const s of [-1, 1]) house(c, { x: s * (W / 2 - 0.25), z: z0 + 0.04, w: 0.42, d: 0.42, h: 0.54, floors: 2, wall: pal.stoneWall, roof: pal.slate, roofType: 'hip', rh: 0.2, noDoor: true, nFront: 2, fancy: false, lit: 0.85 });
+  // observatory dome on one wing
+  const ox = W / 2 - 0.25;
+  gb.cyl(ox, 0.74, z0 + 0.04, 0.12, 0.12, 0.06, 12, trim);
+  gb.sphere(ox, 0.8, z0 + 0.04, 0.12, '#c8cfd2', 1, 0.9);
+  gb.box(ox + 0.03, 0.8, z0 + 0.04, 0.03, 0.14, 0.03, '#3a3a3e', 0, 0, -0.5);
+  const qz = f.dep / 2 - 0.2;
+  gb.box(0, c.gy(0, qz) - 0.006, qz, W * 0.75, 0.012, 0.28, '#7fae4f');
+  gb.box(0, c.gy(0, qz) - 0.002, qz, 0.1, 0.012, 0.28, '#cdbf9e');
+  for (const s of [-1, 1]) { smallTree(c, s * W * 0.3, qz, 1); bench(c, s * 0.14, qz, Math.PI); }
+  if (f.turned) gb.pop();
+};
+
+// ------------------------------------------------- side-branch buildings
+
+MODELS.foundry = (c, L) => {
+  const { gb, pal } = c;
+  // a tall brick casting shed, a cupola furnace and stacks of iron
+  house(c, { x: -0.08, z: -0.14, w: 0.7, d: 0.52, h: L ? 0.6 : 0.48, wall: L ? '#6a4a3a' : pal.brick, roof: '#3f3f44', roofType: 'gable', rh: 0.2, nFront: 3, doorX: 0, doorW: 0.16, chimney: false, fancy: false, lit: 1 });
+  const stacks = L ? [[-0.34, -0.36], [0.3, -0.36]] : [[-0.34, -0.36]];
+  for (const [x, z] of stacks) { gb.cyl(x, 0.2, z, 0.05, 0.07, (L ? 1.3 : 1.05) - 0.2, 10, '#5e2e22'); c.addSmoke(x, L ? 1.35 : 1.1, z, 'heavy'); }
+  gb.cyl(0.36, 0, 0.1, 0.1, 0.12, 0.4, 10, '#4a4a4e');
+  gb.glow(2.4, 1.2, 0.3, 2.0); gb.box(0.36, 0.06, 0.2, 0.08, 0.08, 0.02, '#ff9a40'); gb.noGlow();
+  c.addGlow(0.36, 0.1, 0.22, 'forge');
+  for (let i = 0; i < 3; i++) gb.box(-0.3 + i * 0.12, c.gy(-0.3 + i * 0.12, 0.38), 0.38, 0.1, 0.03 + i * 0.01, 0.06, '#5a5a5e');
+  gb.blob(0.1, c.gy(0.1, 0.4), 0.4, 0.12, 0.05, 0.08, '#2a2826');
+};
+
+MODELS.orchard = (c, L) => {
+  const { gb, rng, pal } = c;
+  // rows of fruit trees, a cider mill with a press, and barrels
+  house(c, { x: 0.44, z: -0.5, w: 0.62, d: 0.46, h: L ? 0.48 : 0.36, floors: L ? 2 : 1, wall: pal.wall, roof: pal.thatched ? pal.thatch : pal.roof, roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.24, nFront: 2, doorX: 0, chimney: true, timber: pal.timber });
+  const fruit = rng.pick(['#c8402f', '#e0b030', '#9ab830']);
+  for (let row = 0; row < 4; row++) for (let i = 0; i < (row < 2 ? 3 : 5); i++) {
+    const x = -0.82 + i * (row < 2 ? 0.28 : 0.38), z = -0.75 + row * 0.42;
+    if (row < 2 && x > -0.05) continue;
+    const y = c.gy(x, z);
+    gb.cyl(x, y, z, 0.014, 0.018, 0.12, 5, '#6e5034');
+    gb.blob(x, y + 0.1, z, 0.1, 0.08, 0.1, rng.pick(LEAF));
+    for (let k = 0; k < 3; k++) gb.sphere(x + rng.float(-0.06, 0.06), y + 0.14 + rng.float(-0.02, 0.03), z + rng.float(-0.06, 0.06), 0.014, fruit, 0);
+  }
+  for (let i = 0; i < (L ? 6 : 3); i++) barrel(c, 0.2 + (i % 3) * 0.08, -0.18 + Math.floor(i / 3) * 0.08);
+  gb.box(0.72, c.gy(0.72, -0.18), -0.18, 0.12, 0.14, 0.12, '#7a5a3c');
+  gb.cyl(0.72, c.gy(0.72, -0.18) + 0.14, -0.18, 0.012, 0.012, 0.1, 6, '#3a2f28');
+  fence(c, -0.96, -0.96, 0.96, 0.96, FENCE, { x: 0, z: 0.96, w: 0.12 });
+  c.work = [-0.88, -0.88, 0.0, 0.88];
+};
+
+MODELS.papermill = (c, L) => {
+  const { gb, pal } = c;
+  // a long mill with a water wheel and drying lofts
+  house(c, { x: -0.04, z: -0.12, w: 0.76, d: 0.48, h: L ? 0.62 : 0.5, floors: 2, wall: L ? pal.brick : pal.wall, roof: pal.slate, roofType: 'gable', rh: 0.22, nFront: 4, doorX: 0, chimney: false, fancy: false, lit: 0.9 });
+  chimney(c, -0.3, 0.4, 0.95, -0.28, 'work', '#7f3f2e');
+  for (let i = 0; i < 4; i++) gb.box(-0.3 + i * 0.2, L ? 0.62 : 0.5, 0.13, 0.12, 0.05, 0.015, '#e8e0cc');
+  const wheel = new GeoBuilder();
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; wheel.boxC(Math.cos(a) * 0.15, Math.sin(a) * 0.15, 0, 0.12, 0.02, 0.07, '#6e5034', 0, 0, a + Math.PI / 2); wheel.boxC(Math.cos(a) * 0.075, Math.sin(a) * 0.075, 0, 0.15, 0.012, 0.012, '#5e432c', 0, 0, a); }
+  c.spin = { geo: wheel.build(), x: 0.42, y: 0.15, z: -0.1, speed: 0.6, ry: Math.PI / 2 };
+  for (let i = 0; i < 3; i++) crate(c, -0.36 + i * 0.09, 0.4, 0.9, '#e8e0cc');
+  sign(c, -0.04, 0.3, 0.125, 0.24, 0.05, '#3b2f2a');
+};
+
+MODELS.musichall = (c, L) => {
+  const { gb, rng, pal } = c;
+  const wall = L ? '#ebe4d6' : pal.wall, trim = '#e3dccd';
+  // a gaily painted hall with a lit marquee and posters
+  house(c, { z: -0.12, w: 0.82, d: 0.56, h: L ? 0.7 : 0.54, floors: 2, wall, roof: pal.slate, roofType: L ? 'hip' : 'gable', rh: 0.24, nFront: 3, doorX: 0, doorW: 0.16, chimney: false, fancy: false, lit: 1 });
+  gb.box(0, 0.26, 0.2, 0.6, 0.03, 0.14, '#3a2f28');
+  gb.glow(2.2, 1.6, 0.6, 3.0);
+  for (let i = 0; i < 9; i++) gb.sphere(-0.28 + i * 0.07, 0.285, 0.27, 0.012, '#ffe2a0', 0);
+  gb.noGlow();
+  gb.box(0, 0.32, 0.17, 0.5, 0.08, 0.012, rng.pick(['#7a2a5a', '#2a3a7a', '#7a2a2a']));
+  gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, 0.335, 0.18, 0.4, 0.04, 0.006, '#e0c070'); gb.noGlow();
+  for (const x of [-0.36, 0.36]) gb.box(x, 0.06, 0.165, 0.1, 0.14, 0.008, rng.pick(['#d8a630', '#c8423a', '#3f6a8f']));
+  if (L) { gb.cbox(0, 0.7, -0.12, 0.3, 0.12, 0.3, trim, 0, 0.01); gb.sphere(0, 0.84, -0.12, 0.14, '#5f7f86', 1, 0.7); }
+  lamp(c, -0.42, 0.42, 0.3); lamp(c, 0.42, 0.42, 0.3);
+};
+
+MODELS.firestation = (c, L) => {
+  const { gb, pal } = c;
+  // red-brick engine house with big doors and a hose-drying tower
+  const wall = '#9a3a2a';
+  house(c, { x: -0.06, z: -0.12, w: 0.7, d: 0.54, h: L ? 0.6 : 0.46, floors: 2, wall, roof: pal.slate, roofType: 'gable', rh: 0.2, nFront: 3, noDoor: true, chimney: true, fancy: false, lit: 0.9 });
+  for (const x of L ? [-0.24, 0, 0.24] : [-0.14, 0.14]) {
+    gb.box(x, 0, 0.152, 0.18, 0.22, 0.012, '#e3dccd');
+    gb.box(x, 0, 0.158, 0.15, 0.19, 0.012, '#c8423a');
+    gb.box(x, 0.09, 0.166, 0.15, 0.008, 0.006, '#e3dccd');
+  }
+  const tx = 0.38, tz = -0.24;
+  footing(c, tx, tz, 0.16, 0.16);
+  gb.cbox(tx, 0, tz, 0.16, L ? 1.0 : 0.8, 0.16, wall, 0, 0.01);
+  gb.roof(tx, L ? 1.0 : 0.8, tz, 0.2, 0.2, 0.14, 0, pal.slate);
+  gb.cyl(tx, (L ? 1.0 : 0.8) - 0.14, tz + 0.085, 0.03, 0.03, 0.012, 8, '#d8a630', 0, Math.PI / 2);
+  // the engine itself, waiting outside
+  const ex = -0.06, ez = 0.36, ey = c.gy(ex, ez);
+  gb.box(ex, ey + 0.03, ez, 0.12, 0.07, 0.26, '#c8423a');
+  for (const s of [-1, 1]) for (const z of [-0.08, 0.08]) gb.cyl(ex + s * 0.065, ey + 0.035, ez + z, 0.035, 0.035, 0.012, 8, '#3a2f28', 0, 0, Math.PI / 2);
+  gb.cyl(ex, ey + 0.11, ez - 0.04, 0.03, 0.03, 0.08, 8, '#d8a630', 0, Math.PI / 2);
+};
+
 function tint(geo, t) {
   const c = geo.attributes.color;
   for (let i = 0; i < c.count; i++) c.setXYZ(i, c.getX(i) * (1 + t[0]), c.getY(i) * (1 + t[1]), c.getZ(i) * (1 + t[2]));

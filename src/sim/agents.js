@@ -126,7 +126,12 @@ export class Agents {
     const shift = has('early') ? -0.6 : has('owl') ? 0.6 : 0;
     const leisure = has('outdoorsy') && parks.length ? parks : parks.concat(taverns);
     const pickFar = (list) => has('curious') ? this._nearest(r, list, 8) : pick(list);
-    if (r.age === 'adult' && r.job != null) {
+    if (r.age === 'adult' && r.school != null && this.world.buildings.get(r.school)) {
+      // a student: lectures, then the library or the tavern
+      push(8 + R() * 1.2, r.school);
+      push(15.5 + R() * 1.5, R() < 0.4 * tavK && taverns.length ? pick(taverns) : home);
+      if (plan[plan.length - 1].dest !== home) push(21 + R(), home);
+    } else if (r.age === 'adult' && r.job != null) {
       const job = this.world.buildings.get(r.job);
       const late = job && BUILDINGS[job.type].leisure;
       const start = late ? 13 + R() * 1.5 : 6.4 + R() * 1.7 + shift;

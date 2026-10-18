@@ -73,8 +73,10 @@ export const pensionOf = (r) => (r.age === 'elder' ? 3 : 0);
 // ---------------------------------------------------------- ages & schooling
 // One year of a villager's life passes every YEAR_DAYS in-game days.
 export const YEAR_DAYS = 2;
-export const EDU = ['No schooling', 'Primary', 'Secondary', 'Advanced'];
-const EDU_PAY = [0.85, 1, 1.2, 1.45];
+export const EDU = ['No schooling', 'Elementary', 'Middle school', 'High school', 'College', 'University'];
+const EDU_PAY = [0.85, 0.95, 1, 1.15, 1.35, 1.6];
+// the stage a child of this age should be at
+export const stageForAge = (y) => (y < 6 ? 0 : y < 11 ? 1 : y < 14 ? 2 : 3);
 
 // Age in years (older saves only knew child / adult / elder).
 export function yearsOf(r) {
@@ -88,30 +90,31 @@ export function yearsOf(r) {
 export function eduOf(r) {
   if (r.edu != null) return r.edu;
   const g = new RNG((r.look ^ 0x165667b1) >>> 0);
-  if (r.age === 'child') r.edu = yearsOf(r) >= 12 ? 1 : 0;
-  else {
-    const x = g.next();
-    r.edu = r.age === 'elder' ? (x < 0.45 ? 0 : x < 0.85 ? 1 : x < 0.98 ? 2 : 3) : (x < 0.28 ? 0 : x < 0.73 ? 1 : x < 0.95 ? 2 : 3);
-  }
+  if (r.age === 'child') r.edu = yearsOf(r) >= 14 ? 2 : yearsOf(r) >= 11 ? 1 : 0;
+  else r.edu = eduFrom(g.next(), r.age === 'elder' ? -0.15 : 0);
   return r.edu;
 }
 
 // Education of a newcomer: better schools in town attract better-educated families.
 export function arrivingEdu(world, rng) {
-  let best = -1;
-  for (const b of world.buildings.values()) if (b.type === 'school' && isOpen(b)) best = Math.max(best, b.level);
-  const x = rng.next() + best * 0.08;
-  return x < 0.28 ? 0 : x < 0.73 ? 1 : x < 0.95 ? 2 : 3;
+  let best = 0;
+  for (const b of world.buildings.values()) { const t = BUILDINGS[b.type].levels[b.level].teaches; if (t && isOpen(b)) best = Math.max(best, t); }
+  return eduFrom(rng.next(), best * 0.03);
+}
+function eduFrom(x, bonus = 0) {
+  x += bonus;
+  return x < 0.18 ? 0 : x < 0.42 ? 1 : x < 0.62 ? 2 : x < 0.88 ? 3 : x < 0.97 ? 4 : 5;
 }
 
 // What a child is doing about school, for the UI.
 export function schoolingOf(world, r) {
-  if (r.age !== 'child') return null;
+  const s = r.school != null ? world.buildings.get(r.school) : null;
+  if (r.age !== 'child') return s ? { text: `Studying at the ${BUILDINGS[s.type].levels[s.level].name}`, ok: true, building: s, student: true } : null;
   const y = yearsOf(r);
   if (y < 6) return { text: 'Too young for school', ok: true };
-  const s = r.school != null ? world.buildings.get(r.school) : null;
-  if (!s) return { text: 'No school place', ok: false };
-  return { text: `${BUILDINGS[s.type].levels[s.level].name} · year ${Math.max(1, Math.floor(y) - 5)}`, ok: true, building: s };
+  const need = EDU[stageForAge(y)].toLowerCase();
+  if (!s) return { text: `Needs a ${need} place`, ok: false, stage: stageForAge(y) };
+  return { text: `${BUILDINGS[s.type].levels[s.level].name} · age ${Math.floor(y)}`, ok: true, building: s };
 }
 
 // Savings a villager arrives with (villa families come with money).

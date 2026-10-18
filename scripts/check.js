@@ -109,6 +109,15 @@ ok((events.coins || 0) > 0, `shops / fares earned coins (${events.coins} payouts
 const st = game.transit.stats[line.line?.id] || { riders: 0 };
 console.log('      coach riders:', st.riders, ' population:', pop0, '→', w.population, ' money:', Math.round(w.money), ' happiness:', Math.round(game.sim.happiness));
 ok(game.transit.vehicles.length === 1, 'one coach on the line');
+{
+  // the happiness breakdown shown to the player must add up to the real score
+  const homes = [...w.buildings.values()].filter(b => b.factors && b.factors.parts);
+  const off = homes.filter(b => {
+    const sum = b.factors.parts.reduce((n, p) => n + p[1], 0);
+    return Math.abs(Math.max(0, Math.min(100, Math.round(sum))) - b.happiness) > 1;
+  });
+  ok(homes.length > 0 && !off.length, `happiness breakdowns add up (${homes.length} homes${off.length ? `, ${off.length} off` : ''})`);
+}
 
 // 3b. railway: trains never reverse, so a dead-end line is refused and a
 // loop of track runs forward forever
@@ -389,6 +398,25 @@ const runUntil = (pred, days = 6) => {
   ok(!fresh.canResearch('highrise'), 'later projects wait for their prerequisites');
 }
 
+// 3d4. school stages: children go to the stage for their age; a school can
+// grow larger or move on to the next stage (the bigger stages need room)
+{
+  const sch = [...w.buildings.values()].find(b => b.type === 'school') || (() => {
+    for (let z = 2; z < w.N - 3; z++) for (let x = 2; x < w.N - 3; x++) { const r = w.placeBuilding('school', x, z, { instant: true, ignoreUnlock: true }); if (r.ok) return r.building; }
+  })();
+  w.setSandbox({ unlockAll: true });
+  const opts = w.upgradeOptions(sch).map(o => o.type);
+  ok(opts.includes('school') && opts.includes('middleschool'), `a schoolhouse can grow larger or become a middle school (${opts.join(', ')})`);
+  game.sim.recompute();
+  const kid = [...w.residents.values()].find(r => r.school != null && r.age === 'child');
+  ok(!kid || BUILDINGS[w.buildings.get(kid.school).type].levels[w.buildings.get(kid.school).level].teaches === 1 + (kid.years >= 11) + (kid.years >= 14), 'children are placed at the stage for their age');
+  sch.type = 'middleschool'; sch.level = 0;
+  const hs = w.upgradeCheck(sch, 'highschool');
+  ok(hs.reqs.some(r => r.space && !r.met), 'a high school needs a double plot first');
+  sch.type = 'school';
+  w.setSandbox({ unlockAll: false });
+}
+
 // 3e. utilities: a generator powers the town, demand is counted
 {
   game.sim.recompute();
@@ -403,6 +431,24 @@ const runUntil = (pred, days = 6) => {
   const after = [...w.buildings.values()].filter(b => b.powered).length;
   ok(gen && U.power.gen >= 25 && after > before, `a wind generator powers ${after} buildings (${U.power.demand}/${U.power.gen} kW)`);
   ok(U.water.supply > 0 && U.water.demand === w.population, `water: ${U.water.demand} villagers, supply for ${U.water.supply}`);
+}
+
+// 3z. every method the UI, game and input code call on themselves exists
+// (a missing one only shows up as a frozen game in the browser)
+{
+  const fsm = await import('node:fs');
+  const missing = [];
+  const esc = (s) => s.replace(/[$]/g, '[$]');
+  for (const f of ['src/ui/ui.js', 'src/game.js', 'src/ui/input.js', 'src/render/worldView.js', 'src/sim/construction.js', 'src/world/world.js', 'src/sim/sim.js', 'src/sim/agents.js']) {
+    const src = fsm.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    const called = new Set([...src.matchAll(/this\.([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]));
+    for (const name of called) {
+      const n = esc(name);
+      const defined = new RegExp('^\\s+(?:static\\s+|async\\s+|get\\s+)?' + n + '\\s*\\(', 'm').test(src) || new RegExp('this\\.' + n + '\\s*=').test(src);
+      if (!defined) missing.push(f + ': this.' + name + '()');
+    }
+  }
+  ok(!missing.length, 'no calls to missing methods' + (missing.length ? ': ' + missing.join(', ') : ''));
 }
 
 // 4. save round-trip

@@ -38,11 +38,11 @@ export function serialize(world) {
     rails: toB64(world.rails),
     buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null]),
     trees,
-    residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edXP ?? null]),
+    residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
     lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
     state: {
       money: Number.isFinite(world.money) ? world.money : 0, sandbox: world.sandbox, taxRate: world.taxRate, day: world.day, hours: world.hours, nextId: world.nextId,
-      entry: world.entry, history: world.history, titleIdx: world.titleIdx, stats: world.stats, research: world.research,
+      entry: world.entry, history: world.history, titleIdx: world.titleIdx, stats: world.stats, research: world.research, eduScale: 5,
     },
     meta: { day: world.day, pop: world.population, money: Number.isFinite(world.money) ? Math.round(world.money) : '∞', title: titleFor(world.population).name },
   };
@@ -67,13 +67,15 @@ export function deserialize(data) {
     if (!BUILDINGS[type]) continue;
     w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look });
   }
-  for (const [id, first, last, age, home, job, look, wealth, fam, years, edu, edXP] of data.residents) {
+  const oldEdu = (data.state && data.state.eduScale) !== 5;
+  for (const [id, first, last, age, home, job, look, wealth, fam, years, edu, edYrs] of data.residents) {
     const r = { id, first, last, age, home: home >= 0 ? home : null, job: job >= 0 ? job : null, look, mood: 60 };
     if (wealth != null) r.wealth = wealth;
     if (fam != null) r.fam = fam;
     if (years != null) r.years = years;
-    if (edu != null) r.edu = edu;
-    if (edXP != null) r.edXP = edXP;
+    // saves before the five-stage scale: primary → elementary, secondary → high school, advanced → college
+    if (edu != null) r.edu = oldEdu ? [0, 1, 3, 4][edu] ?? edu : edu;
+    if (edYrs && typeof edYrs === 'object') r.edYrs = edYrs;
     w.residents.set(id, r);
   }
   w.lines = (data.lines || []).map(l => ({ ...l, stops: l.stops.filter(s => w.buildings.has(s)) }));

@@ -61,6 +61,11 @@ export class Game {
       this._toastT.died = this.time;
       this.ui.toast(gone.length > 1 ? `${gone.length} old villagers passed away` : `${gone[0].first} ${gone[0].last} passed away at ${Math.floor(gone[0].years)}`, 'info', '🔔');
     });
+    this.on('graduated', ({ r, st }) => {
+      if (this.demo || this.time - (this._toastT.grad || -99) < 20) return;
+      this._toastT.grad = this.time;
+      this.ui.toast(`${r.first} ${r.last} graduated from ${st === 5 ? 'university' : 'college'}`, 'good', '🎓');
+    });
     this.on('season', (s) => { if (!this.demo) this.ui.toast(`${SEASONS[s].name} has arrived`, 'info', SEASONS[s].icon); });
     this.on('milestone', (t) => this._onMilestone(t));
     this.on('arrived', ({ building, family }) => {
@@ -214,7 +219,7 @@ export class Game {
       if (!/\.json$/i.test(f.name) && f.type !== 'application/json') { this.ui.toast('Drop a Hearthvale .json save to load it', 'bad'); return; }
       try {
         this.loadData(await readJSONFile(f));
-        this.ui.closeModal();
+        this.ui.closeAllWindows();
         this.ui.toast(`Loaded ${f.name}`, 'good', '📁');
       } catch (err) { this.ui.toast(err.message, 'bad'); }
     });

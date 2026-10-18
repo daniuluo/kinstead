@@ -3,7 +3,7 @@
 
 import { BUILDINGS, SERVICES } from '../defs.js';
 import { isOpen, capOf } from '../world/world.js';
-import { yearsOf } from '../sim/people.js';
+import { yearsOf, stageForAge } from '../sim/people.js';
 
 const SEV = { bad: 0, warn: 1, info: 2 };
 
@@ -43,10 +43,14 @@ export function computeIssues(game) {
 
   // schools
   const sk = sim.schooling;
-  if (sk && sk.kids > sk.placed) {
-    const kids = [...w.residents.values()].filter(r => r.age === 'child' && yearsOf(r) >= 6 && r.school == null);
-    const homesOf = [...new Set(kids.map(r => r.home))].filter(id => id != null);
-    add('warn', 'school', `${plural(sk.kids - sk.placed, 'child', 'children')} without a school place`, { kind: 'focus', ids: homesOf, people: 'noschool' });
+  if (sk && sk.short) {
+    const names = ['', 'an elementary school', 'a middle school', 'a high school'];
+    for (const st of [1, 2, 3]) {
+      if (!sk.short[st]) continue;
+      const kids = [...w.residents.values()].filter(r => r.age === 'child' && r.school == null && stageForAge(yearsOf(r)) === st);
+      const homesOf = [...new Set(kids.map(r => r.home))].filter(id => id != null);
+      add('warn', 'school', `${plural(sk.short[st], 'child', 'children')} need ${names[st]} place`, { kind: 'focus', ids: homesOf, people: 'noschool' });
+    }
   }
 
   // jobs and homes
@@ -65,6 +69,12 @@ export function computeIssues(game) {
   // building sites
   const sites = [...w.buildings.values()].filter(b => b.con && !b.con.wait);
   const C = game.construction;
+  // more work than the builders can keep up with
+  if (C && C.hasBuilders) {
+    const crews = [...w.residents.values()].filter(r => r.job != null && BUILDINGS[w.buildings.get(r.job)?.type]?.builders).length;
+    const waiting = sites.filter(b => !(C.crew.get(b.id) || {}).assigned);
+    if (waiting.length >= Math.max(3, crews)) add('warn', 'construction', `${plural(waiting.length, 'site')} waiting for builders — build another Builder's Yard or upgrade yours`, { kind: 'tool', cat: 'industry' });
+  }
   if (sites.length && C && !C.hasBuilders) add('warn', 'construction', `No builders — ${plural(sites.length, 'site')} with slow hired hands`, { kind: 'tool', cat: 'industry' });
   const stuck = sites.filter(b => b.access && !b.connected);
   if (stuck.length) add('bad', 'construction', `${plural(stuck.length, 'building site')} builders can't reach`, { kind: 'focus', ids: stuck.map(b => b.id) });

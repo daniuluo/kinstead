@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
@@ -21,10 +21,13 @@ export const isOpen = (b) => !b.con || b.con.kind === 'upgrade' || b.con.kind ==
 
 // A building that has grown onto a neighbouring plot (see World.expandOptions)
 // holds half as many people / jobs again.
-export const isExpanded = (b) => !BUILDINGS[b.type].merged && fw(b) * fd(b) > BUILDINGS[b.type].size ** 2;
+const baseArea = (b) => (BUILDINGS[b.type].merged ? 2 : BUILDINGS[b.type].size ** 2);
+export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
+// each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
   const v = BUILDINGS[b.type].levels[b.level][key] || 0;
-  return isExpanded(b) ? Math.round(v * 1.5) : v;
+  const k = 1 + 0.5 * (fw(b) * fd(b) / baseArea(b) - 1);
+  return k > 1 ? Math.round(v * k) : v;
 }
 
 // Neighbouring buildings that can be joined into one mixed-use building.
@@ -388,6 +391,7 @@ export class World {
   // household pays the seller's household (not the town).
   tryEncroach(b) {
     const LAND = 0.25;
+    if (!this.hasTech('surveying')) return [];
     if (!b || !BUILDINGS[b.type].spacious || b.con || fw(b) !== 1 || fd(b) !== 1) return [];
     b.leases ||= [];
     const ext = this._ext(b);
@@ -449,6 +453,21 @@ export class World {
   expandOptions(b) {
     const out = [];
     const def = BUILDINGS[b.type];
+    if (!b || !this.hasTech('surveying')) return out;
+    // a double plot can grow into a 2×2 estate onto two empty plots beside it
+    if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop) {
+      const along = fw(b) === 2;
+      for (const s of [-1, 1]) {
+        const tiles = along ? [[b.x, s < 0 ? b.z - 1 : b.z + 1], [b.x + 1, s < 0 ? b.z - 1 : b.z + 1]] : [[s < 0 ? b.x - 1 : b.x + 1, b.z], [s < 0 ? b.x - 1 : b.x + 1, b.z + 1]];
+        if (!tiles.every(([x, z]) => this.inBounds(x, z) && !this.roadAt(x, z) && !this.railAt(x, z) && !this.terrain.isWater(x, z) && !this.buildingOn(x, z))) continue;
+        const all = [...tiles, [b.x, b.z], [b.x + fw(b) - 1, b.z + fd(b) - 1]];
+        const lo = Math.min(...all.map(([x, z]) => this.terrain.tileMin(x, z))), hi = Math.max(...all.map(([x, z]) => this.terrain.tileMax(x, z)));
+        if (hi - lo > 1.2) continue;
+        const trees = tiles.reduce((n, [x, z]) => n + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
+        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where: 'beside it', cost: Math.round(200 + 0.3 * def.levels[b.level].cost) + trees, label: 'Grow into a 2×2 estate' });
+      }
+      return out;
+    }
     if (!b || b.con || def.merged || def.park || def.stop || fw(b) !== 1 || fd(b) !== 1 || def.size !== 1) return out;
     const base = Math.round(80 + 0.35 * def.levels[b.level].cost);
     const front = DIRS[b.rot];
@@ -498,11 +517,12 @@ export class World {
     if (opt.other) this.removeBuilding(opt.other.id, 0);
     this.money -= opt.cost;
     this._dissolveLeases(b);
-    this._clearTrees(opt.x, opt.z);
-    this.buildingAt[this.idx(opt.x, opt.z)] = b.id;
-    const x0 = Math.min(b.x, opt.x), z0 = Math.min(b.z, opt.z);
-    b.w = b.x !== opt.x ? 2 : 1; b.d = b.z !== opt.z ? 2 : 1;
-    b.x = x0; b.z = z0; b.size = 2;
+    const tiles = opt.tiles || [[opt.x, opt.z]];
+    for (const [x, z] of tiles) { this._clearTrees(x, z); this.buildingAt[this.idx(x, z)] = b.id; }
+    const xs = [b.x, b.x + fw(b) - 1, ...tiles.map(t => t[0])], zs = [b.z, b.z + fd(b) - 1, ...tiles.map(t => t[1])];
+    const x0 = Math.min(...xs), z0 = Math.min(...zs);
+    b.w = Math.max(...xs) - x0 + 1; b.d = Math.max(...zs) - z0 + 1;
+    b.x = x0; b.z = z0; b.size = Math.max(b.w, b.d);
     let minH = Infinity, maxH = -Infinity;
     for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
       minH = Math.min(minH, this.terrain.tileMin(b.x + dx, b.z + dz));
@@ -541,6 +561,7 @@ export class World {
 
   moveCheck(b, x, z) {
     if (b.con) return { ok: false, reason: 'Construction under way', access: [], cost: 0 };
+    if (!this.hasTech('relocation')) return { ok: false, reason: 'Research House Moving first', access: [], cost: 0 };
     return this.checkBuild(b.type, x, z, { w: fw(b), d: fd(b), ignoreUnlock: true, ignoreUnique: true, baseCost: this.moveCost(b) });
   }
 
@@ -579,6 +600,7 @@ export class World {
   // ------------------------------------------------------------ merging
   mergeOptions(b) {
     const out = [];
+    if (!this.hasTech('joining')) return out;
     if (!b || b.con || fw(b) !== 1 || fd(b) !== 1) return out;
     for (const [dx, dz] of DIRS) {
       const o = this.buildingOn(b.x + dx, b.z + dz);
@@ -649,6 +671,10 @@ export class World {
   upgradeOptions(b) {
     const def = BUILDINGS[b.type];
     const out = def.levels[b.level + 1] ? [{ type: b.type, level: b.level + 1 }] : (def.branches || []).map(type => ({ type, level: 0 }));
+    // side paths open up at a particular level (a smithy can become a foundry)
+    for (const type of (def.paths && def.paths[b.level]) || []) out.push({ type, level: 0, side: true });
+    // schools can always move on to the next stage of education
+    for (const type of def.stageNext || []) out.push({ type, level: 0, stage: true });
     // a building that has taken over the plot next door can grow into
     // something bigger
     if (isExpanded(b) && LARGE[b.type]) {
@@ -668,7 +694,7 @@ export class World {
     const next = BUILDINGS[target.type].levels[target.level];
     if (b.con) return { ok: false, reason: 'Construction under way', busy: true, next, target, reqs: [] };
     const unlock = unlockOf(target.type, target.level);
-    const tech = next.tech || (target.type !== b.type ? BUILDINGS[target.type].tech : null);
+    const tech = techForLevel(target.type, target.level);
     const reqs = [];
     const free = this.sandbox.freeUpgrades;
     if (free) reqs.push({ label: 'Sandbox: no requirements', met: true });
@@ -681,6 +707,8 @@ export class World {
       if (next.req.power) reqs.push({ label: 'Electricity', met: !!b.powered });
     }
     if (tech) reqs.unshift({ label: `Research: ${this.techName(tech)}`, met: this.hasTech(tech), tech });
+    // the bigger stages need a double plot: expand onto the plot next door first
+    if (BUILDINGS[target.type].size > 1 && fw(b) * fd(b) < 2) reqs.unshift({ label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
     reqs.push({ label: `$${next.cost}`, met: this.money >= next.cost });
     const ok = reqs.every(r => r.met);
     return { ok, next, target, reqs, reason: ok ? null : 'Requirements not met' };
