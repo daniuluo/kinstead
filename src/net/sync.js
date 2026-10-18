@@ -10,7 +10,7 @@
 
 import { BUILDINGS } from '../defs.js';
 import { serialize, deserialize } from '../save/saves.js';
-import { fw, fd, spareOf } from '../world/world.js';
+import { fw, fd, spareOf, floorHeight } from '../world/world.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 // Bump when the messages change in a way older pages can't read.
@@ -212,7 +212,7 @@ function plotHeights(w, b) {
     minH = Math.min(minH, w.terrain.tileMin(b.x + dx, b.z + dz));
     maxH = Math.max(maxH, w.terrain.tileMax(b.x + dx, b.z + dz));
   }
-  b.baseY = maxH; b.minY = minH;
+  b.baseY = floorHeight(w.terrain, b.type, b.x, b.z, fw(b), fd(b), b.rot, minH, maxH); b.minY = minH;
 }
 
 function setLeases(w, b, leases) {

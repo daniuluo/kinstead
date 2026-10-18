@@ -269,6 +269,14 @@ const runUntil = (pred, days = 6) => {
   ok(up.ok && h.con && h.con.toType === 'villa', 'upgrade to a villa started');
   const res2 = runUntil(() => !h.con);
   ok(res2.ok && h.type === 'villa' && h.level === 0 && h.look === 'stone', `villa finished in stone (${h.type} L${h.level} ${h.look})`);
+  // a new style without an upgrade: paid for, and a job for the builders
+  {
+    const m0 = w.money, chk = w.restyleCheck(h, 'brick');
+    const rr = w.restyleBuilding(h.id, 'brick');
+    ok(chk.ok && rr.ok && w.money === m0 - chk.cost && chk.cost === Math.max(30, Math.round(w.buildValue(h) * 0.3)) && h.con && h.con.restyle && h.type === 'villa' && h.level === 0, `restyling without an upgrade costs $${chk.cost} and starts a job`);
+    ok(runUntil(() => !h.con).ok && h.look === 'brick' && h.type === 'villa' && h.level === 0, 'builders restyle it in brick, same building and level');
+    ok(!w.restyleBuilding(h.id, 'brick').ok, 'restyling to the style it has already is refused');
+  }
 
   // a site the player puts first gets the builders before an older one
   {
@@ -380,6 +388,19 @@ const placePair = (tw, ta, tb) => {
     if (!r.ok || r.building.type !== to) wrong.push(`${ta} + ${tb} → ${r.ok ? r.building.type : r.reason} (not ${to})`);
   }
   ok(!wrong.length, `every pairing in every join recipe makes its building (${pairs.length} pairs, ${MERGES.length} recipes)${wrong.length ? ': ' + wrong.join('; ') : ''}`);
+}
+
+// 3d0c. a builder's yard joined with a woodcutter is still where the builders
+// work from, and they work faster; a chapel keeps its look in its vicarage
+{
+  const tw = World.createNew({ N: 48, seed: 34, name: 'Yardley' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [Y, Wd] = placePair(tw, 'builder', 'lumber');
+  const r = tw.mergeBuildings(Y.id, Wd.id), def = r.ok && BUILDINGS[r.building.type];
+  ok(def && def.builders && def.levels[0].rate > BUILDINGS.builder.levels[0].rate && capOf(r.building, 'jobs') >= 6, `a builder's yard and a woodcutter make a ${def && def.levels[0].name} whose builders work at ${def && def.levels[0].rate}×`);
+  const [Ch, Co] = placePair(tw, 'house', 'chapel');
+  const v = tw.mergeBuildings(Ch.id, Co.id);
+  ok(v.ok && v.building.type === 'vicarage' && v.building.variant === Co.variant, 'a chapel taking in the cottage next door keeps the chapel\'s look');
 }
 
 // 3d0b. a joined building is never a level the town can't build yet, a grand

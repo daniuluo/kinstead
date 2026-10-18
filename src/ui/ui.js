@@ -595,6 +595,14 @@ export class UI {
     // upgrades: one path, or a choice of branches at the top level
     if (!b.con) {
       h += this._upgradeHTML(b);
+      // a new style on its own, without an upgrade
+      if (def.cat === 'residential' || def.cat === 'commercial') {
+        const cost = w.restyleCheck(b, '__probe__').cost || 0;
+        h += `<div class="sec"><h5>🎨 Restyle</h5><div class="note">Builders rebuild its fronts and roof in another style, without upgrading it, for $${fmt(cost)}.</div><div class="styles">${[{ id: '', name: 'Its own' }, ...STYLES].map(s => {
+          const look = s.id || null, t = STYLE_TECH[s.id], unlocked = !t || w.hasTech(t), cur = (b.look || null) === look;
+          return `<button class="style ${cur ? 'on' : ''}" data-act="restyle" data-look="${s.id}" ${!cur && unlocked && w.money >= cost ? '' : 'disabled'} title="${cur ? 'Its style now' : unlocked ? `Restyle · $${fmt(cost)}` : `Research ${esc(TECHS[t].name)}`}">${unlocked ? '' : '🔒'}${s.name}</button>`;
+        }).join('')}</div></div>`;
+      }
       const grow = w.expandOptions(b);
       if (grow.length) {
         const estate = grow[0].kind === 'estate';
@@ -759,6 +767,15 @@ export class UI {
           if (!r.ok) { this.toast(r.reason || "Can't expand that way", 'bad'); return; }
           g.sfx('build');
           this.toast(r.kind === 'strip' ? 'Bought a strip of the neighbouring garden' : 'The plot is yours: choose what to build on it under Upgrade', 'good', '🏡');
+          if (this.selection) this.renderInspector(true);
+        });
+        break;
+      }
+      case 'restyle': {
+        g.cmd({ t: 'restyle', id: sel.id, look: data.look || null }, (r) => {
+          if (!r.ok) { this.toast(r.reason || "Can't restyle it", 'bad'); return; }
+          g.sfx('upgrade');
+          this.toast(r.instant ? 'Restyled' : 'Builders will restyle it', 'good', '🎨');
           if (this.selection) this.renderInspector(true);
         });
         break;

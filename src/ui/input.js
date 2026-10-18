@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { BUILDINGS, TRANSIT } from '../defs.js';
-import { fw, fd, capOf } from '../world/world.js';
+import { fw, fd, capOf, floorHeight } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
@@ -500,7 +500,7 @@ export class Input {
     if (key === this.ghostKey) return;
     this.ghostKey = key;
     if (this.ghost) { scene.remove(this.ghost); this.ghost.geometry.dispose(); }
-    const b = { type: gh.type, level: gh.level || 0, variant, flavor: gh.flavor || null, size: Math.max(W, D), w: W, d: D, baseY: maxH, minY: minH, rot, rail: c.rail || null };
+    const b = { type: gh.type, level: gh.level || 0, variant, flavor: gh.flavor || null, size: Math.max(W, D), w: W, d: D, baseY: floorHeight(w.terrain, gh.type, gh.x, gh.z, W, D, rot, minH, maxH), minY: minH, rot, rail: c.rail || null };
     b.x = gh.x; b.z = gh.z;
     const model = buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z), season: this.game.view.season });
     if (model.spin) model.spin.geo.dispose();
