@@ -739,9 +739,10 @@ export function unlockOf(type, level = 0) {
 }
 
 // Builder-hours of work for a job of the given coin value. BUILD_PACE scales
-// every job (0.5: building, upgrading and the rest take half the work).
+// every job (1/3: building, upgrading and the rest take a third of the work
+// they first did).
 const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6, demolish: 0.3 };
-const BUILD_PACE = 0.5;
+const BUILD_PACE = 1 / 3;
 export function workNeeded(cost, kind = 'build') {
   return Math.max(0.5, Math.round((2 + cost / 28) * (WORK_K[kind] ?? 1) * BUILD_PACE * 10) / 10);
 }

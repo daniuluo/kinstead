@@ -6,7 +6,7 @@ import { BUILDINGS, needsOf, servicesOf } from '../defs.js';
 import { fw, fd, isOpen, capOf } from '../world/world.js';
 import { EDU } from '../sim/people.js';
 
-export const BLOCKER_ICON = { road: 'link_off', workers: 'person_off', power: 'power_off', water: 'format_color_reset' };
+export const BLOCKER_ICON = { road: 'link_off', workers: 'person_off', power: 'power_off', water: 'format_color_reset', priority: 'flag' };
 
 // The main thing holding a building back: no road, nobody at all, then no
 // power or water, and only then being short of staff.
@@ -48,13 +48,15 @@ export class BlockedIcons {
     const seen = new Set();
     if (show) {
       for (const b of w.buildings.values()) {
-        if (!b.blockers || !b.blockers.length) continue;
         const it = g.view.items.get(b.id);
-        if (!it || it.site) continue;
-        const bb = it.mesh.geometry.boundingBox;
+        if (!it) continue;
+        // a building site gets a flag when the player has put it first
+        const site = it.site || !!b.con;
+        if (site ? !(b.con && b.con.priority) : !(b.blockers && b.blockers.length)) continue;
+        const bb = it.mesh && it.mesh.geometry && it.mesh.geometry.boundingBox;
         const p = g.renderer.worldToScreen(this.v.set(b.x + fw(b) / 2, b.baseY + (bb ? bb.max.y : 0.7) + 0.12, b.z + fd(b) / 2));
         if (p.behind || p.x < -20 || p.y < -20 || p.x > innerWidth + 20 || p.y > innerHeight + 20) continue;
-        const all = ORDER.filter(k => b.blockers.includes(k)).map(k => [k, blockerEffect(b, k)]);
+        const all = site ? [['priority', 'prio']] : ORDER.filter(k => b.blockers.includes(k)).map(k => [k, blockerEffect(b, k)]);
         const key = all.map(a => a.join(':')).join(' ');
         let el = this.els.get(b.id);
         if (!el) { el = document.createElement('div'); el.className = 'blocked'; this.layer.appendChild(el); this.els.set(b.id, el); }
