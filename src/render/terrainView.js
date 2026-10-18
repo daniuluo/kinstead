@@ -186,7 +186,7 @@ export class TerrainView {
       const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
       const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
       const work = b.work;
-      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
+      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
         : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
           : (def.park && b.type !== 'plaza') ? 'lawn'
             : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';

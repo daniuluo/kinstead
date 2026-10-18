@@ -49,7 +49,7 @@ game.animals = new Animals(game);
 game.construction = new Construction(game);
 game.on('day', () => game.transit.planCarts());
 w.on('roads', () => game.paths.invalidate?.());
-const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, moves: 0, demolish: 0, roads: 0, research: 0, born: 0, died: 0, grads: 0 };
+const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, estates: 0, estateBuilt: 0, moves: 0, demolish: 0, roads: 0, research: 0, born: 0, died: 0, grads: 0 };
 game.on('born', (b) => { counts.born += b.length; });
 game.on('died', (d) => { counts.died += d.length; });
 game.on('graduated', () => { counts.grads++; });
@@ -168,7 +168,7 @@ function botDay() {
     if (!opts.length) continue;
     const o = rng.pick(opts);
     const look = rng.chance(0.3) ? rng.pick(STYLES).id : undefined;
-    if (w.upgradeBuilding(b.id, o.type, look).ok) { n++; counts.upgrades++; }
+    if (w.upgradeBuilding(b.id, o.type, look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; }
   }
   // joins, expansions, moves, demolition
   for (let k = 0; k < busy; k++) if (rng.chance(MODE !== 'economy' ? 0.8 : 0.25)) {
@@ -179,10 +179,12 @@ function botDay() {
   }
   for (let k = 0; k < busy; k++) if (rng.chance(MODE !== 'economy' ? 0.6 : 0.12)) {
     const cands = [...w.buildings.values()].filter(b => !b.con && w.expandOptions(b).length);
-    const b = cands.length && rng.pick(cands);
+    // the busy modes grow a double plot into a 2×2 estate whenever one can
+    const grand = MODE !== 'economy' ? cands.filter(b => w.expandOptions(b).some(o => o.kind === 'estate')) : [];
+    const b = grand.length && rng.chance(0.5) ? rng.pick(grand) : cands.length && rng.pick(cands);
     const opts = b ? w.expandOptions(b).filter(o => MODE !== 'economy' || o.kind !== 'takeover') : [];
     const o = opts.length && rng.pick(opts);
-    if (o && w.expandBuilding(b.id, o.dir, o.kind).ok) counts.expands++;
+    if (o && w.expandBuilding(b.id, o.dir, o.kind).ok) { counts.expands++; if (o.kind === 'estate') counts.estates++; }
   }
   if (rng.chance(MODE !== 'economy' ? 0.5 : 0.06)) {
     const cands = [...w.buildings.values()].filter(b => !b.con && BUILDINGS[b.type].size === 1 && b.type !== 'townhall');
@@ -266,6 +268,12 @@ console.log('activity:', JSON.stringify(counts));
 console.log(`busiest park at 3pm: ${Math.round(peakVisit * 100)}% full`);
 console.log('research done:', w.research.done.length, '/', Object.keys(TECHS).length, '· education:', [0, 1, 2, 3, 4, 5].map(e => [...w.residents.values()].filter(r => r.age !== 'child' && r.edu === e).length).join('/'));
 console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '));
+{
+  // double plots grown into 2×2 estates, and the estate buildings standing on them
+  const est = [...w.buildings.values()].filter(b => BUILDINGS[b.type].estate);
+  const on = [...w.buildings.values()].filter(b => fw(b) * fd(b) === 4 && BUILDINGS[b.type].merged).length;
+  console.log(`2×2 estates: ${counts.estates} grown, ${counts.estateBuilt} rebuilt as estate buildings · standing: ${est.map(b => `${BUILDINGS[b.type].levels[b.level].name}${b.con ? ' (building)' : ''}`).join(', ') || 'none'} · ${on} double-plot buildings on grown estates`);
+}
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');
 {
   // where the money comes from, and how many buildings can't fully work (Sim._working)

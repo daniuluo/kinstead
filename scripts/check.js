@@ -452,6 +452,45 @@ const runUntil = (pred, days = 6) => {
   w.money = 1e6;
 }
 
+// 3d1c. with Great Plots a double plot grows into a 2×2 estate onto the two
+// plots behind it, and can then be rebuilt as its 2×2 counterpart (every
+// ESTATE recipe), at the level it had reached
+{
+  const { ESTATE, techForLevel } = await import('../src/defs.js');
+  const { sizeK, capOf } = await import('../src/world/world.js');
+  const tw = World.createNew({ N: 64, seed: 37, name: 'Grangeley' });
+  tw.setSandbox({ infiniteMoney: true, instantBuild: true });
+  tw.research.done.push('surveying');
+  const made = [];
+  let gated = null;
+  for (const [src, list] of Object.entries(ESTATE)) {
+    let done = false;
+    for (let z = 3; z < tw.N - 5 && !done; z++) for (let x = 3; x < tw.N - 5 && !done; x++) {
+      if (![x, x + 1].every(k => tw.checkRoad(k, z - 1, 1).ok || tw.roadAt(k, z - 1))) continue;
+      if (![[x, z], [x + 1, z], [x, z + 1], [x + 1, z + 1]].every(([a, b]) => tw.inBounds(a, b) && !tw.buildingOn(a, b) && !tw.roadAt(a, b) && !tw.terrain.isWater(a, b))) continue;
+      tw.placeRoads([[x, z - 1], [x + 1, z - 1]], 1);
+      const P = tw.placeBuilding(src, x, z, { w: 2, d: 1, instant: true, ignoreUnlock: true, level: BUILDINGS[src].levels.length - 1 });
+      if (!P.ok) continue;
+      const b = P.building;
+      if (gated === null) { gated = !tw.expandOptions(b).some(o => o.kind === 'estate'); tw.research.done.push('bigplots'); }
+      const opt = tw.expandOptions(b).find(o => o.kind === 'estate');
+      if (!opt || !tw.expandBuilding(b.id, opt.dir, 'estate').ok) { tw.removeBuilding(b.id, 0); continue; }
+      tw.setSandbox({ unlockAll: true, freeUpgrades: true });
+      const up = tw.upgradeOptions(b).find(o => o.estate && o.type === list[0]);
+      const r = up && tw.upgradeBuilding(b.id, up.type);
+      tw.setSandbox({ unlockAll: false, freeUpgrades: false });
+      const L = BUILDINGS[b.type].levels[b.level], m = r && r.ok && buildModel(b);
+      if (r && r.ok && b.type === list[0] && fw(b) * fd(b) === 4 && sizeK(b) === 1 && capOf(b, L.housing ? 'housing' : 'jobs') === (L.housing || L.jobs || 0)
+        && b.level === Math.min(BUILDINGS[src].levels.length - 1, BUILDINGS[b.type].levels.length - 1) && !tw.expandOptions(b).length && m.geo.attributes.position.count) {
+        made.push(`${src}→${b.type}`); done = true;
+      }
+    }
+  }
+  ok(gated, 'a double plot only grows into a 2×2 estate once Great Plots is researched');
+  ok(made.length === Object.keys(ESTATE).length, `every double-plot building grown to 2×2 rebuilds as its estate, at its level (${made.join(', ')})`);
+  ok(Object.values(ESTATE).flat().every(t => BUILDINGS[t].estate && techForLevel(t, 0) && BUILDINGS[t].levels.every((_, i) => techForLevel(t, i))), 'every estate level is gated by research');
+}
+
 // 3d2. demolition takes a crew and some time
 {
   const target = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);
