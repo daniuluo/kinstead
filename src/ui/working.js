@@ -18,9 +18,22 @@ export function mainBlocker(b) {
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Badges over buildings that can't do their job properly: red when it has
-// stopped, amber when it only works in part (or, for a home, can't grow).
-// One of the pop-ups, so it can be switched off.
+// What each blocker does to a building on its own: 'stop' if that alone
+// stops it, 'part' if it only holds it back (or, for a home, stops it
+// growing).
+export function blockerEffect(b, k) {
+  const need = needsOf(b.type, b.level);
+  if (k === 'road') return 'stop';
+  if (k === 'workers') return b.workers.length ? 'part' : 'stop';
+  if (k === 'power') return need.power && !need.power.without ? 'stop' : 'part';
+  if (k === 'water') return need.water && !need.water.without ? 'stop' : 'part';
+  return 'part';
+}
+const ORDER = ['road', 'workers', 'power', 'water'];
+
+// Badges over buildings that can't do their job properly, one for each
+// thing missing, side by side: red for what stops it, amber for what holds
+// it back. One of the pop-ups, so it can be switched off.
 export class BlockedIcons {
   constructor(game, layer) {
     this.game = game;
@@ -41,11 +54,11 @@ export class BlockedIcons {
         const bb = it.mesh.geometry.boundingBox;
         const p = g.renderer.worldToScreen(this.v.set(b.x + fw(b) / 2, b.baseY + (bb ? bb.max.y : 0.7) + 0.12, b.z + fd(b) / 2));
         if (p.behind || p.x < -20 || p.y < -20 || p.x > innerWidth + 20 || p.y > innerHeight + 20) continue;
-        const key = mainBlocker(b);
-        const cls = `blocked ${b.working === 0 ? 'stop' : 'part'}`;
+        const all = ORDER.filter(k => b.blockers.includes(k)).map(k => [k, blockerEffect(b, k)]);
+        const key = all.map(a => a.join(':')).join(' ');
         let el = this.els.get(b.id);
-        if (!el) { el = document.createElement('div'); this.layer.appendChild(el); this.els.set(b.id, el); }
-        if (el.dataset.key !== key + cls) { el.dataset.key = key + cls; el.className = cls; el.innerHTML = `<span class="ms">${BLOCKER_ICON[key]}</span>`; }
+        if (!el) { el = document.createElement('div'); el.className = 'blocked'; this.layer.appendChild(el); this.els.set(b.id, el); }
+        if (el.dataset.key !== key) { el.dataset.key = key; el.innerHTML = all.map(([k, e]) => `<span class="bi ${e}"><span class="ms">${BLOCKER_ICON[k]}</span></span>`).join(''); }
         el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
         seen.add(b.id);
       }
@@ -66,7 +79,8 @@ export function powerAdvice(game) {
 export function waterAdvice(game, b) {
   const U = game.sim.utility;
   return b.wet === 1 ? `The town's water runs short (${U.water.supply} for ${U.water.demand} people): build more wells, a pump or a water tower`
-    : 'Out of reach of any well or pump: build one nearby (Utilities)';
+    : !b.connected ? "Not on the water mains: connect it to the town's roads"
+      : 'The town has no well or pump drawing water: build one anywhere on the roads (Utilities)';
 }
 function workerAdvice(game, b) {
   const w = game.world, L = BUILDINGS[b.type].levels[b.level];
@@ -113,7 +127,7 @@ export function workingHTML(game, b) {
   if (L.radius && servicesOf(def).length && !def.park) rows.push(['Reach now', `${sim.reachOf(b).toFixed(1).replace(/\.0$/, '')} of ${L.radius} tiles`]);
   if (L.seats) rows.push(['Places now', `${sim.seatsOf(b)} of ${capOf(b, 'seats')}`]);
   if (L.kw) rows.push(['Making', `${Math.round(L.kw * k)} of ${L.kw} kW`]);
-  if (L.supply) rows.push(['Drawing water for', `${Math.round(L.supply * Math.min(1, sim.staffOf(b) * (need.power && !b.powered ? need.power.without : 1)))} of ${L.supply} people`]);
+  if (L.supply) rows.push(['Drawing water for', `${Math.round(sim.supplyOf(b))} of ${L.supply} people`]);
   if (def.park && L.appeal) rows.push(['Scenery now', `+${Math.round(L.appeal * k)} of +${L.appeal}`]);
   const head = home ? 'Running water' : k >= 1 && !bl.length ? 'Working' : k > 0 ? 'Working in part' : 'Stopped';
   const icon = bl.length ? BLOCKER_ICON[mainBlocker(b)] : 'check_circle';
@@ -121,6 +135,31 @@ export function workingHTML(game, b) {
   h += rows.map(([a, v]) => `<div class="row"><span>${a}</span><b>${v}</b></div>`).join('');
   h += `<div class="req">${lines.map(([c, t]) => `<div class="${c === 'warn' ? 'no warn' : c}">${esc(t)}</div>`).join('')}</div></div>`;
   return h;
+}
+
+// Every road tile in town (to bury all the power lines at once).
+export function townRoadTiles(w) {
+  const out = [];
+  for (let z = 0; z < w.N; z++) for (let x = 0; x < w.N; x++) if (w.roadAt(x, z)) out.push([x, z]);
+  return out;
+}
+
+// The power lines along the streets: how many are on poles, and buttons to
+// bury this street's (x, z given: a road panel) or every one in town.
+export function buryHTML(game, x = null, z = null) {
+  const w = game.world;
+  if (![...w.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b))) return '';
+  const all = townRoadTiles(w);
+  const under = all.filter(([tx, tz]) => w.buried[w.idx(tx, tz)]).length;
+  let h = '<div class="sec"><h5><span class="ms">bolt</span> Power lines</h5>';
+  if (x != null) h += `<div class="row"><span>Along this street</span><b>${w.buried[w.idx(x, z)] ? 'Underground' : 'On poles and wires'}</b></div>`;
+  h += `<div class="row"><span>In town</span><b>${under} of ${all.length} road tiles underground</b></div>`;
+  if (!w.hasTech('cables')) return h + '<div class="note">Research Underground Cables (Power) to bury the lines: no more poles and wires, and prettier streets.</div></div>';
+  const street = x != null ? w.buryCost(w.streetTiles(x, z)) : 0, town = w.buryCost(all);
+  const btn = (scope, label, cost) => `<button class="btn" data-act="bury" data-scope="${scope}" ${w.money >= cost ? '' : 'disabled'}>${label} · $${Math.round(cost).toLocaleString('en-US')}</button>`;
+  if (street || town) h += `<div class="actions col">${street ? btn('street', 'Bury the lines along this street', street) : ''}${town ? btn('town', 'Bury every line in town', town) : ''}</div>`;
+  else h += '<div class="note">Every line in town is underground.</div>';
+  return h + '</div>';
 }
 
 // For an upgrade card: what the next level will need that this one doesn't.

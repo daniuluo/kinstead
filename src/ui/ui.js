@@ -5,13 +5,13 @@ import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, S
 import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
-import { BlockedIcons, workingHTML, needsNoteHTML } from './working.js';
+import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf } from '../sim/people.js';
 // What feeds a home's happiness, and what to do about each.
 const HAPPY = {
   base: { label: 'Everyday life', icon: 'cottage', tip: '' },
-  water: { want: 'water', label: 'Water', icon: 'water_drop', tip: (f) => (f.dry ? 'Water runs short here — build more wells or a pump' : 'Build a well or water tower within reach'), act: { label: 'Utilities', cat: 'utilities' } },
+  water: { want: 'water', label: 'Water', icon: 'water_drop', tip: (f) => (f.dry ? 'Water runs short — build more wells, a pump or a water tower' : 'Connect it by road to the water mains (any well, pump or water tower in town)'), act: { label: 'Utilities', cat: 'utilities' } },
   health: { want: 'a clinic nearby', label: 'Health care', icon: 'medical_services', tip: 'Build a clinic within reach', act: { label: 'Services', cat: 'services' } },
   education: { want: 'a school nearby', label: 'Schooling', icon: 'school', tip: 'Build a school within reach', act: { label: 'Services', cat: 'services' } },
   safety: { want: 'a watch post nearby', label: 'Safety', icon: 'shield', tip: 'Build a watch post or fire station within reach', act: { label: 'Services', cat: 'services' } },
@@ -468,6 +468,7 @@ export class UI {
     if (def.needsRail) chips.push(b.rail ? '<span class="chip ok">On the railway</span>' : '<span class="chip no">No track alongside</span>');
     h += `<div class="chips">${chips.join('')}</div>`;
     h += workingHTML(this.game, b);
+    if (def.generator && isOpen(b)) h += buryHTML(this.game);
     const rows = [];
     if (L.housing) {
       rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
@@ -482,7 +483,7 @@ export class UI {
     }
     if (L.visit) rows.push(['Per visit', `$${L.visit}`]);
     if (L.upkeep) rows.push(['Upkeep', `$${L.upkeep} / day`]);
-    for (const s of servicesOf(def)) rows.push([`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
+    for (const s of servicesOf(def)) rows.push(s === 'water' ? [`${SERVICES[s].icon} Water`, 'Into the mains along the roads'] : [`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
     if (def.park) rows.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
     if (L.pollution) rows.push(['Pollution', `${L.pollution} tile radius`]);
     if (L.taxBonus) rows.push(['Tax bonus', `+${Math.round(L.taxBonus * 100)}%`]);
@@ -619,6 +620,7 @@ export class UI {
       const d = ROAD_LEVELS[L];
       h += `<div class="head"><div class="big">${['', '🟫', '🪨', '⬛'][L]}</div><div><h3>${d.name}</h3><div class="sub">${w.terrain.isWater(x, z) ? 'Bridge' : 'Road'} · upkeep ${d.upkeep}/day</div></div></div>`;
       h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}</div>`;
+      h += buryHTML(this.game, x, z);
       if (L < 3) {
         const c = w.checkRoad(x, z, L + 1);
         h += `<div class="actions"><button class="btn primary" data-act="roadup" ${c.ok && w.money >= c.cost ? '' : 'disabled'} title="${esc(c.reason || '')}">⬆ ${ROAD_LEVELS[L + 1].name} · $${c.cost ?? '—'}</button><button class="btn danger" data-act="roaddel">Remove</button></div>`;
@@ -723,6 +725,14 @@ export class UI {
         });
         break;
       case 'raildel': g.cmd({ t: 'unrail', x: sel.x, z: sel.z }); this.inspect(null); break;
+      case 'bury': {
+        const tiles = data.scope === 'town' ? townRoadTiles(w) : w.streetTiles(sel.x, sel.z);
+        g.cmd({ t: 'bury', tiles }, (r) => {
+          if (!r.ok) this.toast(r.reason || "Those lines can't be buried", 'bad');
+          else { this.toast(`Power lines laid underground along ${r.n} stretch${r.n === 1 ? '' : 'es'} of road`, 'good', '⚡'); this.renderInspector(true); }
+        });
+        break;
+      }
     }
   }
 
@@ -1558,7 +1568,7 @@ export class UI {
         <b>Getting started</b><br>
         1. Build 🏡 cottages along the road — builders from the 🧱 Builder's Yard put them up, then families move in from the edge of the map.<br>
         2. Give them work: 🧺 markets, 🌾 farms, 🪓 woodcutters, 🐟 fisheries.<br>
-        3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
+        3. Build 💧 wells (water reaches every home on the roads through the mains), cover homes with 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
         Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
         Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>

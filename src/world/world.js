@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel, BURY_COST } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
@@ -66,6 +66,7 @@ export class World {
     this.terrain = terrain;
     this.roads = new Uint8Array(N * N);
     this.rails = new Uint8Array(N * N);
+    this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
     this.lines = [];
     this.sandbox = { infiniteMoney: false, unlockAll: false, freeUpgrades: false, instantBuild: false };
     this.buildingAt = new Int32Array(N * N).fill(-1);
@@ -862,8 +863,37 @@ export class World {
     if (!this.roadAt(x, z)) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
+    this.buried[this.idx(x, z)] = 0;
     this.updateRoadNetwork();
     return true;
+  }
+
+  // ---------------------------------------------------- buried power lines
+  // The street through (x, z): the straight runs of road along it, both
+  // ways at a crossing.
+  streetTiles(x, z) {
+    if (!this.roadAt(x, z)) return [];
+    const out = [[x, z]];
+    for (const [dx, dz] of DIRS) for (let k = 1; this.roadAt(x + dx * k, z + dz * k); k++) out.push([x + dx * k, z + dz * k]);
+    return out;
+  }
+
+  // Lay the power lines under the given road tiles (Underground Cables):
+  // their poles and wires come down, and the street looks the better for it.
+  buryCost(tiles) {
+    return tiles.filter(([x, z]) => this.roadAt(x, z) && !this.buried[this.idx(x, z)]).length * BURY_COST;
+  }
+
+  buryLines(tiles) {
+    if (!this.hasTech('cables')) return { ok: false, reason: `Research ${this.techName('cables')} first` };
+    const todo = tiles.filter(([x, z]) => this.roadAt(x, z) && !this.buried[this.idx(x, z)]);
+    if (!todo.length) return { ok: false, reason: 'Those lines are already underground' };
+    const cost = todo.length * BURY_COST;
+    if (this.money < cost) return { ok: false, reason: 'Not enough money' };
+    this.money -= cost;
+    for (const [x, z] of todo) this.buried[this.idx(x, z)] = 1;
+    this.emit('lines');
+    return { ok: true, n: todo.length, cost };
   }
 
   updateRoadNetwork() {
