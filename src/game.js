@@ -9,6 +9,7 @@ import { WorldView } from './render/worldView.js';
 import { Particles } from './render/particles.js';
 import { World } from './world/world.js';
 import { growDemoTown } from './world/demo.js';
+import { loadStarter } from './world/starters.js';
 import { PathFinder } from './sim/path.js';
 import { Sim } from './sim/sim.js';
 import { Agents } from './sim/agents.js';
@@ -150,11 +151,12 @@ export class Game {
     this.speed = 1;
   }
 
-  newGame({ name, seed, N, sandbox }) {
-    const w = World.createNew({ N, seed, name, sandbox });
-    this.load(w, { fresh: true });
+  newGame({ name, seed, N, sandbox, starter = null }) {
+    const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox });
+    this.load(w, { fresh: !starter });
     document.getElementById('title').classList.add('hidden');
-    this.ui.toast(`Welcome to ${name}! Build cottages along the road to attract settlers.`, 'big', '🏡');
+    if (starter) this.ui.toast(`Welcome to ${name}! ${w.population} villagers are counting on you.`, 'big', '🏡');
+    else this.ui.toast(`Welcome to ${name}! Build cottages along the road to attract settlers.`, 'big', '🏡');
     setTimeout(() => this.ui.toast('Press ❓ any time for a quick guide.', 'info', '💡'), 2500);
   }
 
@@ -183,6 +185,8 @@ export class Game {
     };
     document.getElementById('btnNew').onclick = () => this.ui.showNewGame((o) => this.newGame(o));
     document.getElementById('btnLoad').onclick = () => this.ui.showSaves('local');
+    // first visit: straight to choosing how to start
+    if (!saves.length && !this._offeredStart) { this._offeredStart = true; this.ui.showNewGame((o) => this.newGame(o)); }
   }
 
   // --------------------------------------------------------------- saving

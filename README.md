@@ -10,6 +10,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Rotating view** — press `Q` / `E` or the rotate buttons beside `2D` to swing the camera a quarter turn around the ground at the middle of the screen and see the town from all four sides. The light turns with you, so every side is lit and shadowed the same way.
 - **2D top-down map view** — press `T` or the `2D` button to swing the camera straight down for a grid-aligned map (it rotates too); zoom in and out with the wheel or the `+`/`−` buttons.
 - **Procedural valley** — every seed grows a different landscape: rivers, lakes, hills, forests and rocky slopes, shown as a diorama. Pick a size: Small 32×32, Medium 48×48, Large 64×64 or Huge 80×80. Terraform by raising, lowering and levelling land, and plant trees.
+- **Starter towns** — found a village in an empty valley, or take over one that's a few weeks along: a **riverside hamlet** (cottages, a woodcutter and a fishing hut by the river), a **market village** (a cobbled high street with a bakery, tavern, school and family houses), a **mill town** (farms, a workshop, a chapel and a water wheel powering the town) or a **crossroads village** (a coaching tavern, a smithy and a coach line out to every corner). Each card in the new-village window shows a little map of the town, its size, villagers and money, and picking one shows it behind the window.
 - **Organic village** — no two buildings look the same. Each one is generated from a seed: walls, roofs (thatch, tile, slate, shingle), half-timbering, chimneys, dormers, shutters, flower boxes, gardens and fences. Paths are worn into the grass and meander a little.
 - **Upgradable buildings** across homes, commerce (market, bakery, tavern), industry (farm, woodcutter, fishery, workshop, builder's yard), services (well, clinic, school, watch, chapel, town hall), and parks and decor. Most buildings have three or four levels, up to a Market Hall, Hospital, Academy or Minster. Upgrades need happiness and service coverage, and each option shows what changes (homes, jobs, earnings, reach, upkeep…) before you commit.
 - **Branching homes** — a Cottage becomes a Family House, which then goes one of two ways: a **grand home** (Villa → Manor House → Grand Manor: few, wealthy residents who pay much more tax) or **flats** (Townhouse Flats → Tenement → Mansion Block: many households on one plot). Pick a **style** for any home or shop upgrade — timber frame, limewash, painted, brick, stone or clapboard — and tick **Preview in town** to see it in place before building. Each style builds differently, not just in different colours: timber frame has steep roofs, a jettied upper floor and a central stack; limewash has thatch or half-hipped roofs, a chimney up the outside wall and a deep front garden; painted is a symmetrical Georgian front with a hipped roof, a centred door and a chimney at each end; brick has gables, bay windows, arched window heads and paired stacks; stone has low slate or saltbox roofs, deep-set arched windows and an outside stack; clapboard has a saltbox roof, dormers, shutters and a deep porch. On a bigger plot a home can become a **Country Mansion** or a block of **Apartments**.
@@ -95,7 +96,8 @@ A Client ID isn't a secret, so committing it is fine.
 index.html, style.css     page shell and the 90s-desktop UI
 src/main.js, game.js      boot + game orchestrator (loop, saving, overlays)
 src/config.js, defs.js    tunables and the building catalogue
-src/world/                terrain generation, world rules, demo-town grower
+src/world/                terrain generation, world rules, demo-town grower,
+                          starter towns
 src/sim/                  economy & migration, villagers, transit, pathfinding
 src/render/               renderer & pixel pass, sky, terrain painter,
                           procedural buildings, nature, particles, overlays
@@ -103,6 +105,8 @@ src/ui/                   HUD & dialogs, input/tools, thumbnails, sound
 src/save/                 save format + local slots, Google Drive
 scripts/check.js          headless smoke test
 scripts/playtest.js       headless playtest bot
+scripts/starters.js       headless test of the starter towns
+scripts/audit.js          town invariants shared by the headless tests
 ```
 
 ### Smoke test
@@ -121,6 +125,16 @@ node scripts/playtest.js 50 48 2024 economy
 ```
 
 A bot plays a fresh town for a number of days (arguments: days, map size, seed, mode), building, laying roads, researching, upgrading, joining, expanding, moving and demolishing. Modes: `economy` (real money), `stress` (unlimited money, everything unlocked, lots of building every day), `chaos` (the same with instant construction, so far more upgrades, joins and moves) and `scale` (a big ready-grown town on an 80×80 map, to measure speed). Every day it audits the town (no overlapping buildings, no broken references, capacities respected, building sites always progressing, no builders idle while sites wait) and it prints anything wrong at the end.
+
+### Starter towns
+
+```bash
+node scripts/starters.js
+```
+
+Each starter town in [`src/world/starters.js`](src/world/starters.js) is a fixed map seed plus a short build script (streets, buildings, upgrades with styles, cobbles, a coach line, the order of research). The town is **grown when you pick it**, in about 50 ms: every step goes through the normal world rules (it costs money and waits for the villagers and research it needs; buildings go up with instant construction), and between steps the real simulation runs a day at a time, so families move in, find jobs and school places, age, have children, pay taxes and research. The result is saved and loaded back through the normal save format, so a new game starts from exactly what a save of that town would load. The sim's dice are seeded, so a town comes out the same every time.
+
+Growing the towns at runtime was chosen over shipping saved `.json` towns because a saved town is a snapshot of the rules at the time it was made: when buildings, capacities or the save format change, it goes stale and has to be regenerated by hand, while a grown town always follows the current rules. The test checks that this still works: it grows each town twice and compares them, fails if any script step could no longer be carried out, checks that research covers everything built and that homes are within capacity, then plays each town on for a few days with the full simulation, running the playtest audits every day, and round-trips a save. Add `--map` to print each town day by day and as a map, which helps when changing a build script.
 
 ## Credits
 
