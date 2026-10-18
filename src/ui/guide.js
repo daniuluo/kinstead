@@ -2,7 +2,7 @@
 // card, and the full picture (every level, its needs and where it can lead)
 // in the Building guide window when one is picked.
 
-import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, servicesOf, unlockOf, techForLevel, workNeeded, sellsText } from '../defs.js';
+import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, GRAND, RESEARCH_SOURCES, servicesOf, unlockOf, techForLevel, workNeeded, sellsText } from '../defs.js';
 import { EDU } from '../sim/people.js';
 import { visitorCap, visitKind } from '../sim/agents.js';
 import { thumb } from './thumbs.js';
@@ -29,6 +29,10 @@ function stats(type, level) {
   if (def.park && L.appeal) out.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
   else if (L.appeal) out.push(['Scenery', `+${L.appeal}`]);
   if (L.visit) out.push(['Per visit', `$${L.visit}`]);
+  if (def.play) out.push(['Play', 'homes with children nearby are happier']);
+  if (def.potter) out.push(['Digging', 'homes with elders nearby are happier']);
+  const res = RESEARCH_SOURCES[type];
+  if (res) out.push(['Research', `${res[Math.min(level, res.length - 1)]} a day`]);
   if (L.income) out.push(['Earnings', `$${L.income} a worker a day`]);
   if (L.supply) out.push(['Water for', `${L.supply} villagers`]);
   if (L.kw) out.push(['Power', `${L.kw} kW`]);
@@ -54,7 +58,7 @@ function needs(world, type, level) {
 
 function placement(def) {
   const out = [];
-  out.push(def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
+  out.push(def.grand ? `Takes ${def.size}×${def.size} grounds, grown from a ${def.size - 1}×${def.size - 1} park` : def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
   if (!def.park) out.push('needs a road alongside');
   if (def.needsWater) out.push('must be beside water');
   if (def.needsRail) out.push('needs railway track alongside');
@@ -119,6 +123,7 @@ export function showBuildingGuide(ui, type) {
   for (const [lv, list] of Object.entries(def.paths || {})) for (const b of list) more.push(`From the ${esc(def.levels[lv].name)} it can turn into a <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const b of def.stageNext || []) more.push(`It can move on to the next stage: <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const b of LARGE[type] || []) more.push(`On a double plot it can be rebuilt as <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
+  for (const b of GRAND[type] || []) more.push(`Grown onto the land round it (${BUILDINGS[b].size}×${BUILDINGS[b].size} grounds, Public Parks) it can be laid out as <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const m of MERGES) {
     const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;
     if (other) more.push(`Joined with a neighbouring ${other.map(o => esc(BUILDINGS[o].levels[0].name.toLowerCase())).join(' or ')}: <b>${esc(BUILDINGS[m.to].levels[0].name)}</b>`);

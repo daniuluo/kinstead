@@ -7,7 +7,7 @@
 // reached; where this building stands now is marked, and so is what is
 // still locked.
 
-import { BUILDINGS, TECHS, MERGES, LARGE, ESTATE, FARM_JOIN, unlockOf, techForLevel } from '../defs.js';
+import { BUILDINGS, TECHS, MERGES, LARGE, ESTATE, GRAND, FARM_JOIN, unlockOf, techForLevel } from '../defs.js';
 import { thumb } from './thumbs.js';
 import { showBuildingGuide } from './guide.js';
 
@@ -27,9 +27,10 @@ const KIND = {
   stage: { icon: 'school', col: '#1f4e9c', name: 'The next stage of schooling' },
   plot: { icon: 'open_in_full', col: '#8a5a1e', name: 'Take the plot next door, then rebuild' },
   estate: { icon: 'select_all', col: '#7a3d8f', name: 'Take two more plots (a 2×2 estate), then rebuild' },
+  grand: { icon: 'zoom_out_map', col: '#2f6a3a', name: 'Take the land round it (bigger grounds), then lay it out' },
   join: { icon: 'link', col: '#1e7a6e', name: 'Join with a neighbour' },
 };
-const ORDER = ['branch', 'side', 'stage', 'plot', 'estate', 'join'];
+const ORDER = ['branch', 'side', 'stage', 'plot', 'estate', 'grand', 'join'];
 
 // Where one type can lead: [{ kind, at (the level it opens from), any (any
 // level can), label, type }]
@@ -40,6 +41,7 @@ function nextOf(type) {
   for (const t of def.stageNext || []) out.push({ kind: 'stage', at: 0, any: true, label: 'next stage', type: t });
   for (const t of LARGE[type] || []) out.push({ kind: 'plot', at: 0, any: true, label: 'double plot', type: t });
   for (const t of ESTATE[type] || []) out.push({ kind: 'estate', at: 0, any: true, label: '2×2 estate', type: t });
+  for (const t of GRAND[type] || []) out.push({ kind: 'grand', at: 0, any: true, label: `${BUILDINGS[t].size}×${BUILDINGS[t].size} grounds`, type: t });
   if (FARM_JOIN.from.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.with)}`, type: FARM_JOIN.to });
   if (FARM_JOIN.with.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.from)}`, type: FARM_JOIN.to });
   if (joinable(type)) {
@@ -102,7 +104,8 @@ export function showPathMap(ui, b, type = b && b.type) {
   let h = `<h2>${TITLE}</h2><p class="lead">Everything ${b ? `this ${esc(def.levels[b.level].name.toLowerCase())}` : `a ${esc(lower(type))}`} can become. Each row is a building and its levels. A line starts at the level a path opens from, or at the start of the row when any level can take it. Click a building for its guide.</p>`;
   h += `<div class="pm-legend">${ORDER.map(k => `<span style="--k:${KIND[k].col}"><span class="ms">${KIND[k].icon}</span>${esc(KIND[k].name)}</span>`).join('')}<span><span class="ms">lock</span>Locked: hover for what it needs</span></div>`;
   if (rows.length === 1) h += '<div class="note">It has no other paths: only its own levels.</div>';
-  else if (LARGE[type] || ESTATE[type]) h += '<div class="note">Taking land next door also lets it be <b>extended</b> as it is, to hold 50% more.</div>';
+  else if ((LARGE[type] || ESTATE[type]) && !def.park) h += '<div class="note">Taking land next door also lets it be <b>extended</b> as it is, to hold 50% more.</div>';
+  else if (def.park && rows.length > 1) h += '<div class="note">A park growing onto the land beside it takes in the little parks in the way.</div>';
   h += `<div class="pm-wrap"><div class="tt-grid" style="grid-template-columns: 178px repeat(${width}, 128px); grid-template-rows: repeat(${rows.length}, minmax(50px, auto))"><svg class="pm-links"></svg>`;
   rows.forEach((t, r) => {
     const d = BUILDINGS[t], here = at && at.type === t, c0 = col.get(t);

@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { newTownId } from '../util/text.js';
@@ -147,6 +147,15 @@ export function scaledLevel(L, k) {
 // Neighbouring buildings that can be joined into one mixed-use building.
 const MERGE_SHOPS = ['market', 'bakery', 'tavern'];
 const MERGE_COST = [150, 300, 500];
+// A park joined (or rebuilt on a double plot) from a little park with a
+// feature of its own keeps it: b.flavor is the most telling of the two
+// (not the recipe's own kind: every lake garden has its pond).
+const PARK_FEATURE = ['bandstand', 'statue', 'rosegarden', 'pond', 'physic', 'flowers'];
+const PARK_BASE = { park: null, lakepark: 'pond', botanic: 'physic' };
+export function parkFeature(to, types) {
+  if (!(to in PARK_BASE)) return null;
+  return PARK_FEATURE.find(t => t !== PARK_BASE[to] && types.includes(t)) || null;
+}
 function mergeResult(a, o, has = () => true) {
   const one = (x) => BUILDINGS[x.type].size === 1 && !BUILDINGS[x.type].merged;
   if (!one(a) || !one(o)) return null;
@@ -162,7 +171,7 @@ function mergeResult(a, o, has = () => true) {
     // the higher of the two levels, but never one the town can't build yet
     let level = Math.min(Math.max(a.level, o.level), def.levels.length - 1);
     while (level > 0 && !has(m.to, level)) level--;
-    const flavor = m.to === 'shophouse' || m.to === 'inn' ? (base.type === 'house' || base.type === 'tavern' ? other.type : base.type) : null;
+    const flavor = m.to === 'shophouse' || m.to === 'inn' ? (base.type === 'house' || base.type === 'tavern' ? other.type : base.type) : parkFeature(m.to, [a.type, o.type]);
     const cost = Math.round(120 + def.levels[level].cost * 0.3);
     return { type: m.to, base, flavor, level, cost, name: def.levels[level].name };
   }
@@ -537,6 +546,7 @@ export class World {
     if (con.kind === 'upgrade') {
       if (con.toType && BUILDINGS[con.toType]) b.type = con.toType;
       if (con.look !== undefined) b.look = con.look;
+      if (con.flavor !== undefined) b.flavor = con.flavor;
       b.level = Math.min(con.to, BUILDINGS[b.type].levels.length - 1);
       this._fill(b, con.extend);
       if (!hasFields(b.type)) this._dropFields(b);
@@ -656,19 +666,44 @@ export class World {
     const out = [];
     const def = BUILDINGS[b.type];
     if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
-    // a double plot can grow into a 2×2 estate onto two empty plots beside it
+    // a 2×2 park, or a 3×3 one, can grow onto the land round one of its
+    // corners into grounds a size bigger (Public Parks)
+    const n = fw(b);
+    if (!b.con && !b.spare && def.park && n >= 2 && fd(b) === n && n * n === baseArea(b) && this.hasTech('publicparks') && growsInto(b.type, (n + 1) ** 2).length) {
+      const [fx, fz] = DIRS[b.rot];
+      for (const cz of [-1, 1]) for (const cx of [-1, 1]) {
+        const x0 = cx < 0 ? b.x - 1 : b.x, z0 = cz < 0 ? b.z - 1 : b.z, tiles = [];
+        for (let z = z0; z <= z0 + n; z++) for (let x = x0; x <= x0 + n; x++) if (x < b.x || x >= b.x + n || z < b.z || z >= b.z + n) tiles.push([x, z]);
+        const take = this._growLand(b, tiles, 1.4);
+        if (!take) continue;
+        // which corner, as the park sees it from its street side
+        const ahead = cx * fx + cz * fz, right = -cx * fz + cz * fx;
+        const where = `${ahead > 0 ? 'in front of it' : 'behind it'} and to its ${right > 0 ? 'right' : 'left'}`;
+        out.push({ dir: 20 + (cx > 0 ? 1 : 0) + (cz > 0 ? 2 : 0), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'grand', where, ...take, label: `Take the land ${where} for ${plotName((n + 1) ** 2)}` });
+      }
+      return out;
+    }
+    // a double plot can grow into a 2×2 estate onto two plots beside it:
+    // empty land or, for a park, the little parks there too
     if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop && growsInto(b.type, 4).length) {
       const along = fw(b) === 2;
       for (const s of [-1, 1]) {
         const tiles = along ? [[b.x, s < 0 ? b.z - 1 : b.z + 1], [b.x + 1, s < 0 ? b.z - 1 : b.z + 1]] : [[s < 0 ? b.x - 1 : b.x + 1, b.z], [s < 0 ? b.x - 1 : b.x + 1, b.z + 1]];
-        if (!tiles.every(([x, z]) => this.inBounds(x, z) && !this.roadAt(x, z) && !this.railAt(x, z) && !this.terrain.isWater(x, z) && !this.buildingOn(x, z) && this.fields[this.idx(x, z)] < 0)) continue;
-        const all = [...tiles, [b.x, b.z], [b.x + fw(b) - 1, b.z + fd(b) - 1]];
-        const lo = Math.min(...all.map(([x, z]) => this.terrain.tileMin(x, z))), hi = Math.max(...all.map(([x, z]) => this.terrain.tileMax(x, z)));
-        if (hi - lo > 1.2) continue;
-        const trees = tiles.reduce((n, [x, z]) => n + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
+        const take = this._growLand(b, tiles, 1.2);
+        if (!take) continue;
         const [fx, fz] = DIRS[b.rot], where = (along ? -fz === s && !fx : -fx === s && !fz) ? 'behind it' : 'beside it';
-        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where, cost: 2 * CONFIG.PLOT_PRICE + trees, label: `Take the two plots ${where} for a 2×2 estate` });
+        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where, ...take, label: `Take the two plots ${where} for a 2×2 estate` });
       }
+      return out;
+    }
+    // a one-plot park only takes an empty plot beside it (it joins with the
+    // parks next door instead)
+    if (def.park && !b.con && fw(b) === 1 && fd(b) === 1 && def.size === 1 && growsInto(b.type, 2).length) {
+      const sideOf = (k) => (k === b.rot ? 'in front' : (k + 2) % 4 === b.rot ? 'behind' : 'beside');
+      DIRS.forEach(([dx, dz], k) => {
+        const take = this._growLand(b, [[b.x + dx, b.z + dz]], 1.1, false);
+        if (take) out.push({ dir: k, x: b.x + dx, z: b.z + dz, kind: 'land', where: sideOf(k), ...take, label: `Take the empty plot ${sideOf(k)}` });
+      });
       return out;
     }
     if (!b || b.con || def.merged || def.park || def.stop || fw(b) !== 1 || fd(b) !== 1 || def.size !== 1) return out;
@@ -703,6 +738,31 @@ export class World {
     return out;
   }
 
+  // Land a building can grow onto: every tile in bounds, clear of roads,
+  // track, water and fields and with no building on it (though a park may
+  // take in the little parks there), and the ground over the old plot and
+  // the new no rougher than `rough`. { cost, absorb, warn }, or null.
+  _growLand(b, tiles, rough, absorb = true) {
+    const def = BUILDINGS[b.type], taken = [];
+    for (const [x, z] of tiles) {
+      if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return null;
+      const o = this.buildingOn(x, z);
+      if (!o) continue;
+      if (!(absorb && def.park && isSmallPark(o) && !(o.leases || []).length)) return null;
+      if (!taken.includes(o)) taken.push(o);
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (const [x, z] of [...tiles, [b.x, b.z], [b.x + fw(b) - 1, b.z], [b.x, b.z + fd(b) - 1], [b.x + fw(b) - 1, b.z + fd(b) - 1]]) {
+      lo = Math.min(lo, this.terrain.tileMin(x, z)); hi = Math.max(hi, this.terrain.tileMax(x, z));
+    }
+    if (hi - lo > rough) return null;
+    const empty = tiles.filter(([x, z]) => !this.buildingOn(x, z));
+    const trees = empty.reduce((s, [x, z]) => s + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
+    const names = [...new Set(taken.map(o => BUILDINGS[o.type].levels[o.level].name.toLowerCase()))];
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    return { cost: empty.length * CONFIG.PLOT_PRICE + trees, absorb: taken, warn: taken.length ? `The ${list} there ${taken.length > 1 ? 'become' : 'becomes'} part of the park` : undefined };
+  }
+
   // Homes need running water to grow (see Sim._working), unless the sandbox
   // lets buildings upgrade without meeting their needs.
   _dryHome(b) {
@@ -729,6 +789,8 @@ export class World {
       return { ok: true, building: b, kind: 'strip' };
     }
     if (opt.other) this.removeBuilding(opt.other.id, 0);
+    // the little parks a growing park takes in
+    for (const o of opt.absorb || []) this.removeBuilding(o.id, 0);
     this.money -= opt.cost;
     this._dissolveLeases(b);
     const tiles = opt.tiles || [[opt.x, opt.z]];
@@ -961,8 +1023,14 @@ export class World {
     if (fw(b) * fd(b) >= 4 && ESTATE[b.type]) {
       for (const type of ESTATE[b.type]) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), estate: true });
     }
+    // ...and a 2×2 park grown into 3×3 grounds (or a 3×3 one into 4×4) laid
+    // out afresh across them, round what it was
+    if (b.spare && fw(b) * fd(b) >= 9 && GRAND[b.type]) {
+      for (const type of GRAND[b.type]) if (baseAreaOf(type) === fw(b) * fd(b)) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), grand: true });
+    }
     // ...or the building as it is can be built out across the land it took
-    if (b.spare) out.push({ type: b.type, level: b.level, extend: true });
+    // (not a park: a bigger lawn holds no more scenery)
+    if (b.spare && !def.park) out.push({ type: b.type, level: b.level, extend: true });
     return out;
   }
 
@@ -1005,9 +1073,12 @@ export class World {
     // the bigger stages need a double plot: expand onto the plot next door
     // first; estates need a 2×2 plot, grown from a double plot
     if (fw(b) * fd(b) < baseAreaOf(target.type)) {
-      reqs.unshift(BUILDINGS[target.type].estate
-        ? { label: 'A 2×2 estate — grow the double plot onto the two plots beside it first', met: false, space: true }
-        : { label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
+      const grounds = plotName(baseAreaOf(target.type));
+      reqs.unshift(BUILDINGS[target.type].grand
+        ? { label: `${grounds[0].toUpperCase()}${grounds.slice(1)} — grow the park onto the land round it first`, met: false, space: true }
+        : BUILDINGS[target.type].estate
+          ? { label: 'A 2×2 estate — grow the double plot onto the two plots beside it first', met: false, space: true }
+          : { label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
     }
     reqs.push({ label: restyle ? `$${cost} (with $${restyle} for the new style)` : `$${cost}`, met: this.money >= cost });
     const ok = reqs.every(r => r.met);
@@ -1054,11 +1125,13 @@ export class World {
     if (!chk.ok) return chk;
     this.money -= chk.cost;
     const { type, level } = chk.target;
+    const flavor = this._grownFlavor(b, chk.target);
     if (this.sandbox.instantBuild) {
       const homes = capOf(b, 'housing');
       b.type = type;
       b.level = level;
       if (look !== undefined) b.look = look;
+      if (flavor !== undefined) b.flavor = flavor;
       this._fill(b, chk.target.extend);
       if (!hasFields(b.type)) this._dropFields(b);
       this.emit('building:change', b);
@@ -1068,8 +1141,24 @@ export class World {
     b.con = { kind: 'upgrade', to: level, toType: type, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
     if (chk.target.extend) b.con.extend = true;
     if (look !== undefined) b.con.look = look;
+    if (flavor !== undefined) b.con.flavor = flavor;
     this.emit('building:change', b);
     return { ok: true, building: b };
+  }
+
+  // What a park rebuilt on its bigger plot keeps of what it was (b.flavor):
+  // grounds are laid out round the 2×2 park they grew from, and a park
+  // rebuilt from a little one with a feature of its own keeps the feature.
+  // undefined: as it is.
+  _grownFlavor(b, target) {
+    if (!BUILDINGS[b.type].park) return undefined;
+    if (target.grand) {
+      // the park it was, at its level, in the corner it stands in (see parkOrigin)
+      const at = b.spare && b.spare.sx != null ? `@${b.spare.sx},${b.spare.sz}` : '';
+      return `${b.type}#${b.level}${at}${b.flavor ? `/${b.flavor}` : ''}`;
+    }
+    if (target.large) return parkFeature(target.type, [b.type]);
+    return undefined;
   }
 
   removeBuilding(id, refund = 0.25) {

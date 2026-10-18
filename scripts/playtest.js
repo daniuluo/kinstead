@@ -49,7 +49,7 @@ game.animals = new Animals(game);
 game.construction = new Construction(game);
 game.on('day', () => game.transit.planCarts());
 w.on('roads', () => game.paths.invalidate?.());
-const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, estates: 0, estateBuilt: 0, moves: 0, demolish: 0, roads: 0, research: 0, born: 0, died: 0, grads: 0 };
+const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, estates: 0, estateBuilt: 0, grounds: 0, groundsBuilt: 0, moves: 0, demolish: 0, roads: 0, research: 0, born: 0, died: 0, grads: 0 };
 game.on('born', (b) => { counts.born += b.length; });
 game.on('died', (d) => { counts.died += d.length; });
 game.on('graduated', () => { counts.grads++; });
@@ -114,7 +114,9 @@ const placeUseful = (type, near) => place(idleType(type) ? 'house' : type, near)
 function botDay() {
   const sim = game.sim;
   if (w.money < 150) return;
-  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well']); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
+  // (the busy modes try every kind of little park too)
+  const parks = MODE !== 'economy' ? ['pond', 'rosegarden', 'bandstand', 'allotment', 'physic'] : [];
+  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well', ...parks]); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
   const issues = computeIssues(game);
   const has = (t) => issues.some(i => i.text.includes(t));
   // research: cheapest available project, but water and power once the
@@ -172,7 +174,7 @@ function botDay() {
     if (!opts.length) continue;
     const o = rng.pick(opts);
     const look = rng.chance(0.3) ? rng.pick(STYLES).id : undefined;
-    if (w.upgradeBuilding(b.id, key(o), look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; if (o.extend) counts.extended = (counts.extended || 0) + 1; }
+    if (w.upgradeBuilding(b.id, key(o), look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; if (o.grand) counts.groundsBuilt++; if (o.extend) counts.extended = (counts.extended || 0) + 1; }
   }
   // farms plough more fields, and now and then change what they grow or raise
   // (the busy modes keep a farm going to try it on)
@@ -201,12 +203,13 @@ function botDay() {
   }
   for (let k = 0; k < busy; k++) if (rng.chance(MODE !== 'economy' ? 0.6 : 0.12)) {
     const cands = [...w.buildings.values()].filter(b => !b.con && w.expandOptions(b).length);
-    // the busy modes grow a double plot into a 2×2 estate whenever one can
-    const grand = MODE !== 'economy' ? cands.filter(b => w.expandOptions(b).some(o => o.kind === 'estate')) : [];
+    // the busy modes grow a double plot into a 2×2 estate (and a 2×2 park
+    // into bigger grounds) whenever one can
+    const grand = MODE !== 'economy' ? cands.filter(b => w.expandOptions(b).some(o => o.kind === 'estate' || o.kind === 'grand')) : [];
     const b = grand.length && rng.chance(0.5) ? rng.pick(grand) : cands.length && rng.pick(cands);
     const opts = b ? w.expandOptions(b).filter(o => MODE !== 'economy' || o.kind !== 'takeover') : [];
     const o = opts.length && rng.pick(opts);
-    if (o && w.expandBuilding(b.id, o.dir, o.kind).ok) { counts.expands++; if (o.kind === 'estate') counts.estates++; }
+    if (o && w.expandBuilding(b.id, o.dir, o.kind).ok) { counts.expands++; if (o.kind === 'estate') counts.estates++; if (o.kind === 'grand') counts.grounds++; }
   }
   if (rng.chance(MODE !== 'economy' ? 0.5 : 0.06)) {
     const cands = [...w.buildings.values()].filter(b => !b.con && BUILDINGS[b.type].size === 1 && b.type !== 'townhall');
@@ -297,6 +300,10 @@ console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(
   const est = [...w.buildings.values()].filter(b => BUILDINGS[b.type].estate);
   const on = [...w.buildings.values()].filter(b => fw(b) * fd(b) === 4 && BUILDINGS[b.type].merged).length;
   console.log(`2×2 estates: ${counts.estates} grown, ${counts.estateBuilt} rebuilt as estate buildings · standing: ${est.map(b => `${BUILDINGS[b.type].levels[b.level].name}${b.con ? ' (building)' : ''}`).join(', ') || 'none'} · ${on} double-plot buildings on grown estates`);
+  // 2×2 parks grown into bigger grounds, and the grand parks standing on them
+  const big = [...w.buildings.values()].filter(b => BUILDINGS[b.type].grand);
+  const parkTypes = new Set([...w.buildings.values()].filter(b => BUILDINGS[b.type].park).map(b => b.type));
+  console.log(`park grounds: ${counts.grounds} grown, ${counts.groundsBuilt} laid out · standing: ${big.map(b => `${BUILDINGS[b.type].levels[b.level].name} ${fw(b)}×${fd(b)}`).join(', ') || 'none'} · ${parkTypes.size} kinds of park in town`);
 }
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');
 {

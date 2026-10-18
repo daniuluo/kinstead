@@ -8,6 +8,7 @@ import { NatureView } from './natureView.js';
 import { Overlay } from './overlay.js';
 import { Particles } from './particles.js';
 import { buildModel, workArea } from './buildings.js';
+import { PARK_SEASON_STEPS } from './parks.js';
 import { siteGeo, bodyBox } from './construction.js';
 import { Rain } from './rain.js';
 import { fw, fd } from '../world/world.js';
@@ -39,6 +40,8 @@ export class WorldView {
     this.dirty = { roads: false, doors: false, nature: false, terrain: false, paint: false, glows: true };
     this.season = 1;
     this.seasonW = 0;
+    this._parkSeason = 1 * PARK_SEASON_STEPS;   // the step of the season the parks are drawn at
+    this._reseason = new Set();   // parks still to redraw for it, a few a frame
     this.poolTex = glowTexture();
     this.pools = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
       map: this.poolTex, color: '#ffb35c', transparent: true, opacity: 0, depthWrite: false,
@@ -144,8 +147,9 @@ export class WorldView {
       fountain: model.fountain ? toWorld({ x: model.fountain[0], y: model.fountain[1], z: model.fountain[2] }) : null,
       work: model.work,
     };
-    // Outdoor work / wander area in world space
+    // Outdoor work / wander area in world space, and where a park's visitors stroll to
     b.work = workArea(b);
+    b.spots = model.spots && model.spots.length ? model.spots.map(p => { const v = toWorld({ x: p.x, y: 0, z: p.z }); return [v.x, v.z]; }) : null;
     b.door = this._doorOf(model, mesh, b);
     this.items.set(b.id, item);
     if (animate) {
@@ -182,6 +186,7 @@ export class WorldView {
     };
     const item = { b, mesh, spin: null, smoke: [], glows: [], fountain: null, work: null, site };
     b.work = workArea(b);
+    b.spots = null;
     mesh.updateMatrixWorld(true);
     b.door = this._doorOf(old || target, mesh, b);
     this.items.set(b.id, item);
@@ -371,6 +376,13 @@ export class WorldView {
     this.terrain.setSeason(s, q);
     this.nature.setSeason(s, q);
     for (const it of [...this.items.values()]) if (it.b.type === 'farm') { this.removeBuilding(it.b, true); this.addBuilding(it.b, false); }
+    // parks follow the season in fewer steps, and are redrawn a few at a
+    // time over the next frames (see update)
+    const pk = s * PARK_SEASON_STEPS + Math.floor(q * PARK_SEASON_STEPS + 1e-6);
+    if (pk !== this._parkSeason) {
+      this._parkSeason = pk;
+      for (const it of this.items.values()) if (BUILDINGS[it.b.type].park && !it.site) this._reseason.add(it.b.id);
+    }
   }
 
   update(dt, gameDt, env) {
@@ -388,6 +400,16 @@ export class WorldView {
     if (this.dirty.nature) { this.nature.rebuild(); this.dirty.nature = false; }
     if (this.dirty.glows) { this._rebuildGlows(); this.dirty.glows = false; }
 
+    // parks redrawn for the turn of the season, a few milliseconds' worth a frame
+    if (this._reseason.size) {
+      const t0 = performance.now();
+      for (const id of this._reseason) {
+        this._reseason.delete(id);
+        const it = this.items.get(id);
+        if (it && !it.site && this.preview?.id !== id) { this.removeBuilding(it.b, true); this.addBuilding(it.b, false); }
+        if (performance.now() - t0 > 3) break;
+      }
+    }
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.time >= this.pending[i].at) { this.pending[i].fn(); this.pending.splice(i, 1); }
     }

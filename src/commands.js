@@ -103,7 +103,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.restyleBuilding(c.id, c.look),
   },
   expand: {
-    check: (w, c) => int(c.id) && int(c.dir, 0, 12) && ['land', 'strip', 'takeover', 'estate'].includes(c.kind),
+    check: (w, c) => int(c.id) && int(c.dir, 0, 23) && ['land', 'strip', 'takeover', 'estate', 'grand'].includes(c.kind),
     run: (g, c) => g.world.expandBuilding(c.id, c.dir, c.kind),
   },
   merge: {

@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { BUILDINGS, TRADES, servicesOf, tradesOf } from '../defs.js';
+import { BUILDINGS, TRADES, servicesOf, tradesOf, visitOf } from '../defs.js';
 import { doorPoint, fw, fd, isOpen } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { curvesAt } from '../world/roadShape.js';
@@ -85,10 +85,14 @@ export class Agents {
   _places() {
     return this._lists ||= {
       shops: this._candidates(d => d.shop),
-      parks: this._candidates(d => d.park && d.outdoor),
+      // (allotments are for the old to dig, not for a stroll)
+      parks: this._candidates(d => d.park && d.outdoor && !d.potter),
       plays: this._candidates(d => d.play),
+      allots: this._candidates(d => d.potter),
       taverns: this._candidates(d => d.leisure && !d.park),
-      chapels: this._candidates(d => servicesOf(d).includes('culture')),
+      // (a bandstand brings culture to the streets round it, but nobody goes
+      // to it to worship)
+      chapels: this._candidates(d => servicesOf(d).includes('culture') && !d.park),
       schools: this._candidates(d => servicesOf(d).includes('education')),
       clinics: this._candidates(d => visitKind(d) === 'clinic'),
     };
@@ -125,7 +129,7 @@ export class Agents {
 
   planDay(r, now) {
     const R = Math.random;
-    const { shops, parks, plays, taverns, chapels, schools, clinics } = this._places();
+    const { shops, parks, plays, allots, taverns, chapels, schools, clinics } = this._places();
     const pick = (list) => this._nearest(r, list), shop = () => this._shopFor(r, shops);
     const plan = [];
     const home = r.home;
@@ -178,7 +182,9 @@ export class Agents {
         push(18 + R() * 0.5, home);
       }
     } else {
-      push(8.4 + R() * 2 + shift, has('devout') || R() < 0.6 ? pick(chapels) ?? pick(parks) : pickFar(parks));
+      // the old: chapel, the park, or of a morning their allotment
+      const dig = allots.length && !has('devout') && R() < (has('outdoorsy') ? 0.7 : 0.45);
+      push(8.4 + R() * 2 + shift, dig ? pick(allots) : has('devout') || R() < 0.6 ? pick(chapels) ?? pick(parks) : pickFar(parks));
       push(11.5 + R(), home);
       if (R() < 0.6 * outK) { push(14 + R() * 2, R() < 0.6 * shopK ? shop() ?? pick(parks) : pickFar(parks)); push(16.6 + R(), home); }
     }
@@ -311,7 +317,7 @@ export class Agents {
       if (r.loc === 'out') { if (r.walk) this._drop(r.walk); r.loc = 'in'; r.at = r.home; }
       return;
     }
-    if (def.shop || (def.leisure && !def.park)) {
+    if (def.shop || (def.leisure && !def.park) || (def.park && visitOf(B) && this._visiting(r, B))) {
       const v = this.game.sim.recordVisit(B);
       if (v && r.age !== 'child') r.wealth = Math.round(((r.wealth ?? 60) - v) * 10) / 10;
       if (v) this.game.emit('coins', { x: doorPoint(B).x, y: B.baseY + 0.4, z: doorPoint(B).z, v });
@@ -323,11 +329,15 @@ export class Agents {
       const wk = r.walk;
       wk.mode = 'wander';
       wk.area = site ? siteArea(B) : B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + fw(B) - 0.15, B.z + fd(B) - 0.15];
+      // a park's visitors stroll between its walks and seats (B.spots, from
+      // the model) rather than anywhere on the plot (so not into the pond)
       wk.ring = site;
       wk.baseY = B.baseY + 0.012;
-      wk.working = (def.outdoorWork && r.job === B.id) || site;
+      // the old dig their allotment
+      wk.working = (def.outdoorWork && r.job === B.id) || site || (def.potter && r.age === 'elder');
       wk.tool = site ? 'hammer' : B.type === 'orchard' ? 'pick' : 'hoe';
       if (wk.working) wk.carry = null;
+      wk.spots = !site && !wk.working && B.spots && B.spots.length ? B.spots : null;
       wk.idle = 0.3;
       wk.target = null;
       r.loc = 'out';
@@ -544,6 +554,9 @@ export class Agents {
             // builders work their way round the scaffolding
             const wx = x1 - x0, wz = z1 - z0, t = Math.random() * 2 * (wx + wz);
             wk.target = t < wx ? [x0 + t, z0] : t < wx + wz ? [x1, z0 + t - wx] : t < 2 * wx + wz ? [x1 - (t - wx - wz), z1] : [x0, z1 - (t - 2 * wx - wz)];
+          } else if (wk.spots) {
+            const p = wk.spots[(Math.random() * wk.spots.length) | 0];
+            wk.target = [p[0] + (Math.random() - 0.5) * 0.08, p[1] + (Math.random() - 0.5) * 0.08];
           } else wk.target = [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
         }
         const dx = wk.target[0] - wk.x, dz = wk.target[1] - wk.z;

@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -19,6 +19,7 @@ const HAPPY = {
   power: { want: 'electricity', label: 'Electricity', icon: 'bolt', tip: (f, g) => (g.sim.utility && g.sim.utility.power.gen ? 'Not enough power — build more generators' : 'Build a generator (Utilities)'), act: { label: 'Utilities', cat: 'utilities' } },
   appeal: { want: 'nicer scenery', label: 'Scenery', icon: 'park', tip: 'Plant trees, or build gardens and parks nearby', act: { label: 'Parks', cat: 'parks' } },
   play: { want: 'somewhere to play', label: 'Play', icon: 'toys', tip: 'Build a play area or playing field within reach of homes with children', act: { label: 'Parks', cat: 'parks' } },
+  potter: { want: 'an allotment to dig', label: 'Allotment', icon: 'agriculture', tip: 'Build allotments within reach of homes with elders', act: { label: 'Parks', cat: 'parks' } },
   shops: { want: 'shops nearby', label: 'Shops nearby', icon: 'storefront', tip: 'Build a shop, café or tavern within 7 tiles', act: { label: 'Commerce', cat: 'commercial' } },
   transit: { want: 'a coach stop nearby', label: 'Transport', icon: 'directions_bus', tip: 'Put a coach stop within 4 tiles', act: { label: 'Transit', cat: 'transit' } },
   pollution: { want: 'less smoke', label: 'Smoke', icon: 'factory', tip: 'Industry is too close — move it, or plant trees between', act: { label: 'Show homes' } },
@@ -539,15 +540,16 @@ export class UI {
     if (L.edu) rows.push(['Workers need', `${EDU[L.edu]} education`]);
     if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
     if (isExpanded(b)) {
-      const plot = (b.w ?? b.size) * (b.d ?? b.size) >= 4 ? '2×2 estate' : 'Double plot';
-      rows.push(['Plot', b.spare ? `${plot} · not built on yet (see Upgrade)` : `${plot} · room for ${Math.round((sizeK(b) - 1) * 100)}% more`]);
+      const plot = plotName((b.w ?? b.size) * (b.d ?? b.size)), Plot = plot[0].toUpperCase() + plot.slice(1);
+      rows.push(['Plot', b.spare ? `${Plot} · not built on yet (see Upgrade)` : `${Plot} · room for ${Math.round((sizeK(b) - 1) * 100)}% more`]);
     }
     else if (def.estate) rows.push(['Plot', '2×2 estate']);
+    else if (def.grand) rows.push(['Plot', `${def.size}×${def.size} grounds`]);
     if (L.income) {
       let v = sim.incomeOf(b);
       rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `$${fmt(v)} / day`]);
     }
-    if (L.visit) rows.push(['Per visit', `$${L.visit}`]);
+    if (visitOf(b)) rows.push(['Per visit', `$${visitOf(b)}`]);
     if (L.upkeep) rows.push(['Upkeep', `$${S.upkeep} / day`]);
     for (const s of servicesOf(def)) rows.push(s === 'water' ? [`${SERVICES[s].icon} Water`, 'Into the mains along the roads'] : [`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
     if (def.park) rows.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
@@ -567,6 +569,10 @@ export class UI {
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
     if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
     if (def.fields && (b.flavor || def.fruit)) rows.push(['Produce', produceOf(b).name]);
+    else if (b.flavor && def.park) {
+      const o = parkOrigin(b.flavor);
+      if (o) rows.push(['Laid out round', `the ${BUILDINGS[o.type].levels[Math.min(o.level ?? 0, BUILDINGS[o.type].levels.length - 1)].name.toLowerCase()}`]);
+    }
     else if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
       if (def.shop) rows.push(['Sells', esc(sellsText(b))]);
     for (const l of b.leases || []) {
@@ -625,10 +631,14 @@ export class UI {
       }
       const grow = w.expandOptions(b);
       if (grow.length) {
-        const estate = grow[0].kind === 'estate';
-        const into = growsInto(b.type, (b.w ?? b.size) * (b.d ?? b.size) * 2).map(t => BUILDINGS[t].levels[estate ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
+        const kind = grow[0].kind, estate = kind === 'estate' || kind === 'grand';
+        const area = kind === 'grand' ? ((b.w ?? b.size) + 1) ** 2 : (b.w ?? b.size) * (b.d ?? b.size) * 2, plot = plotName(area);
+        const into = growsInto(b.type, area).map(t => BUILDINGS[t].levels[estate ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
         const who = L.housing ? 'households' : L.seats ? 'students' : def.park ? 'visitors' : 'workers';
-        h += `<div class="sec"><h5>⇲ ${estate ? 'Take land for a 2×2 estate' : 'Take a neighbouring plot'}</h5><div class="note">Buy the land first: the ${esc(L.name.toLowerCase())} stays as it is and the new land becomes its garden. Then choose what to build across ${estate ? 'the 2×2 estate' : 'the double plot'} under Upgrade: ${into.length ? `the ${esc(into.join(' or the '))}, or ` : ''}the ${esc(L.name.toLowerCase())} extended to hold 50% more ${who}.</div><div class="actions col">`;
+        // (a park isn't offered extended as it is: more lawn holds no more scenery)
+        const asIs = def.park ? '' : `${into.length ? ', or ' : ''}the ${esc(L.name.toLowerCase())} extended to hold 50% more ${who}`;
+        const absorbs = def.park && kind !== 'land' ? ' Little parks in the way become part of it.' : '';
+        h += `<div class="sec"><h5>⇲ ${kind === 'grand' ? `Take land for ${plot}` : estate ? 'Take land for a 2×2 estate' : 'Take a neighbouring plot'}</h5><div class="note">Buy the land first: the ${esc(L.name.toLowerCase())} stays as it is and the new land becomes its ${def.park ? 'lawn' : 'garden'}. Then choose what to build across the ${plot} under Upgrade: ${into.length ? `the ${esc(into.join(' or the '))}` : ''}${asIs}.${absorbs}</div><div class="actions col">`;
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
           const label = confirm ? `⚠ Click again: ${o.kind === 'takeover' ? 'demolish' : 'shrink'} the neighbour` : `${esc(o.label)} · $${fmt(o.cost)}`;
