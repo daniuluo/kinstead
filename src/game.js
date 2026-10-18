@@ -9,6 +9,7 @@ import { WorldView } from './render/worldView.js';
 import { Particles } from './render/particles.js';
 import { World } from './world/world.js';
 import { growDemoTown } from './world/demo.js';
+import { loadStarter } from './world/starters.js';
 import { PathFinder } from './sim/path.js';
 import { Sim } from './sim/sim.js';
 import { Agents } from './sim/agents.js';
@@ -185,12 +186,13 @@ export class Game {
     this.speed = 1;
   }
 
-  newGame({ name, seed, N, sandbox }) {
+  newGame({ name, seed, N, sandbox, starter = null }) {
     this.endNet();
-    const w = World.createNew({ N, seed, name, sandbox });
-    this.load(w, { fresh: true });
+    const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox });
+    this.load(w, { fresh: !starter });
     document.getElementById('title').classList.add('hidden');
-    this.ui.toast(`Welcome to ${name}! Build cottages along the road to attract settlers.`, 'big', '🏡');
+    if (starter) this.ui.toast(`Welcome to ${name}! ${w.population} villagers are counting on you.`, 'big', '🏡');
+    else this.ui.toast(`Welcome to ${name}! Build cottages along the road to attract settlers.`, 'big', '🏡');
     setTimeout(() => this.ui.toast('Press ❓ any time for a quick guide.', 'info', '💡'), 2500);
   }
 
@@ -245,6 +247,9 @@ export class Game {
     document.getElementById('btnNew').onclick = () => this.ui.showNewGame((o) => this.newGame(o));
     document.getElementById('btnLoad').onclick = () => this.ui.showSaves('local');
     document.getElementById('btnMulti').onclick = () => this.ui.showMultiplayer();
+    // first visit: straight to choosing how to start (unless an invite link brought them here)
+    const invited = new URLSearchParams(location.search).has('join');
+    if (!saves.length && !this._offeredStart && !invited) { this._offeredStart = true; this.ui.showNewGame((o) => this.newGame(o)); }
   }
 
   // --------------------------------------------------------------- saving
@@ -497,7 +502,7 @@ export class Game {
       this.animals.update(dt, this.speed);
       this.view.update(dt, gameDt, env);
       // villagers carry little lanterns at night
-      const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.05, y: wk.y + 0.12, z: wk.z - Math.sin(wk.heading) * 0.05, size: 0.16, r: 1, g: 0.75, b: 0.4, a: 0.8 }));
+      const l = this.agents.lanterns.map(wk => ({ x: wk.x + Math.cos(wk.heading) * 0.03, y: wk.y + 0.075, z: wk.z - Math.sin(wk.heading) * 0.03, size: 0.12, r: 1, g: 0.75, b: 0.4, a: 0.8 }));
       this.lantern.setStatics(l);
       this.lantern.update(dt, this.renderer.pixelsPerUnit(), env.night);
       if (this.follow != null) {

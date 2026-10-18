@@ -31,6 +31,7 @@ import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFi
 import { showMultiplayer, renderNetBox } from './multiplayer.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
+import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -486,6 +487,7 @@ export class UI {
     }
     const U = sim.utility;
     if (L.kw) rows.push(['Power output', `${L.kw} kW`], ['Town grid', `${U.power.demand} of ${U.power.gen} kW in use`]);
+    if (open && def.park && def.outdoor && this.game.agents) { const v = this.game.agents.visitorsAt(b); rows.push(['Visitors', `${v.now} of ${v.cap} at most`]); }
     if (L.supply) rows.push(['Water supply', `${L.supply} people`], ['Town water', `${U.water.demand} of ${U.water.supply} people`]);
     if (open && !def.park && !L.kw) rows.push(['Electricity', b.powered ? 'Connected' : U.power.gen ? (b.connected ? 'Cut off — not enough power' : 'Not on the grid') : 'No generator in town']);
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
@@ -741,7 +743,7 @@ export class UI {
     const pos = g.agents.positionOf(r);
     if (!pos) return;
     if (!el) { el = document.createElement('div'); el.className = 'label3d'; $('popups').appendChild(el); this.labels.set('sel', el); }
-    const p = g.renderer.worldToScreen(new g.THREE.Vector3(pos.x, pos.y + 0.32, pos.z));
+    const p = g.renderer.worldToScreen(new g.THREE.Vector3(pos.x, pos.y + 0.24, pos.z));
     el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
     el.textContent = `${r.first} · ${g.agents.activity(r)}`;
   }
@@ -889,7 +891,8 @@ export class UI {
   showNewGame(onCreate) {
     const rng = new RNG(randomSeed());
     const name = genTownName(rng);
-    this.openModal(`<h2>Found a new village</h2><p class="lead">Every seed grows a different valley — rivers, lakes, hills and forests.</p>
+    this.openModal(`<h2>Found a new village</h2><p class="lead">Start in an empty valley, or take over a village a few weeks along. Every seed grows a different valley — rivers, lakes, hills and forests.</p>
+      <div class="field"><label>Start from</label>${starterPickerHTML()}</div>
       <div class="field"><label>Village name</label><input id="ngName" maxlength="40" value="${esc(name)}"></div>
       <div class="grid2">
         <div class="field"><label>Map seed</label><div class="inline"><input id="ngSeed" style="flex:1" value="${randomSeed() % 1000000}"><button class="btn small" id="ngDice" title="Random seed">🎲</button></div></div>
@@ -901,10 +904,25 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="ngInst"> Sandbox: buildings go up instantly (no builders needed)</label></div>
       <div class="actions"><button class="btn primary" id="ngGo">🏡 Found the village</button></div>`, (c) => {
       c.querySelector('#ngDice').onclick = () => { c.querySelector('#ngSeed').value = randomSeed() % 1000000; };
-      c.querySelector('#ngGo').onclick = () => {
+      const seedOf = () => {
         const seedStr = c.querySelector('#ngSeed').value.trim();
-        const seed = /^\d+$/.test(seedStr) ? Number(seedStr) : [...seedStr].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked, instantBuild: c.querySelector('#ngInst').checked } };
+        return /^\d+$/.test(seedStr) ? Number(seedStr) : [...seedStr].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+      };
+      // a starter town comes with its own valley: the seed and size are its own
+      const typed = {};
+      const picker = mountStarterPicker(c, this.game, {
+        getMap: () => ({ seed: seedOf(), N: Number(c.querySelector('#ngSize').value) }),
+        onPick: (id, def) => {
+          const seedIn = c.querySelector('#ngSeed'), sizeIn = c.querySelector('#ngSize');
+          if (def && !seedIn.disabled) Object.assign(typed, { seed: seedIn.value, N: sizeIn.value });
+          if (def) { seedIn.value = def.seed; sizeIn.value = def.N; } else if (seedIn.disabled) { seedIn.value = typed.seed; sizeIn.value = typed.N; }
+          for (const el of [seedIn, sizeIn, c.querySelector('#ngDice')]) el.disabled = !!def;
+        },
+      });
+      c.classList.add('wide');
+      c.querySelector('#ngGo').onclick = () => {
+        const seed = seedOf();
+        const opts = { name: c.querySelector('#ngName').value.trim() || name, seed, N: Number(c.querySelector('#ngSize').value), starter: picker.pick === EMPTY ? null : picker.pick, sandbox: { infiniteMoney: c.querySelector('#ngInf').checked, unlockAll: c.querySelector('#ngAll').checked, freeUpgrades: c.querySelector('#ngFree').checked, instantBuild: c.querySelector('#ngInst').checked } };
         this.closeModal();
         onCreate(opts);
       };

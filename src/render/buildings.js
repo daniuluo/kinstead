@@ -67,8 +67,54 @@ function palette(seed, look = null) {
   if (look !== 'brick') p.brick = look === 'stone' ? shade(p.stoneWall, 0.9) : shade(p.wall, 0.85);
   p.lower = look === 'brick' || look === 'stone' ? p.wall : shade(p.wall, 0.88);
   if (look !== 'mixed') p.style = look;
+  // ...and the architecture that goes with it, so a style changes the shape of
+  // a building and where things go on it, not only its colours
+  Object.assign(p, STYLE_ARCH[look](r, p));
   return p;
 }
+
+// What each style builds like: roof shape and pitch, where the door and the
+// chimneys go, window size, porches, bays, jetties, dormers, and how far the
+// house sits back from the street. A little variety within each style.
+const STYLE_ARCH = {
+  // Tudor: steep roofs (sometimes thatch), a jettied upper floor, small dark
+  // leaded windows, one big central stack, the door to one side
+  timber: (r, p) => {
+    const thatch = r.chance(0.3);
+    return { roofStyle: thatch ? 'thatch' : r.chance(0.5) ? 'crossgable' : 'gable', thatched: thatch, hip: false,
+      roof: thatch ? p.thatch : r.pick(ROOF_TILE), pitch: r.float(1.22, 1.36), jetty: true, winW: r.float(0.054, 0.062), winH: 0.88,
+      shutters: false, porch: false, bay: false, chimneyPos: 'center', doorPos: 'side', alongZ: false, flowerBoxes: true,
+      frame: '#3a2a1f', arched: false, dormers: 0, setback: 0.16 };
+  },
+  // Limewashed cottage: thatch or a half-hipped roof, a stack up the gable
+  // wall outside, a little porch, a deep front garden
+  plaster: (r, p) => {
+    const thatch = r.chance(0.65);
+    return { roofStyle: thatch ? 'thatch' : 'halfhip', thatched: thatch, hip: false, roof: thatch ? p.thatch : r.pick(ROOF_TILE),
+      pitch: r.float(1.08, 1.2), jetty: false, winW: r.float(0.054, 0.06), winH: 0.84, shutters: false, porch: true, bay: false,
+      chimneyPos: 'outside', doorPos: 'side', alongZ: false, flowerBoxes: true, ivy: r.chance(0.4), arched: false, dormers: 0, setback: 0.21 };
+  },
+  // Georgian: a symmetrical front under a low hipped slate roof, a centred
+  // door with a porch, tall shuttered windows, a chimney at each end
+  painted: (r) => ({ roofStyle: 'hip', thatched: false, hip: true, roof: r.pick(ROOF_SLATE), pitch: r.float(0.82, 0.94), jetty: false,
+    winW: r.float(0.07, 0.077), winH: 1.2, shutters: true, porch: true, bay: false, chimneyPos: 'ends', doorPos: 'center', alongZ: false,
+    flowerBoxes: false, ivy: false, arched: false, dormers: 0, setback: 0.1 }),
+  // Victorian brick: tile gables (some facing the street), bay windows,
+  // arched window heads, paired end stacks, the door to one side
+  brick: (r) => ({ roofStyle: r.chance(0.4) ? 'crossgable' : 'gable', thatched: false, hip: false, roof: r.chance(0.6) ? r.pick(ROOF_TILE) : r.pick(ROOF_SLATE),
+    pitch: r.float(1.04, 1.18), jetty: false, winW: r.float(0.066, 0.074), winH: 1.14, shutters: false, porch: false, bay: true,
+    chimneyPos: 'ends', doorPos: 'side', alongZ: r.chance(0.35), flowerBoxes: false, arched: true, dormers: 0, setback: 0.1 }),
+  // Stone: low slate roofs (some saltbox), small deep-set arched windows,
+  // a stack up the gable wall, a centred door with a porch, ivy
+  stone: (r) => ({ roofStyle: r.chance(0.4) ? 'saltbox' : 'gable', thatched: false, hip: false, roof: r.pick(ROOF_SLATE),
+    pitch: r.float(0.84, 0.95), jetty: false, winW: r.float(0.052, 0.058), winH: 0.84, shutters: false, porch: true, bay: false,
+    chimneyPos: 'outside', doorPos: 'center', alongZ: false, ivy: r.chance(0.5), arched: true, dormers: 0, setback: 0.18 }),
+  // Clapboard: a saltbox or gable under shingles, dormers, shutters, a
+  // centred door with a deep porch, one central chimney
+  clapboard: (r) => ({ roofStyle: r.chance(0.5) ? 'saltbox' : 'gable', thatched: false, hip: false, roof: r.pick(ROOF_SHINGLE),
+    pitch: r.float(1.0, 1.12), jetty: false, winW: r.float(0.064, 0.07), winH: 1.04, shutters: true, porch: true, bay: false,
+    chimneyPos: 'center', doorPos: 'center', alongZ: false, flowerBoxes: false, arched: false, dormers: 2, setback: 0.14 }),
+};
 
 function basePalette(seed) {
   const r = new RNG(seed);
@@ -341,9 +387,12 @@ function house(c, o) {
   }
 
   const hw = w / 2, hd = d / 2;
-  const nF = o.nFront || Math.max(1, Math.floor(w / 0.22));
+  let nF = o.nFront || Math.max(1, Math.floor(w / 0.22));
+  // a centred front door wants an odd number of bays so it stands in the middle
+  if (!o.nFront && fancy && pal.doorPos === 'center' && nF % 2 === 0 && w / (nF + 1) >= 0.14) nF++;
   const nS = Math.max(1, Math.floor(d / 0.24));
-  const doorX = o.doorX ?? (nF % 2 === 1 && nF > 1 ? -hw + (w / nF) * 0.5 : 0);
+  const doorX = o.doorX ?? (fancy && pal.doorPos === 'center' ? 0
+    : (nF > 1 && (nF % 2 === 1 || (fancy && pal.doorPos === 'side'))) ? -hw + (w / nF) * 0.5 : 0);
   const ww = o.ww || (fancy ? pal.winW : 0.075);
   for (let f = 0; f < floors; f++) {
     const wh = Math.min(0.11, fh * 0.4);
@@ -372,20 +421,20 @@ function house(c, o) {
     bay(c, bx, hd, Math.min(0.16, fh * 0.6), o.wall, o.roof);
   }
   if (o.chimney) {
-    const count = fancy ? pal.chimneys : 1;
-    for (let k = 0; k < count; k++) {
-      const side = (k === 0 ? (rng.chance(0.5) ? 1 : -1) : -1) * (k === 1 ? -1 : 1);
-      if (fancy && pal.extChimney && k === 0 && !alongZ) {
-        // a chimney stack built up the outside of the gable wall
-        const ex = side * (rw / 2 + 0.035);
-        gb.cbox(ex, 0, 0, 0.07, h + rh + 0.06, 0.1, STONE, 0, 0.01);
-        gb.cbox(ex, h + rh + 0.06, 0, 0.085, 0.03, 0.11, STONE_D, 0, 0.008);
-        c.addSmoke(ex, h + rh + 0.13, 0, o.smokeKind || 'home');
-      } else {
-        const cx = alongZ ? side * w * 0.22 : side * w * 0.32;
-        const cz = alongZ ? -d * 0.26 : (rng.chance(0.5) ? 1 : -1) * d * 0.14;
-        chimney(c, cx, h - 0.06, h + rh + 0.08, cz, o.smokeKind || 'home', o.chimneyColor || (pal.style === 'brick' ? pal.brick : STONE));
-      }
+    // Stacks stand on the ridge: one at each end, one in the middle, one at
+    // an end, or built up the outside of a gable wall. The style decides; a
+    // building without one goes by its own seed.
+    const kind = o.smokeKind || 'home', col = o.chimneyColor || (pal.style === 'brick' ? pal.brick : STONE);
+    let pos = o.chimneyPos || (fancy ? pal.chimneyPos || (pal.extChimney ? 'outside' : pal.chimneys > 1 ? 'ends' : 'side') : 'side');
+    if (pos === 'outside' && alongZ) pos = 'side';
+    if (pos === 'outside') {
+      const ex = (rng.chance(0.5) ? 1 : -1) * (rw / 2 + 0.035);
+      gb.cbox(ex, 0, 0, 0.07, h + rh + 0.06, 0.1, STONE, 0, 0.01);
+      gb.cbox(ex, h + rh + 0.06, 0, 0.085, 0.03, 0.11, STONE_D, 0, 0.008);
+      c.addSmoke(ex, h + rh + 0.13, 0, kind);
+    } else {
+      const spots = pos === 'ends' ? [-0.34, 0.34] : pos === 'center' ? [rng.float(-0.05, 0.05)] : [(rng.chance(0.5) ? 1 : -1) * 0.3];
+      for (const u of spots) chimney(c, alongZ ? 0 : u * w, h - 0.06, h + rh + 0.08, alongZ ? u * d : 0, kind, col);
     }
   }
   if (o.dormers && !alongZ && roofType !== 'flat' && roofType !== 'hip') {
@@ -588,14 +637,15 @@ function homeModel(c, L) {
     const w = Math.min(two ? rng.float(0.5, 0.6) : rng.float(0.44, 0.54), bw - 0.22);
     const d = two ? rng.float(0.4, 0.46) : rng.float(0.34, 0.4);
     const h = two ? rng.float(0.52, 0.58) : rng.float(0.28, 0.33);
-    const front = B.z1 - rng.float(0.12, 0.2);
+    const jit = rng.float(0.12, 0.2);
+    const front = B.z1 - (pal.setback != null ? pal.setback + (jit - 0.16) * 0.3 : jit);
     const lo = B.x0 + 0.11 + w / 2, hi = B.x1 - 0.11 - w / 2;
     const hx = Math.min(hi, Math.max(lo, (B.x0 + B.x1) / 2 + rng.float(-0.06, 0.06)));
     const thatch = pal.thatched && (!two || rng.chance(0.5));
     const r = house(c, {
       x: hx, z: front - d / 2, w, d, h, floors: two ? 2 : 1, wall, roof: thatch ? pal.thatch : pal.roof,
       roofType: thatch ? 'thatch' : (pal.hip ? 'hip' : 'gable'), rh: two ? rng.float(0.27, 0.33) : rng.float(0.2, 0.29),
-      alongZ: pal.alongZ, chimney: two || rng.chance(0.8), timber: pal.timber, plinth: two && rng.chance(0.5) ? STONE : null,
+      alongZ: pal.alongZ, chimney: two || rng.chance(0.8), timber: pal.timber, plinth: two && rng.chance(0.5) ? STONE : null, dormers: two ? pal.dormers || 0 : 0,
     });
     yard = { x: hx, front, d, doorX: r.doorX };
     // a lean-to on whichever side has room
@@ -615,33 +665,37 @@ function homeModel(c, L) {
     const stone = pal.stoneHouse || rng.chance(0.5);
     const mwall = stone ? pal.stoneWall : pal.wall;
     const roof = rng.chance(0.6) ? pal.slate : pal.roof;
+    // hipped and classical, unless the style calls for gables (Tudor,
+    // cottage, stone or clapboard manors get gabled wings facing the drive)
+    const hipped = !pal.forced || pal.hip || pal.style === 'brick';
     house(c, {
-      x: 0, z: -0.17, w: 0.88, d: 0.5, h: 0.6, floors: 2, wall: mwall, roof, roofType: 'hip', rh: 0.3, chimney: true,
-      plinth: STONE, doorX: 0, doorW: 0.11, nFront: 5, timber: !stone && pal.timber,
+      x: 0, z: -0.17, w: 0.88, d: 0.5, h: 0.6, floors: 2, wall: mwall, roof: pal.forced ? pal.roof : roof, roofType: hipped ? 'hip' : 'gable', rh: 0.3,
+      chimney: true, chimneyPos: 'ends', plinth: STONE, doorX: 0, doorW: 0.11, nFront: 5, timber: !stone && pal.timber,
     });
     for (const sd of [-1, 1]) {
       footing(c, sd * 0.33, 0.15, 0.22, 0.26);
       gb.cbox(sd * 0.33, 0, 0.15, 0.22, 0.46, 0.26, mwall, 0, 0.016);
-      gb.hip(sd * 0.33, 0.46, 0.15, 0.22, 0.26, 0.16, roof, 0.035);
+      if (hipped) gb.hip(sd * 0.33, 0.46, 0.15, 0.22, 0.26, 0.16, roof, 0.035);
+      else gb.gable(sd * 0.33, 0.46, 0.15, 0.22, 0.26, 0.2, mwall, pal.roof, 0.035, true, 0.03);
       win(c, sd * 0.33, 0.08, 0.28, 0.07, 0.1, 'f');
       win(c, sd * 0.33, 0.29, 0.28, 0.07, 0.1, 'f');
     }
-    chimney(c, -0.3, 0.5, 1.0, -0.3, 'home', STONE);
     for (const sd of [-1, 1]) gb.cyl(sd * 0.075, 0, 0.14, 0.014, 0.016, 0.26, 8, '#e9e2d4');
     gb.gable(0, 0.26, 0.12, 0.22, 0.11, 0.07, '#e9e2d4', roof, 0.02);
     hedge(c, -0.27, 0.44, 0.3, 0.06); hedge(c, 0.27, 0.44, 0.3, 0.06);
     smallTree(c, rng.chance(0.5) ? -0.42 : 0.42, -0.43, 1.1);
   } else if (L >= 4) {
     // Grand Manor: three-storey centre, two wings and a portico
-    const mwall = pal.stoneWall, roof = pal.slate;
+    const mwall = pal.stoneWall, roof = pal.forced ? pal.roof : pal.slate;
+    const hipped = !pal.forced || pal.hip || pal.style === 'brick' || pal.style === 'stone';
     house(c, {
-      x: 0, z: -0.13, w: 0.5, d: 0.6, h: 0.88, floors: 3, wall: mwall, roof, roofType: 'hip', rh: 0.32, chimney: true,
-      plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3,
+      x: 0, z: -0.13, w: 0.5, d: 0.6, h: 0.88, floors: 3, wall: mwall, roof, roofType: hipped ? 'hip' : 'gable', rh: 0.32, chimney: true,
+      chimneyPos: 'ends', plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3,
     });
     for (const sd of [-1, 1]) {
       house(c, {
-        x: sd * 0.36, z: -0.16, w: 0.22, d: 0.54, h: 0.62, floors: 2, wall: mwall, roof, roofType: 'hip', rh: 0.2,
-        noDoor: true, plinth: STONE, nFront: 1, chimney: rng.chance(0.5),
+        x: sd * 0.36, z: -0.16, w: 0.22, d: 0.54, h: 0.62, floors: 2, wall: mwall, roof, roofType: hipped ? 'hip' : 'gable', rh: 0.2,
+        alongZ: !hipped, noDoor: true, plinth: STONE, nFront: 1, chimney: false,
       });
     }
     for (let i = 0; i < 4; i++) gb.cyl(-0.15 + i * 0.1, 0.02, 0.24, 0.016, 0.019, 0.36, 8, '#ece6da');
@@ -2561,7 +2615,7 @@ export function buildModel(b, opts = {}) {
   const ground = opts.ground;
   const c = {
     gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
-    frame: pal.frame, winH: pal.winH, arched: pal.style === 'stone' && b.type !== 'farm',
+    frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
     smoke: [], glows: [], spin: null, work: null, fountain: null,
     season: opts.season ?? 1,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
