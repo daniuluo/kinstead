@@ -554,3 +554,18 @@ table.hap.big td { padding: 4px 8px; }
 @media (max-width: 760px) {
   .merge-pick, .merge-arrange { grid-template-columns: 1fr; }
 }
+
+/* research points */
+#resStat { cursor: pointer; }
+.rhead { display: grid; grid-template-columns: auto auto 1fr; gap: 6px; margin-bottom: 4px; }
+.rhead .rcell { display: flex; align-items: center; gap: 8px; background: #fff; box-shadow: var(--field); padding: 5px 9px; min-width: 0; }
+.rhead .rcell > .ms { font-size: 24px; color: var(--ink-2); }
+.rhead .rcell b { display: block; font-size: 15px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.rhead .rcell small { display: block; font-size: 11px; color: var(--ink-2); }
+.rhead .rcell.wide > div { flex: 1; min-width: 0; }
+.rhead .rcell .meter { margin: 3px 0 2px; }
+.rhead .rcell.warn { background: #fff6dc; }
+.rhead .rcell.warn > .ms { color: #a07000; }
+.rsrc { font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+.rsrc b { color: var(--good); }
+@media (max-width: 720px) { .rhead { grid-template-columns: 1fr 1fr; } .rhead .rcell.wide { grid-column: 1 / -1; } }
