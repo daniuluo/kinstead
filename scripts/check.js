@@ -1135,6 +1135,20 @@ ok(same, 'save round-trip heights');
     winterHours++; peak = Math.max(peak, f); if (f < 0.02) clear++;
   }
   ok(summer === 0 && peak > 0.6 && clear > winterHours * 0.3, `fresh snow only in winter: up to ${peak.toFixed(2)} after a fall, gone again ${Math.round((clear / winterHours) * 100)}% of winter hours`);
+  // the seasons turn gradually: each holds for its first half, then shades
+  // into the next, ending where the next begins
+  const { seasonBlend } = await import('../src/render/sky.js');
+  const { CONFIG } = await import('../src/config.js');
+  const D = CONFIG.DAYS_PER_SEASON;
+  let jump = 0;
+  for (let t = 0.25; t < 8 * D * 24; t += 0.25) {
+    const day = 1 + Math.floor(t / 24), h = t % 24, pd = 1 + Math.floor((t - 0.25) / 24), ph = (t - 0.25) % 24;
+    const look = (d, hh) => seasonOf(d) + seasonBlend(d, hh);   // seasons and the turn between, on one scale
+    let a = look(pd, ph), b = look(day, h);
+    if (b < a - 2) b += 4;   // winter into spring
+    jump = Math.max(jump, Math.abs(b - a));
+  }
+  ok(seasonBlend(1, 12) === 0 && seasonBlend(D / 2, 0) === 0 && seasonBlend(D, 23.9) > 0.97 && jump < 0.03, `seasons hold for half their days, then turn gradually (largest step in a quarter hour ${jump.toFixed(3)})`);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

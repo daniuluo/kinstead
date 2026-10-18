@@ -44,7 +44,7 @@ export class MergePlacement {
     this.root.add(this.pivot);
     R.scene.add(this.root);
     this.view = new WorldView(B, { scene: this.pivot, rig: R.rig, pixelsPerUnit: () => R.pixelsPerUnit() });
-    this.view.setSeason(g.sky.season);
+    this.view.setSeason(g.sky.season, g.sky.seasonW);
     this.view.update(1 / 60, 0, g.env);
     this.lines = new THREE.Group();
     R.scene.add(this.lines);

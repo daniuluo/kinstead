@@ -53,6 +53,7 @@ export class TerrainView {
     this.world = world;
     this.scene = scene;
     this.season = 1;
+    this.seasonW = 0;
     this.n1 = makeNoise2D(world.seed + 11);
     this.n2 = makeNoise2D(world.seed + 12);
     this.n3 = makeNoise2D(world.seed + 13);
@@ -86,10 +87,18 @@ export class TerrainView {
     this.rebuild();
   }
 
-  setSeason(s) {
-    if (s === this.season) return;
+  setSeason(s, w = 0) {
+    if (s === this.season && w === (this.seasonW || 0)) return;
     this.season = s;
+    this.seasonW = w;
     this.repaint();
+  }
+
+  // This season's grass, shading towards the next's.
+  _grass() {
+    const A = GRASS[this.season], B = GRASS[(this.season + 1) % 4], w = this.seasonW || 0;
+    if (!w) return A;
+    return { a: A.a.clone().lerp(B.a, w), b: A.b.clone().lerp(B.b, w), meadow: A.meadow.clone().lerp(B.meadow, w), dry: A.dry.clone().lerp(B.dry, w) };
   }
 
   rebuild() {
@@ -112,7 +121,7 @@ export class TerrainView {
   repaint() {
     const w = this.world, t = w.terrain, N = w.N, V = this.V;
     const P = this.pos, col = this.col, snow = this.snow;
-    const g = GRASS[this.season];
+    const g = this._grass();
     // smooth tree-density field at tile corners
     const forest = new Float32Array((N + 1) * (N + 1));
     for (let z = 0; z <= N; z++) for (let x = 0; x <= N; x++) {
@@ -178,7 +187,9 @@ export class TerrainView {
   }
 
   _paintBuildings() {
-    const w = this.world, season = this.season;
+    const w = this.world, season = this.season, next = (season + 1) % 4, sw = this.seasonW || 0;
+    // fields go to bare earth for the winter, and come back in spring
+    const bare = (season === 3 ? 1 - sw : 0) + (next === 3 ? sw : 0);
     for (const b of w.buildings.values()) {
       const def = BUILDINGS[b.type];
       const odd = (b.rot & 1) === 1;
@@ -216,9 +227,13 @@ export class TerrainView {
                 const fa = smoothstep(-0.02, 0.12, fe);
                 const row = Math.floor((lz + 10) / 0.2 + 1e-4) % 2;
                 const plot = Math.floor((lx + E) / ((2 * E) / 3));
-                const crop = CROPS[season][((plot % 3) + 3) % 3];
-                if (row === 0 || season === 3) { _b.copy(SOIL).lerp(SOIL_D, hash2(i, j, 2) * 0.6); this._blend(vi, _b, fa, 0.9); }
-                else this._blend(vi, crop, fa, 1);
+                const k = ((plot % 3) + 3) % 3;
+                _b.copy(SOIL).lerp(SOIL_D, hash2(i, j, 2) * 0.6);
+                if (row === 0) this._blend(vi, _b, fa, 0.9);
+                else {
+                  _a.copy(CROPS[season][k]).lerp(CROPS[next][k], sw).lerp(_b, bare);
+                  this._blend(vi, _a, fa, bare > 0.5 ? 0.9 : 1);
+                }
               }
             }
             break;

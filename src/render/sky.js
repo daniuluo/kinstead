@@ -45,11 +45,20 @@ export function weatherAt(seed, day, hours) {
 }
 
 // How much of the winter's snow lies on the ground (0 .. 0.9): it settles
-// over the first day of winter and melts over the last.
+// over the first two days of winter and melts over the last day and a half.
 export function coverAt(day, hours) {
   if (seasonOf(day) !== 3) return 0;
   const dps = CONFIG.DAYS_PER_SEASON, dIn = ((day - 1) % dps) + hours / 24;
-  return clamp(dIn / 1.2, 0, 1) * clamp((dps - dIn) / 0.8, 0, 1) * 0.9;
+  return smoothstep(0, 2, dIn) * smoothstep(0, 1.5, dps - dIn) * 0.9;
+}
+
+// How far the year has turned from this season towards the next (0 .. 1):
+// a season holds for the first half of its days, then shades into the next
+// over the second half (the grass, the trees one by one, the flowers and
+// the crops; see TerrainView and NatureView).
+export function seasonBlend(day, hours) {
+  const pos = (day - 1 + hours / 24) / CONFIG.DAYS_PER_SEASON;
+  return smoothstep(0.5, 1, pos - Math.floor(pos));
 }
 
 // Fresh snow (0 .. 1): every half hour of snowfall in the last 18 hours lays
@@ -78,6 +87,7 @@ export class Sky {
     this.snow = 0;
     this.fresh = 0;
     this.season = 1;
+    this.seasonW = 0;
     this.wet = 0;
     this.cloud = 0;
     this.rain = 0;
@@ -119,6 +129,7 @@ export class Sky {
     // seasons
     const season = seasonOf(day);
     this.season = season;
+    this.seasonW = seasonBlend(day, hours);
     const snow = this.snow = coverAt(day, hours);
     this.fresh = freshSnowAt(seed, day, hours);
     if (snow > 0) { c.hg.lerp(WINTER_TINT, snow * 0.25); c.bot.lerp(WINTER_TINT, snow * 0.15 * (1 - this.night)); }

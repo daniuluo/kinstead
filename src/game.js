@@ -165,7 +165,7 @@ export class Game {
     this.overlayMode = null;
     this.follow = null;
     this.speed = 1;
-    this.view.setSeason(this.sky.season);
+    this.view.setSeason(this.sky.season, this.sky.seasonW);
     document.getElementById('hud').classList.toggle('hidden', demo);
     this.ui.inspect(null);
     this.ui.closeFlyout();
@@ -529,7 +529,8 @@ export class Game {
       env.rain = this.sky.rain;
       env.cloud = this.sky.cloud;
       this.audio.setRain(this.settings.sound ? env.rain : 0);
-      this.view.setSeason(env.season);
+      env.seasonW = this.sky.seasonW;
+      this.view.setSeason(env.season, env.seasonW);
       this.agents.update(dt, gameDt);
       this.construction.update(dt, gameDt);
       this.transit.update(dt);

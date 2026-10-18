@@ -5,7 +5,7 @@
 // the real terrain via c.gy(); structures get stone foundations on slopes.
 
 import * as THREE from 'three';
-import { GeoBuilder, shade } from './geo.js';
+import { GeoBuilder, shade, mix } from './geo.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
@@ -1858,7 +1858,9 @@ MODELS.farm = (c, L) => {
   // fields (painted furrows + crop tufts)
   const fx0 = -0.92, fx1 = 0.92, fz0 = L >= 1 ? -0.12 : 0.04, fz1 = 0.92;
   c.work = [fx0 + 0.04, fz0 + 0.04, fx1 - 0.04, fz1 - 0.04];
-  cropRows(c, fx0, fz0, fx1, fz1, CROP_TUFT[c.season]);
+  // the crops of this season, shading into the next's as it turns
+  const A = CROP_TUFT[c.season], B = CROP_TUFT[(c.season + 1) % 4];
+  cropRows(c, fx0, fz0, fx1, fz1, c.seasonW ? A.map((col, i) => mix(col, B[i], c.seasonW)) : A);
   fence(c, -0.96, fz0 - 0.03, 0.96, 0.96, FENCE, { x: 0, z: 0.96, w: 0.12 });
   if (L >= 1) {
     const sx = -0.03, sz = -0.66, sy = c.gy(sx, sz);
@@ -5521,7 +5523,7 @@ export function buildModel(b, opts = {}) {
     houses: [],   // every house() drawn, where it stands (see annexes)
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
     smoke: [], glows: [], spin: null, work: null, fountain: null,
-    season: opts.season ?? 1,
+    season: opts.season ?? 1, seasonW: opts.seasonW || 0,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
     gy(x, z) {
