@@ -909,7 +909,7 @@ export const MERGES = [
   { a: ['market', 'bakery', 'grocer', 'butcher'], b: ['market', 'bakery', 'grocer', 'butcher'], to: 'arcade' },
   { a: ['draper'], b: ['draper', 'market', 'cobbler'], to: 'deptstore' },
   { a: ['offices'], b: ['offices', 'bank'], to: 'exchange' },
-  { a: ['tavern'], b: ['market', 'bakery', 'tavern'], to: 'inn' },
+  { a: ['tavern'], b: ['market', 'bakery', 'tavern', 'coffeehouse'], to: 'inn' },
   { a: ['chapel'], b: ['school'], to: 'parishschool' },
   { a: ['clinic'], b: ['chapel', 'house'], to: 'almshouse' },
   { a: ['well', 'pump'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
@@ -924,10 +924,10 @@ export const MERGES = [
   { a: ['tavern'], b: ['workshop'], to: 'brewhouse' },
   { a: ['watch'], b: ['watch'], to: 'watchhouse' },
   { a: ['fishery'], b: ['market'], to: 'fishmarket' },
-  { a: ['clinic'], b: ['clinic'], to: 'cottagehospital' },
+  { a: ['clinic'], b: ['clinic', 'chemist'], to: 'cottagehospital' },
   { a: ['school'], b: ['school'], to: 'boardschool' },
   { a: ['chapel'], b: ['house'], to: 'vicarage', lead: true },
-  { a: ['builder'], b: ['builder', 'lumber'], to: 'contractor', lead: true },
+  { a: ['builder'], b: ['builder', 'lumber', 'ironmonger'], to: 'contractor', lead: true },
   { a: ['workshop'], b: ['house'], to: 'craftshouse' },
 ];
 
