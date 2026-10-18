@@ -488,13 +488,14 @@ const runUntil = (pred, days = 6) => {
   sim.recompute();
   const k0 = bak.working, reach0 = sim.reachOf(cl);
   ok(bak.wet === 2 && cl.wet === 2 && k0 > 0 && reach0 > 0, `the bakery and clinic have running water (bakery at ${Math.round(k0 * 100)}%, clinic reaches ${reach0} tiles)`);
+  const home = [...tw.buildings.values()].find(b => b.type === 'house' && b.wet === 2 && tw.expandOptions(b).length);
+  const grow = home && tw.expandOptions(home)[0];
   tw.removeBuilding(well.id, 0);
   sim.recompute();
   ok(bak.blockers.includes('water') && Math.abs(bak.working - k0 * 0.3) < 1e-9, `without water the bakery works at 30% of that (${Math.round(bak.working * 100)}%)`);
   ok(cl.blockers.includes('water') && sim.reachOf(cl) < reach0, `without water the clinic reaches less (${reach0} → ${sim.reachOf(cl)} tiles)`);
   ok(computeIssues(tg).some(i => /bakery without water/.test(i.text)), 'issues list the bakery without water');
-  const home = [...tw.buildings.values()].find(b => b.type === 'house' && tw.expandOptions(b).length);
-  if (home) { const o = tw.expandOptions(home)[0]; ok(home.blockers.includes('water') && !tw.expandBuilding(home.id, o.dir, o.kind).ok, "a home without running water can't expand"); }
+  ok(home && home.blockers.includes('water') && !tw.expandOptions(home).length && /water/.test(tw.expandBuilding(home.id, grow.dir, grow.kind).reason || ''), "a home that could expand can't once its water is gone");
   // workers: a school with no teachers has no places
   const sch = near('school');
   sim.recompute();
