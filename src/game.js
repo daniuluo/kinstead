@@ -97,7 +97,7 @@ export class Game {
 
     this._bindFileDrop();
     // closing or reloading the tab: say goodbye rather than leave the others waiting
-    window.addEventListener('pagehide', () => { this.autosave(); if (this.net) this.net.close(); });
+    window.addEventListener('pagehide', () => { if (this.net) this.net.close(); this.autosave(); });
     // switching away (or a phone locking) may be the last chance to save
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.autosave(); });
     this.clock = performance.now();
@@ -199,6 +199,7 @@ export class Game {
     this.endNet();
     const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox });
     w.townId = newTownId();   // every game from the same starter is a town of its own
+    this.ui.closeAllWindows();   // none of them is about this town
     this.load(w, { fresh: !starter });
     document.getElementById('title').classList.add('hidden');
     if (starter) this.ui.toast(`Welcome to ${name}! ${w.population} villagers are counting on you.`, 'big', '🏡');
@@ -209,6 +210,7 @@ export class Game {
   loadData(data) {
     const w = deserialize(data);
     this.endNet();
+    this.ui.closeAllWindows();
     this.load(w, { fresh: false });
     document.getElementById('title').classList.add('hidden');
   }
