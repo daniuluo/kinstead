@@ -134,7 +134,8 @@
   <noscript>Kinstead needs JavaScript and WebGL.</noscript>
   <script>
     // after an update, load the new game files rather than the browser's old copies (see sw.js)
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+    // (only on the live site: a local test server has no ten-minute caching to get round)
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
   </script>
   <script type="module" src="src/main.js"></script>
 </body>
