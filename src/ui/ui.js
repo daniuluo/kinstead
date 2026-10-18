@@ -32,6 +32,7 @@ import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFi
 import { MergeDialog } from './mergeUI.js';
 import { showMultiplayer, renderNetBox } from './multiplayer.js';
 import { buildingSummary, showBuildingGuide } from './guide.js';
+import { showPathMap } from './pathMap.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
@@ -606,7 +607,7 @@ export class UI {
         h += '</div></div>';
       }
     }
-    h += `<div class="actions">`;
+    h += `<div class="actions"><button class="btn" data-act="paths" title="Everything it can be upgraded, rebuilt or joined into"><span class="ms">account_tree</span> All paths</button>`;
     if (!b.con) h += w.hasTech('relocation')
       ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
       : '<button class="btn" disabled title="Research House Moving to move buildings">↔ Move 🔒</button>';
@@ -721,6 +722,7 @@ export class UI {
         break;
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
+      case 'paths': { const pb = w.buildings.get(sel.id); if (pb) showPathMap(this, pb); break; }
       case 'expand': {
         const key = `${sel.id}:${data.dir}:${data.kind}`;
         // anything that shrinks or demolishes a neighbour needs a second click
