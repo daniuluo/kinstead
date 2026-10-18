@@ -172,7 +172,6 @@ export const MAT = {
     color: '#3f93bb', transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05, flatShading: true,
   }), { waves: true }, 'water'),
   waterSide: new THREE.MeshStandardMaterial({ color: '#3a86ad', transparent: true, opacity: 0.72, roughness: 0.3 }),
-  agent: new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.8 }),
   ghostOk: new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.62, emissive: '#2f7a2f', emissiveIntensity: 0.35, flatShading: true }),
   ghostBad: new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.5, emissive: '#c02020', emissiveIntensity: 0.6, flatShading: true }),
 };

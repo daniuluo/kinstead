@@ -162,7 +162,7 @@ export class Construction {
     if (!list) { list = []; this.hands.set(s.id, list); }
     const ag = this.game.agents;
     while (list.length < n) {
-      const lk = lookOf({ look: (Math.random() * 1e9) | 0, age: 'adult' });
+      const lk = lookOf({ look: (Math.random() * 1e9) | 0, age: 'adult' }, { kind: 'builder' });
       const area = siteArea(s);
       const wk = ag._makeWalker(lk, [[area[0] + Math.random() * (area[2] - area[0]), area[3]]], null);
       Object.assign(wk, { mode: 'wander', area, ring: true, baseY: s.baseY + 0.012, working: true, idle: Math.random() * 2, target: null, hand: true });
