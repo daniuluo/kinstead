@@ -1,11 +1,14 @@
 // The town's problems and bottlenecks, most serious first, for the issues
 // panel. Each issue can point at the buildings involved or open a menu.
 
-import { BUILDINGS, SERVICES } from '../defs.js';
+import { BUILDINGS, SERVICES, needsOf } from '../defs.js';
 import { isOpen, capOf } from '../world/world.js';
 import { yearsOf, stageForAge } from '../sim/people.js';
+import { mainBlocker } from './working.js';
 
 const SEV = { bad: 0, warn: 1, info: 2 };
+// "iron foundry" → "iron foundries", "builder's yard" → "builder's yards"
+const pluralOf = (s) => (/[^aeiou]y$/.test(s) ? s.slice(0, -1) + 'ies' : /(s|sh|ch|x)$/.test(s) ? s + 'es' : s + 's');
 
 export function computeIssues(game) {
   const w = game.world, sim = game.sim;
@@ -31,8 +34,32 @@ export function computeIssues(game) {
     if (U.power.gen && U.power.demand > U.power.gen) {
       const dark = [...w.buildings.values()].filter(b => isOpen(b) && b.connected && !b.powered && !BUILDINGS[b.type].park);
       add('bad', 'power_off', `Power short by ${U.power.demand - U.power.gen} kW — ${plural(dark.length, 'building')} in the dark`, { kind: 'tool', cat: 'utilities' });
-    } else if (!U.power.gen && w.hasTech('electricity')) add('info', 'bolt', 'No electricity yet — the grandest upgrades need power', { kind: 'tool', cat: 'utilities' });
+    } else if (!U.power.gen && w.hasTech('electricity')) add('info', 'bolt', 'No electricity yet — street lamps are dark, and powered works and the grandest upgrades need it', { kind: 'tool', cat: 'utilities' });
     if (U.water.demand > U.water.supply) add('bad', 'water_drop', `Water for ${U.water.supply} of ${U.water.demand} villagers — build wells or a pump`, { kind: 'tool', cat: 'utilities' });
+  }
+
+  // workplaces and services that can't do their job (Sim._working), grouped
+  // by type and by what they lack; homes show up below as homes without a
+  // service, and unconnected buildings above
+  const groups = new Map();
+  for (const b of w.buildings.values()) {
+    const bl = b.blockers;
+    if (!bl || !bl.length || !isOpen(b) || bl.includes('road')) continue;
+    const L = BUILDINGS[b.type].levels[b.level];
+    if (L.housing && !L.jobs) continue;
+    const why = mainBlocker(b);
+    if (!why) continue;
+    const stop = why === 'workers' ? !b.workers.length : b.working === 0, lights = why === 'power' && needsOf(b.type, b.level).power?.use === 'lights';
+    const key = `${b.type}|${why}|${stop}|${lights}`;
+    if (!groups.has(key)) groups.set(key, { type: b.type, why, stop, lights, ids: [] });
+    groups.get(key).ids.push(b.id);
+  }
+  for (const g of groups.values()) {
+    const n = g.ids.length, name = BUILDINGS[g.type].name.toLowerCase(), names = n === 1 ? name : pluralOf(name);
+    const what = `${n} ${names}`, act = { kind: 'focus', ids: g.ids };
+    if (g.why === 'workers') add(g.stop ? 'warn' : 'info', 'person_off', g.stop ? `${what} with no workers — ${n === 1 ? 'it does' : 'they do'} nothing` : `${what} short of staff`, act);
+    else if (g.why === 'power') add(g.stop ? 'bad' : 'warn', 'power_off', g.stop ? `${what} stopped — no power` : g.lights ? `${what} without power — little trade after dark` : `${what} working slowly — no power`, act);
+    else add(g.stop ? 'bad' : 'warn', 'format_color_reset', g.stop ? `${what} stopped — no water` : `${what} without water`, act);
   }
 
   // services that homes are missing

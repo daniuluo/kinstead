@@ -28,6 +28,8 @@ export class RoadsView {
     this.surface.receiveShadow = true;
     scene.add(this.surface);
     this.lamps = [];
+    // street lamps are electric: lit(x, z) says whether one has power
+    this.lit = () => false;
     this.rebuild();
   }
 
@@ -35,6 +37,7 @@ export class RoadsView {
     const w = this.world, N = w.N, t = w.terrain;
     const gb = new GeoBuilder();
     this.lamps = [];
+    this.darkLamps = 0;
     for (let z = 0; z < N; z++) {
       for (let x = 0; x < N; x++) {
         const L = w.roads[w.idx(x, z)];
@@ -148,13 +151,14 @@ export class RoadsView {
   }
 
   _lamp(gb, x, y, z) {
+    const on = this.lit(x, z);
     gb.cyl(x, y - 0.02, z, 0.012, 0.017, 0.36, 6, '#2f2c2a');
     gb.cbox(x, y - 0.02, z, 0.035, 0.05, 0.035, '#2f2c2a', 0, 0.006);
-    gb.glow(2.2, 1.6, 0.8, 3.0);
-    gb.box(x, y + 0.34, z, 0.042, 0.052, 0.042, '#ffe2a0');
+    if (on) gb.glow(2.2, 1.6, 0.8, 3.0);
+    gb.box(x, y + 0.34, z, 0.042, 0.052, 0.042, on ? '#ffe2a0' : '#9a958a');
     gb.noGlow();
     gb.cone(x, y + 0.392, z, 0.037, 0.036, 4, '#2f2c2a', Math.PI / 4);
-    this.lamps.push({ x, y: y + 0.366, z, ground: y });
+    if (on) this.lamps.push({ x, y: y + 0.366, z, ground: y }); else this.darkLamps++;
   }
 
   _bridge(gb, x, z, n, L) {

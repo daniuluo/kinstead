@@ -456,7 +456,7 @@ export class World {
   expandOptions(b) {
     const out = [];
     const def = BUILDINGS[b.type];
-    if (!b || !this.hasTech('surveying')) return out;
+    if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
     // a double plot can grow into a 2×2 estate onto two empty plots beside it
     if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop) {
       const along = fw(b) === 2;
@@ -501,8 +501,15 @@ export class World {
     return out;
   }
 
+  // Homes need running water to grow (see Sim._working), unless the sandbox
+  // lets buildings upgrade without meeting their needs.
+  _dryHome(b) {
+    return !this.sandbox.freeUpgrades && !!BUILDINGS[b.type].levels[b.level].housing && (b.blockers || []).includes('water');
+  }
+
   expandBuilding(id, dir, kind) {
     const b = this.buildings.get(id);
+    if (b && this._dryHome(b)) return { ok: false, reason: 'No running water: homes need it to grow' };
     const opt = b && this.expandOptions(b).find(o => o.dir === dir && o.kind === kind);
     if (!opt) return { ok: false, reason: "Can't expand that way" };
     if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };
