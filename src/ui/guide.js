@@ -146,5 +146,5 @@ export function showBuildingGuide(ui, type) {
   ui.openModal(h, (c) => { c.classList.add('guide'); for (const p of c.querySelectorAll('[data-paths]')) p.onclick = () => showPathMap(ui, null, p.dataset.paths); });
   // the first time, keep it to the left so the map stays clear for building
   const win = ui.windows.get(GUIDE);
-  if (win && !known && !saved) { win.style.left = '8px'; win.style.top = '132px'; }
+  if (win && !known && !saved) { win.style.left = '8px'; win.style.top = '132px'; ui._fitWin(win); }
 }
