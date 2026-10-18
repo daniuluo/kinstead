@@ -252,6 +252,7 @@ export class Game {
     };
     document.getElementById('btnNew').onclick = () => this.ui.showNewGame((o) => this.newGame(o));
     document.getElementById('btnLoad').onclick = () => this.ui.showSaves('local');
+    document.getElementById('btnMerge').onclick = () => this.ui.showMerge();
     document.getElementById('btnMulti').onclick = () => this.ui.showMultiplayer();
     // first visit: straight to choosing how to start (unless an invite link brought them here)
     const invited = new URLSearchParams(location.search).has('join');

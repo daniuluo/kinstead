@@ -70,7 +70,8 @@ function spots(type, near = center, max = 14) {
 }
 function place(type, near) {
   if (MODE === 'economy' && [...w.buildings.values()].some(b => b.type === type && b.con && b.con.kind === 'build') && type !== 'house') return null;
-  const s = spots(type, near)[0];
+  // near the middle if there's room, else further out
+  const s = spots(type, near)[0] || spots(type, near, 22)[0];
   if (!s) return null;
   const r = w.placeBuilding(type, s.x, s.z, { variant: (rng.next() * 1e9) | 0 });
   if (r.ok) counts.placed++;
@@ -78,33 +79,56 @@ function place(type, near) {
 }
 // lay a new street off an existing one, heading out of town
 function growRoads() {
-  const roads = [];
-  for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (w.roadAt(x, z) && w.connected[w.idx(x, z)]) roads.push([x, z]);
-  for (let t = 0; t < 40; t++) {
-    const [sx, sz] = rng.pick(roads);
-    const [dx, dz] = rng.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+  // start from a street with open ground beside it
+  const starts = [];
+  for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+    if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)]) continue;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (w.checkRoad(x + dx, z + dz, 1).ok && !w.buildingOn(x + dx, z + dz)) starts.push([x, z, dx, dz]);
+  }
+  // a proper street if there's room for one, else a short spur
+  for (let t = 0; t < 60 && starts.length; t++) {
+    const [sx, sz, dx, dz] = rng.pick(starts);
     const tiles = [];
     for (let k = 1; k <= 6; k++) {
       const x = sx + dx * k, z = sz + dz * k;
       if (!w.checkRoad(x, z, 1).ok || w.buildingOn(x, z)) break;
       tiles.push([x, z]);
     }
-    if (tiles.length >= 3) { const r = w.placeRoads(tiles, 1); if (r.placed) { counts.roads += r.placed; return true; } }
+    if (tiles.length >= (t < 40 ? 3 : 1)) { const r = w.placeRoads(tiles, 1); if (r.placed) { counts.roads += r.placed; return true; } }
   }
   return false;
 }
 
 // ------------------------------------------------------------ the bot's day
+// a workplace type that already has a building standing idle for want of
+// workers, or one still going up, isn't worth building more of yet (build
+// homes for more villagers instead)
+const idleType = (type) => !!BUILDINGS[type].levels[0].jobs && [...w.buildings.values()].some(b => b.type === type && (b.con ? b.con.kind === 'build' : (b.blockers || []).includes('workers')));
+const placeUseful = (type, near) => place(idleType(type) ? 'house' : type, near);
+
 function botDay() {
   const sim = game.sim;
   if (w.money < 150) return;
-  for (let k = 1; k < busy; k++) { if (!place(rng.pick(['house', 'house', 'market', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'well']))) growRoads(); }
+  for (let k = 1; k < busy; k++) { if (!placeUseful(rng.pick(['house', 'house', 'market', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'well']))) growRoads(); }
   const issues = computeIssues(game);
   const has = (t) => issues.some(i => i.text.includes(t));
-  // research: cheapest available project
+  // research: cheapest available project, but water and power once the
+  // town is big enough to need them
   if (!w.research.current) {
     const can = Object.keys(TECHS).filter(id => w.canResearch(id)).sort((a, b) => TECHS[a].cost - TECHS[b].cost);
-    if (can.length) w.startResearch(can[0]);
+    const want = w.population >= 40 && ['hydraulics', 'electricity'].find(id => can.includes(id)) || w.population >= 140 && can.includes('steam') && 'steam';
+    if (want || can.length) w.startResearch(want || can[0]);
+  }
+  // power before anything else: generators while it is short, a power
+  // station once steam allows (saving up for one rather than upgrading)
+  let saving = false;
+  const genSite = [...w.buildings.values()].some(b => BUILDINGS[b.type].generator && b.con && b.con.kind === 'build');
+  if ((has('No electricity') || has('Power short') || has('no power')) && w.hasTech('electricity') && !genSite) {
+    const U = sim.utility, short = U.power.demand - U.power.gen;
+    const big = w.hasTech('steam') && w.population >= 60 && short > 50 && (MODE !== 'economy' || w.money > 2400);
+    const gen = () => (big && place('powerplant')) || (rng.chance(0.6) && place('watermill')) || place('windgen');
+    const built = gen() || (w.money > 400 && growRoads() && gen());
+    saving = !built && w.money < 400;
   }
   // keep the builders ahead of the work
   if (has('waiting for builders')) {
@@ -120,7 +144,7 @@ function botDay() {
   // services that homes lack
   for (const [s, type] of [['water', 'well'], ['health', 'clinic'], ['safety', 'watch'], ['education', 'school']]) {
     const miss = [...w.buildings.values()].filter(b => b.factors && !b.factors[s] && BUILDINGS[b.type].levels[b.level].housing);
-    if (miss.length >= 3) place(type, rng.pick(miss));
+    if (miss.length >= 3) placeUseful(type, rng.pick(miss));
   }
   if (has('need a middle school') || has('need a high school') || has('need an elementary')) {
     const sch = [...w.buildings.values()].filter(b => BUILDINGS[b.type].levels[b.level].seats && !b.con);
@@ -128,13 +152,15 @@ function botDay() {
     if (opt) { const r = w.upgradeBuilding(opt.b.id, opt.o.type); if (r.ok) counts.upgrades++; } else place('school');
   }
   if (has('Water for')) place(w.hasTech('hydraulics') && rng.chance(0.5) ? 'pump' : 'well');
-  if ((has('No electricity') || has('Power short')) && w.hasTech('electricity')) place(rng.chance(0.5) ? 'windgen' : 'watermill');
+  // water for the trades and services that need it
+  const dry = [...w.buildings.values()].filter(b => (b.blockers || []).includes('water') && !BUILDINGS[b.type].levels[b.level].housing);
+  if (dry.length) place('well', rng.pick(dry));
   if (has('builders can\'t reach') || has('not connected')) growRoads();
   // upgrades, with a random style now and then
   const ups = [...w.buildings.values()].filter(b => !b.con).sort(() => rng.next() - 0.5);
   let n = 0;
   for (const b of ups) {
-    if (n >= 3 * busy) break;
+    if (n >= 3 * busy || saving) break;
     const opts = w.upgradeOptions(b).filter(o => w.upgradeCheck(b, o.type).ok);
     if (!opts.length) continue;
     const o = rng.pick(opts);
@@ -238,5 +264,19 @@ console.log(`busiest park at 3pm: ${Math.round(peakVisit * 100)}% full`);
 console.log('research done:', w.research.done.length, '/', Object.keys(TECHS).length, '· education:', [0, 1, 2, 3, 4, 5].map(e => [...w.residents.values()].filter(r => r.age !== 'child' && r.edu === e).length).join('/'));
 console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '));
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');
+{
+  // where the money comes from, and how many buildings can't fully work (Sim._working)
+  const B = game.sim.budget, r = (o) => Object.entries(o).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ');
+  const why = {};
+  let stopped = 0, part = 0;
+  for (const b of w.buildings.values()) {
+    if (!b.blockers || !b.blockers.length || (BUILDINGS[b.type].levels[b.level].housing && !BUILDINGS[b.type].levels[b.level].jobs)) continue;
+    if (b.working === 0) stopped++; else if (b.working < 1) part++;
+    for (const k of b.blockers) why[k] = (why[k] || 0) + 1;
+  }
+  const U = game.sim.utility;
+  console.log(`budget/day: in ${r(B.income)} · out ${r(B.expense)} · visits so far $${Math.round(w.stats.visitIncome)} · power ${U.power.demand}/${U.power.gen} kW · water ${U.water.demand}/${U.water.supply}`);
+  console.log(`working: ${stopped} stopped, ${part} in part · lacking ${r(why) || 'nothing'}`);
+}
 console.log(problems.length ? `\n${problems.length} problem(s):\n  ` + problems.join('\n  ') : '\nno problems found');
 process.exit(problems.length ? 1 : 0);

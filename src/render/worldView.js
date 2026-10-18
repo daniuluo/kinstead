@@ -69,6 +69,8 @@ export class WorldView {
       refit: (b) => { if (!this.items.has(b.id)) return; this._dropPreview(b); this.removeBuilding(b, true); this.addBuilding(b, false); this.dirty.paint = true; this.dirty.roads = true; },
       trees: () => { this.dirty.nature = true; this.dirty.paint = true; },
       terrain: () => { this.dirty.terrain = true; this.dirty.roads = true; this.dirty.nature = true; },
+      // the street lamps follow the town's power supply
+      power: (sim) => { this.roads.lit = (x, z) => sim.lampLit(x, z); this.dirty.roads = true; },
     };
     world.on('building:add', this._h.add);
     world.on('building:remove', this._h.remove);
@@ -78,6 +80,7 @@ export class WorldView {
     world.on('rails', this._h.rails);
     world.on('trees', this._h.trees);
     world.on('terrain', this._h.terrain);
+    world.on('power', this._h.power);
     this.fireflyTimer = 0;
     this.time = 0;
   }
@@ -283,7 +286,14 @@ export class WorldView {
       if (warm && g.kind !== 'forge') pools.push([g.x, g.ground, g.z]);
     };
     for (const l of this.roads.lamps) add({ ...l, kind: 'lamp' });
-    for (const it of this.items.values()) for (const g of it.glows) add(g);
+    for (const it of this.items.values()) {
+      // stopped: dark; no power: a dim lantern and no pool of light
+      if (it.light === 'off') continue;
+      for (const g of it.glows) {
+        if (it.light === 'candle' && g.kind !== 'forge') statics.push({ x: g.x, y: g.y, z: g.z, size: 0.3, r: 1, g: 0.66, b: 0.32, a: 0.45 });
+        else add(g);
+      }
+    }
     this.glow.setStatics(statics);
     // ground light pools
     const pos = [], uv = [];
@@ -300,6 +310,25 @@ export class WorldView {
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
     g.computeBoundingSphere();
+  }
+
+  // Windows and lamps follow each building's power and working state
+  // (Sim._working): electric light, candles and lanterns without power, or
+  // dark once its work has stopped.
+  _syncLights() {
+    for (const it of this.items.values()) {
+      if (it.site) continue;
+      const b = it.b;
+      const light = !BUILDINGS[b.type].levels[b.level].housing && b.working === 0 && b.workers.length === 0 ? 'off'
+        : b.working === 0 && (b.blockers || []).includes('power') ? 'off'
+        : b.powered === false ? 'candle' : null;
+      if (light === it.light) continue;
+      it.light = light;
+      const mat = light === 'off' ? MAT.buildingOff : light === 'candle' ? MAT.buildingCandle : MAT.building;
+      it.mesh.material = mat;
+      if (it.spin) it.spin.material = mat;
+      this.dirty.glows = true;
+    }
   }
 
   setSeason(s) {
@@ -347,17 +376,35 @@ export class WorldView {
     }
 
     const hours = env.hours, night = env.night, season = env.season;
+    this._syncLights();
     // chimney smoke
     if (gameDt > 0) {
       const homeRate = (hours > 6 && hours < 9.5) || (hours > 17 && hours < 23) ? 1.6 : (night > 0.5 ? 0.5 : 0.3);
       const seasonK = season === 3 ? 1.6 : season === 1 ? 0.6 : 1;
       const speedK = Math.min(3, gameDt / Math.max(dt, 1e-4));
       for (const it of this.items.values()) {
+        // how well it works (Sim._working): stopped works have cold
+        // chimneys, still wheels and a dry fountain
+        const k = Math.min(1, it.b.working ?? 1), wet = !(it.b.blockers || []).includes('water');
+        if (it.spin && k > 0) it.spin.rotation.z -= dt * it.spin.userData.speed * (0.4 + 0.6 * k) * Math.min(4, Math.max(0.25, speedK));
+        if (it.fountain && k > 0 && wet) {
+          // a steady jet, leaving room in the pool for the chimneys
+          it.jet = (it.jet || 0) + dt * 40;
+          if (this.smoke.items.length > this.smoke.max * 0.7) it.jet = 0;
+          for (; it.jet >= 1; it.jet--) {
+            const a = Math.random() * Math.PI * 2, s = 0.15 + Math.random() * 0.12;
+            this.smoke.emit({
+              x: it.fountain.x, y: it.fountain.y, z: it.fountain.z, vx: Math.cos(a) * s, vy: 0.55 + Math.random() * 0.2, vz: Math.sin(a) * s,
+              gravity: -2.2, wind: 0, life: 0.55, size: 0.035, size1: 0.025, r: 0.85, g: 0.93, b: 1, alpha: 0.85, alpha1: 0.4,
+            });
+          }
+        }
         if (!it.smoke.length) continue;
-        const working = it.b.workers.length > 0 && hours > 6.5 && hours < 19.5;
+        const working = k > 0 && it.b.workers.length > 0 && hours > 6.5 && hours < 19.5;
+        const idle = k > 0 ? 1 : 0;
         for (const s of it.smoke) {
           const rate = s.kind === 'home' ? homeRate * seasonK * (it.b.residents.length ? 1 : 0)
-            : s.kind === 'heavy' ? (working ? 3.5 : 0.4) : (working ? 1.6 : 0.25);
+            : s.kind === 'heavy' ? (working ? 3.5 * (0.4 + 0.6 * k) : 0.4 * idle) : (working ? 1.6 * (0.4 + 0.6 * k) : 0.25 * idle);
           s.acc += dt * rate * Math.sqrt(speedK);
           while (s.acc >= 1) {
             s.acc -= 1;
@@ -369,16 +416,6 @@ export class WorldView {
               drag: 0.6, wind: 1, life: 3.5 + Math.random() * 2,
               size: 0.06, size1: s.kind === 'heavy' ? 0.42 : 0.3, r: shade, g: shade, b: shade * 1.03,
               alpha: s.kind === 'heavy' ? 0.6 : 0.45, alpha1: 0, fadeIn: 0.1,
-            });
-          }
-        }
-        if (it.spin) it.spin.rotation.z -= dt * it.spin.userData.speed * Math.min(4, Math.max(0.25, speedK));
-        if (it.fountain) {
-          for (let k = 0; k < 2; k++) {
-            const a = Math.random() * Math.PI * 2, s = 0.15 + Math.random() * 0.12;
-            this.smoke.emit({
-              x: it.fountain.x, y: it.fountain.y, z: it.fountain.z, vx: Math.cos(a) * s, vy: 0.55 + Math.random() * 0.2, vz: Math.sin(a) * s,
-              gravity: -2.2, wind: 0, life: 0.55, size: 0.035, size1: 0.025, r: 0.85, g: 0.93, b: 1, alpha: 0.85, alpha1: 0.4,
             });
           }
         }

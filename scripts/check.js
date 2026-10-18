@@ -433,6 +433,75 @@ const runUntil = (pred, days = 6) => {
   ok(U.water.supply > 0 && U.water.demand === w.population, `water: ${U.water.demand} villagers, supply for ${U.water.supply}`);
 }
 
+// 3f. power, water and workers decide what works (Sim._working): an
+// unpowered machine makes nothing, street lamps go dark, things without
+// water or staff do less, and the issues panel lists what has stopped
+// (in a small fresh town, so supply is under control)
+{
+  const { RoadsView } = await import('../src/render/roadsView.js');
+  const { computeIssues } = await import('../src/ui/issues.js');
+  const tw = World.createNew({ N: 40, seed: 77, name: 'Wattsby' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = tg.sim = new Sim(tg);
+  sim.seedFounders();
+  const well = [...tw.buildings.values()].find(b => b.type === 'well');
+  // cobbled streets get lamps
+  const roads = [];
+  for (let z = 0; z < tw.N; z++) for (let x = 0; x < tw.N; x++) if (tw.roadAt(x, z)) roads.push([x, z]);
+  tw.placeRoads(roads, 2);
+  const near = (type, max = 12) => {
+    for (let r = 1; r <= max; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const c = tw.checkBuild(type, well.x + dx, well.z + dz);
+      if (!c.ok || !c.access.some(a => a.conn)) continue;
+      const p = tw.placeBuilding(type, well.x + dx, well.z + dz, { instant: true });
+      if (p.ok) return p.building;
+    }
+    return null;
+  };
+  const mf = near('workshop');
+  mf.level = 2;
+  for (const r of tw.residents.values()) if (r.age === 'adult') r.job = mf.id;
+  for (let k = 0; k < 8 && (sim.recompute(), sim.powerShare < 1); k++) near('windgen', 16);
+  const rv = new RoadsView(tw, { add() {}, remove() {} });
+  rv.lit = (x, z) => sim.lampLit(x, z);
+  rv.rebuild();
+  const lamps = rv.lamps.length;
+  ok(mf.powered && mf.working > 0 && sim.incomeOf(mf) > 0, `a powered Manufactory works (${Math.round(mf.working * 100)}% staffed, $${Math.round(sim.incomeOf(mf))} a day)`);
+  ok(lamps > 0 && rv.darkLamps === 0, `street lamps are lit with enough power (${lamps})`);
+  // cut the power
+  for (const b of [...tw.buildings.values()]) if (BUILDINGS[b.type].generator) tw.removeBuilding(b.id, 0);
+  sim.recompute();
+  rv.rebuild();
+  ok(!mf.powered && mf.working === 0 && mf.blockers.includes('power') && sim.incomeOf(mf) === 0, `an unpowered Manufactory makes nothing (lacks ${mf.blockers.join(', ')})`);
+  ok(rv.lamps.length === 0 && rv.darkLamps === lamps, `street lamps go dark without power (${rv.darkLamps})`);
+  const iss = computeIssues(tg).map(i => i.text);
+  ok(iss.some(t => /manufactory stopped — no power/.test(t)), `issues list the stopped works ("${iss.find(t => /no power/.test(t))}")`);
+  for (let k = 0; k < 8 && (sim.recompute(), sim.powerShare < 1); k++) near('windgen', 16);
+  ok(mf.working > 0 && !computeIssues(tg).some(i => /no power/.test(i.text)), 'it starts again once the power is back');
+  // water: without it a bakery works at reduced output, a clinic reaches
+  // less, homes can't expand, and the issues panel says so
+  const bak = near('bakery'), cl = near('clinic');
+  let n = 0;
+  for (const r of tw.residents.values()) if (r.age === 'adult') { r.job = n++ % 2 ? bak.id : cl.id; r.edu = 3; }
+  sim.recompute();
+  const k0 = bak.working, reach0 = sim.reachOf(cl);
+  ok(bak.wet === 2 && cl.wet === 2 && k0 > 0 && reach0 > 0, `the bakery and clinic have running water (bakery at ${Math.round(k0 * 100)}%, clinic reaches ${reach0} tiles)`);
+  const home = [...tw.buildings.values()].find(b => b.type === 'house' && b.wet === 2 && tw.expandOptions(b).length);
+  const grow = home && tw.expandOptions(home)[0];
+  tw.removeBuilding(well.id, 0);
+  sim.recompute();
+  ok(bak.blockers.includes('water') && Math.abs(bak.working - k0 * 0.3) < 1e-9, `without water the bakery works at 30% of that (${Math.round(bak.working * 100)}%)`);
+  ok(cl.blockers.includes('water') && sim.reachOf(cl) < reach0, `without water the clinic reaches less (${reach0} → ${sim.reachOf(cl)} tiles)`);
+  ok(computeIssues(tg).some(i => /bakery without water/.test(i.text)), 'issues list the bakery without water');
+  ok(home && home.blockers.includes('water') && !tw.expandOptions(home).length && /water/.test(tw.expandBuilding(home.id, grow.dir, grow.kind).reason || ''), "a home that could expand can't once its water is gone");
+  // workers: a school with no teachers has no places
+  const sch = near('school');
+  sim.recompute();
+  ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /schoolhouse with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
+}
+
 // 3z. every method the UI, game and input code call on themselves exists
 // (a missing one only shows up as a frozen game in the browser)
 {

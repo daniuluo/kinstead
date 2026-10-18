@@ -5,6 +5,7 @@ import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, S
 import { isOpen, capOf, isExpanded } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
+import { BlockedIcons, workingHTML, needsNoteHTML } from './working.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf } from '../sim/people.js';
 // What feeds a home's happiness, and what to do about each.
@@ -28,6 +29,7 @@ const HAPPY = {
 };
 
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
+import { MergeDialog } from './mergeUI.js';
 import { showMultiplayer, renderNetBox } from './multiplayer.js';
 import { buildingSummary, showBuildingGuide } from './guide.js';
 import { RNG, randomSeed } from '../util/rng.js';
@@ -121,6 +123,7 @@ export class UI {
     $('happy').parentElement.title = 'Happiness: what helps and what hurts (click)';
     $('happy').parentElement.onclick = () => this.showHappiness();
     $('btnResearch').onclick = () => this.showResearch();
+    $('resStat').onclick = () => this.showResearch();
     $('btnPops').onclick = () => this.togglePopups();
     $('btnMusic').onclick = () => this.toggleMusic();
     $('issuesHead').onclick = () => this.toggleIssues();
@@ -305,6 +308,7 @@ export class UI {
       $('happy').textContent = `${hp}%`;
       $('happyIco').textContent = hp >= 75 ? 'sentiment_very_satisfied' : hp >= 55 ? 'sentiment_satisfied' : hp >= 40 ? 'sentiment_neutral' : 'sentiment_dissatisfied';
       $('jobs').textContent = `${sim.jobs.filled}/${sim.jobs.total}`;
+      this._researchHUD();
       const U = sim.utility;
       if (U) {
         $('power').textContent = U.power.gen ? `${U.power.demand}/${U.power.gen} kW` : 'no power';
@@ -324,6 +328,7 @@ export class UI {
     this._issuesT = (this._issuesT || 0) + dt;
     if (this._issuesT > 1) { this._issuesT = 0; this.renderIssues(); }
     this.updateLabels();
+    (this.blockedIcons ||= new BlockedIcons(this.game, $('popups'))).update();
   }
 
   // ------------------------------------------------------------ inspector
@@ -401,6 +406,7 @@ export class UI {
       c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${cur.name.toLowerCase()}.`)}</div></div></div>`;
       c += `<div class="chain">${chain}</div>`;
       c += this._tilesHTML(cur, n);
+      c += needsNoteHTML(b, o.type, o.level);
       if (styled) {
         const on = this.preview && this.preview.id === b.id && this.preview.type === o.type;
         c += `<div class="styles"><span>Style</span>${[{ id: '', name: 'As now' }, ...STYLES].map(s => { const t = STYLE_TECH[s.id], ok = !t || w.hasTech(t); return `<button class="style ${(look || '') === s.id ? 'on' : ''}" data-act="look" data-type="${o.type}" data-look="${s.id}" ${ok ? '' : `disabled title="Research ${esc(TECHS[t].name)}"`}>${ok ? '' : '🔒'}${s.name}</button>`; }).join('')}</div>`;
@@ -484,6 +490,7 @@ export class UI {
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
     if (def.needsRail) chips.push(b.rail ? '<span class="chip ok">On the railway</span>' : '<span class="chip no">No track alongside</span>');
     h += `<div class="chips">${chips.join('')}</div>`;
+    h += workingHTML(this.game, b);
     const rows = [];
     if (L.housing) {
       rows.push(['Residents', `${b.residents.length} / ${capOf(b, 'housing')}`]);
@@ -493,7 +500,7 @@ export class UI {
     if (L.seats) rows.push([L.teaches >= 4 ? 'Students' : 'Pupils', `${(b.pupils || []).length} / ${capOf(b, 'seats')}`], ['Teaches', `${EDU[L.teaches || 1]}${L.teaches === 1 ? ' (ages 6–10)' : L.teaches === 2 ? ' (ages 11–13)' : L.teaches === 3 ? ' (ages 14–17)' : ' (young adults)'}`]);
     if (isExpanded(b)) rows.push(['Plot', 'Double plot · room for 50% more']);
     if (L.income) {
-      let v = b.workers.length * L.income;
+      let v = sim.incomeOf(b);
       rows.push([def.cat === 'industry' ? 'Production' : 'Sales', `$${fmt(v)} / day`]);
     }
     if (L.visit) rows.push(['Per visit', `$${L.visit}`]);
@@ -953,6 +960,8 @@ export class UI {
   }
 
   // ---------------------------------------------------------- save/load
+  showMerge() { (this._merge ||= new MergeDialog(this)).open(); }
+
   showSaves(tab = 'local') {
     const g = this.game;
     const inGame = !!g.world && !g.demo;
@@ -961,11 +970,13 @@ export class UI {
       <div class="actions" style="margin:0 0 10px">
         ${inGame ? '<button class="btn primary" id="svDownload" title="Ctrl+Shift+S">⬇ Download save (.json)</button>' : ''}
         <label class="btn" title="You can also drop a .json save onto the game"><input type="file" id="svUpload" accept=".json,application/json" hidden>⬆ Open a .json save…</label>
+        <button class="btn" id="svMerge" title="Join two saved towns into one">🔗 Merge villages…</button>
       </div>
       <div class="tabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div><div id="saveBody"></div>`, (c) => {
       for (const b of c.querySelectorAll('[data-tab]')) b.onclick = () => this.showSaves(b.dataset.tab);
       const dl = c.querySelector('#svDownload');
       if (dl) dl.onclick = () => g.downloadSave();
+      c.querySelector('#svMerge').onclick = () => this.showMerge();
       c.querySelector('#svUpload').onchange = async (e) => {
         const f = e.target.files[0];
         if (!f) return;
@@ -1175,7 +1186,8 @@ export class UI {
         <label class="inline"><input type="checkbox" id="stCoins" ${s.popCoins ? 'checked' : ''}> Coin pop-ups</label>
         <label class="inline"><input type="checkbox" id="stToasts" ${s.popToasts ? 'checked' : ''}> Notices</label>
         <label class="inline"><input type="checkbox" id="stTips" ${s.popTips ? 'checked' : ''}> Hover tips</label>
-        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label></div></div>
+        <label class="inline"><input type="checkbox" id="stLabels" ${s.popLabels ? 'checked' : ''}> Name tag over selected villager</label>
+        <label class="inline"><input type="checkbox" id="stBlocked" ${s.popBlocked !== false ? 'checked' : ''}> Warnings over buildings with no power, water or workers</label></div></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stPix" ${s.pixelArt ? 'checked' : ''}> Pixel-art rendering</label></div>
       <div class="field"><label>Pixel size</label><select id="stPixSize">${[1, 2, 3, 4].map(n => `<option value="${n}" ${s.pixelSize === n ? 'selected' : ''}>${n}× (${['finest', 'classic', 'chunky', 'retro'][n - 1]})</option>`).join('')}</select></div>
       ${g.world && !g.demo ? `${g.isGuest ? '<div class="note">Only the host can change the sandbox switches of this town.</div>' : ''}
@@ -1205,6 +1217,7 @@ export class UI {
         s.popToasts = c.querySelector('#stToasts').checked;
         s.popTips = c.querySelector('#stTips').checked;
         s.popLabels = c.querySelector('#stLabels').checked;
+        s.popBlocked = c.querySelector('#stBlocked').checked;
         this.syncPopButton();
         const id = c.querySelector('#stGcid').value.trim();
         if (id !== g.drive.clientId) g.drive.setClientId(id);
@@ -1259,7 +1272,7 @@ export class UI {
     // only same-branch links are drawn; anything else a project needs shows as a tag
     const node = (id) => {
       const t = TECHS[id], s = state(id);
-      const tail = s === 'done' ? '✓ done' : s === 'cur' ? `${Math.round((R.progress / t.cost) * 100)}%` : `${s === 'can' ? '🔬' : '🔒'} ${t.cost}`;
+      const tail = s === 'done' ? '✓ done' : s === 'cur' ? `${Math.floor(R.progress)}/${t.cost}` : s === 'can' ? (R.bank >= t.cost ? `🔬 ${t.cost} · now` : `🔬 ${t.cost}`) : `🔒 ${t.cost}`;
       const cross = t.needs.filter(n => TECHS[n].branch !== t.branch).map(n => `<em class="${R.done.includes(n) || all ? 'ok' : ''}">+ ${esc(TECHS[n].name)}</em>`).join('');
       return `<div class="tnode ${s} ${this._techSel === id ? 'sel' : ''}" data-node="${id}" style="--hue:${hue(t.branch)};grid-row:${rows.findIndex(r => r[0] === t.branch) + 1};grid-column:${t.tier + 2}"><b>${esc(t.name)}</b><span>${tail}</span>${cross ? `<div class="tx">${cross}</div>` : ''}${s === 'cur' ? `<i style="width:${Math.round((R.progress / t.cost) * 100)}%"></i>` : ''}</div>`;
     };
@@ -1271,12 +1284,10 @@ export class UI {
     detail += `</div><div class="tunlocks">${un.map(u => `<div class="tu">${u.img ? `<img src="${u.img}" alt="">` : '<div class="tu-ph"><span class="ms">auto_awesome</span></div>'}<span>${esc(u.text)}</span></div>`).join('') || '<div class="tsub">—</div>'}</div><div class="tact">`;
     if (ss === 'done') detail += '<div class="tdone">✓ Researched</div>';
     else if (ss === 'cur') detail += `<div class="meter build"><i style="width:${Math.round((R.progress / sel.cost) * 100)}%"></i></div><div class="tsub">${R.progress}/${sel.cost} · ${days ? `about ${days} day${days === 1 ? '' : 's'}` : 'no research yet'}</div>`;
-    else if (ss === 'can') detail += `<button class="btn primary" data-tech="${this._techSel}">🔬 Research · ${sel.cost} points${days ? ` · ~${days} days` : ''}</button>`;
+    else if (ss === 'can') detail += `<button class="btn primary" data-tech="${this._techSel}">🔬 Research · ${sel.cost} points${R.bank >= sel.cost ? ' · done now with banked points' : days ? ` · ~${days} day${days === 1 ? '' : 's'}${R.bank ? ` (${Math.floor(R.bank)} banked go in first)` : ''}` : ''}</button>`;
     else detail += '<div class="tsub">Research the projects it needs first.</div>';
     detail += '</div></div>';
-    const sources = [];
-    for (const b of w.buildings.values()) if (['townhall', 'school', 'chapel', 'parishschool'].includes(b.type) && b.connected) sources.push(BUILDINGS[b.type].levels[b.level].name);
-    this.openModal(`<h2>Research</h2><p class="lead">🔬 ${rate} point${rate === 1 ? '' : 's'} a day from ${sources.length ? esc([...new Set(sources)].join(', ')) : 'nowhere yet'} and your villagers${R.bank ? ` · ${R.bank} banked` : ''}${R.current ? ` · researching <b>${esc(TECHS[R.current].name)}</b>` : ''}. Schools and chapels speed research up.${all ? ' <b>Sandbox: everything is unlocked.</b>' : ''}</p>
+    this.openModal(`<h2>Research</h2><div id="resHead">${this._researchHead()}</div>
       <div class="ttree-wrap"><div class="ttree" style="grid-template-columns: 104px repeat(${tiers}, 136px); grid-template-rows: repeat(${rows.length}, minmax(44px, auto))">
         <svg class="tlinks"></svg>
         ${rows.map(([b, name], i) => `<div class="tbranch" style="--hue:${hue(b)};grid-row:${i + 1};grid-column:1">${esc(name)}</div>`).join('')}
@@ -1304,6 +1315,64 @@ export class UI {
         if (r.ok) { g.sfx('click'); if (c.isConnected) this.showResearch(); } else if (r.reason) this.toast(r.reason, 'bad');
       });
     });
+  }
+
+  // ------------------------------------------------------------ research
+  // Research points at a glance: what's banked, what comes in each day and
+  // from where, and how the current project is going.
+  _researchHead() {
+    const w = this.world, R = w.research, sim = this.game.sim;
+    if (w.sandbox.unlockAll) return '<div class="rhead"><div class="rcell wide"><span class="ms">lock_open</span><div><b>Sandbox: everything is unlocked</b></div></div></div>';
+    const src = sim.researchSources(), rate = src.reduce((n, s) => n + s.points, 0);
+    const cur = R.current && TECHS[R.current];
+    let h = '<div class="rhead">';
+    h += `<div class="rcell"><span class="ms">savings</span><div><b>${fmt(Math.floor(R.bank))}</b><small>points banked</small></div></div>`;
+    h += `<div class="rcell"><span class="ms">trending_up</span><div><b>+${rate}</b><small>points a day</small></div></div>`;
+    if (cur) {
+      const pct = Math.min(100, Math.round((R.progress / cur.cost) * 100)), left = cur.cost - Math.floor(R.progress);
+      const days = rate > 0 ? Math.max(1, Math.ceil(left / rate)) : null;
+      h += `<div class="rcell wide"><span class="ms">science</span><div><b>${esc(cur.name)} · ${Math.floor(R.progress)} / ${cur.cost}</b><div class="meter build"><i style="width:${pct}%"></i></div><small>${days ? `${left} to go · about ${days} day${days === 1 ? '' : 's'}` : 'no points coming in: build a town hall or a school'}</small></div></div>`;
+    } else {
+      h += `<div class="rcell wide warn"><span class="ms">pending</span><div><b>Nothing being researched</b><small>${R.bank ? 'points are banking up: pick a project and they go straight in' : 'pick a project below'}</small></div></div>`;
+    }
+    h += '</div>';
+    h += `<div class="rsrc">Each day: ${src.length ? src.map(s => `${esc(s.name)}${s.n > 1 ? ` ×${s.n}` : ''} <b>+${s.points}</b>`).join(' · ') : 'nothing yet'}. Town halls, schools, colleges and chapels add more as they're upgraded; villagers add 1 for every 40.</div>`;
+    return h;
+  }
+
+  // The research readout in the top bar, and the open research window's header.
+  _researchHUD() {
+    const w = this.world, R = w.research, sim = this.game.sim;
+    const rate = sim.researchRate(), cur = R.current && TECHS[R.current];
+    const pts = $('resPts'), sub = $('resRate'), box = $('resStat');
+    if (w.sandbox.unlockAll) {
+      pts.textContent = 'all'; sub.textContent = 'unlocked'; sub.className = '';
+      box.title = 'Sandbox: everything is unlocked';
+    } else if (cur) {
+      pts.textContent = `${Math.floor(R.progress)}/${cur.cost}`;
+      sub.textContent = `+${rate}/day · ${cur.name}`;
+      sub.className = '';
+      box.title = `Researching ${cur.name}: ${Math.floor(R.progress)} of ${cur.cost} points, +${rate} a day${R.bank ? `, ${Math.floor(R.bank)} banked` : ''}. Click for the research tree.`;
+    } else {
+      pts.textContent = `${fmt(Math.floor(R.bank))} pts`;
+      sub.textContent = `+${rate}/day · ${R.bank ? 'pick a project' : 'nothing chosen'}`;
+      sub.className = R.bank ? 'neg' : '';
+      box.title = `${Math.floor(R.bank)} research points banked, +${rate} a day. Nothing is being researched: click to pick a project.`;
+    }
+    const head = document.getElementById('resHead');
+    if (head) {
+      const key = `${Math.floor(R.bank)}|${Math.floor(R.progress)}|${R.current}|${rate}`;
+      if (head.dataset.k !== key) {
+        head.dataset.k = key;
+        head.innerHTML = this._researchHead();
+        const node = cur && head.closest('.win')?.querySelector(`.tnode[data-node="${R.current}"]`);
+        if (node) {
+          node.querySelector('span').textContent = `${Math.floor(R.progress)}/${cur.cost}`;
+          const bar = node.querySelector('i');
+          if (bar) bar.style.width = `${Math.round((R.progress / cur.cost) * 100)}%`;
+        }
+      }
+    }
   }
 
   // ----------------------------------------------------------- happiness
@@ -1409,11 +1478,12 @@ export class UI {
     else if (a.kind === 'budget') this.showBudget();
   }
 
-  // One switch for every pop-up (coins, notices, hover tips, name tags).
+  // One switch for every pop-up (coins, notices, hover tips, name tags,
+  // warnings over blocked buildings).
   togglePopups() {
     const s = this.game.settings;
-    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
-    s.popCoins = s.popToasts = s.popTips = s.popLabels = !any;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels || s.popBlocked !== false;
+    s.popCoins = s.popToasts = s.popTips = s.popLabels = s.popBlocked = !any;
     this.game.applySettings();
     this.syncPopButton();
     if (!any) this.toast('Pop-ups on', 'info', '💡');
@@ -1439,7 +1509,7 @@ export class UI {
   syncPopButton() {
     const s = this.game.settings, b = $('btnPops');
     if (!b) return;
-    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels;
+    const any = s.popCoins || s.popToasts || s.popTips || s.popLabels || s.popBlocked !== false;
     b.innerHTML = `<span class="ms">${any ? 'notifications' : 'notifications_off'}</span>`;
     b.classList.toggle('on', !any);
     b.title = `${any ? 'Hide' : 'Show'} pop-ups: coins, notices, tips (N)`;
@@ -1536,6 +1606,7 @@ export class UI {
         3. Cover homes with 💧 water, 🩺 health, 📚 schools and 🛡️ safety, and add 🌷 gardens. Happy homes can be upgraded: a Family House becomes a grand Villa or a block of Flats.<br>
         Select a home next to another home or a shop to 🔗 join them into a terrace or shophouse, or ↔ move any building (it is taken down and rebuilt).<br>
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
+        Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
         6. Save to this browser, a file, or Google Drive from 💾.
       </div></div>`);

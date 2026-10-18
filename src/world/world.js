@@ -400,11 +400,14 @@ export class World {
     for (const [side, dx, dz, opp] of sides) {
       if (b.leases.length >= 2) break;
       if (ext[side]) continue;
+      // strips on two perpendicular sides would meet in a corner of a third plot
+      const perp = side[0] === 'x' ? 'z' : 'x';
+      if (ext[perp + '0'] > 0 || ext[perp + '1'] > 0) continue;
       const o = this.buildingOn(b.x + dx, b.z + dz);
       if (!o || o.type !== 'house' || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
       const oe = this._ext(o);
-      // a seller gives up at most one strip on each axis, and keeps its street side
-      if (oe[side[0] + '0'] < 0 || oe[side[0] + '1'] < 0) continue;
+      // a seller gives up one strip at most, and keeps its street side
+      if (oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0) continue;
       if (o.access && o.access.x === b.x && o.access.z === b.z) continue;
       const price = 60 + 40 * b.level + (b.type === 'villa' ? 30 : 0);
       ext[side] = LAND;
@@ -453,7 +456,7 @@ export class World {
   expandOptions(b) {
     const out = [];
     const def = BUILDINGS[b.type];
-    if (!b || !this.hasTech('surveying')) return out;
+    if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
     // a double plot can grow into a 2×2 estate onto two empty plots beside it
     if (!b.con && fw(b) * fd(b) === 2 && this.hasTech('bigplots') && !def.stop) {
       const along = fw(b) === 2;
@@ -487,7 +490,8 @@ export class World {
       // squeeze: buy a strip of a cottage's garden (it keeps its house)
       const side = names[k], opp = names[(k + 2) % 4];
       const be = b.ext || {}, oe = o.ext || {};
-      if (o.type === 'house' && !be[side] && !(oe[side[0] + '0'] < 0 || oe[side[0] + '1'] < 0)) {
+      const perp = side[0] === 'x' ? 'z' : 'x';
+      if (o.type === 'house' && !be[side] && !(be[perp + '0'] > 0 || be[perp + '1'] > 0) && !(oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0)) {
         out.push({ dir: k, x, z, kind: 'strip', where, other: o, side, opp, cost: 60 + 40 * b.level, label: `Buy a strip of the ${oname}'s garden ${where}`, warn: `The ${oname} next door gets a smaller garden (its owners are paid)` });
       }
       const comp = Math.round(this.buildValue(o) * 0.5);
@@ -497,8 +501,15 @@ export class World {
     return out;
   }
 
+  // Homes need running water to grow (see Sim._working), unless the sandbox
+  // lets buildings upgrade without meeting their needs.
+  _dryHome(b) {
+    return !this.sandbox.freeUpgrades && !!BUILDINGS[b.type].levels[b.level].housing && (b.blockers || []).includes('water');
+  }
+
   expandBuilding(id, dir, kind) {
     const b = this.buildings.get(id);
+    if (b && this._dryHome(b)) return { ok: false, reason: 'No running water: homes need it to grow' };
     const opt = b && this.expandOptions(b).find(o => o.dir === dir && o.kind === kind);
     if (!opt) return { ok: false, reason: "Can't expand that way" };
     if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };

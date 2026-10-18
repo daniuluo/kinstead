@@ -488,53 +488,53 @@ export const BRANCHES = [
   ['power', 'Power'], ['public', 'Public services'], ['learn', 'Learning'], ['transport', 'Transport'],
 ];
 export const TECHS = {
-  carpentry: { name: 'Carpentry', cost: 15, tier: 0, branch: 'build', needs: [], desc: 'Timber framing, and better tools for the builders.' },
-  joining: { name: 'Joining', cost: 25, tier: 1, branch: 'build', needs: ['carpentry'], desc: 'Knock two neighbouring buildings into one.' },
-  surveying: { name: 'Plot Surveying', cost: 35, tier: 2, branch: 'build', needs: ['joining'], desc: 'Grow a building onto the plot next door, and buy strips of garden.' },
-  relocation: { name: 'House Moving', cost: 40, tier: 3, branch: 'build', needs: ['surveying'], desc: 'Take buildings down and put them up somewhere else.' },
-  bigplots: { name: 'Great Plots', cost: 90, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates.' },
-  homes2: { name: 'Better Homes', cost: 15, tier: 0, branch: 'homes', needs: [], desc: 'Second-level home upgrades, like the Family House.' },
-  homes3: { name: 'Fine Homes', cost: 40, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
-  flats: { name: 'Flats', cost: 50, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
-  highrise: { name: 'Tall Buildings', cost: 120, tier: 4, branch: 'homes', needs: ['flats', 'steam'], desc: 'Tenements, mansion blocks and the tallest terraces.' },
-  masonry: { name: 'Masonry', cost: 20, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses and the masons' lodge." },
-  stonework: { name: 'Dressed Stone', cost: 25, tier: 1, branch: 'stone', needs: ['masonry'], desc: 'Stone-fronted buildings and monuments.' },
-  architecture: { name: 'Architecture', cost: 45, tier: 2, branch: 'stone', needs: ['stonework'], desc: 'Villas, manor houses and cobbled squares.' },
-  grandarch: { name: 'Grand Architecture', cost: 90, tier: 3, branch: 'stone', needs: ['architecture', 'paints'], desc: 'Grand manors, country mansions and stately homes.' },
-  brickmaking: { name: 'Brickmaking', cost: 20, tier: 0, branch: 'brick', needs: [], desc: 'Kilns and brick walls.' },
-  urban: { name: 'Terraces', cost: 35, tier: 1, branch: 'brick', needs: ['brickmaking', 'joining'], desc: 'Join neighbouring homes into terraces.' },
-  pigments: { name: 'Limewash', cost: 10, tier: 0, branch: 'colour', needs: [], desc: 'Limewashed walls.' },
-  paints: { name: 'Paints', cost: 20, tier: 1, branch: 'colour', needs: ['pigments'], desc: 'Painted walls in every colour.' },
-  commerce: { name: 'Shopkeeping', cost: 20, tier: 0, branch: 'trade', needs: [], desc: 'Bakeries, and shops with homes above.' },
-  trade2: { name: 'Shopfitting', cost: 25, tier: 1, branch: 'trade', needs: ['commerce'], desc: 'Second-level shop upgrades.' },
-  arcades: { name: 'Arcades', cost: 45, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
-  trade3: { name: 'Grand Shops', cost: 60, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades.' },
-  civic: { name: 'Civic Planning', cost: 90, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, the Grand Hall, grand squares and covered markets.' },
-  gardening: { name: 'Gardening', cost: 15, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks.' },
-  hospitality: { name: 'Hospitality', cost: 30, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns and inns.' },
-  parks2: { name: 'Landscaping', cost: 30, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
-  theatre: { name: 'Theatre', cost: 60, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
-  industry2: { name: 'Mills & Smithies', cost: 20, tier: 0, branch: 'industry', needs: [], desc: 'Second-level industry: sawmills, smithies, bigger farms.' },
-  woodwork: { name: 'Joinery', cost: 25, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
-  industry3: { name: 'Manufacturing', cost: 50, tier: 2, branch: 'industry', needs: ['industry2'], desc: 'Third-level and higher industry.' },
-  metallurgy: { name: 'Metallurgy', cost: 70, tier: 3, branch: 'industry', needs: ['industry3', 'brickmaking'], desc: 'Turn a smithy into an iron foundry, then a steelworks.' },
-  papermaking: { name: 'Papermaking', cost: 60, tier: 4, branch: 'industry', needs: ['industry3', 'woodwork'], desc: 'Turn a sawmill into a paper mill — it adds to research.' },
-  horticulture: { name: 'Orchards', cost: 35, tier: 1, branch: 'farm', needs: ['industry2'], desc: 'Turn a farm into an orchard with a cider mill.' },
-  hydraulics: { name: 'Hydraulics', cost: 25, tier: 0, branch: 'water', needs: [], desc: 'River pumps and water towers.' },
-  fountains: { name: 'Fountains', cost: 30, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
-  electricity: { name: 'Electricity', cost: 60, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets.' },
-  steam: { name: 'Steam Power', cost: 100, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
-  services2: { name: 'Public Works', cost: 20, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings: guardhouses, churches, water towers.' },
-  medicine: { name: 'Medicine', cost: 30, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, and almshouses.' },
-  firefighting: { name: 'Fire Brigades', cost: 45, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
-  hospitals: { name: 'Hospitals', cost: 70, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals and infirmaries.' },
-  services3: { name: 'Civic Services', cost: 80, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
-  schooling: { name: 'Schooling', cost: 25, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools and middle schools.' },
-  parish: { name: 'Parish Schools', cost: 35, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
-  academies: { name: 'High Schools', cost: 70, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot) and cathedral schools.' },
-  colleges: { name: 'Colleges', cost: 110, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working.' },
-  universities: { name: 'Universities', cost: 170, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
-  railways: { name: 'Railways', cost: 70, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
+  carpentry: { name: 'Carpentry', cost: 25, tier: 0, branch: 'build', needs: [], desc: 'Timber framing, and better tools for the builders.' },
+  joining: { name: 'Joining', cost: 45, tier: 1, branch: 'build', needs: ['carpentry'], desc: 'Knock two neighbouring buildings into one.' },
+  surveying: { name: 'Plot Surveying', cost: 70, tier: 2, branch: 'build', needs: ['joining'], desc: 'Grow a building onto the plot next door, and buy strips of garden.' },
+  relocation: { name: 'House Moving', cost: 90, tier: 3, branch: 'build', needs: ['surveying'], desc: 'Take buildings down and put them up somewhere else.' },
+  bigplots: { name: 'Great Plots', cost: 225, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates.' },
+  homes2: { name: 'Better Homes', cost: 25, tier: 0, branch: 'homes', needs: [], desc: 'Second-level home upgrades, like the Family House.' },
+  homes3: { name: 'Fine Homes', cost: 70, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
+  flats: { name: 'Flats', cost: 100, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
+  highrise: { name: 'Tall Buildings', cost: 300, tier: 4, branch: 'homes', needs: ['flats', 'steam'], desc: 'Tenements, mansion blocks and the tallest terraces.' },
+  masonry: { name: 'Masonry', cost: 30, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses and the masons' lodge." },
+  stonework: { name: 'Dressed Stone', cost: 45, tier: 1, branch: 'stone', needs: ['masonry'], desc: 'Stone-fronted buildings and monuments.' },
+  architecture: { name: 'Architecture', cost: 90, tier: 2, branch: 'stone', needs: ['stonework'], desc: 'Villas, manor houses and cobbled squares.' },
+  grandarch: { name: 'Grand Architecture', cost: 205, tier: 3, branch: 'stone', needs: ['architecture', 'paints'], desc: 'Grand manors, country mansions and stately homes.' },
+  brickmaking: { name: 'Brickmaking', cost: 30, tier: 0, branch: 'brick', needs: [], desc: 'Kilns and brick walls.' },
+  urban: { name: 'Terraces', cost: 60, tier: 1, branch: 'brick', needs: ['brickmaking', 'joining'], desc: 'Join neighbouring homes into terraces.' },
+  pigments: { name: 'Limewash', cost: 15, tier: 0, branch: 'colour', needs: [], desc: 'Limewashed walls.' },
+  paints: { name: 'Paints', cost: 35, tier: 1, branch: 'colour', needs: ['pigments'], desc: 'Painted walls in every colour.' },
+  commerce: { name: 'Shopkeeping', cost: 30, tier: 0, branch: 'trade', needs: [], desc: 'Bakeries, and shops with homes above.' },
+  trade2: { name: 'Shopfitting', cost: 45, tier: 1, branch: 'trade', needs: ['commerce'], desc: 'Second-level shop upgrades.' },
+  arcades: { name: 'Arcades', cost: 90, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
+  trade3: { name: 'Grand Shops', cost: 135, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades.' },
+  civic: { name: 'Civic Planning', cost: 225, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, the Grand Hall, grand squares and covered markets.' },
+  gardening: { name: 'Gardening', cost: 25, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks.' },
+  hospitality: { name: 'Hospitality', cost: 55, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns and inns.' },
+  parks2: { name: 'Landscaping', cost: 60, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
+  theatre: { name: 'Theatre', cost: 135, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
+  industry2: { name: 'Mills & Smithies', cost: 30, tier: 0, branch: 'industry', needs: [], desc: 'Second-level industry: sawmills, smithies, bigger farms.' },
+  woodwork: { name: 'Joinery', cost: 45, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
+  industry3: { name: 'Manufacturing', cost: 100, tier: 2, branch: 'industry', needs: ['industry2'], desc: 'Third-level and higher industry.' },
+  metallurgy: { name: 'Metallurgy', cost: 160, tier: 3, branch: 'industry', needs: ['industry3', 'brickmaking'], desc: 'Turn a smithy into an iron foundry, then a steelworks.' },
+  papermaking: { name: 'Papermaking', cost: 150, tier: 4, branch: 'industry', needs: ['industry3', 'woodwork'], desc: 'Turn a sawmill into a paper mill — it adds to research.' },
+  horticulture: { name: 'Orchards', cost: 60, tier: 1, branch: 'farm', needs: ['industry2'], desc: 'Turn a farm into an orchard with a cider mill.' },
+  hydraulics: { name: 'Hydraulics', cost: 40, tier: 0, branch: 'water', needs: [], desc: 'River pumps and water towers.' },
+  fountains: { name: 'Fountains', cost: 55, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
+  electricity: { name: 'Electricity', cost: 120, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets.' },
+  steam: { name: 'Steam Power', cost: 225, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
+  services2: { name: 'Public Works', cost: 30, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings: guardhouses, churches, water towers.' },
+  medicine: { name: 'Medicine', cost: 55, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, and almshouses.' },
+  firefighting: { name: 'Fire Brigades', cost: 90, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
+  hospitals: { name: 'Hospitals', cost: 160, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals and infirmaries.' },
+  services3: { name: 'Civic Services', cost: 200, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
+  schooling: { name: 'Schooling', cost: 40, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools and middle schools.' },
+  parish: { name: 'Parish Schools', cost: 60, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
+  academies: { name: 'High Schools', cost: 140, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot) and cathedral schools.' },
+  colleges: { name: 'Colleges', cost: 250, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working.' },
+  universities: { name: 'Universities', cost: 425, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
+  railways: { name: 'Railways', cost: 140, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains.' },
 };
 
 // Upgrade levels unlock by research too. Unless a level names its own
@@ -576,6 +576,52 @@ export const LARGE = {
 
 // Every service a building provides (combined buildings can provide two).
 export const servicesOf = (def) => def.services || (def.service ? [def.service] : []);
+
+// What a building needs to work, from a given level up (see Sim._working).
+//   power  use 'machines': powered machinery, or 'lights': electric light
+//          for trade after dark
+//   water  running water: within reach of a well or pump, with enough to
+//          go round
+//   without  how much of its work it still does without it (0: it stops)
+//   what     what the need is for, in the building panel
+// It also needs its workers: services, schools and utilities only work as
+// well as they are staffed, and nothing works with nobody there — unless
+// it says staff: false (the council meets whoever staffs the town hall,
+// and trains run without a station master). Homes need
+// no table entry: without water they can't upgrade, expand or grow a family,
+// and without power their windows fall back to candlelight.
+// Early buildings (cottages, wells, farms, woodcutters, builders) need none.
+export const NEEDS = {
+  market: { power: { from: 2, use: 'lights', without: 0.8, what: 'its gas-lit counters' } },
+  bakery: { water: { from: 0, without: 0.3, what: 'the dough and the ovens' }, power: { from: 2, use: 'lights', without: 0.85, what: 'its shop lights' } },
+  tavern: { water: { from: 0, without: 0.5, what: 'brewing and washing up' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
+  inn: { water: { from: 0, without: 0.5, what: 'brewing, baths and the kitchens' }, power: { from: 1, use: 'lights', without: 0.7, what: 'its evening lights' } },
+  shophouse: { power: { from: 1, use: 'lights', without: 0.8, what: 'its shop lights' } },
+  arcade: { power: { from: 1, use: 'lights', without: 0.8, what: 'the lights under its roof' } },
+  musichall: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights' } },
+  lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
+  workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
+  joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },
+  foundry: { power: { from: 0, use: 'machines', without: 0.4, what: 'the furnace blowers and rolling mill' } },
+  papermill: { power: { from: 0, use: 'machines', without: 0.4, what: 'the pulpers and presses' }, water: { from: 0, without: 0.5, what: 'the pulp vats' } },
+  orchard: { water: { from: 0, without: 0.6, what: 'the cider mill' } },
+  well: { power: { from: 2, use: 'machines', without: 0.3, what: 'its pumps' } },
+  pump: { power: { from: 1, use: 'machines', without: 0.3, what: 'its pumps' } },
+  clinic: { water: { from: 0, without: 0.5, what: 'washing and medicines' }, power: { from: 2, use: 'machines', without: 0.5, what: 'its wards and equipment' } },
+  almshouse: { water: { from: 0, without: 0.5, what: 'washing and medicines' } },
+  firestation: { water: { from: 0, without: 0.4, what: 'the fire engines' } },
+  university: { power: { from: 0, use: 'machines', without: 0.6, what: 'its laboratories' } },
+  fountaingarden: { water: { from: 0, without: 0.6, what: 'the fountain' } },
+  plaza: { water: { from: 1, without: 0.7, what: 'the fountain' } },
+  townhall: { staff: false },
+  station: { staff: false },
+};
+
+export function needsOf(type, level) {
+  const n = NEEDS[type], out = { staff: !n || n.staff !== false };
+  if (n) for (const k of ['power', 'water']) if (n[k] && level >= n[k].from) out[k] = n[k];
+  return out;
+}
 
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
