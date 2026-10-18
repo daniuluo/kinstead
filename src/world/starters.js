@@ -23,6 +23,11 @@ import { serialize, deserialize } from '../save/saves.js';
 // [a, b] is a steps along the main road (towards the way out of the valley)
 // and b steps across it, from the founding crossroads.
 //
+// known: research the founders bring with them (what a town a few weeks along
+// has behind it). Its points are banked on the first day, so each project is
+// done as soon as it can be begun, in order. research: what the town then
+// works on with its own points as it grows.
+//
 // Script steps (each waits, retried day after day, until it can be done;
 // tech: an extra research project to wait for, e.g. for a style):
 //   { day, street: [a, b], go: 'out' | 'in' | 'left' | 'right', len, level }
@@ -37,7 +42,8 @@ export const STARTERS = [
     // summer · out = south, right = east (towards the river)
     id: 'hamlet', name: 'Riverside hamlet', town: 'Willowford', N: 48, seed: 23770, days: 9,
     desc: 'A handful of cottages down by the river, with a woodcutter and a fishing hut.',
-    research: ['carpentry', 'pigments', 'homes2'],
+    known: ['carpentry'],
+    research: ['pigments', 'homes2'],
     plan: [
       { day: 1, street: [0, 4], go: 'right', len: 5 },
       { day: 1, build: 'house', n: 2, near: [[1, 2], [-1, -2]] },
@@ -55,7 +61,8 @@ export const STARTERS = [
     // autumn · out = east along the high street, right = south
     id: 'market', name: 'Market village', town: 'Marbury', N: 64, seed: 142555, days: 18,
     desc: 'A busy high street with a bakery, a tavern and a school, cobbled in the middle.',
-    research: ['commerce', 'homes2', 'hospitality', 'pigments', 'trade2', 'industry2'],
+    known: ['commerce', 'homes2', 'hospitality', 'pigments'],
+    research: ['trade2', 'industry2'],
     plan: [
       { day: 1, street: [0, -4], go: 'left', len: 3 },
       { day: 1, street: [0, 4], go: 'right', len: 3 },
@@ -92,7 +99,8 @@ export const STARTERS = [
     // spring of the second year · out = north, right = west, in = south towards the river
     id: 'mill', name: 'Mill town', town: 'Millbrook', N: 48, seed: 174231, days: 26,
     desc: 'A farm, a workshop and a chapel, with a water wheel on the river for power.',
-    research: ['hydraulics', 'electricity', 'industry2', 'carpentry', 'masonry'],
+    known: ['hydraulics', 'electricity', 'industry2', 'carpentry'],
+    research: ['masonry', 'horticulture'],
     plan: [
       { day: 1, street: [-3, 0], go: 'in', len: 6 },
       { day: 1, street: [0, -4], go: 'left', len: 4 },
@@ -125,7 +133,8 @@ export const STARTERS = [
     // autumn · out = north, right = west, left = east, in = south
     id: 'crossroads', name: 'Crossroads village', town: 'Coldharbour', N: 64, seed: 213826, days: 16,
     desc: 'Where two roads meet: a coaching tavern, a smithy, and a coach line to every corner.',
-    research: ['commerce', 'hospitality', 'carpentry', 'masonry'],
+    known: ['commerce', 'hospitality', 'carpentry'],
+    research: ['masonry', 'brickmaking'],
     plan: [
       { day: 1, street: [0, -4], go: 'left', len: 7 },
       { day: 1, street: [0, 4], go: 'right', len: 7 },
@@ -142,13 +151,13 @@ export const STARTERS = [
       { day: 8, build: 'lumber', near: 'trees' },
       { day: 8, build: 'clinic', near: 'need:health' },
       { day: 9, build: 'house', n: 2, near: [[5, 1], [-1, -9]] },
-      { day: 10, build: 'well', near: 'need:water' },
+      { day: 10, build: 'well', near: [2, 2] },
       { day: 11, build: 'tavern', near: [1, -1] },
+      { day: 11, build: 'house', n: 2, near: [[2, 5], [-2, -5]] },
       { day: 12, build: 'watch', near: 'need:safety' },
       { day: 13, build: 'chapel', near: 'need:culture' },
       { day: 13, build: 'flowers', n: 2, near: [[1, 1], [-1, 1]] },
       { day: 14, upgrade: 'builder', look: 'timber', tech: 'carpentry' },
-      { day: 16, build: 'house', n: 2, near: [[2, 5], [-2, -5]] },
     ],
   },
 ];
@@ -188,10 +197,11 @@ export function growStarter(def, { onDay } = {}) {
   const { N, seed } = def;
   const w = World.createNew({ N, seed, name: def.town });
   // The founders' research: a town a few weeks along has already worked
-  // through its research list, so those points are banked from the start and
+  // through its known list, so those points are banked from the start and
   // each project completes as soon as it can begin (in order, prerequisites
-  // first). The town's own research then carries on from there.
-  w.research.bank += (def.research || []).reduce((n, id) => n + (TECHS[id] ? TECHS[id].cost : 0), 0);
+  // first). The town's own research then carries on through its research list.
+  const known = def.known || [];
+  w.research.bank += known.reduce((n, id) => n + (TECHS[id] ? TECHS[id].cost : 0), 0);
   const rng = new RNG(seed ^ 0x2f6b1d3);
   // the founding buildings were given random looks: make them fixed
   for (const b of w.buildings.values()) b.variant = (rng.next() * 1e9) | 0;
@@ -337,7 +347,7 @@ export function growStarter(def, { onDay } = {}) {
       if (r === true) st.done = true; else st.why = r;
     }
   };
-  const queue = [...(def.research || [])];
+  const queue = [...known, ...(def.research || [])];
   const nextResearch = () => {
     for (;;) {
       if (w.research.current) return;
@@ -381,6 +391,7 @@ export function growStarter(def, { onDay } = {}) {
   }
   w.hours = 8.5;
   for (const st of pending) if (!st.done) log.push(`${st.kind} ${JSON.stringify(st.s)}: ${st.why || 'not reached'}`);
+  for (const id of known) if (!w.research.done.includes(id)) log.push(`known research ${id}: never begun (${TECHS[id] ? `needs ${TECHS[id].needs.join(', ')}` : 'no such project'})`);
   return { world: w, sim, log };
 }
 
