@@ -43,7 +43,7 @@ export function perfHTML(s) {
   return group('Performance', `
     <p class="set-hint">Lower settings run smoother on slower computers and use less power.</p>
     <div class="set-row"><span class="set-label">Presets</span><div class="set-presets">
-      <button type="button" class="btn small" id="pfSaver" title="Everything at its lightest that still looks like the game, and soft shadows off">Battery saver</button>
+      <button type="button" class="btn small" id="pfSaver" title="Everything at its lightest that still looks like the game, and soft contact shadows and tilt-shift off">Battery saver</button>
       <button type="button" class="btn small" id="pfBest" title="Everything as it was at first">Best look</button></div></div>
     ${seg('pfFps', 'Frame rate', [[0, 'Screen', 'As fast as the screen'], [60, '60', '60 frames a second'], [30, '30', '30 frames a second']], s.fps || 0)}
     ${seg('pfRes', 'Resolution', [[1, '100%'], [0.75, '75%'], [0.5, '50%']], s.resScale ?? 1)}
@@ -53,7 +53,7 @@ export function perfHTML(s) {
     ${check('pfPaused', s.pausedSlow, 'Draw slowly while paused', 'Only a few frames a second while the game is paused')}`);
 }
 
-// The two presets fill in the form (and the soft shadows box), then apply.
+// The two presets fill in the form (and the soft shadows and tilt-shift), then apply.
 export function bindPerf(c) {
   const fill = (p) => {
     setSeg(c, 'pfFps', p.fps);
@@ -64,6 +64,8 @@ export function bindPerf(c) {
     c.querySelector('#pfPaused').checked = p.pausedSlow;
     const ao = c.querySelector('#stAO');
     if (ao) ao.checked = p.ao !== false;
+    // Battery saver turns the tilt-shift off; Best look leaves it as chosen
+    if (p.tiltShift && c.querySelector('#stTilt')) setSeg(c, 'stTilt', p.tiltShift);
     c.querySelector('#pfFps').dispatchEvent(new Event('change', { bubbles: true }));
   };
   c.querySelector('#pfSaver').onclick = () => fill(BATTERY_SAVER);

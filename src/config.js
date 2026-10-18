@@ -36,7 +36,17 @@ export const CONFIG = {
 // is paused and nothing moves.
 export const SHADOW_SIZE = { high: 4096, medium: 2048, low: 1024 };
 export const PERF_DEFAULTS = { fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false };
-export const BATTERY_SAVER = { fps: 30, resScale: 0.75, shadows: true, shadowQuality: 'low', effects: 'reduced', villagers: 'some', pausedSlow: true, ao: false };
+export const BATTERY_SAVER = { fps: 30, resScale: 0.75, shadows: true, shadowQuality: 'low', effects: 'reduced', villagers: 'some', pausedSlow: true, ao: false, tiltShift: 'off' };
+
+// Tilt-shift (Settings → Graphics; see render/tiltShift.js): blur is the
+// widest blur, in screen heights either side, at the top and bottom of the
+// screen; saturate and contrast lift the colour a little. TILT_BAND: how far
+// above and below the focus stays sharp, in screen heights.
+export const TILT_SHIFT = {
+  subtle: { blur: 0.008, saturate: 0.07, contrast: 0.04 },
+  strong: { blur: 0.018, saturate: 0.12, contrast: 0.07 },
+};
+export const TILT_BAND = { narrow: 0.06, normal: 0.11, wide: 0.18 };
 
 export const SEASONS = [
   { name: 'Spring', icon: '🌸' },

@@ -1,17 +1,18 @@
 // WebGL renderer, isometric / top-down camera rig, and the sun-moon lighting.
 
 import * as THREE from 'three';
-import { CONFIG } from '../config.js';
+import { CONFIG, TILT_SHIFT, TILT_BAND } from '../config.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { PixelPass } from './pixelPass.js';
+import { TiltShiftPass } from './tiltShift.js';
 
 // Classic 2:1 pixel-art isometric (dimetric) projection: 26.57° above the ground.
 export const ISO_ELEV = Math.atan(0.5);
 const DIST = 140;
-const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3();
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3(), _f = new THREE.Vector3();
 
 export class Renderer {
   constructor(container) {
@@ -34,7 +35,10 @@ export class Renderer {
     this.post = null;
     // scale: the share of the screen's resolution drawn (the Performance
     // settings; pixel art gets chunkier pixels instead)
-    this.gfx = { pixelArt: true, pixelSize: 2, ao: true, scale: 1 };
+    this.gfx = { pixelArt: true, pixelSize: 2, ao: true, scale: 1, tilt: null, tiltBand: 'normal' };
+    // the tilt-shift's sharp band: its height up the screen (0 bottom, 1 top),
+    // gliding toward goal (see setFocus)
+    this.focus = { y: 0.5, goal: 0.5 };
 
     this.hemi = new THREE.HemisphereLight('#cfe6f7', '#7f6f55', 0.9);
     this.sun = new THREE.DirectionalLight('#ffffff', 2.8);
@@ -67,7 +71,10 @@ export class Renderer {
   }
 
   // Graphics pipeline: pixel-art (low-res render + outlines, crisp upscale)
-  // or smooth (antialiased, optional GTAO ambient occlusion).
+  // or smooth (antialiased, optional GTAO ambient occlusion), either with an
+  // optional tilt-shift blur last (g.tilt: a TILT_SHIFT look, or none; it
+  // goes after the pixel art's outlines and upscale, so the sharp band keeps
+  // its crisp pixels and the blur softens whole pixels, outlines and all).
   setGraphics(opts) {
     Object.assign(this.gfx, opts);
     const g = this.gfx, r = this.renderer;
@@ -76,13 +83,27 @@ export class Renderer {
     r.setPixelRatio(g.pixelArt ? dpr : Math.min(dpr, g.ao ? 1.5 : 2) * scale);
     r.toneMapping = g.pixelArt ? THREE.NeutralToneMapping : THREE.AgXToneMapping;
     this.baseExposure = g.pixelArt ? 1.0 : 1.2;
+    const pixelSize = Math.max(1, Math.round((g.pixelSize * dpr) / scale));
+    const tilt = TILT_SHIFT[g.tilt] ? new TiltShiftPass({
+      look: TILT_SHIFT[g.tilt], band: TILT_BAND[g.tiltBand] || TILT_BAND.normal,
+      div: g.pixelArt ? Math.max(2, pixelSize) : 2, grid: g.pixelArt ? pixelSize : 0,
+    }) : null;
     try {
       if (g.pixelArt) {
         const composer = new EffectComposer(r);
-        const pix = new PixelPass(Math.max(1, Math.round((g.pixelSize * dpr) / scale)), this.scene, this.camera);
+        const pix = new PixelPass(pixelSize, this.scene, this.camera);
         composer.addPass(pix);
+        if (tilt) composer.addPass(tilt);
         composer.addPass(new OutputPass());
-        this.post = { composer, passes: [pix], pix };
+        this.post = { composer, passes: [pix, tilt].filter(Boolean), pix, tilt };
+      } else if (!g.ao && tilt) {
+        // smooth without ambient occlusion: a plain (antialiased) render, then the blur
+        const size = r.getDrawingBufferSize(new THREE.Vector2());
+        const composer = new EffectComposer(r, new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 }));
+        composer.addPass(new RenderPass(this.scene, this.camera));
+        composer.addPass(tilt);
+        composer.addPass(new OutputPass());
+        this.post = { composer, passes: [tilt], tilt };
       } else if (g.ao) {
         const size = r.getDrawingBufferSize(new THREE.Vector2());
         const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
@@ -100,15 +121,29 @@ export class Renderer {
         gtao.updateGtaoMaterial({ radius: 0.32, distanceExponent: 1.6, thickness: 0.5, scale: 1.1, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false });
         gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
         composer.addPass(gtao);
+        if (tilt) composer.addPass(tilt);
         composer.addPass(new OutputPass());
-        this.post = { composer, passes: [gtao] };
+        this.post = { composer, passes: [gtao, tilt].filter(Boolean), tilt };
       }
     } catch (e) {
       console.warn('Post-processing unavailable', e);
+      tilt?.dispose();
       this.post = null;
     }
     document.body.classList.toggle('pixel', !!g.pixelArt);
     this.resize();
+  }
+
+  // Keep the tilt-shift's sharp band on this point of the world (a selected
+  // building), or on the middle of the screen (null). Not too near the top or
+  // bottom, where there's no room for the blur.
+  setFocus(v) {
+    let y = 0.5;
+    if (v && this.post?.tilt) {
+      const p = _f.copy(v).project(this.camera);
+      if (Math.abs(p.x) < 1 && Math.abs(p.y) < 1) y = Math.min(0.8, Math.max(0.2, p.y * 0.5 + 0.5));
+    }
+    this.focus.goal = y;
   }
 
   // size of one rendered pixel in device pixels
@@ -297,6 +332,8 @@ export class Renderer {
     const noFog = this.gfx.pixelArt ? 1000 : 0;
     this.scene.fog.near = DIST + 3 + top * 400 + noFog;
     this.scene.fog.far = DIST + 3 + top * 400 + 150 / Math.max(0.5, rig.zoom) + noFog;
+    const f = this.focus;
+    f.y = Math.abs(f.goal - f.y) < 1e-3 ? f.goal : f.y + (f.goal - f.y) * (1 - Math.pow(0.02, dt));
     this._fitShadow();
   }
 
@@ -333,6 +370,7 @@ export class Renderer {
   get lightDir() { return _lz.copy(this.sunDir); }
 
   render() {
+    if (this.post?.tilt) this.post.tilt.focus = this.focus.y;
     if (this.post) this.post.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }

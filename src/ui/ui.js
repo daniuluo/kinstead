@@ -1320,7 +1320,10 @@ export class UI {
     const display = group('Display', `
       ${check('stPix', s.pixelArt, 'Pixel-art look', 'Drawn small with outlines, then scaled up crisply')}
       ${seg('stPixSize', 'Pixel size', [[1, '1×', 'Finest'], [2, '2×', 'Classic'], [3, '3×', 'Chunky'], [4, '4×', 'Retro']], s.pixelSize || 2)}
-      ${check('stAO', s.ao, 'Soft contact shadows', 'Ambient occlusion: shade where walls meet the ground')}`);
+      ${check('stAO', s.ao, 'Soft contact shadows', 'Ambient occlusion: shade where walls meet the ground')}
+      ${seg('stTilt', 'Tilt-shift', [['off', 'Off'], ['subtle', 'Subtle'], ['strong', 'Strong']], s.tiltShift || 'off')}
+      ${seg('stTiltBand', 'Sharp band', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], s.tiltBand || 'normal')}
+      <p class="set-hint">Tilt-shift makes the town look like a tabletop model: a band across the middle, or what's selected, stays sharp and the view blurs above and below it.</p>`);
     const sound = group('Sound', `
       ${check('stSound', s.sound, 'Sound effects')}
       ${check('stMusic', s.music !== false, 'Music')}
@@ -1348,13 +1351,18 @@ export class UI {
       bindSegs(c);
       bindPerf(c);
       const val = (id) => c.querySelector(`#${id}`);
-      const syncPixel = () => { for (const b of val('stPixSize').querySelectorAll('button')) b.disabled = !val('stPix').checked; };
-      syncPixel();
+      const syncDisplay = () => {
+        for (const b of val('stPixSize').querySelectorAll('button')) b.disabled = !val('stPix').checked;
+        for (const b of val('stTiltBand').querySelectorAll('button')) b.disabled = segValue(c, 'stTilt') === 'off';
+      };
+      syncDisplay();
       const apply = (e) => {
         readPerf(c, s);
         s.pixelArt = val('stPix').checked;
         s.pixelSize = Number(segValue(c, 'stPixSize'));
         s.ao = val('stAO').checked;
+        s.tiltShift = segValue(c, 'stTilt');
+        s.tiltBand = segValue(c, 'stTiltBand');
         s.sound = val('stSound').checked;
         s.music = val('stMusic').checked;
         s.musicVol = Number(val('stMusicVol').value);
@@ -1364,7 +1372,7 @@ export class UI {
         s.popLabels = val('stLabels').checked;
         s.popBlocked = val('stBlocked').checked;
         s.autosave = val('stAuto').checked;
-        syncPixel();
+        syncDisplay();
         g.music.apply();
         this.syncMusicButton();
         this.syncPopButton();

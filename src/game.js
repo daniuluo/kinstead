@@ -7,7 +7,7 @@ import { Renderer } from './render/renderer.js';
 import { Sky } from './render/sky.js';
 import { WorldView } from './render/worldView.js';
 import { Particles } from './render/particles.js';
-import { World } from './world/world.js';
+import { World, fw, fd } from './world/world.js';
 import { growDemoTown } from './world/demo.js';
 import { loadStarter } from './world/starters.js';
 import { PathFinder } from './sim/path.js';
@@ -38,7 +38,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, ...PERF_DEFAULTS };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', ...PERF_DEFAULTS };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -465,10 +465,11 @@ export class Game {
   applySettings() {
     const s = this.settings;
     this.renderer.setShadows(s.shadows, SHADOW_SIZE[s.shadowQuality] || SHADOW_SIZE.high);
-    const gf = this.renderer.gfx, scale = s.resScale || 1;
-    if (!this.renderer.post && (s.pixelArt || s.ao) || gf.pixelArt !== s.pixelArt || gf.pixelSize !== s.pixelSize || gf.ao !== s.ao || gf.scale !== scale || !this._gfxInit) {
+    const gf = this.renderer.gfx, scale = s.resScale || 1, tilt = s.tiltShift === 'off' ? null : s.tiltShift;
+    if (!this.renderer.post && (s.pixelArt || s.ao || tilt) || gf.pixelArt !== s.pixelArt || gf.pixelSize !== s.pixelSize || gf.ao !== s.ao || gf.scale !== scale
+      || gf.tilt !== tilt || gf.tiltBand !== s.tiltBand || !this._gfxInit) {
       this._gfxInit = true;
-      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale });
+      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale, tilt, tiltBand: s.tiltBand });
     }
     this.view?.setEffects(s.effects);
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch {}
@@ -533,6 +534,23 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- frame
+  // What the tilt-shift keeps sharp: the selected building or villager (null:
+  // the middle of the screen).
+  _focusPoint() {
+    const sel = this.ui?.selection, w = this.world;
+    if (!sel || !w || !this.renderer.post?.tilt) return null;
+    const v = this._focusV ||= new THREE.Vector3();
+    if (sel.kind === 'building') {
+      const b = w.buildings.get(sel.id);
+      return b ? v.set(b.x + fw(b) / 2, b.baseY + 0.5, b.z + fd(b) / 2) : null;
+    }
+    if (sel.kind === 'resident') {
+      const r = w.residents.get(sel.id), p = r && this.agents.positionOf(r);
+      return p ? v.set(p.x, p.y ?? 0, p.z) : null;
+    }
+    return null;
+  }
+
   frame(render = true) {
     const now = performance.now();
     let dt = (now - this.clock) / 1000;
@@ -584,6 +602,7 @@ export class Game {
       if (!this.demo) this.ui.update(dt);
     }
     if (!render) return;
+    this.renderer.setFocus(this._focusPoint());
     this.renderer.updateCamera(dt);
     this.renderer.render();
   }
