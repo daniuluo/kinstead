@@ -77,7 +77,11 @@ export class Game {
 
     this._bindFileDrop();
     this.clock = performance.now();
-    const loop = () => { this.frame(); requestAnimationFrame(loop); };
+    // one bad frame must never stop the game: log it and carry on
+    const loop = () => {
+      try { this.frame(); } catch (e) { if (!this._frameErr) { this._frameErr = true; console.error('Frame error (the game keeps running):', e); } }
+      requestAnimationFrame(loop);
+    };
     requestAnimationFrame(loop);
   }
 

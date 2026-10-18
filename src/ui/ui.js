@@ -1098,6 +1098,49 @@ export class UI {
     });
   }
 
+  // ------------------------------------------------------------- issues
+  toggleIssues() {
+    const s = this.game.settings;
+    s.issuesOpen = !(s.issuesOpen ?? true);
+    this.game.applySettings();
+    this.renderIssues();
+  }
+
+  renderIssues() {
+    const g = this.game, el = $('issues');
+    if (!el) return;
+    if (!g.world || g.demo) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const list = computeIssues(g);
+    const open = g.settings.issuesOpen ?? true;
+    el.classList.toggle('collapsed', !open);
+    $('issueCount').textContent = list.length;
+    $('issueCount').className = list.some(i => i.sev === 'bad') ? 'bad' : list.length ? 'warn' : 'ok';
+    $('issueCaret').textContent = open ? 'expand_more' : 'expand_less';
+    const key = JSON.stringify(list.map(i => i.text)) + open;
+    if (key === this._issuesKey) return;
+    this._issuesKey = key;
+    this._issues = list;
+    $('issueList').innerHTML = !open ? '' : list.length
+      ? list.map((i, k) => `<div class="issue ${i.sev}" data-k="${k}" title="${i.act ? 'Click to show' : ''}"><span class="ms">${i.icon}</span><span>${esc(i.text)}</span>${i.act ? '<span class="ms go">chevron_right</span>' : ''}</div>`).join('')
+      : '<div class="issue ok"><span class="ms">check_circle</span><span>No problems right now</span></div>';
+    for (const row of $('issueList').querySelectorAll('[data-k]')) row.onclick = () => this._issueAct(this._issues[Number(row.dataset.k)]);
+  }
+
+  _issueAct(i) {
+    const g = this.game, a = i && i.act;
+    if (!a) return;
+    if (a.kind === 'focus' && a.ids.length) {
+      // each click moves on to the next building involved
+      const n = this._issueCycle[i.text] = ((this._issueCycle[i.text] ?? -1) + 1) % a.ids.length;
+      const b = this.world.buildings.get(a.ids[n]);
+      if (b) { this.inspect({ kind: 'building', id: b.id }); g.renderer.lookAt(b.x + (b.w ?? b.size) / 2, b.z + (b.d ?? b.size) / 2); }
+    } else if (a.kind === 'tool') this.openFlyout(a.cat);
+    else if (a.kind === 'people') { this._ppl = { q: '', f: a.filter, k: 'name', dir: 1 }; this.showPeople(); }
+    else if (a.kind === 'research') this.showResearch();
+    else if (a.kind === 'budget') this.showBudget();
+  }
+
   // One switch for every pop-up (coins, notices, hover tips, name tags).
   togglePopups() {
     const s = this.game.settings;
