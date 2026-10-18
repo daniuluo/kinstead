@@ -390,6 +390,19 @@ const placePair = (tw, ta, tb) => {
   ok(!wrong.length, `every pairing in every join recipe makes its building (${pairs.length} pairs, ${MERGES.length} recipes)${wrong.length ? ': ' + wrong.join('; ') : ''}`);
 }
 
+// 3d0c. a builder's yard joined with a woodcutter is still where the builders
+// work from, and they work faster; a chapel keeps its look in its vicarage
+{
+  const tw = World.createNew({ N: 48, seed: 34, name: 'Yardley' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const [Y, Wd] = placePair(tw, 'builder', 'lumber');
+  const r = tw.mergeBuildings(Y.id, Wd.id), def = r.ok && BUILDINGS[r.building.type];
+  ok(def && def.builders && def.levels[0].rate > BUILDINGS.builder.levels[0].rate && capOf(r.building, 'jobs') >= 6, `a builder's yard and a woodcutter make a ${def && def.levels[0].name} whose builders work at ${def && def.levels[0].rate}×`);
+  const [Ch, Co] = placePair(tw, 'house', 'chapel');
+  const v = tw.mergeBuildings(Ch.id, Co.id);
+  ok(v.ok && v.building.type === 'vicarage' && v.building.variant === Co.variant, 'a chapel taking in the cottage next door keeps the chapel\'s look');
+}
+
 // 3d0b. a joined building is never a level the town can't build yet, a grand
 // home leads when it takes in a cottage, and the join says who must move out
 {
