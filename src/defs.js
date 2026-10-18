@@ -907,6 +907,10 @@ export const BURY_COST = 12;
 export const FARM_JOIN = { from: ['farm'], with: ['house'], to: 'homestead' };
 export const hasFields = (type) => !!(BUILDINGS[type] && BUILDINGS[type].fields);
 
+// Shops that carry their shopfront round a street corner when they stand
+// on one (b.corner, which the world works out from the roads).
+export const CORNER_SHOPS = new Set(['market', 'bakery', 'tavern', 'grocer', 'butcher', 'cobbler', 'draper', 'ironmonger', 'chemist', 'stationer', 'coffeehouse', 'bank', 'postoffice', 'shophouse']);
+
 // What a farm grows or raises (kept in b.flavor; none: mixed farming), and
 // what that means: the hands its plot and fields take (× its jobs), what each
 // earns (× its level's income), and how its fields look.
