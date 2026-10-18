@@ -505,3 +505,34 @@ table.hap.big td { padding: 4px 8px; }
 .netcur i { width: 9px; height: 9px; border-radius: 50%; }
 .netcur small { font-weight: 400; color: var(--ink-2); }
 @media (max-width: 900px) { .netbox b { display: none; } }
+
+/* ------------------------------------------------------ building guide */
+.tooltip .muted { opacity: 0.7; font-size: 12px; font-weight: 400; }
+.tooltip:has(.bsum) { max-width: 300px; padding: 5px 8px; }
+.bsum > b { font-size: 14px; }
+.bsum-chain { font-size: 11px; color: var(--navy); margin: 1px 0 3px; }
+.bsum-desc { font-size: 12px; margin-bottom: 4px; }
+.bsum-stats { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 1px; font-size: 12px; }
+.bsum-stats span { color: var(--ink-2); }
+.bsum-foot { margin-top: 4px; font-size: 11px; color: var(--ink-2); }
+.bsum-hint { margin-top: 4px; font-size: 11px; color: var(--navy); }
+.guide { width: min(460px, calc(100vw - 16px)); }
+.guide-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.guide-head img, .guide-level img { width: 72px; height: 54px; background: #9fb383; box-shadow: var(--field); object-fit: cover; image-rendering: pixelated; flex: none; }
+.guide-head h3 { margin: 0 0 2px; font-size: 17px; }
+.guide-desc { font-size: 13px; }
+.guide-place { margin-top: 4px; font-size: 12px; color: var(--ink-2); }
+.guide-lock { margin-top: 4px; font-size: 12px; color: var(--bad); font-weight: 700; }
+.guide-level { display: flex; gap: 10px; padding: 6px; margin: 4px 0; background: #fff; box-shadow: var(--field); }
+.guide-level img { width: 56px; height: 42px; }
+.guide-level > div { flex: 1; min-width: 0; }
+.guide-lname { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 2px; }
+.guide-lname span { font-size: 12px; color: var(--ink-2); }
+.guide-stats { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; font-size: 12px; }
+.guide-stats span { color: var(--ink-2); }
+.guide-needs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.guide-needs span { font-size: 11px; padding: 0 5px; background: var(--face); box-shadow: var(--raised); }
+.guide-needs span.ok { color: var(--good); }
+.guide-needs span.no { color: var(--bad); }
+.guide-more h5 { margin: 10px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.guide-more div { font-size: 12px; margin: 2px 0; }

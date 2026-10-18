@@ -71,7 +71,7 @@ const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f<>]/g, '').trim(
 function cursorOf(game) {
   const h = game.input.hover, sel = game.ui.selection, t = game.input.tool;
   let act = '';
-  if (t.kind === 'build') act = BUILDINGS[t.type]?.name || '';
+  if (t.kind === 'build') act = BUILDINGS[t.type]?.levels[0].name || '';
   else if (t.kind === 'road') act = ROAD_LEVELS[t.level]?.name || '';
   else if (t.kind === 'rail') act = 'Laying track';
   else if (t.kind === 'bulldoze') act = 'Demolishing';

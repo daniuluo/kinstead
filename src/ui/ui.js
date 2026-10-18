@@ -29,6 +29,7 @@ const HAPPY = {
 
 import { LocalSaves, serialize, downloadJSON, readJSONFile, saveFileName, saveFileNameFor } from '../save/saves.js';
 import { showMultiplayer, renderNetBox } from './multiplayer.js';
+import { buildingSummary, showBuildingGuide } from './guide.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
@@ -121,9 +122,11 @@ export class UI {
     $('happy').parentElement.onclick = () => this.showHappiness();
     $('btnResearch').onclick = () => this.showResearch();
     $('btnPops').onclick = () => this.togglePopups();
+    $('btnMusic').onclick = () => this.toggleMusic();
     $('issuesHead').onclick = () => this.toggleIssues();
     this._issueCycle = {};
     this.syncPopButton();
+    this.syncMusicButton();
     $('btnSave').onclick = () => this.showSaves();
     $('btnNet').onclick = () => this.showMultiplayer();
     $('netBox').onclick = () => this.showMultiplayer();
@@ -192,7 +195,7 @@ export class UI {
         if (def.cat !== cat || def.hidden) continue;
         const u = unlockOf(type, 0);
         const lock = pop < u ? u : !this.world.hasTech(def.tech) ? `🔬 ${TECHS[def.tech].name}` : 0;
-        cards.push(card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type }), def.desc));
+        cards.push({ ...card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type }), def.desc), type });
       }
       if (cat === 'parks') cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
       if (cat === 'transit') {
@@ -207,11 +210,18 @@ export class UI {
       const el = document.createElement('div');
       el.className = 'card' + (c.locked ? ' locked' : '');
       el.dataset.key = c.key;
-      el.title = c.title;
       const img = c.img.startsWith('data:') ? `<img src="${c.img}" alt="">` : `<div class="ph">${ico(c.img)}</div>`;
       const research = typeof c.locked === 'string';
       el.innerHTML = ico(`${img}<div class="n">${esc(c.name)}</div>` + (c.locked ? `<div class="lock">${research ? esc(c.locked) : `🔒 ${c.locked} villagers`}</div>` : (c.cost ? `<div class="c">$${c.cost}</div>` : '')));
+      // hovering shows what it does; picking a building opens its guide
+      let tip = null;
+      el.onmouseenter = el.onmousemove = () => {
+        tip ||= ico(c.type ? buildingSummary(this.world, c.type) : `<b>${esc(c.name)}</b>${c.title ? `<br>${esc(c.title)}` : ''}`);
+        this._cardTip(el, tip);
+      };
+      el.onmouseleave = () => this.tooltip(null);
       el.onclick = () => {
+        if (c.type) showBuildingGuide(this, c.type);
         if (research) { this.toast(`${c.name} needs research: ${c.locked.replace('🔬 ', '')}. Press K to open Research.`, 'bad', '🔬'); return; }
         if (c.locked) { this.toast(`${c.name} unlocks when your town reaches ${c.locked} villagers.`, 'bad', '🔒'); return; }
         c.onclick();
@@ -223,7 +233,18 @@ export class UI {
     this.syncToolbar();
   }
 
+  // A build card's tip sits just above the card.
+  _cardTip(el, html) {
+    this.tooltip(html, 0, 0);
+    const t = $('tooltip');
+    if (t.classList.contains('hidden')) return;
+    const r = el.getBoundingClientRect(), tr = t.getBoundingClientRect();
+    t.style.left = `${Math.max(8, Math.min(innerWidth - tr.width - 8, r.left + r.width / 2 - tr.width / 2))}px`;
+    t.style.top = `${Math.max(8, r.top - tr.height - 8)}px`;
+  }
+
   closeFlyout() {
+    this.tooltip(null);
     this.category = null;
     $('flyout').classList.add('hidden');
     this.syncToolbar();
@@ -236,7 +257,7 @@ export class UI {
     switch (t.kind) {
       case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
-      case 'build': msg = `Click to place a ${BUILDINGS[t.type].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
+      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
       case 'move': {
         const b = this.world.buildings.get(t.id);
         msg = b ? `Click a new plot for the ${BUILDINGS[b.type].levels[b.level].name} · it is taken down, carted over and rebuilt · Tab flips the entrance · right-click to cancel` : '';
@@ -260,7 +281,9 @@ export class UI {
     const h = Math.floor(w.hours), m = Math.floor((w.hours - h) * 60 / 10) * 10;
     $('clockTime').textContent = `${pad(h)}:${pad(m)}`;
     const night = this.game.env.night;
-    const ci = night > 0.6 ? 'dark_mode' : (w.hours < 8 || w.hours > 18 ? 'wb_twilight' : 'light_mode');
+    const env = this.game.env;
+    const ci = env.snowing ? 'weather_snowy' : env.rain > 0.3 ? 'rainy' : env.cloud > 0.5 ? 'cloud'
+      : night > 0.6 ? 'dark_mode' : (w.hours < 8 || w.hours > 18 ? 'wb_twilight' : 'light_mode');
     if (this._ci !== ci) { this._ci = ci; $('clockIcon').innerHTML = `<span class="ms">${ci}</span>`; }
     this._t += dt;
     if (this._t > 0.25) {
@@ -375,7 +398,7 @@ export class UI {
       c += `<div class="path-tab"><span class="ms">${icon}</span><span>${tabName}</span><span class="tag ${up.ok ? 'ok' : ''}">${status}</span></div><div class="path-body">`;
       c += '<div class="path-top">';
       if (styled) c += `<img class="preview" src="${thumb(o.type, o.level, b.variant, b.flavor, look)}" alt="">`;
-      c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${BUILDINGS[b.type].name.toLowerCase()}.`)}</div></div></div>`;
+      c += `<div><div class="path-name">${esc(n.name)}</div><div class="path-desc">${esc(o.type !== b.type ? td.desc : branching ? td.desc : `The next level of the ${cur.name.toLowerCase()}.`)}</div></div></div>`;
       c += `<div class="chain">${chain}</div>`;
       c += this._tilesHTML(cur, n);
       if (styled) {
@@ -487,12 +510,12 @@ export class UI {
     }
     const U = sim.utility;
     if (L.kw) rows.push(['Power output', `${L.kw} kW`], ['Town grid', `${U.power.demand} of ${U.power.gen} kW in use`]);
-    if (open && def.park && def.outdoor && this.game.agents) { const v = this.game.agents.visitorsAt(b); rows.push(['Visitors', `${v.now} of ${v.cap} at most`]); }
+    if (open && this.game.agents) { const v = this.game.agents.visitorsAt(b); if (Number.isFinite(v.cap)) rows.push(['Visitors', `${v.now} of ${v.cap} at once`]); }
     if (L.supply) rows.push(['Water supply', `${L.supply} people`], ['Town water', `${U.water.demand} of ${U.water.supply} people`]);
     if (open && !def.park && !L.kw) rows.push(['Electricity', b.powered ? 'Connected' : U.power.gen ? (b.connected ? 'Cut off — not enough power' : 'Not on the grid') : 'No generator in town']);
     if (def.builders) rows.push(['Builders', `${b.workers.length} · work rate ${L.rate}×`]);
     if (L.tax && L.housing) rows.push(['Tax per worker', `${L.tax}×`]);
-    if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].name : b.flavor]);
+    if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
     for (const l of b.leases || []) {
       const o = w.buildings.get(l.with);
       if (!o) continue;
@@ -1147,6 +1170,7 @@ export class UI {
       <div class="field"><label class="inline"><input type="checkbox" id="stAO" ${s.ao ? 'checked' : ''}> Ambient occlusion (soft contact shadows)</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stAuto" ${s.autosave ? 'checked' : ''}> Autosave every in-game day</label></div>
       <div class="field"><label class="inline"><input type="checkbox" id="stSound" ${s.sound ? 'checked' : ''}> Sound effects</label></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="stMusic" ${s.music !== false ? 'checked' : ''}> Music</label><label class="inline">Music volume <input type="range" id="stMusicVol" min="0" max="1" step="0.05" value="${s.musicVol ?? 0.5}"></label></div>
       <div class="field"><label>Pop-ups</label><div class="checkrow">
         <label class="inline"><input type="checkbox" id="stCoins" ${s.popCoins ? 'checked' : ''}> Coin pop-ups</label>
         <label class="inline"><input type="checkbox" id="stToasts" ${s.popToasts ? 'checked' : ''}> Notices</label>
@@ -1173,6 +1197,10 @@ export class UI {
         }
         s.autosave = c.querySelector('#stAuto').checked;
         s.sound = c.querySelector('#stSound').checked;
+        s.music = c.querySelector('#stMusic').checked;
+        s.musicVol = Number(c.querySelector('#stMusicVol').value);
+        g.music.apply();
+        this.syncMusicButton();
         s.popCoins = c.querySelector('#stCoins').checked;
         s.popToasts = c.querySelector('#stToasts').checked;
         s.popTips = c.querySelector('#stTips').checked;
@@ -1208,7 +1236,7 @@ export class UI {
         if (techForLevel(type, i) !== id) return;
         if (i === 0) {
           const m = MERGES.find(m => m.to === type);
-          add(m ? `${def.name} — join ${BUILDINGS[m.a[0]].name.toLowerCase()} + ${BUILDINGS[m.b[0]].name.toLowerCase()}` : def.hidden && def.branch ? `${L.name} (new path)` : def.name, thumb(type, 0));
+          add(m ? `${L.name} — join ${BUILDINGS[m.a[0]].levels[0].name.toLowerCase()} + ${BUILDINGS[m.b[0]].levels[0].name.toLowerCase()}` : def.hidden && def.branch ? `${L.name} (new path)` : `${L.name} (${def.name})`, thumb(type, 0));
         } else add(`${L.name} (upgrade)`, thumb(type, i));
       });
     }
@@ -1389,6 +1417,23 @@ export class UI {
     this.game.applySettings();
     this.syncPopButton();
     if (!any) this.toast('Pop-ups on', 'info', '💡');
+  }
+
+  toggleMusic() {
+    const g = this.game;
+    g.settings.music = g.settings.music === false;
+    g.applySettings();
+    g.music.apply();
+    this.syncMusicButton();
+  }
+
+  syncMusicButton() {
+    const b = $('btnMusic');
+    if (!b) return;
+    const on = this.game.settings.music !== false;
+    b.innerHTML = `<span class="ms">${on ? 'music_note' : 'music_off'}</span>`;
+    b.classList.toggle('on', !on);
+    b.title = `${on ? 'Turn off' : 'Turn on'} the music`;
   }
 
   syncPopButton() {

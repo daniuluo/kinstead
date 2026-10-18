@@ -19,6 +19,7 @@ import { Construction } from './sim/construction.js';
 import { UI } from './ui/ui.js';
 import { Input } from './ui/input.js';
 import { Sfx } from './ui/sfx.js';
+import { Music } from './ui/music.js';
 import { serialize, deserialize, LocalSaves, downloadJSON, readJSONFile, saveFileName } from './save/saves.js';
 import { Drive } from './save/gdrive.js';
 import { randomSeed, RNG } from './util/rng.js';
@@ -36,7 +37,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5 };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -52,6 +53,11 @@ export class Game {
     this.net = null;         // a multiplayer session (src/net/session.js), when hosting or joined
     this.replica = false;    // true while this town is a guest's copy of the host's
     this.audio = new Sfx();
+    this.music = new Music(this);
+    // browsers only allow sound after the player has clicked or pressed a key
+    const wake = () => { this.music.apply(); window.removeEventListener('pointerdown', wake); window.removeEventListener('keydown', wake); };
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
     this.lantern = new Particles(this.renderer.scene, 400, { additive: true });
     this.ui = new UI(this);
     this.input = new Input(this);
@@ -327,7 +333,7 @@ export class Game {
     if (this.demo) return;
     const unlocked = [];
     for (const [type, def] of Object.entries(BUILDINGS)) {
-      if (unlockOf(type, 0) === t.pop) unlocked.push(def.name);
+      if (unlockOf(type, 0) === t.pop) unlocked.push(def.levels[0].name);
       def.levels.forEach((L, i) => { if (i > 0 && L.unlock === t.pop) unlocked.push(L.name); });
     }
     this.ui.toast(`${this.world.townName} is now a ${t.name}!`, 'big', '🎉');
@@ -491,10 +497,14 @@ export class Game {
     const w = this.world;
     if (w) {
       const gameDt = this.sim.update(dt);
-      this.sky.update(w.day, w.hours);
+      this.sky.update(w.day, w.hours, w.seed);
       const env = this.env;
       env.hours = w.hours; env.night = this.sky.night; env.season = this.sky.season;
-      env.snowing = env.season === 3 && this.sky.snow > 0.15 && ((w.day * 7 + Math.floor(w.hours / 5)) % 3 === 0);
+      // the weather brings snow in winter and rain the rest of the year
+      env.snowing = env.season === 3 && this.sky.snow > 0.15 && this.sky.wet > 0.45;
+      env.rain = this.sky.rain;
+      env.cloud = this.sky.cloud;
+      this.audio.setRain(this.settings.sound ? env.rain : 0);
       this.view.setSeason(env.season);
       this.agents.update(dt, gameDt);
       this.construction.update(dt, gameDt);

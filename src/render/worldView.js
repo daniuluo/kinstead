@@ -9,6 +9,7 @@ import { Overlay } from './overlay.js';
 import { Particles } from './particles.js';
 import { buildModel, workArea } from './buildings.js';
 import { siteGeo, bodyBox } from './construction.js';
+import { Rain } from './rain.js';
 import { fw, fd } from '../world/world.js';
 import { BUILDINGS } from '../defs.js';
 
@@ -27,6 +28,7 @@ export class WorldView {
     this.glow = new Particles(scene, 1600, { additive: true });
     this.fx = new Particles(scene, 1500, { additive: true });
     this.weather = new Particles(scene, 900, { soft: 0.2 });
+    this.rain = new Rain(scene, (x, z) => Math.max(world.terrain.heightAt(x, z), 0));
     this.group = new THREE.Group();
     scene.add(this.group);
     this.groundFn = (x, z) => world.terrain.heightAt(x, z);
@@ -414,6 +416,9 @@ export class WorldView {
       }
     }
 
+    // rain
+    this.rain.update(dt, env.rain || 0, this.R.rig.target);
+
     const scale = this.R.pixelsPerUnit();
     const windK = [0.12, 0.05];
     this.smoke.update(dt, scale, 1, windK);
@@ -433,6 +438,7 @@ export class WorldView {
     this.scene.remove(this.group, this.pools);
     this.pools.geometry.dispose();
     for (const p of [this.smoke, this.glow, this.fx, this.weather]) p.dispose(this.scene);
+    this.rain.dispose();
   }
 }
 
