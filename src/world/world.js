@@ -294,11 +294,14 @@ export class World {
     const tiles = this._frontTiles(b);
     if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
     // two buildings on a street corner facing the same road tile would meet
-    // in its corner, so neither of them comes forward there
-    const [dx, dz] = DIRS[b.rot];
+    // in its corner, so neither of them comes forward there. Nor does one
+    // whose garden strip (b.ext) widens its front past a building on the corner.
+    const [dx, dz] = DIRS[b.rot], e = b.ext || {}, ax = dz ? 'x' : 'z';
     for (const [x, z] of tiles) for (const s of [-1, 1]) {
       const o = this.buildingOn(x + (dz ? s : 0), z + (dx ? s : 0));
-      if (o && o !== b && o.access && this._frontTiles(o).some(([fx, fz]) => fx === x && fz === z)) return 0;
+      if (!o || o === b) continue;
+      if (e[ax + (s < 0 ? '0' : '1')] > 0) return 0;
+      if (o.access && this._frontTiles(o).some(([fx, fz]) => fx === x && fz === z)) return 0;
     }
     return FRONT;
   }
@@ -370,6 +373,7 @@ export class World {
       }
       return;
     }
+    const homes = capOf(b, 'housing');
     if (con.kind === 'upgrade') {
       if (con.toType && BUILDINGS[con.toType]) b.type = con.toType;
       if (con.look !== undefined) b.look = con.look;
@@ -381,7 +385,34 @@ export class World {
     if (b.type !== 'house') this._dissolveLeases(b, true);
     this.emit('building:change', b);
     this.emit('building:done', { building: b, kind: con.kind, moved: !!con.moved });
+    this._shrunk(b, homes);
     if (BUILDINGS[b.type].spacious) this.tryEncroach(b);
+  }
+
+  // A home rebuilt to hold fewer people (a Grand Manor on a double plot
+  // becoming a Country Mansion): the households that no longer fit move out,
+  // to another home or out of town (see Sim._onShrunk).
+  _shrunk(b, homes) {
+    if (capOf(b, 'housing') < homes) this.emit('building:shrink', b);
+  }
+
+  // The households that would have to leave a home for only `cap` people to
+  // live there: the ones that moved in last, whole.
+  movingOut(b, cap) {
+    const fams = new Map();
+    for (const r of this.residents.values()) {
+      if (r.home !== b.id) continue;
+      if (!fams.has(r.fam ?? r.id)) fams.set(r.fam ?? r.id, []);
+      fams.get(r.fam ?? r.id).push(r);
+    }
+    let n = [...fams.values()].reduce((s, f) => s + f.length, 0);
+    const out = [];
+    for (const fam of [...fams.values()].reverse()) {
+      if (n <= cap) break;
+      out.push(...fam);
+      n -= fam.length;
+    }
+    return out;
   }
 
   // ---------------------------------------------------------- land deals
@@ -400,11 +431,14 @@ export class World {
     for (const [side, dx, dz, opp] of sides) {
       if (b.leases.length >= 2) break;
       if (ext[side]) continue;
+      // strips on two perpendicular sides would meet in a corner of a third plot
+      const perp = side[0] === 'x' ? 'z' : 'x';
+      if (ext[perp + '0'] > 0 || ext[perp + '1'] > 0) continue;
       const o = this.buildingOn(b.x + dx, b.z + dz);
       if (!o || o.type !== 'house' || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
       const oe = this._ext(o);
-      // a seller gives up at most one strip on each axis, and keeps its street side
-      if (oe[side[0] + '0'] < 0 || oe[side[0] + '1'] < 0) continue;
+      // a seller gives up one strip at most, and keeps its street side
+      if (oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0) continue;
       if (o.access && o.access.x === b.x && o.access.z === b.z) continue;
       const price = 60 + 40 * b.level + (b.type === 'villa' ? 30 : 0);
       ext[side] = LAND;
@@ -415,7 +449,7 @@ export class World {
       this.emit('building:refit', o);
       this.emit('land:sold', { buyer: b, seller: o, price });
     }
-    if (sold.length) this.emit('building:refit', b);
+    if (sold.length) { this._updateFronts(b); this.emit('building:refit', b); }
     return sold;
   }
 
@@ -487,7 +521,8 @@ export class World {
       // squeeze: buy a strip of a cottage's garden (it keeps its house)
       const side = names[k], opp = names[(k + 2) % 4];
       const be = b.ext || {}, oe = o.ext || {};
-      if (o.type === 'house' && !be[side] && !(oe[side[0] + '0'] < 0 || oe[side[0] + '1'] < 0)) {
+      const perp = side[0] === 'x' ? 'z' : 'x';
+      if (o.type === 'house' && !be[side] && !(be[perp + '0'] > 0 || be[perp + '1'] > 0) && !(oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0)) {
         out.push({ dir: k, x, z, kind: 'strip', where, other: o, side, opp, cost: 60 + 40 * b.level, label: `Buy a strip of the ${oname}'s garden ${where}`, warn: `The ${oname} next door gets a smaller garden (its owners are paid)` });
       }
       const comp = Math.round(this.buildValue(o) * 0.5);
@@ -509,6 +544,7 @@ export class World {
       this._ext(opt.other)[opt.opp] = -LAND;
       (b.leases ||= []).push({ with: opt.other.id, side: opt.side, amt: LAND, price: opt.cost, buyer: true });
       (opt.other.leases ||= []).push({ with: b.id, side: opt.opp, amt: LAND, price: opt.cost, buyer: false });
+      this._updateFronts(b);
       this.emit('building:refit', opt.other);
       this.emit('building:refit', b);
       this.emit('land:sold', { buyer: b, seller: opt.other, price: opt.cost });
@@ -625,6 +661,7 @@ export class World {
     if (maxH - minH > 1.1) return { ok: false, reason: 'The ground is too uneven to join them' };
     const access = this.findAccess(x, z, w, d);
     if (!access.length) return { ok: false, reason: 'Needs a road alongside' };
+    const homes = capOf(a, 'housing') + capOf(o, 'housing');
     const nb = this._record(opt.type, x, z, { access, rail: null, minH, maxH }, {
       w, d, level: opt.level, variant: opt.base.variant, flavor: opt.flavor, look: opt.base.look, happiness: opt.base.happiness, factors: opt.base.factors,
     });
@@ -638,6 +675,7 @@ export class World {
     this.buildings.set(nb.id, nb);
     this._updateFronts(nb);
     this.emit('building:add', nb);
+    this._shrunk(nb, homes);
     return { ok: true, building: nb, cost: opt.cost };
   }
 
@@ -711,7 +749,10 @@ export class World {
     if (BUILDINGS[target.type].size > 1 && fw(b) * fd(b) < 2) reqs.unshift({ label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
     reqs.push({ label: `$${next.cost}`, met: this.money >= next.cost });
     const ok = reqs.every(r => r.met);
-    return { ok, next, target, reqs, reason: ok ? null : 'Requirements not met' };
+    // residents of the households that won't fit in what it becomes
+    const homes = capOf({ ...b, type: target.type, level: target.level }, 'housing');
+    const moveOut = (b.residents || []).length > homes ? this.movingOut(b, homes).length : 0;
+    return { ok, next, target, reqs, moveOut, reason: ok ? null : 'Requirements not met' };
   }
 
   upgradeBuilding(id, toType = null, look = undefined) {
@@ -723,10 +764,12 @@ export class World {
     this.money -= chk.next.cost;
     const { type, level } = chk.target;
     if (this.sandbox.instantBuild) {
+      const homes = capOf(b, 'housing');
       b.type = type;
       b.level = level;
       if (look !== undefined) b.look = look;
       this.emit('building:change', b);
+      this._shrunk(b, homes);
       return { ok: true, building: b, instant: true };
     }
     b.con = { kind: 'upgrade', to: level, toType: type, work: workNeeded(chk.next.cost, 'upgrade'), done: 0 };

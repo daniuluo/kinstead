@@ -13,8 +13,9 @@ import { Construction } from '../src/sim/construction.js';
 import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel, STYLES } from '../src/render/buildings.js';
-import { fw, fd } from '../src/world/world.js';
+import { fw, fd, capOf } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
+import { makeAudit } from './audit.js';
 
 let failures = 0;
 const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg); } else console.log('ok  ', msg); };
@@ -369,6 +370,85 @@ const runUntil = (pred, days = 6) => {
     ok(big.length >= 2, `the bigger plot opens larger paths: ${big.join(', ')}`);
   }
   w.setSandbox({ infiniteMoney: false });
+  w.money = 1e6;
+}
+
+// 3d1a. land deals beside street corners: a plot never reaches into a third
+// plot, whichever order the deals and the buildings come in
+{
+  // a small flat town: a street along z = 6, plus the road tiles given
+  const back = Array.from({ length: 12 }, (_, x) => [x, 3]);
+  const town = (roads, builds) => {
+    const tw = new World(12, 1, { isWater: () => false, tileMin: () => 0, tileMax: () => 0 });
+    tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+    for (let x = 0; x < 12; x++) tw.roads[tw.idx(x, 6)] = 1;
+    for (const [x, z] of roads) tw.roads[tw.idx(x, z)] = 1;
+    tw.entry = { x: 0, z: 6 };
+    tw.updateRoadNetwork();
+    const at = {};
+    for (const [k, type, x, z] of builds) at[k] = tw.placeBuilding(type, x, z).building;
+    return { tw, at };
+  };
+  const overlapsIn = (tw) => {
+    const found = [];
+    makeAudit({ world: tw, construction: {}, agents: { walkers: [] }, animals: { list: [] } }, (d, m) => { if (m.startsWith('plots overlap')) found.push(m); })(0);
+    return found;
+  };
+  const axes = (b) => new Set((b.leases || []).filter(l => l.buyer).map(l => l.side[0]));
+  // a villa between a cottage beside it and one behind it buys from only one
+  // of them, so a chapel can still go on the corner plot between the two
+  {
+    const { tw, at } = town(back, [['v', 'villa', 5, 5], ['a', 'house', 4, 5], ['b', 'house', 5, 4]]);
+    tw.tryEncroach(at.v);
+    const c = tw.placeBuilding('chapel', 4, 4);
+    ok(axes(at.v).size === 1 && c.ok && !overlapsIn(tw).length, `a villa buys garden on one axis only (${[...axes(at.v)]}) and the corner plot stays free ${overlapsIn(tw).join('; ')}`);
+  }
+  // a cottage between two villas sells a strip to one of them only
+  {
+    const { tw, at } = town(back, [['h', 'house', 5, 5], ['a', 'villa', 4, 5], ['b', 'villa', 5, 4]]);
+    tw.tryEncroach(at.a); tw.tryEncroach(at.b);
+    ok((at.h.leases || []).length === 1 && !overlapsIn(tw).length, `a cottage sells one strip at most (${(at.h.leases || []).length}) ${overlapsIn(tw).join('; ')}`);
+  }
+  // a villa facing the street with a strip of the garden beside it: its front
+  // does not run into a building on the street corner next to it
+  {
+    // villa (5,4) faces the spur at (5,5); cottage (6,4) faces the spur at (7,4)
+    const spurs = [[5, 5], [7, 4], [7, 5]];
+    const a = town(spurs, [['v', 'villa', 5, 4], ['h', 'house', 6, 4]]);
+    a.tw.tryEncroach(a.at.v);
+    const kept = a.at.v.front > 0 && (a.at.v.leases || []).length === 1;
+    a.tw.placeBuilding('market', 6, 5);
+    const b = town(spurs, [['v', 'villa', 5, 4], ['h', 'house', 6, 4], ['m', 'market', 6, 5]]);
+    b.tw.tryEncroach(b.at.v);
+    ok(kept && (b.at.v.leases || []).length === 1 && !overlapsIn(a.tw).length && !overlapsIn(b.tw).length,
+      `a villa with a strip beside it keeps clear of the corner plot (front ${a.at.v.front} / ${b.at.v.front}) ${[...overlapsIn(a.tw), ...overlapsIn(b.tw)].join('; ')}`);
+  }
+}
+
+// 3d1b. a home rebuilt to hold fewer people (a Grand Manor on a double plot
+// becoming a Country Mansion): the households that no longer fit move out
+{
+  w.setSandbox({ infiniteMoney: true, unlockAll: true, freeUpgrades: true, instantBuild: true });
+  const b = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && fw(b) * fd(b) === 2);
+  if (b) {
+    b.type = 'villa'; b.level = 2;
+    const people = () => [...w.residents.values()].filter(r => r.home === b.id);
+    while (people().length < capOf(b, 'housing')) game.agents.arrive(game.sim.makeFamily(b, capOf(b, 'housing') - people().length), b);
+    game.sim.recompute();
+    const before = people(), was = capOf(b, 'housing');
+    const chk = w.upgradeCheck(b, 'mansion');
+    const r = w.upgradeBuilding(b.id, 'mansion');
+    const stay = people(), cap = capOf(b, 'housing');
+    const moved = before.filter(p => w.residents.has(p.id) && p.home !== b.id);
+    const left = before.filter(p => !w.residents.has(p.id));
+    const fam = (p) => p.fam ?? p.id;
+    const split = before.some(p => !stay.includes(p) && stay.some(s => fam(s) === fam(p)));
+    const fits = (h) => h && [...w.residents.values()].filter(r => r.home === h.id).length <= capOf(h, 'housing');
+    ok(r.ok && b.type === 'mansion' && stay.length <= cap && chk.moveOut === before.length - stay.length,
+      `a Grand Manor (${before.length}/${was}) rebuilt as a ${BUILDINGS.mansion.levels[0].name} keeps ${stay.length}/${cap}; ${moved.length} moved house, ${left.length} left (${chk.moveOut} foretold)`);
+    ok(!split && moved.every(p => fits(w.buildings.get(p.home))), 'whole households move out, into homes with room');
+  } else ok(false, 'no house on a double plot to rebuild');
+  w.setSandbox({ infiniteMoney: false, unlockAll: false, freeUpgrades: false, instantBuild: false });
   w.money = 1e6;
 }
 

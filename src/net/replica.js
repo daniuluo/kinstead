@@ -42,8 +42,10 @@ export class ReplicaSim extends Sim {
   // Shop visits and fares still pop up coins here, but the money is the host's.
   recordVisit(b, fare = null) { return fare ?? (BUILDINGS[b.type].levels[b.level].visit || 0); }
 
-  // The host rehouses (or loses) the people of a demolished building.
+  // The host rehouses (or loses) the people of a demolished building, or of
+  // a home rebuilt to hold fewer.
   _onRemoved() { this.dirty = true; }
+  _onShrunk() { this.dirty = true; }
 
   // The host announces new titles.
   _milestones() {}

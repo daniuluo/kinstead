@@ -384,6 +384,7 @@ export class UI {
         c += `<label class="chk"><input type="checkbox" data-act="preview" data-type="${o.type}" ${on ? 'checked' : ''}> Preview in town</label>`;
       }
       c += `<div class="req">${[...unmet, ...up.reqs.filter(r => r.met)].map(r => `<div class="${r.met ? 'ok' : 'no'}">${esc(r.label)}</div>`).join('')}</div>`;
+      if (up.moveOut) c += `<div class="warnline">⚠ Room for fewer people: ${up.moveOut} resident${up.moveOut > 1 ? 's' : ''} will move out</div>`;
       c += `<button class="btn primary path-go" data-act="upgrade" data-type="${o.type}" ${up.ok ? '' : 'disabled'}>⬆ ${branching ? `Build ${esc(n.name)}` : `Upgrade to ${esc(n.name)}`} · $${fmt(n.cost)}</button>`;
       return c + '</div></div>';
     });
