@@ -127,6 +127,7 @@ export class UI {
     this._issueCycle = {};
     this.syncPopButton();
     $('btnSave').onclick = () => this.showSaves();
+    $('btnMergeIn').onclick = () => this.showMerge({ intoTown: true });
     $('btnNet').onclick = () => this.showMultiplayer();
     $('netBox').onclick = () => this.showMultiplayer();
     $('btnSettings').onclick = () => this.showSettings();
@@ -935,7 +936,7 @@ export class UI {
   }
 
   // ---------------------------------------------------------- save/load
-  showMerge() { (this._merge ||= new MergeDialog(this)).open(); }
+  showMerge(opts) { (this._merge ||= new MergeDialog(this)).open(opts); }
 
   showSaves(tab = 'local') {
     const g = this.game;
