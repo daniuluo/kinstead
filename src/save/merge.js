@@ -467,7 +467,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
       const [X, Z] = s.tile(x, z);
       if (!w.inBounds(X, Z)) continue;
       const i = w.idx(X, Z), id = s.id(f), farm = w.buildings.get(id);
-      if (!farm || farm.type !== 'farm' || w.roads[i] || w.rails[i] || w.buildingAt[i] >= 0 || w.fields[i] >= 0 || w.terrain.isWater(X, Z)) continue;
+      if (!farm || !BUILDINGS[farm.type].fields || w.roads[i] || w.rails[i] || w.buildingAt[i] >= 0 || w.fields[i] >= 0 || w.terrain.isWater(X, Z)) continue;
       w.fields[i] = id;
     }
   }

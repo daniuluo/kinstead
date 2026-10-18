@@ -77,6 +77,8 @@ export class WorldView {
       lines: () => { this.dirty.roads = true; },
       // streets dressed with trees, hedges, lamps or a planted median
       dress: () => { this.dirty.roads = true; this.dirty.nature = true; },
+      // farmland added or taken out, or a farm growing something else
+      fields: () => { this.dirty.paint = true; this.dirty.nature = true; },
     };
     world.on('building:add', this._h.add);
     world.on('building:remove', this._h.remove);
@@ -89,6 +91,7 @@ export class WorldView {
     world.on('power', this._h.power);
     world.on('lines', this._h.lines);
     world.on('dress', this._h.dress);
+    world.on('fields', this._h.fields);
     this.fireflyTimer = 0;
     this.time = 0;
   }

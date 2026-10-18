@@ -6,7 +6,7 @@
 // chose, never rule-bending options, and each one is checked before it runs.
 // A guest the host has made a visitor can't run any.
 
-import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
+import { BUILDINGS, TECHS, TRANSIT, PRODUCE } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
 import { applyDress } from './world/roadDress.js';
@@ -74,6 +74,11 @@ export const COMMANDS = {
       for (const [x, z] of c.tiles) { const r = g.world.bulldoze(x, z); if (r.ok) n++; else reason ||= r.reason || null; }
       return { ok: n > 0, n, reason };
     },
+  },
+  // what a farm grows or raises
+  produce: {
+    check: (w, c) => int(c.id) && hasKey(PRODUCE, c.produce),
+    run: (g, c) => g.world.setProduce(c.id, c.produce),
   },
   // add fields to a farm, or take them out
   fields: {

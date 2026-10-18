@@ -6,6 +6,7 @@ import { MAT } from './materials.js';
 import { TREE } from '../world/world.js';
 import { hash2 } from '../util/rng.js';
 import { dressSpots } from '../world/roadDress.js';
+import { produceOf } from '../defs.js';
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 
@@ -52,7 +53,13 @@ const GEO = {
     flat(new THREE.ConeGeometry(0.009, 0.065, 3).translate(-0.014, 0.032, -0.012)),
   ])),
   bloom: flat(new THREE.IcosahedronGeometry(0.013, 0).translate(0, 0.04, 0)),
+  crop: flat(new THREE.IcosahedronGeometry(0.03, 0).scale(1, 0.75, 1).translate(0, 0.022, 0)),
+  post: flat(new THREE.BoxGeometry(0.016, 0.085, 0.016).translate(0, 0.042, 0)),
+  rail: flat(new THREE.BoxGeometry(1, 0.012, 0.01).translate(0, 0.058, 0)),
 };
+// crop tufts in farm fields, by season (mixed farming), and their fences
+const CROP_TUFT = [['#7fae4f', '#8fbd5a'], ['#c9a640', '#6f9e45'], ['#c08f3e', '#a8823c'], ['#6f5a44', '#6f5a44']];
+const FENCE_COL = '#7a5f42';
 
 const FOLIAGE = {
   pine: [['#2f5236', '#36593b', '#2b4a33'], ['#2c4e33', '#335538', '#294630'], ['#304d34', '#38573b', '#2c4631'], ['#2f4a37', '#36523d', '#2a4231']],
@@ -96,6 +103,9 @@ export class NatureView {
       rock: mk(GEO.rock, MAT.rock, this.cap),
       tuft: mk(GEO.tuft, MAT.grass, N * N * 3, false),
       bloom: mk(GEO.bloom, MAT.grass, N * N * 3, false),
+      crop: mk(GEO.crop, MAT.grass, 30000, false),
+      post: mk(GEO.post, MAT.trunk, 8000),
+      rail: mk(GEO.rail, MAT.trunk, 8000),
     };
     this.rebuild();
   }
@@ -109,7 +119,7 @@ export class NatureView {
   rebuild() {
     const w = this.world, t = w.terrain, s = this.season;
     const M = this.meshes;
-    const counts = { trunk: 0, pine: 0, round: 0, birch: 0, bush: 0, rock: 0, tuft: 0, bloom: 0 };
+    const counts = { trunk: 0, pine: 0, round: 0, birch: 0, bush: 0, rock: 0, tuft: 0, bloom: 0, crop: 0, post: 0, rail: 0 };
     const put = (key, x, y, z, sc, rot, color, sy = 1) => {
       const mesh = M[key];
       const i = counts[key]++;
@@ -170,12 +180,46 @@ export class NatureView {
         if (s <= 1) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
       }
     }
-    // grass tufts and wildflowers on open land
-    const N = w.N;
+    // farm fields: rows of crop tufts (none in winter, or on grazing land)
+    // and a post-and-rail fence round their outer edges
+    const N = w.N, F = w.fields;
+    const cropField = new Uint8Array(N * N);
+    if (F && w.fieldTiles) for (const [id, tiles] of w.fieldTiles) {
+      const farm = w.buildings.get(id);
+      if (!farm) continue;
+      const P = produceOf(farm), across = farm.rot & 1;
+      const cols = P.crop && s < 3 ? P.crop[s] : CROP_TUFT[s];
+      for (const ti of tiles) {
+        const x = ti % N, z = (ti / N) | 0;
+        if (P.kind !== 'livestock') {
+          cropField[ti] = 1;
+          if (s < 3) for (let u = 0.1; u < 0.98; u += 0.4) for (let v = 0.06; v < 0.97; v += 0.11) {
+            const k = hash2(x * 31 + Math.round(u * 10), z * 17 + Math.round(v * 100), 9);
+            const px = x + (across ? v : u) + (k - 0.5) * 0.04, pz = z + (across ? u : v) + (hash2(x, z, Math.round(u * 50 + v * 900)) - 0.5) * 0.04;
+            put('crop', px, t.heightAt(px, pz), pz, 0.85 + k * 0.35, k * 6, cols[k < 0.5 ? 0 : 1]);
+          }
+        }
+        const rail = (x0, z0, x1, z1) => {
+          const len = Math.hypot(x1 - x0, z1 - z0), mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, i = counts.rail++;
+          if (i < M.rail.instanceMatrix.count) {
+            _p.set(mx, t.heightAt(mx, mz), mz); _q.setFromEuler(_e.set(0, -Math.atan2(z1 - z0, x1 - x0), 0)); _s.set(len, 1, 1);
+            M.rail.setMatrixAt(i, _m.compose(_p, _q, _s)); M.rail.setColorAt(i, _c.set(FENCE_COL));
+          }
+          for (let q = 0; q <= 2; q++) { const fx = x0 + (x1 - x0) * q / 2, fz = z0 + (z1 - z0) * q / 2; put('post', fx, t.heightAt(fx, fz), fz, 1, 0, FENCE_COL); }
+        };
+        const edgeOf = (dx, dz) => { const nx = x + dx, nz = z + dz; return !w.inBounds(nx, nz) || (F[nz * N + nx] !== id && w.buildingAt[nz * N + nx] !== id); };
+        const e = 0.04;
+        if (edgeOf(0, -1)) rail(x + e, z + e, x + 1 - e, z + e);
+        if (edgeOf(0, 1)) rail(x + e, z + 1 - e, x + 1 - e, z + 1 - e);
+        if (edgeOf(-1, 0)) rail(x + e, z + e, x + e, z + 1 - e);
+        if (edgeOf(1, 0)) rail(x + 1 - e, z + e, x + 1 - e, z + 1 - e);
+      }
+    }
+    // grass tufts and wildflowers on open land (not in fields of crops)
     for (let z = 0; z < N; z++) {
       for (let x = 0; x < N; x++) {
         const i = w.idx(x, z);
-        if (w.roads[i] || w.rails[i] || w.buildingAt[i] >= 0 || t.isWater(x, z) || t.slope(x, z) > 0.6) continue;
+        if (w.roads[i] || w.rails[i] || w.buildingAt[i] >= 0 || cropField[i] || t.isWater(x, z) || t.slope(x, z) > 0.6) continue;
         const avg = t.tileAvg(x, z);
         if (avg < 0.2 || avg > 2.4) continue;
         const n = Math.floor(hash2(x, z, 41) * 3);

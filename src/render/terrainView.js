@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { MAT } from './materials.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, produceOf } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
 import { doorPoint, fw, fd } from '../world/world.js';
 import { railArc } from './roadsView.js';
@@ -36,6 +36,16 @@ const CROPS = [
   [C('#c79a45'), C('#b58a42'), C('#a8853f')],
   [C('#6f5a44'), C('#6a5640'), C('#74604a')],
 ];
+
+// grazed grass for livestock, by season, and each crop's colours (cached)
+const PASTURE = [[C('#86b45a'), C('#6f9e48')], [C('#7fa94c'), C('#6a9442')], [C('#93a052'), C('#7d8a45')], [C('#8a8f72'), C('#767c62')]];
+const cropCols = new Map();
+const cropOf = (P, season) => {
+  if (!P.crop || season === 3) return CROPS[season];
+  const k = P.name + season;
+  if (!cropCols.has(k)) { const [c0, c1] = P.crop[season]; cropCols.set(k, [C(c0), C(c1), C(c0)]); }
+  return cropCols.get(k);
+};
 
 const _a = new THREE.Color(), _b = new THREE.Color();
 
@@ -156,11 +166,53 @@ export class TerrainView {
       }
     }
     this._paintBuildings();
+    this._paintFields();
     this._paintRoads();
     this._paintRails();
     const geo = this.surface.geometry;
     geo.attributes.color.needsUpdate = true;
     geo.attributes.snowMask.needsUpdate = true;
+  }
+
+  // One point of farmland: furrows of a crop (or the season's bare soil), or
+  // grazed grass for livestock. lx, lz: where it lies across and along the farm.
+  _fieldPaint(vi, i, j, P, season, lx, lz, E, a) {
+    if (P.kind === 'livestock') {
+      const [g0, g1] = PASTURE[season];
+      _b.copy(g0).lerp(g1, this.n3(i * 0.31, j * 0.31) * 0.5 + 0.5);
+      this._blend(vi, _b, a * 0.85);
+      return;
+    }
+    const row = Math.floor((lz + 10) / 0.2 + 1e-4) % 2;
+    const plot = Math.floor((lx + E) / ((2 * E) / 3));
+    const crop = cropOf(P, season)[((plot % 3) + 3) % 3];
+    if (row === 0 || season === 3) { _b.copy(SOIL).lerp(SOIL_D, hash2(i, j, 2) * 0.6); this._blend(vi, _b, a, 0.9); }
+    else this._blend(vi, crop, a, 1);
+  }
+
+  // A farm's fields beyond its plot, furrowed the same way as its own, with
+  // soft edges where they meet open ground.
+  _paintFields() {
+    const w = this.world, f = w.fields, N = w.N, season = this.season;
+    if (!f || !w.fieldTiles || !w.fieldTiles.size) return;
+    for (const [id, tiles] of w.fieldTiles) {
+      const farm = w.buildings.get(id);
+      if (!farm) continue;
+      const P = produceOf(farm), th = (farm.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      const cx = farm.x + fw(farm) / 2, cz = farm.z + fd(farm) / 2;
+      for (const t of tiles) {
+        const x = t % N, z = (t / N) | 0;
+        const same = (dx, dz) => w.inBounds(x + dx, z + dz) && f[(z + dz) * N + x + dx] === id;
+        const W = !same(-1, 0), Eo = !same(1, 0), Nn = !same(0, -1), S = !same(0, 1);
+        this._range(x - (W ? 0.08 : 0), z - (Nn ? 0.08 : 0), x + 1 + (Eo ? 0.08 : 0), z + 1 + (S ? 0.08 : 0), (vi, px, pz, i, j) => {
+          if ((!W && px < x) || (!Eo && px > x + 1) || (!Nn && pz < z) || (!S && pz > z + 1)) return;
+          const edge = Math.min(W ? px - x : 9, Eo ? x + 1 - px : 9, Nn ? pz - z : 9, S ? z + 1 - pz : 9);
+          const a = smoothstep(-0.04, 0.12, edge);
+          const dx = px - cx, dz = pz - cz;
+          this._fieldPaint(vi, i, j, P, season, dx * co - dz * si, dx * si + dz * co, 1, a);
+        });
+      }
+    }
   }
 
   _range(x0, z0, x1, z1, fn) {
@@ -186,7 +238,7 @@ export class TerrainView {
       const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
       const th = (b.rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
       const work = b.work;
-      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : b.type === 'farm' ? 'farm' : b.type === 'plaza' ? 'plaza'
+      const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : def.fields ? 'farm' : b.type === 'plaza' ? 'plaza'
         : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
           : (def.park && b.type !== 'plaza') ? 'lawn'
             : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';
@@ -214,11 +266,7 @@ export class TerrainView {
               if (inside) {
                 const fe = Math.min(x - work[0], work[2] - x, z - work[1], work[3] - z);
                 const fa = smoothstep(-0.02, 0.12, fe);
-                const row = Math.floor((lz + 10) / 0.2 + 1e-4) % 2;
-                const plot = Math.floor((lx + E) / ((2 * E) / 3));
-                const crop = CROPS[season][((plot % 3) + 3) % 3];
-                if (row === 0 || season === 3) { _b.copy(SOIL).lerp(SOIL_D, hash2(i, j, 2) * 0.6); this._blend(vi, _b, fa, 0.9); }
-                else this._blend(vi, crop, fa, 1);
+                this._fieldPaint(vi, i, j, produceOf(b), season, lx, lz, E, fa);
               }
             }
             break;

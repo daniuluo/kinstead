@@ -7,7 +7,7 @@
 // reached; where this building stands now is marked, and so is what is
 // still locked.
 
-import { BUILDINGS, TECHS, MERGES, LARGE, ESTATE, unlockOf, techForLevel } from '../defs.js';
+import { BUILDINGS, TECHS, MERGES, LARGE, ESTATE, FARM_JOIN, unlockOf, techForLevel } from '../defs.js';
 import { thumb } from './thumbs.js';
 import { showBuildingGuide } from './guide.js';
 
@@ -40,6 +40,8 @@ function nextOf(type) {
   for (const t of def.stageNext || []) out.push({ kind: 'stage', at: 0, any: true, label: 'next stage', type: t });
   for (const t of LARGE[type] || []) out.push({ kind: 'plot', at: 0, any: true, label: 'double plot', type: t });
   for (const t of ESTATE[type] || []) out.push({ kind: 'estate', at: 0, any: true, label: '2×2 estate', type: t });
+  if (FARM_JOIN.from.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.with)}`, type: FARM_JOIN.to });
+  if (FARM_JOIN.with.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.from)}`, type: FARM_JOIN.to });
   if (joinable(type)) {
     for (const m of MERGES) {
       const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;

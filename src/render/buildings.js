@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, shade } from './geo.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, produceOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
@@ -960,43 +960,69 @@ MODELS.tavern = (c, L) => {
   lamp(c, 0.14, 0.42, 0.26);
 };
 
-MODELS.farm = (c, L) => {
+// A farm: barn and yard by the road, fields behind growing crops (or grass
+// for livestock: a field shelter for sheep and cattle, a hen house for
+// poultry). A homestead (a farm joined with a house) has its farmhouse in
+// the yard too.
+function farmstead(c, L, home) {
   const { gb, rng, pal } = c;
-  // the farmhouse and barn face the road, with the yard behind them and the
-  // fields beyond (the street is at +z)
-  house(c, {
-    x: -0.5, z: 0.5, w: 0.6, d: 0.44, h: L >= 3 ? 0.52 : 0.32, floors: L >= 3 ? 2 : 1, wall: L >= 3 ? pal.stoneWall : pal.wall,
-    roof: L >= 3 ? pal.slate : pal.thatched ? pal.thatch : pal.roof,
-    roofType: L >= 3 ? 'hip' : pal.thatched ? 'thatch' : 'gable', rh: 0.24, chimney: true, timber: L < 3 && pal.timber,
-  });
+  const P = produceOf({ flavor: c.flavor }), stock = P.kind === 'livestock';
   const barnCol = rng.pick(['#8f3e2c', '#83402e', '#7a5a3c', '#9a4a34']);
-  const bz = 0.5, bf = bz + 0.25;   // the barn, and its front wall
-  footing(c, 0.44, bz, 0.66, 0.5);
-  gb.cbox(0.44, 0, bz, 0.66, 0.4, 0.5, barnCol, 0, 0.02);
-  gb.gable(0.44, 0.4, bz, 0.66, 0.5, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
-  gb.box(0.44, 0, bf + 0.005, 0.24, 0.27, 0.012, '#d8ccb4');
-  gb.box(0.44, 0, bf + 0.012, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
-  gb.box(0.44, 0.0, bf + 0.018, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
-  // the fields behind (painted furrows and crop tufts), fenced, with a gate
-  // from the yard; an estate keeps an orchard down one side
+  const barnX = home ? 0.44 : -0.32, barnW = home ? 0.66 : 0.72, bz = 0.5, bf = bz + 0.25;
+  if (home) {
+    house(c, {
+      x: -0.5, z: 0.5, w: 0.6, d: 0.44, h: L >= 3 ? 0.52 : 0.32, floors: L >= 3 ? 2 : 1, wall: L >= 3 ? pal.stoneWall : pal.wall,
+      roof: L >= 3 ? pal.slate : pal.thatched ? pal.thatch : pal.roof,
+      roofType: L >= 3 ? 'hip' : pal.thatched ? 'thatch' : 'gable', rh: 0.24, chimney: true, timber: L < 3 && pal.timber,
+    });
+  }
+  footing(c, barnX, bz, barnW, 0.5);
+  gb.cbox(barnX, 0, bz, barnW, 0.4, 0.5, barnCol, 0, 0.02);
+  gb.gable(barnX, 0.4, bz, barnW, 0.5, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
+  gb.box(barnX, 0, bf + 0.005, 0.24, 0.27, 0.012, '#d8ccb4');
+  gb.box(barnX, 0, bf + 0.012, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
+  gb.box(barnX, 0.0, bf + 0.018, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
+  c.doorAt ||= { x: barnX, y: 0, z: bf + 0.02, dx: 0, dz: 1 };
+  if (!home) {
+    // an open cart shed beside the barn
+    const sx = 0.6, sz = 0.52, sy = c.gy(sx, sz);
+    for (const ox of [-0.18, 0.18]) for (const oz of [-0.14, 0.14]) gb.box(sx + ox, sy - 0.01, sz + oz, 0.03, 0.24, 0.03, '#4e3a2a');
+    gb.gable(sx, sy + 0.23, sz, 0.44, 0.36, 0.12, '#6e5034', pal.roof, 0.04);
+    if (L >= 1) gb.cbox(sx, sy, sz + 0.02, 0.26, 0.07, 0.12, '#6b4a2f', 0, 0.008);
+  }
+  // the fields behind, fenced, with a gate from the yard; an estate keeps an
+  // orchard down one side
   const fx0 = L >= 3 ? -0.72 : -0.92, fx1 = 0.92, fz0 = L >= 1 ? -0.92 : -0.6, fz1 = 0.06;
   c.work = [fx0 + 0.04, fz0 + 0.04, fx1 - 0.04, fz1 - 0.04];
-  cropRows(c, fx0, fz0, fx1, fz1, CROP_TUFT[c.season]);
+  if (!stock) cropRows(c, fx0, fz0, fx1, fz1, c.season === 3 || !P.crop ? CROP_TUFT[c.season] : P.crop[c.season]);
   fence(c, fx0 - 0.04, fz0 - 0.03, fx1 + 0.04, fz1 + 0.03, FENCE, { x: 0, z: fz1 + 0.03, w: 0.12 });
+  if (stock && P.animal === 'chicken') {
+    // a hen house on legs
+    const hx = 0.3, hz = -0.3, hy = c.gy(hx, hz);
+    for (const ox of [-0.09, 0.09]) for (const oz of [-0.06, 0.06]) gb.box(hx + ox, hy, hz + oz, 0.02, 0.07, 0.02, '#4e3a2a');
+    gb.cbox(hx, hy + 0.07, hz, 0.24, 0.12, 0.17, shade(barnCol, 1.1), 0, 0.01);
+    gb.gable(hx, hy + 0.19, hz, 0.26, 0.19, 0.08, shade(barnCol, 1.1), '#4e463e', 0.02);
+    gb.box(hx + 0.08, hy, hz + 0.1, 0.04, 0.012, 0.12, '#6e5034', 0.5);
+  } else if (stock) {
+    // an open field shelter and a water trough
+    const hx = 0.35, hz = -0.42, hy = c.gy(hx, hz);
+    gb.cbox(hx, hy, hz - 0.1, 0.42, 0.2, 0.03, '#6e5034', 0, 0.006);
+    for (const ox of [-0.2, 0.2]) gb.box(hx + ox, hy, hz + 0.08, 0.025, 0.2, 0.025, '#4e3a2a');
+    gb.gable(hx, hy + 0.2, hz, 0.46, 0.26, 0.1, '#6e5034', pal.roof, 0.03);
+    gb.cbox(-0.2, c.gy(-0.2, -0.2), -0.2, 0.2, 0.05, 0.06, '#6b4a2f', 0, 0.008);
+  }
   if (L >= 1) {
-    // a silo between the house and the barn, hay and a trough in the yard
-    const sx = -0.045, sz = 0.44, sy = c.gy(sx, sz);
-    gb.cyl(sx, sy - 0.02, sz, 0.13, 0.14, 0.66, 12, '#b8b0a0');
-    gb.sphere(sx, sy + 0.64, sz, 0.135, '#6f7f8a', 1, 0.6);
+    // a silo, and hay in the yard
+    const sx = home ? -0.045 : 0.2, sz = home ? 0.44 : 0.4, sy = c.gy(sx, sz);
+    gb.cyl(sx, sy - 0.02, sz, 0.12, 0.13, 0.64, 12, '#b8b0a0');
+    gb.sphere(sx, sy + 0.62, sz, 0.125, '#6f7f8a', 1, 0.6);
     for (let i = 0; i < 2; i++) {
-      const hx = 0.62 + i * 0.17, hz = 0.16, hy = c.gy(hx, hz);
+      const hx = (home ? 0.62 : 0.66) + i * 0.15, hz = 0.17, hy = c.gy(hx, hz);
       gb.cyl(hx, hy - 0.01, hz, 0.065, 0.075, 0.08, 9, '#cfa944');
       gb.sphere(hx, hy + 0.07, hz, 0.068, '#c9a240', 1, 0.7);
     }
-    const tx = -0.3, tz = 0.17;
-    gb.cbox(tx, c.gy(tx, tz), tz, 0.22, 0.05, 0.07, '#6b4a2f', 0, 0.008);
   }
-  if (L >= 2) {
+  if (L >= 2 && !stock) {
     // a windmill in the far corner of the fields
     const mx = 0.8, mz = -0.8, my = c.gy(mx, mz);
     gb.cyl(mx, my - 0.03, mz, 0.1, 0.17, 0.8, 9, '#ddd2bc');
@@ -1004,21 +1030,23 @@ MODELS.farm = (c, L) => {
     gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(mx, my + 0.32, mz + 0.125, 0.04, 0.06, 0.02, GLASS); gb.noGlow();
     const blades = new GeoBuilder();
     for (let i = 0; i < 4; i++) {
-      const a = (i * Math.PI) / 2;
-      blades.boxC(Math.cos(a) * 0.19, Math.sin(a) * 0.19, 0, 0.36, 0.014, 0.014, '#4e3a2a', 0, 0, a);
-      blades.boxC(Math.cos(a) * 0.22 + Math.cos(a + Math.PI / 2) * 0.04, Math.sin(a) * 0.22 + Math.sin(a + Math.PI / 2) * 0.04, 0, 0.27, 0.065, 0.006, '#e3d8c2', 0, 0, a);
+      const an = (i * Math.PI) / 2;
+      blades.boxC(Math.cos(an) * 0.19, Math.sin(an) * 0.19, 0, 0.36, 0.014, 0.014, '#4e3a2a', 0, 0, an);
+      blades.boxC(Math.cos(an) * 0.22 + Math.cos(an + Math.PI / 2) * 0.04, Math.sin(an) * 0.22 + Math.sin(an + Math.PI / 2) * 0.04, 0, 0.27, 0.065, 0.006, '#e3d8c2', 0, 0, an);
     }
     blades.cyl(0, 0, -0.02, 0.028, 0.028, 0.05, 6, '#3a2f28', 0, Math.PI / 2);
     c.spin = { geo: blades.build(), x: mx, y: my + 0.72, z: mz + 0.19, speed: 1.2 };
   }
   if (L >= 3) {
-    // an orchard down the side of the fields, and a dovecote by the house
+    // an orchard down the side of the fields, and a dovecote in the yard
     for (let i = 0; i < 4; i++) smallTree(c, -0.86, -0.8 + i * 0.26, 0.75);
     const dx = -0.88, dz = 0.16, dy = c.gy(dx, dz);
     gb.cyl(dx, dy - 0.02, dz, 0.06, 0.07, 0.32, 8, '#e3dccb');
     gb.cone(dx, dy + 0.3, dz, 0.09, 0.1, 8, '#4e463e');
   }
-};
+}
+MODELS.farm = (c, L) => farmstead(c, L, false);
+MODELS.homestead = (c, L) => farmstead(c, L, true);
 
 MODELS.lumber = (c, L) => {
   const { gb, rng, pal } = c;
@@ -3812,7 +3840,7 @@ export function jitterOf(b) {
 // Must match the c.work rectangles set by the models above.
 export function workArea(b) {
   let r = null;
-  if (b.type === 'farm') r = [b.level >= 3 ? -0.68 : -0.88, b.level >= 1 ? -0.88 : -0.56, 0.88, 0.02];   // the fields behind the farmyard (see MODELS.farm)
+  if (BUILDINGS[b.type].fields) r = [b.level >= 3 ? -0.68 : -0.88, b.level >= 1 ? -0.88 : -0.56, 0.88, 0.02];   // the fields behind the farmyard (see MODELS.farm)
   else if (b.type === 'garden') r = [-0.4, -0.4, 0.4, 0.4];
   else if (b.type === 'plaza') r = [-0.85, -0.85, 0.85, 0.85];
   if (!r) return null;
@@ -3840,7 +3868,7 @@ export function buildModel(b, opts = {}) {
   const c = {
     gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, flavor: b.flavor || null, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     houses: [],   // every house() drawn, where it stands (see annexes)
-    frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && b.type !== 'farm',
+    frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !BUILDINGS[b.type].fields,
     smoke: [], glows: [], spin: null, work: null, fountain: null,
     season: opts.season ?? 1,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,

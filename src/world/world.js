@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { newTownId } from '../util/text.js';
@@ -32,9 +32,10 @@ export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 export function capOf(b, key) {
   const v = BUILDINGS[b.type].levels[b.level][key] || 0;
   const k = sizeK(b);
-  // a farm's fields beyond its plot need hands too
-  const fields = key === 'jobs' && b.fields ? Math.round(b.fields * CONFIG.FIELD_JOBS) : 0;
-  return (k > 1 ? Math.round(v * k) : v) + fields;
+  const out = k > 1 ? Math.round(v * k) : v;
+  // a farm's fields beyond its plot need hands too, as many as what it grows takes
+  if (key === 'jobs' && v && hasFields(b.type)) return Math.round((out + (b.fields || 0) * CONFIG.FIELD_JOBS) * produceOf(b).jobs);
+  return out;
 }
 // The most households a home takes (its level's `households`): a cottage,
 // family house or villa is a home for one family, and the bigger houses and
@@ -428,7 +429,7 @@ export class World {
       if (con.look !== undefined) b.look = con.look;
       b.level = Math.min(con.to, BUILDINGS[b.type].levels.length - 1);
       this._fill(b, con.extend);
-      if (b.type !== 'farm') this._dropFields(b);
+      if (!hasFields(b.type)) this._dropFields(b);
     }
     if (con.kind === 'build') b.built = this.day;
     b.con = null;
@@ -707,7 +708,7 @@ export class World {
 
   // ------------------------------------------------------------ merging
   mergeOptions(b) {
-    const out = [];
+    const out = this._farmJoins(b);
     if (!this.hasTech('joining')) return out;
     if (!b || b.con || fw(b) !== 1 || fd(b) !== 1) return out;
     for (const [dx, dz] of DIRS) {
@@ -727,6 +728,7 @@ export class World {
     const opt = this.mergeOptions(a).find(m => m.other === o);
     if (!opt) return { ok: false, reason: "These two can't be joined" };
     if (this.money < opt.cost) return { ok: false, reason: 'Not enough money' };
+    if (opt.farmJoin) return this._joinFarm(opt);
     const x = Math.min(a.x, o.x), z = Math.min(a.z, o.z), w = a.x !== o.x ? 2 : 1, d = a.z !== o.z ? 2 : 1;
     let minH = Infinity, maxH = -Infinity;
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) {
@@ -752,6 +754,47 @@ export class World {
     this.emit('building:add', nb);
     this._shrunk(nb, homes);
     return { ok: true, building: nb, cost: opt.cost };
+  }
+
+  // A farm and a house beside it (FARM_JOIN), from either side: the farm
+  // becomes a homestead at its level, with its fields and produce, and the
+  // house's family moves into the farmhouse (the house's plot is freed).
+  // Needs no research: any farm can have its farmhouse.
+  _farmJoins(b) {
+    const out = [];
+    if (!b || b.con) return out;
+    const J = FARM_JOIN, farmSide = J.from.includes(b.type), houseSide = J.with.includes(b.type) && fw(b) === 1 && fd(b) === 1;
+    if (!farmSide && !houseSide) return out;
+    const seen = new Set();
+    for (let dz = -1; dz <= fd(b); dz++) for (let dx = -1; dx <= fw(b); dx++) {
+      const inX = dx >= 0 && dx < fw(b), inZ = dz >= 0 && dz < fd(b);
+      if (inX === inZ) continue;   // the plot itself, and its corners
+      const o = this.buildingOn(b.x + dx, b.z + dz);
+      if (!o || o === b || o.con || seen.has(o.id)) continue;
+      seen.add(o.id);
+      const farm = farmSide ? b : o, house = farmSide ? o : b;
+      if (!J.from.includes(farm.type) || !J.with.includes(house.type) || fw(house) !== 1 || fd(house) !== 1) continue;
+      const to = BUILDINGS[J.to], level = Math.min(farm.level, to.levels.length - 1);
+      let value = 0;
+      for (let l = 0; l <= level; l++) value += to.levels[l].cost;
+      const cost = Math.max(0, value - this.buildValue(farm) - this.buildValue(house)) + 60;
+      out.push({ other: o, type: J.to, farmJoin: true, farm, house, base: farm, flavor: farm.flavor || null, level, cost, name: to.levels[level].name, ok: this.money >= cost });
+    }
+    return out;
+  }
+
+  _joinFarm(opt) {
+    const { farm, house } = opt;
+    const people = house.residents.length;
+    this.money -= opt.cost;
+    this._retarget(house.id, farm.id);
+    farm.residents = [...(farm.residents || []), ...house.residents];
+    this._detach(house);
+    farm.type = opt.type;
+    farm.level = opt.level;
+    this.emit('building:change', farm);
+    this._shrunk(farm, people);
+    return { ok: true, building: farm, cost: opt.cost, farmJoin: true };
   }
 
   // Restore a building from a save without any checks.
@@ -874,7 +917,7 @@ export class World {
       b.level = level;
       if (look !== undefined) b.look = look;
       this._fill(b, chk.target.extend);
-      if (b.type !== 'farm') this._dropFields(b);
+      if (!hasFields(b.type)) this._dropFields(b);
       this.emit('building:change', b);
       this._shrunk(b, homes);
       return { ok: true, building: b, instant: true };
@@ -1178,7 +1221,7 @@ export class World {
   // plot or its other fields, as many as its level allows (FIELD_MAX). Each
   // is ploughed and fenced for FIELD_COST (and any trees cleared), adds
   // FIELD_JOBS jobs (capOf), and gives a quarter back when taken out.
-  fieldMax(b) { return b && b.type === 'farm' ? CONFIG.FIELD_MAX[Math.min(b.level, CONFIG.FIELD_MAX.length - 1)] : 0; }
+  fieldMax(b) { return b && hasFields(b.type) ? CONFIG.FIELD_MAX[Math.min(b.level, CONFIG.FIELD_MAX.length - 1)] : 0; }
 
   // Why tile (x, z) can't become a field of farm b, or null.
   _fieldBlock(b, x, z) {
@@ -1201,7 +1244,7 @@ export class World {
   planFields(id, list, add = true) {
     const b = this.buildings.get(id);
     const plan = { tiles: [], n: 0, cost: 0, refund: 0, max: this.fieldMax(b), have: b ? b.fields || 0 : 0, short: null };
-    if (!b || b.type !== 'farm') { plan.short = 'Only a farm has fields'; return plan; }
+    if (!b || !hasFields(b.type)) { plan.short = 'Only a farm has fields'; return plan; }
     if (b.con && b.con.kind !== 'upgrade') { plan.short = 'Not until the farm is built'; return plan; }
     const seen = new Set();
     for (const [x, z] of list) {
@@ -1258,16 +1301,30 @@ export class World {
     return { ok: true, n: plan.n, cost: plan.cost, refund: plan.refund, skipped: plan.tiles.length - plan.n };
   }
 
+  // What a farm grows or raises (PRODUCE; kept in b.flavor). It changes the
+  // look of its plot and fields, the hands it takes and what each earns.
+  setProduce(id, key) {
+    const b = this.buildings.get(id);
+    if (!b || !hasFields(b.type)) return { ok: false, reason: 'Only a farm grows crops or keeps livestock' };
+    if (typeof key !== 'string' || !Object.hasOwn(PRODUCE, key)) return { ok: false, reason: "A farm can't do that" };
+    const flavor = key === 'mixed' ? null : key;
+    if ((b.flavor || null) === flavor) return { ok: false, reason: `It already does: ${PRODUCE[key].name.toLowerCase()}` };
+    b.flavor = flavor;
+    this.emit('building:change', b);
+    this.emit('fields');
+    return { ok: true, produce: key };
+  }
+
   // Each farm's fields (b.fields, fieldTiles) from the grid; fields of a
   // building that is no farm are dropped.
   _countFields() {
     this.fieldTiles = new Map();
-    for (const b of this.buildings.values()) if (b.type === 'farm') b.fields = 0;
+    for (const b of this.buildings.values()) if (hasFields(b.type)) b.fields = 0;
     for (let i = 0; i < this.fields.length; i++) {
       const f = this.fields[i];
       if (f < 0) continue;
       const b = this.buildings.get(f);
-      if (!b || b.type !== 'farm') { this.fields[i] = -1; continue; }
+      if (!b || !hasFields(b.type)) { this.fields[i] = -1; continue; }
       b.fields++;
       if (!this.fieldTiles.has(f)) this.fieldTiles.set(f, []);
       this.fieldTiles.get(f).push(i);
@@ -1279,7 +1336,7 @@ export class World {
   _pruneFields() {
     const keep = new Uint8Array(this.fields.length);
     for (const b of this.buildings.values()) {
-      if (b.type !== 'farm') continue;
+      if (!hasFields(b.type)) continue;
       const max = this.fieldMax(b), q = [];
       for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) q.push([b.x + dx, b.z + dz]);
       let n = 0;

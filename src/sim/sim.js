@@ -1,7 +1,7 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS } from '../config.js';
-import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf } from '../defs.js';
+import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf, hasFields, produceOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf, sizeK, householdCap } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
@@ -580,7 +580,7 @@ export class Sim {
   incomeOf(b) {
     const def = BUILDINGS[b.type], L = def.levels[b.level];
     if (!L.income || !isOpen(b)) return 0;
-    let v = capOf(b, 'jobs') * Math.min(1, b.working ?? 1) * L.income * (b.powered ? 1.15 : 1);
+    let v = capOf(b, 'jobs') * Math.min(1, b.working ?? 1) * L.income * (b.powered ? 1.15 : 1) * (hasFields(b.type) ? produceOf(b).income : 1);
     if (def.nearTrees && v) v *= 0.6 + Math.min(1, this._treesNear(b, 3) / 18) * 0.8;
     return v;
   }

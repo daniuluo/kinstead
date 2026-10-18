@@ -6,6 +6,7 @@
 // bolt away from villagers who come too close.
 
 import * as THREE from 'three';
+import { BUILDINGS, produceOf } from '../defs.js';
 import { GeoBuilder } from '../render/geo.js';
 import { RNG } from '../util/rng.js';
 import { workArea } from '../render/buildings.js';
@@ -145,7 +146,7 @@ export class Animals {
     this.fleeT = 0;
     this.dirty = true;
     const mark = () => { this.dirty = true; };
-    for (const e of ['building:add', 'building:remove', 'building:change', 'roads', 'rails', 'trees', 'terrain']) this.world.on(e, mark);
+    for (const e of ['building:add', 'building:remove', 'building:change', 'roads', 'rails', 'trees', 'terrain', 'fields']) this.world.on(e, mark);
     this._reconcile(true);
   }
 
@@ -165,7 +166,11 @@ export class Animals {
     if (sp.habitat === 'farm') {
       const f = w.buildings.get(a.farm);
       const r = f && (f.work || (f.work = workArea(f)));
-      return !!r && x > r[0] + 0.03 && x < r[2] - 0.03 && z > r[1] + 0.03 && z < r[3] - 0.03;
+      if (r && x > r[0] + 0.03 && x < r[2] - 0.03 && z > r[1] + 0.03 && z < r[3] - 0.03) return true;
+      // or out in one of its fields, clear of the fence
+      if (!f || !w.fields || w.fields[i] !== f.id) return false;
+      const fx = x - tx, fz = z - tz, M = 0.08, mine = (nx, nz) => w.inBounds(nx, nz) && (w.fields[w.idx(nx, nz)] === f.id || w.buildingAt[w.idx(nx, nz)] === f.id);
+      return (fx > M || mine(tx - 1, tz)) && (fx < 1 - M || mine(tx + 1, tz)) && (fz > M || mine(tx, tz - 1)) && (fz < 1 - M || mine(tx, tz + 1));
     }
     if (t.isWater(tx, tz) || t.heightAt(x, z) < 0.05) return false;
     if (w.buildingAt[i] >= 0 || w.rails[i]) return false;
@@ -214,9 +219,15 @@ export class Animals {
       } else if (sp.habitat === 'farm') {
         const f = w.buildings.get(a.farm);
         if (!f || !f.work) return false;
-        const q = f.work;
-        x = q[0] + 0.05 + r.next() * (q[2] - q[0] - 0.1);
-        z = q[1] + 0.05 + r.next() * (q[3] - q[1] - 0.1);
+        const q = f.work, fields = w.fieldTiles && w.fieldTiles.get(f.id);
+        if (fields && fields.length && r.next() < 0.6) {
+          // wander out into the fields
+          const ti = fields[(r.next() * fields.length) | 0];
+          x = (ti % w.N) + 0.12 + r.next() * 0.76; z = ((ti / w.N) | 0) + 0.12 + r.next() * 0.76;
+        } else {
+          x = q[0] + 0.05 + r.next() * (q[2] - q[0] - 0.1);
+          z = q[1] + 0.05 + r.next() * (q[3] - q[1] - 0.1);
+        }
         if (Math.hypot(x - a.x, z - a.z) > 0.9) { const k = 0.9 / Math.hypot(x - a.x, z - a.z); x = a.x + (x - a.x) * k; z = a.z + (z - a.z) * k; }
       } else {
         const ang = r.next() * Math.PI * 2, d = 0.4 + r.next() * sp.range;
@@ -293,9 +304,14 @@ export class Animals {
     // livestock per farm
     const want = new Map();
     for (const b of w.buildings.values()) {
-      if (b.type !== 'farm' || (b.con && b.con.kind !== 'upgrade')) continue;
-      if (!b.work) b.work = workArea(b);
-      want.set(b.id, { chicken: 2, sheep: b.level >= 1 ? 2 : 0, cow: b.level >= 2 ? 1 : 0 });
+      if (!BUILDINGS[b.type].fields || (b.con && b.con.kind !== 'upgrade')) continue;
+      b.work = workArea(b);
+      // a few of each on mixed farms, herds on livestock farms (more with more fields)
+      const P = produceOf(b), n = b.fields || 0;
+      want.set(b.id, P.animal === 'sheep' ? { chicken: 1, sheep: Math.min(14, 3 + b.level + (n >> 1)), cow: 0 }
+        : P.animal === 'cow' ? { chicken: 1, sheep: 0, cow: Math.min(10, 2 + b.level + Math.floor(n / 3)) }
+          : P.animal === 'chicken' ? { chicken: Math.min(18, 5 + b.level * 2 + n), sheep: 0, cow: 0 }
+            : P.name === 'Mixed farming' ? { chicken: 2, sheep: b.level >= 1 ? 2 + (n >> 3) : 0, cow: b.level >= 2 ? 1 : 0 } : { chicken: 2, sheep: 0, cow: 0 });
     }
     const have = new Map();
     for (const a of this.list) if (a.farm != null) {
@@ -303,6 +319,16 @@ export class Animals {
       h[a.sp]++; have.set(a.farm, h);
     }
     this.list = this.list.filter(a => a.farm == null || want.has(a.farm));
+    // a farm that has changed what it keeps sends the extra animals away
+    for (const [id, h] of have) {
+      const wn = want.get(id);
+      if (!wn) continue;
+      for (const sp of ['chicken', 'sheep', 'cow']) {
+        let extra = h[sp] - wn[sp];
+        if (extra > 0) this.list = this.list.filter(a => !(a.farm === id && a.sp === sp && extra-- > 0));
+        h[sp] = Math.min(h[sp], wn[sp]);
+      }
+    }
     for (const [id, wn] of want) {
       const f = w.buildings.get(id), q = f.work;
       const h = have.get(id) || { chicken: 0, sheep: 0, cow: 0 };

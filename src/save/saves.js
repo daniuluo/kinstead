@@ -101,7 +101,7 @@ export function deserialize(data) {
   if (Array.isArray(data.fields)) {
     for (const [id, ...tiles] of data.fields) {
       const b = w.buildings.get(id);
-      if (!b || b.type !== 'farm') continue;
+      if (!b || !BUILDINGS[b.type].fields) continue;
       for (const i of tiles) if (Number.isInteger(i) && i >= 0 && i < N * N && w.buildingAt[i] < 0 && !w.roads[i] && !w.rails[i]) w.fields[i] = id;
     }
   }

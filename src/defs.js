@@ -367,14 +367,24 @@ export const BUILDINGS = {
     ],
   },
   farm: {
-    name: 'Farming', cat: 'industry', size: 2, outdoorWork: true, icon: '🌾',
-    desc: 'Fields and a farmhouse. Farmers work outdoors.',
+    name: 'Farming', cat: 'industry', size: 2, outdoorWork: true, fields: true, icon: '🌾',
+    desc: 'A barn, a yard and fields behind, growing crops or raising livestock. Farmers work outdoors; join a cottage beside it for a farmhouse.',
     paths: { 1: ['orchard'] },
     levels: [
       { name: 'Farmstead', cost: 260, jobs: 4, income: 10 },
       { name: 'Farm', cost: 520, jobs: 8, income: 11, unlock: 25 },
       { name: 'Estate', cost: 1100, jobs: 12, income: 12, unlock: 60 },
       { name: 'Manor Farm', cost: 2000, jobs: 16, income: 13, unlock: 120 },
+    ],
+  },
+  homestead: {
+    name: 'Homestead', cat: 'industry', size: 2, hidden: true, outdoorWork: true, fields: true, icon: '🏡',
+    desc: 'A farm with its farmhouse in the yard: the family that works it lives on it.',
+    levels: [
+      { name: 'Homestead', cost: 360, jobs: 4, income: 10, housing: 4, households: 1, tax: 1 },
+      { name: 'Farm & Farmhouse', cost: 760, jobs: 8, income: 11, housing: 5, households: 1, tax: 1.1, unlock: 25 },
+      { name: 'Estate & Manor', cost: 1500, jobs: 12, income: 12, housing: 7, households: 2, tax: 1.3, unlock: 60 },
+      { name: 'Manor Farm', cost: 2600, jobs: 16, income: 13, housing: 9, households: 2, tax: 1.5, unlock: 120 },
     ],
   },
   lumber: {
@@ -666,6 +676,25 @@ export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying:
 export const BURY_COST = 12;
 
 // Which neighbours can be joined, and into what. Either order works.
+// A farm joined with a house beside it: the farm, with its farmhouse in the
+// yard and the house's family living in it (the house's plot is freed).
+export const FARM_JOIN = { from: ['farm'], with: ['house'], to: 'homestead' };
+export const hasFields = (type) => !!(BUILDINGS[type] && BUILDINGS[type].fields);
+
+// What a farm grows or raises (kept in b.flavor; none: mixed farming), and
+// what that means: the hands its plot and fields take (× its jobs), what each
+// earns (× its level's income), and how its fields look.
+export const PRODUCE = {
+  mixed: { name: 'Mixed farming', icon: '🌾', kind: 'crop', jobs: 1, income: 1, desc: 'A bit of everything: strips of different crops, a few hens and sheep.' },
+  wheat: { name: 'Wheat', icon: '🌾', kind: 'crop', jobs: 1, income: 1.05, desc: 'Golden grain for the millers and bakers.', crop: [['#86b65a', '#9cc46a'], ['#dab94e', '#cfa944'], ['#c79a45', '#b58a42']] },
+  barley: { name: 'Barley', icon: '🍺', kind: 'crop', jobs: 1, income: 1.05, desc: 'Pale grain for brewing and feed.', crop: [['#93bf66', '#a6cb74'], ['#d3c27a', '#c8b56a'], ['#bfa45c', '#b29855']] },
+  vegetables: { name: 'Vegetables', icon: '🥕', kind: 'crop', jobs: 1.5, income: 0.85, desc: 'Rows of cabbages, beans and roots: more hands, less each.', crop: [['#5f9a44', '#7aae52'], ['#4f8a3c', '#6da24a'], ['#7a8a3a', '#c46a2a']] },
+  sheep: { name: 'Sheep', icon: '🐑', kind: 'livestock', jobs: 0.5, income: 1.6, animal: 'sheep', desc: 'A flock on grass: few hands, good wool money each.' },
+  cattle: { name: 'Cattle', icon: '🐄', kind: 'livestock', jobs: 0.6, income: 1.5, animal: 'cow', desc: 'Dairy and beef herds on rich pasture.' },
+  poultry: { name: 'Poultry', icon: '🐔', kind: 'livestock', jobs: 0.7, income: 1.3, animal: 'chicken', desc: 'Hens by the hundred: eggs every day.' },
+};
+export const produceOf = (b) => (b && b.flavor && Object.hasOwn(PRODUCE, b.flavor) ? PRODUCE[b.flavor] : PRODUCE.mixed);
+
 export const MERGES = [
   { a: ['house'], b: ['house'], to: 'terrace' },
   { a: ['house'], b: ['market', 'bakery', 'tavern'], to: 'shophouse' },
