@@ -14,7 +14,7 @@ import { fw, fd } from '../world/world.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 // Bump when the messages change in a way older pages can't read.
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
