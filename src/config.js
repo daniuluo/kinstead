@@ -14,11 +14,11 @@ export const CONFIG = {
   CART_SPEED: 0.18,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
-  PLOT_PRICE: 60,
+  PLOT_PRICE: 60,           // a neighbouring plot of land, bought to grow a building's plot
   ARRIVE_RATE: 0.8,         // how readily newcomer households take up empty homes each day
   ARRIVE_MAX: 10,           // ...and at most this many a day (each takes a home of its own)
   FAMILY_KIDS: 0.6,         // a newcomer family's third member and on: the chance each is a child
-  FAMILY_KIDS_BIG: 0.4,    // ...in a family of four or more (the rest grown-up sons and daughters, relatives, grandparents)           // a neighbouring plot of land, bought to grow a building's plot
+  FAMILY_KIDS_BIG: 0.4,     // ...in a family of four or more (the rest grown-up sons and daughters, relatives, grandparents)
   AUTOSAVE_SECONDS: 90,     // also this often in real time, paused or not
   VIEW_HEIGHT: 22,         // world units visible vertically at zoom 1
 };
