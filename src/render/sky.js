@@ -44,6 +44,30 @@ export function weatherAt(seed, day, hours) {
   return a + (b - a) * f * f * (3 - 2 * f);
 }
 
+// How much of the winter's snow lies on the ground (0 .. 0.9): it settles
+// over the first day of winter and melts over the last.
+export function coverAt(day, hours) {
+  if (seasonOf(day) !== 3) return 0;
+  const dps = CONFIG.DAYS_PER_SEASON, dIn = ((day - 1) % dps) + hours / 24;
+  return clamp(dIn / 1.2, 0, 1) * clamp((dps - dIn) / 0.8, 0, 1) * 0.9;
+}
+
+// Fresh snow (0 .. 1): every half hour of snowfall in the last 18 hours lays
+// a little more, and it melts and is trodden away over the hours after. It
+// snows when the winter's cover is down and the sky is at its wettest, as
+// in Game.frame. Worked out from the weather, so it is the same for everyone
+// who has the town and comes back the same after a load.
+export function freshSnowAt(seed, day, hours) {
+  const T = day * 24 + hours;
+  let s = 0;
+  for (let k = 0; k <= 18; k += 0.5) {
+    const t = T - k, d = Math.floor(t / 24), h = t - d * 24;
+    if (d < 1 || coverAt(d, h) <= 0.15) continue;
+    s += smoothstep(0.45, 0.8, weatherAt(seed, d, h)) * Math.exp(-k / 5) * 0.3;
+  }
+  return Math.min(1, s);
+}
+
 export class Sky {
   constructor(renderer) {
     this.r = renderer;
@@ -52,6 +76,7 @@ export class Sky {
     this._lastBg = '';
     this.night = 0;
     this.snow = 0;
+    this.fresh = 0;
     this.season = 1;
     this.wet = 0;
     this.cloud = 0;
@@ -94,11 +119,8 @@ export class Sky {
     // seasons
     const season = seasonOf(day);
     this.season = season;
-    const dps = CONFIG.DAYS_PER_SEASON;
-    const dIn = ((day - 1) % dps) + hours / 24;
-    let snow = 0;
-    if (season === 3) snow = clamp(dIn / 1.2, 0, 1) * clamp((dps - dIn) / 0.8, 0, 1) * 0.9;
-    this.snow = snow;
+    const snow = this.snow = coverAt(day, hours);
+    this.fresh = freshSnowAt(seed, day, hours);
     if (snow > 0) { c.hg.lerp(WINTER_TINT, snow * 0.25); c.bot.lerp(WINTER_TINT, snow * 0.15 * (1 - this.night)); }
 
     // weather: cloud greys the sky and dims the sun; the heaviest spells rain
@@ -144,6 +166,7 @@ export class Sky {
     const late = hours >= 22.5 ? smoothstep(22.5, 25.5, hours) : hours < 5.5 ? (hours < 4.3 ? smoothstep(-1.5, 1.5, hours) : 1 - smoothstep(4.3, 5.5, hours)) : 0;
     U.uLate.value = late;
     U.uSnow.value = snow;
+    U.uFresh.value = this.fresh;
 
     const bg = `linear-gradient(180deg, #${c.top.getHexString()} 0%, #${c.bot.getHexString()} 100%)`;
     if (bg !== this._lastBg) { this.skyEl.style.background = bg; this._lastBg = bg; }

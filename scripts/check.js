@@ -1065,5 +1065,19 @@ let same = true;
 for (let i = 0; i < w.terrain.H.length; i++) if (Math.abs(w.terrain.H[i] - w2.terrain.H[i]) > 0.001) same = false;
 ok(same, 'save round-trip heights');
 
+// 5. snow: only in winter; a fall lays fresh snow on roads and roofs, and it
+// melts away again within the day (the same for everyone from the weather)
+{
+  const { freshSnowAt, coverAt } = await import('../src/render/sky.js');
+  const { seasonOf } = await import('../src/config.js');
+  let summer = 0, peak = 0, clear = 0, winterHours = 0;
+  for (let day = 1; day <= 48; day++) for (let h = 0; h < 24; h += 0.5) {
+    const f = freshSnowAt(77, day, h);
+    if (seasonOf(day) !== 3) { summer = Math.max(summer, f, coverAt(day, h)); continue; }
+    winterHours++; peak = Math.max(peak, f); if (f < 0.02) clear++;
+  }
+  ok(summer === 0 && peak > 0.6 && clear > winterHours * 0.3, `fresh snow only in winter: up to ${peak.toFixed(2)} after a fall, gone again ${Math.round((clear / winterHours) * 100)}% of winter hours`);
+}
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
