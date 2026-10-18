@@ -487,11 +487,12 @@ export class UI {
     const hrs = this.world.hours;
     if (con.wait) note = null;
     else if (!b.access) note = 'Volunteers from the village are doing this one.';
-    else if (!st.hasBuilders) { note = "No builders in town: hired hands from the next village work slowly. Build a 🧱 Builder's Yard."; cls = 'no'; }
+    else if (!st.hasBuilders) { note = "No builders in town: hired hands from the next village are doing it, slowly. Build a 🧱 Builder's Yard."; cls = 'no'; }
     else if (!b.connected) { note = "Builders can't reach it: connect it to the town's roads."; cls = 'no'; }
     else if (hrs < 6.5 || hrs >= 18) note = 'The builders start again at dawn.';
     else if (!st.assigned) note = 'Waiting for a free builder.';
     if (note) h += `<div class="req"><div class="${cls}">${note}</div></div>`;
+    if (con.kind !== 'dismantle') h += `<label class="chk" title="Builders come to this site before any other"><input type="checkbox" data-act="priority" ${con.priority ? 'checked' : ''}> Priority: builders come here first</label>`;
     return h + '</div>';
   }
 
@@ -691,6 +692,11 @@ export class UI {
       case 'building': {
         const b = w.buildings.get(Number(data.id));
         if (b) { this.inspect({ kind: 'building', id: b.id }); g.renderer.lookAt(b.x + (b.w ?? b.size) / 2, b.z + (b.d ?? b.size) / 2); }
+        break;
+      }
+      case 'priority': {
+        const b = sel && w.buildings.get(sel.id);
+        if (b) g.cmd({ t: 'priority', id: b.id, on: !(b.con && b.con.priority) }, () => this.renderInspector(true));
         break;
       }
       case 'upgrade': {

@@ -550,7 +550,7 @@ export const BUILDINGS = {
 };
 
 export const TRANSIT = {
-  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.45, capacity: 8, stopType: 'coachstop', unlock: 0 },
+  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.225, capacity: 8, stopType: 'coachstop', unlock: 0 },
   rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25 },
 };
 export const RAIL_COST = 30;
@@ -738,10 +738,13 @@ export function unlockOf(type, level = 0) {
   return Math.max(d.unlock || 0, d.levels[level].unlock || 0);
 }
 
-// Builder-hours of work for a job of the given coin value.
+// Builder-hours of work for a job of the given coin value. BUILD_PACE scales
+// every job (1/3: building, upgrading and the rest take a third of the work
+// they first did).
 const WORK_K = { build: 1, upgrade: 0.9, merge: 0.6, dismantle: 0.35, rebuild: 0.6, demolish: 0.3 };
+const BUILD_PACE = 1 / 3;
 export function workNeeded(cost, kind = 'build') {
-  return Math.round((2 + cost / 28) * (WORK_K[kind] ?? 1) * 10) / 10;
+  return Math.max(0.5, Math.round((2 + cost / 28) * (WORK_K[kind] ?? 1) * BUILD_PACE * 10) / 10);
 }
 
 export function isShop(type) { return !!BUILDINGS[type].shop; }

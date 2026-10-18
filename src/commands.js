@@ -23,6 +23,15 @@ const tile = (w, c) => int(c.x, 0, w.N - 1) && int(c.z, 0, w.N - 1);
 const tiles = (w, list, max = 4096) => Array.isArray(list) && list.length > 0 && list.length <= max
   && list.every(p => Array.isArray(p) && p.length === 2 && int(p[0], 0, w.N - 1) && int(p[1], 0, w.N - 1));
 const ok = (v, reason) => (v ? { ok: true } : { ok: false, reason });
+
+// The priority flag lives on the job itself (b.con), so it is saved, sent to
+// guests with the building, and gone once the job is done.
+function setPriority(w, id, on) {
+  const b = w.buildings.get(id);
+  if (!b || !b.con) return { ok: false, reason: 'Nothing is being built there' };
+  if (on) b.con.priority = true; else delete b.con.priority;
+  return { ok: true, building: b };
+}
 export const VISITOR_REASON = "You're a visitor in this town: you can look around and point things out, but only builders can change it.";
 
 // t → { check(world, cmd), run(game, cmd), host: only the host may do it }
@@ -93,6 +102,11 @@ export const COMMANDS = {
   demolish: {
     check: (w, c) => int(c.id),
     run: (g, c) => g.world.demolishBuilding(c.id),
+  },
+  // put a building site first (or back in line) for the builders
+  priority: {
+    check: (w, c) => int(c.id) && typeof c.on === 'boolean',
+    run: (g, c) => setPriority(g.world, c.id, c.on),
   },
   research: {
     check: (w, c) => hasKey(TECHS, c.id),

@@ -284,6 +284,10 @@ let ended = null;
   spot = freeSpot(hw);
   const site = await ask(guest, { t: 'place', type: 'house', x: spot.x, z: spot.z });
   globalThis.__site = site.building && site.building.id;
+  // and puts it first for the builders
+  const pr = await ask(guest, { t: 'priority', id: site.building.id, on: true });
+  await until(() => gw().buildings.get(site.building.id)?.con?.priority === true);
+  ok(pr.ok && hw.buildings.get(site.building.id).con.priority === true && gw().buildings.get(site.building.id)?.con?.priority === true, 'a guest puts a building site first, and everyone sees it');
   await until(() => !queue.length);
   const diff = differences(host, guest);
   ok(!diff.length, `after all that, both towns match${diff.length ? ': ' + diff.join('; ') : ''}`);
