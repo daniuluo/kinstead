@@ -42,6 +42,8 @@ export class Renderer {
     this.sun.shadow.mapSize.set(sm, sm);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.025;
+    // shadows let a little sunlight through, like a bright day's soft shade
+    this.sun.shadow.intensity = 0.72;
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 260;
     this.scene.add(this.hemi, this.sun, this.sun.target);

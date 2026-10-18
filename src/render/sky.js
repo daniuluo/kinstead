@@ -22,6 +22,10 @@ const KEYS = [
   K(24, '#0a1230', '#1b2850', '#a9bcff', 0.62, '#4a5e96', '#262c3e', 0.55, 1),
 ];
 
+// Some of the sun's light goes to the sky's fill instead, so the shaded sides
+// of buildings stay soft rather than going dark (see also sun.shadow.intensity).
+const DIRECT = 0.93, FILL = 1.18;
+
 const WINTER_TINT = new THREE.Color('#dfe8f5');
 const _grey = new THREE.Color();
 
@@ -129,10 +133,10 @@ export class Sky {
 
     const R = this.r;
     R.sun.color.copy(c.sun);
-    R.sun.intensity = sunI * sunK;
+    R.sun.intensity = sunI * sunK * DIRECT;
     R.hemi.color.copy(c.hs);
     R.hemi.groundColor.copy(c.hg);
-    R.hemi.intensity = hi * (1 + 0.15 * cloud);
+    R.hemi.intensity = hi * (1 + 0.15 * cloud) * FILL;
     R.renderer.toneMappingExposure = (R.baseExposure || 1) + this.night * 0.2;
     R.scene.fog.color.copy(c.bot).lerp(c.top, 0.25);
 
