@@ -350,8 +350,11 @@ const runUntil = (pred, days = 6) => {
   ok(made.length === MERGES.length, `every join recipe works (${made.join(', ')})`);
 }
 
-// 3d1. expanding onto a neighbouring plot
+// 3d1. taking a neighbouring plot: the land first (no builders, the building
+// stays its size), then what to build across it
 {
+  const { sizeK, sizeKFor } = await import('../src/world/world.js');
+  const { CONFIG } = await import('../src/config.js');
   w.setSandbox({ infiniteMoney: true });
   let done = null;
   for (const b of [...w.buildings.values()]) {
@@ -362,12 +365,18 @@ const runUntil = (pred, days = 6) => {
     const r = w.expandBuilding(b.id, opt.dir, opt.kind);
     if (r.ok) { done = { b, opt }; break; }
   }
-  ok(done && fw(done.b) * fd(done.b) === 2 && done.b.con && done.b.con.expand, `a house expands onto a neighbouring plot (${done ? done.opt.kind : 'none'})`);
+  ok(done && fw(done.b) * fd(done.b) === 2 && !done.b.con && done.b.spare && sizeK(done.b) === 1, `a house takes a neighbouring plot (${done ? done.opt.kind : 'none'}) as land only: no builders, still its own size`);
   if (done) {
-    ok(w.buildingOn(done.opt.x, done.opt.z) === done.b, 'the new plot belongs to it');
-    ok(runUntil(() => !done.b.con).ok, 'builders finished the extension');
-    const big = w.upgradeOptions(done.b).filter(o => o.large).map(o => o.type);
-    ok(big.length >= 2, `the bigger plot opens larger paths: ${big.join(', ')}`);
+    const b = done.b;
+    ok(w.buildingOn(done.opt.x, done.opt.z) === b, 'the new plot belongs to it');
+    ok(done.opt.kind !== 'land' || done.opt.cost === CONFIG.PLOT_PRICE + w.treeCount[w.idx(done.opt.x, done.opt.z)] * 3, `an empty plot costs the price of the land ($${done.opt.cost})`);
+    const opts = w.upgradeOptions(b), big = opts.filter(o => o.large).map(o => o.type);
+    ok(big.length >= 2 && opts.some(o => o.extend), `then it can be rebuilt bigger (${big.join(', ')}) or extended`);
+    const cap0 = capOf(b, 'housing'), chk = w.upgradeCheck(b, 'extend');
+    ok(chk.target && chk.target.extend && chk.cost === Math.max(20, Math.round((BUILDINGS.house.levels.slice(0, b.level + 1).reduce((s, L) => s + L.cost, 0)) * (sizeKFor('house', 2, 1) - 1))), `extending costs what the extra half is worth ($${chk.cost})`);
+    const r = w.upgradeBuilding(b.id, 'extend');
+    ok(r.ok && b.con && b.con.extend && b.spare, 'builders extend it across the plot');
+    ok(runUntil(() => !b.con).ok && !b.spare && sizeK(b) === 1.5 && capOf(b, 'housing') === Math.round(BUILDINGS.house.levels[b.level].housing * 1.5) && capOf(b, 'housing') > cap0, `extended, it holds half as many again (${cap0} → ${capOf(b, 'housing')})`);
   }
   w.setSandbox({ infiniteMoney: false });
   w.money = 1e6;

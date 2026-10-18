@@ -3679,7 +3679,7 @@ export function buildModel(b, opts = {}) {
     const c2 = makeCtx(gb2, new RNG((b.variant * 2654435761 + 7) >>> 0));
     c2.smoke = c.smoke; c2.glows = c.glows;
     c2.doorAt = c.doorAt || { x: 0, y: 0, z: 0, dx: 0, dz: 1 };   // the building's own door stays the way in
-    for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y);
+    for (const A of annex.areas) buildAnnex(c2, def, A, geo.boundingBox.max.y, !!b.spare);
     const g2 = gb2.build();
     if (g2) { weather(g2); tint(g2, pal.tint); geo = mergeGeometries([geo, g2], false); geo.computeBoundingSphere(); }
   }
@@ -3712,13 +3712,14 @@ function annexPlan(def, b, Ex, Ez, B) {
 }
 
 // One annex in area A (local frame, street side at +z). `top` is how tall the
-// main building stands, so a wing can match it a storey lower.
-function buildAnnex(c, def, A, top) {
+// main building stands, so a wing can match it a storey lower. spare: land
+// taken but not built on yet, kept as a garden.
+function buildAnnex(c, def, A, top, spare = false) {
   const { gb, rng, pal } = c;
   const aw = A.x1 - A.x0, ad = A.z1 - A.z0, cx = (A.x0 + A.x1) / 2;
   const beside = A.where === 'beside';
   const L = def.levels[c.level] || def.levels[0];
-  if (def.park) {
+  if (def.park || spare) {
     // more garden: a gravel walk, trees, beds and a bench, inside a hedge
     hedge(c, cx, A.z0 + 0.06, aw - 0.12, 0.05);
     gb.box(cx, c.gy(cx, (A.z0 + A.z1) / 2) - 0.008, (A.z0 + A.z1) / 2, 0.09, 0.012, ad - 0.2, '#c8b894');

@@ -223,6 +223,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
     recs.push({
       s, idx: recs.length, id: s.id(b.id), type: b.type, level: b.level, x, z, w, d, rot: ((b.rot || 0) + 3 * s.k) % 4,
       variant: b.variant, built: b.built, flavor: b.flavor || null, look: b.look || null, con,
+      spare: b.spare ? (s.k % 2 ? { w: b.spare.d, d: b.spare.w } : { ...b.spare }) : null,
       leases: (b.leases || []).map(l => ({ ...l, with: s.id(l.with), side: rotSide(l.side, s.k) })),
       value: s.w.buildValue(b), slope0: footSlope(s.w.terrain, b.x, b.z, fw(b), fd(b)), x0: x, z0: z,
     });
@@ -743,7 +744,7 @@ function blendTerrain({ N, own, grp, hOf, seam, rep, SRC, ways, dryWay }) {
 
 // ------------------------------------------------------------ buildings
 function restore(w, r) {
-  w.restoreBuilding({ id: r.id, type: r.type, level: r.level, x: r.x, z: r.z, variant: r.variant, rot: r.rot, built: r.built, w: r.w, d: r.d, flavor: r.flavor, con: r.con, look: r.look });
+  w.restoreBuilding({ id: r.id, type: r.type, level: r.level, x: r.x, z: r.z, variant: r.variant, rot: r.rot, built: r.built, w: r.w, d: r.d, flavor: r.flavor, con: r.con, look: r.look, spare: r.spare });
 }
 
 function unplace(w, r) {

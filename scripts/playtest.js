@@ -164,11 +164,12 @@ function botDay() {
   let n = 0;
   for (const b of ups) {
     if (n >= 3 * busy || saving) break;
-    const opts = w.upgradeOptions(b).filter(o => w.upgradeCheck(b, o.type).ok);
+    const key = (o) => (o.extend ? 'extend' : o.type);
+    const opts = w.upgradeOptions(b).filter(o => w.upgradeCheck(b, key(o)).ok);
     if (!opts.length) continue;
     const o = rng.pick(opts);
     const look = rng.chance(0.3) ? rng.pick(STYLES).id : undefined;
-    if (w.upgradeBuilding(b.id, o.type, look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; }
+    if (w.upgradeBuilding(b.id, key(o), look).ok) { n++; counts.upgrades++; if (o.estate) counts.estateBuilt++; if (o.extend) counts.extended = (counts.extended || 0) + 1; }
   }
   // joins, expansions, moves, demolition
   for (let k = 0; k < busy; k++) if (rng.chance(MODE !== 'economy' ? 0.8 : 0.25)) {

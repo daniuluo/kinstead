@@ -75,7 +75,7 @@ export const COMMANDS = {
     run: (g, c) => g.world.plantTree(c.x, c.z),
   },
   upgrade: {
-    check: (w, c) => int(c.id) && (c.to == null || hasKey(BUILDINGS, c.to)) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
+    check: (w, c) => int(c.id) && (c.to == null || c.to === 'extend' || hasKey(BUILDINGS, c.to)) && (c.look === undefined || c.look === null || LOOKS.has(c.look)),
     run: (g, c) => g.world.upgradeBuilding(c.id, c.to || null, c.look),
   },
   expand: {

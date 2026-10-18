@@ -10,7 +10,7 @@
 
 import { BUILDINGS } from '../defs.js';
 import { serialize, deserialize } from '../save/saves.js';
-import { fw, fd } from '../world/world.js';
+import { fw, fd, spareOf } from '../world/world.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
 // Bump when the messages change in a way older pages can't read.
@@ -25,10 +25,10 @@ function conRec(c) {
 }
 
 // One building as [id, type, level, x, z, variant, rot, built, w, d, flavor,
-// con, leases, look, access] — the save's record plus the entrance in use.
+// con, leases, look, access, spare] — the save's record plus the entrance in use.
 export function buildingRec(b) {
   return [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, fw(b), fd(b), b.flavor || null,
-    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null];
+    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d] : null];
 }
 
 // One villager: the save's record plus their school place.
@@ -219,7 +219,7 @@ function setLeases(w, b, leases) {
 }
 
 // The parts of a building site that change its look (not its progress).
-const conLook = (c) => (c ? JSON.stringify([c.kind, c.to, c.toType, c.look, c.wait, c.moved, c.expand]) : '');
+const conLook = (c) => (c ? JSON.stringify([c.kind, c.to, c.toType, c.look, c.wait, c.moved, c.expand, c.extend]) : '');
 
 // Apply one delta (or keyframe) from the host. Returns what changed that the
 // UI may want to refresh for.
@@ -280,12 +280,13 @@ export function applyDelta(game, d) {
   const added = [], changed = [], refit = [], done = [];
   let railLinks = rails;
   for (const rec of d.b || []) {
-    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc] = rec;
+    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc, sp] = rec;
+    const spare = spareOf(sp, bw, bd);
     if (!hasKey(BUILDINGS, type)) continue;
     const def = BUILDINGS[type];
     let b = w.buildings.get(id);
     if (!b) {
-      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look });
+      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare });
       b = w.buildings.get(id);
       if (!b) continue;
       b.access = acc ? { x: acc[0], z: acc[1] } : null;
@@ -297,7 +298,8 @@ export function applyDelta(game, d) {
     const moved = b.x !== x || b.z !== z || fw(b) !== bw || fd(b) !== bd;
     const prev = b.con;
     const looks = moved || b.type !== type || b.level !== level || (b.look || null) !== look || (b.flavor || null) !== flavor
-      || b.variant !== variant || b.rot !== rot || conLook(prev) !== conLook(con);
+      || b.variant !== variant || b.rot !== rot || conLook(prev) !== conLook(con)
+      || JSON.stringify(b.spare || null) !== JSON.stringify(spare || null);
     if (moved) {
       setFootprint(w, b, -1);
       b.x = x; b.z = z; b.w = bw; b.d = bd; b.size = Math.max(bw, bd);
@@ -307,7 +309,9 @@ export function applyDelta(game, d) {
       structural = true;
     }
     if (b.type !== type || b.level !== level) simDirty = true;
+    if (JSON.stringify(b.spare || null) !== JSON.stringify(spare || null)) simDirty = true;
     Object.assign(b, { type, level, variant, rot, built, flavor, look });
+    if (spare) b.spare = spare; else delete b.spare;
     // keep the same site object while it is the same job, so builders keep their place in the queue
     if (!con) b.con = null;
     else if (prev && conLook(prev) === conLook(con)) Object.assign(prev, con);
