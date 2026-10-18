@@ -1,6 +1,7 @@
 // Breadth-first pathfinding over the road and rail grids, with a small cache.
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const TURN = 6;   // segments in a walker's quarter-circle turn
 
 export class PathFinder {
   constructor(world) {
@@ -56,7 +57,10 @@ export class PathFinder {
 }
 
 // Turn a tile path into a smooth world-space polyline offset to the right-hand side.
-export function tilePolyline(tiles, offset = 0, start = null, end = null) {
+// round(x, z), if given, says whether a turn on that tile may follow the
+// road's curve: a quarter circle round the inside tile corner (as the road
+// surface is laid), tighter on the inside lane and wider on the outside.
+export function tilePolyline(tiles, offset = 0, start = null, end = null, round = null) {
   const pts = [];
   if (start) pts.push([start.x, start.z]);
   const n = tiles.length;
@@ -73,6 +77,18 @@ export function tilePolyline(tiles, offset = 0, start = null, end = null) {
     else if (d1[0] === -d2[0] && d1[1] === -d2[1]) {
       pts.push([cx + r1[0] * offset + d1[0] * offset, cz + r1[1] * offset + d1[1] * offset]);
       pts.push([cx + r2[0] * offset + d1[0] * offset, cz + r2[1] * offset + d1[1] * offset]);
+    } else if (round && round(x, z)) {
+      const ox = cx + (d2[0] - d1[0]) * 0.5, oz = cz + (d2[1] - d1[1]) * 0.5;
+      const R = 0.5 + (d2[0] === r1[0] && d2[1] === r1[1] ? -offset : offset);
+      const a0 = Math.atan2(cz - d1[1] * 0.5 + r1[1] * offset - oz, cx - d1[0] * 0.5 + r1[0] * offset - ox);
+      let da = Math.atan2(cz + d2[1] * 0.5 + r2[1] * offset - oz, cx + d2[0] * 0.5 + r2[0] * offset - ox) - a0;
+      if (da > Math.PI) da -= Math.PI * 2;
+      if (da < -Math.PI) da += Math.PI * 2;
+      for (let k = 0; k <= TURN; k++) {
+        const a = a0 + (da * k) / TURN, px = ox + Math.cos(a) * R, pz = oz + Math.sin(a) * R;
+        const last = pts[pts.length - 1];
+        if (!last || Math.abs(last[0] - px) + Math.abs(last[1] - pz) > 1e-6) pts.push([px, pz]);
+      }
     } else pts.push([cx + (r1[0] + r2[0]) * offset, cz + (r1[1] + r2[1]) * offset]);
   }
   if (end) pts.push([end.x, end.z]);

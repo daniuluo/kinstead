@@ -7,6 +7,7 @@
 
 import { BUILDINGS, TECHS, TRANSIT } from './defs.js';
 import { STYLES } from './render/buildings.js';
+import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
 
 const SPEEDS = [0, 1, 2, 4, 8, 16, 32];
 const LOOKS = new Set(STYLES.map(s => s.id));
@@ -36,6 +37,11 @@ export const COMMANDS = {
   unroad: {
     check: tile,
     run: (g, c) => { const r = g.world.removeRoad(c.x, c.z); return r === true ? { ok: true } : { ok: false, reason: r || 'Cannot remove' }; },
+  },
+  // upgrade, downgrade or take up a whole selection of road tiles
+  roadedit: {
+    check: (w, c) => ROAD_OPS.includes(c.op) && tiles(w, c.tiles, w.N * w.N),
+    run: (g, c) => applyRoadEdit(g.world, c.tiles, c.op),
   },
   unrail: {
     check: tile,
@@ -132,7 +138,7 @@ export function runCommand(game, cmd, from = null) {
 // Results travel back to a guest as plain data: building and line objects
 // become ids (the guest looks them up in its own copy of the town, which has
 // already been updated by the time the result arrives).
-const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n'];
+const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n', 'refund', 'skipped'];
 export function packResult(r) {
   if (!r || typeof r !== 'object') return { ok: !!r };
   const out = {};

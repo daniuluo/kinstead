@@ -44,6 +44,14 @@ export const TREE_COST = 10;
 export const CLEAR_COST = 3;
 export const TERRAFORM_COST = 15;
 
+// Taking up a road (or downgrading it) pays back a quarter of the price
+// difference, like the salvage from a demolished building.
+export const ROAD_SALVAGE = 0.25;
+export function roadRefund(from, to, water) {
+  const price = (L) => (L ? ROAD_LEVELS[L].cost : 0) * (water ? BRIDGE_MULT : 1);
+  return Math.round((price(from) - price(to)) * ROAD_SALVAGE);
+}
+
 export function titleFor(pop) {
   let t = TITLES[0];
   for (const x of TITLES) if (pop >= x.pop) t = x;

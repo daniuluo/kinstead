@@ -7,8 +7,10 @@ import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
 import { MAT } from '../render/materials.js';
 import { fmt } from './ui.js';
+import { roadRun, roadsInBox, roadsAt, planRoadEdit } from '../world/roadEdit.js';
+import { selTiles } from './roadSelect.js';
 
-const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a';
+const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a', WARN = '#ffa64a';
 
 export class Input {
   constructor(game) {
@@ -43,11 +45,14 @@ export class Input {
   get ui() { return this.game.ui; }
 
   setTool(t) {
+    const sel = this.ui.selection;
     this.tool = t;
     this.drag = null;
     this.accessIndex = 0;
     this.variant = (Math.random() * 1e9) | 0;
-    if (t.kind !== 'select') this.ui.inspect(null);
+    // the road selection tool keeps its own panel in the inspector
+    if (t.kind === 'roadsel') this.ui.inspect({ kind: 'roadsel' });
+    else if (t.kind !== 'select' || (sel && sel.kind === 'roadsel')) this.ui.inspect(null);
     this.ui.syncToolbar();
     this.game.updateRouteOverlay();
     this.refresh();
@@ -94,6 +99,7 @@ export class Input {
       case 'select': this.drag = { type: 'maybePan', x: e.clientX, y: e.clientY, moved: 0 }; break;
       case 'road': case 'rail': if (tile) this.drag = { type: 'line', start: tile, end: tile }; break;
       case 'bulldoze': if (tile) this.drag = { type: 'rect', start: tile, end: tile }; break;
+      case 'roadsel': if (tile) this.drag = { type: 'pick', start: tile, end: tile, add: e.shiftKey }; break;
       case 'build': if (tile) { this._place(tile); this.drag = { type: 'paint', last: `${tile.x},${tile.z}` }; } break;
       case 'move': if (tile) this._moveTo(tile); break;
       case 'terrain': case 'trees': if (tile) { this._applyTile(tile); this.drag = { type: 'paint', last: `${tile.x},${tile.z}` }; } break;
@@ -131,7 +137,8 @@ export class Input {
     const key = tile ? `${tile.x},${tile.z}` : '';
     const prevKey = this.hover ? `${this.hover.x},${this.hover.z}` : '';
     this.hover = tile;
-    if (d && (d.type === 'line' || d.type === 'rect') && tile) d.end = tile;
+    if (this.tool.kind === 'roadsel' && this.tool.action) { this.tool.action = null; this.refresh(e); }
+    if (d && (d.type === 'line' || d.type === 'rect' || d.type === 'pick') && tile) d.end = tile;
     if (d && d.type === 'paint' && tile && key !== d.last) {
       d.last = key;
       if (this.tool.kind === 'build') { if (BUILDINGS[this.tool.type].size === 1) this._place(tile, true); }
@@ -149,6 +156,7 @@ export class Input {
     if (d.type === 'pan' && d.button === 2 && d.moved < 6) {
       // right-click: step back out of the current tool / selection
       if (this.tool.kind === 'line' && this.tool.stops.length) { this.tool.stops.pop(); this.ui.updateHint(); this.game.updateRouteOverlay(); }
+      else if (this.tool.kind === 'roadsel' && this.tool.sel.size) this.pickRoads([], false);
       else if (this.tool.kind !== 'select') { this.ui.closeFlyout(); this.setTool({ kind: 'select' }); }
       else this.ui.inspect(null);
     } else if (d.type === 'maybePan') {
@@ -167,6 +175,8 @@ export class Input {
         if (r.n) this.game.sfx('demolish');
         else if (r.reason && tiles.length === 1) this.ui.toast(r.reason, 'bad');
       });
+    } else if (d.type === 'pick') {
+      this.pickRoads(this._pickTiles(d), d.add || e.shiftKey, this._oneTile(d));
     }
     this.drag = null;
     this.refresh();
@@ -278,6 +288,42 @@ export class Input {
     return out;
   }
 
+  // ------------------------------------------------------ road selection
+  _oneTile(d) { return d.start.x === d.end.x && d.start.z === d.end.z; }
+
+  // What a click (the stretch between junctions) or a drag (every road in
+  // the box or along the line) picks.
+  _pickTiles(d) {
+    const w = this.world;
+    if (this._oneTile(d)) return roadRun(w, d.start.x, d.start.z);
+    return this.tool.box ? roadsInBox(w, d.start, d.end) : roadsAt(w, this._lineTiles(d.start, d.end));
+  }
+
+  // Change the road selection: a fresh pick replaces it, Shift adds to it
+  // (and Shift-clicking a stretch that is already picked takes it back out).
+  // Backspace steps back through these changes.
+  pickRoads(tiles, add, toggle = false) {
+    const t = this.tool, N = this.world.N;
+    if (t.kind !== 'roadsel') return;
+    const keys = tiles.map(([x, z]) => z * N + x);
+    t.hist.push([...t.sel]);
+    if (t.hist.length > 60) t.hist.shift();
+    if (!add) t.sel = new Set(keys);
+    else if (toggle && keys.length && keys.every(k => t.sel.has(k))) for (const k of keys) t.sel.delete(k);
+    else for (const k of keys) t.sel.add(k);
+    t.confirm = null;
+    if (keys.length) this.game.sfx('click');
+    this.ui.inspect({ kind: 'roadsel' });
+  }
+
+  undoPick() {
+    const t = this.tool;
+    if (t.kind !== 'roadsel' || !t.hist.length) return;
+    t.sel = new Set(t.hist.pop());
+    t.confirm = null;
+    this.ui.inspect({ kind: 'roadsel' });
+  }
+
   // --------------------------------------------------------------- preview
   refresh(e = null) {
     const g = this.game, w = this.world;
@@ -319,6 +365,34 @@ export class Input {
         if (c.ok) cost += c.cost; else bad ||= c.reason;
       }
       tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name} · $${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
+    } else if (t.kind === 'roadsel') {
+      // picked tiles in gold; while an action is hovered in the panel, the
+      // tiles it changes in green, those it leaves alone in red, and the
+      // buildings it would cut off
+      const plan = t.action && t.action !== 'clear' ? planRoadEdit(w, selTiles(w, t), t.action, { paths: g.paths }) : null;
+      if (plan) {
+        for (const p of plan.tiles) tiles.push({ x: p.x, z: p.z, color: p.reason ? BAD : p.line ? WARN : OK, alpha: p.reason ? 0.3 : 0.45 });
+        const mark = (ids, color) => {
+          for (const id of ids || []) {
+            const b = w.buildings.get(id);
+            if (b) for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color, alpha: 0.3 });
+          }
+        };
+        mark(plan.lost, BAD);
+        mark(plan.cut, WARN);
+      } else for (const [x, z] of selTiles(w, t)) tiles.push({ x, z, color: GOLD, alpha: 0.4 });
+      if (d && d.type === 'pick') {
+        const list = this._pickTiles(d);
+        if (!this._oneTile(d)) for (const [x, z] of t.box ? this._rectTiles(d.start, d.end) : this._lineTiles(d.start, d.end)) tiles.push({ x, z, color: SOFT, alpha: 0.07, border: false });
+        for (const [x, z] of list) tiles.push({ x, z, color: SOFT, alpha: 0.3 });
+        tip = `${list.length} road tile${list.length === 1 ? '' : 's'}${d.add ? ' · adding to the selection' : ''}`;
+      } else if (h && !plan) {
+        const run = roadRun(w, h.x, h.z);
+        if (run.length) {
+          for (const [x, z] of run) tiles.push({ x, z, color: SOFT, alpha: 0.16, border: false });
+          tip = `Stretch of ${run.length} road tile${run.length === 1 ? '' : 's'} · click to pick${t.sel.size ? ' · Shift-click to add' : ''}`;
+        }
+      }
     } else if (t.kind === 'bulldoze' && (d || h)) {
       const list = d ? this._rectTiles(d.start, d.end) : [[h.x, h.z]];
       for (const [x, z] of list) {
@@ -418,7 +492,8 @@ export class Input {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (k) {
       case 'escape':
-        if (this.tool.kind !== 'select') { ui.closeFlyout(); this.setTool({ kind: 'select' }); }
+        if (this.tool.kind === 'roadsel' && this.tool.sel.size) this.pickRoads([], false);
+        else if (this.tool.kind !== 'select') { ui.closeFlyout(); this.setTool({ kind: 'select' }); }
         else ui.inspect(null);
         break;
       case ' ': e.preventDefault(); g.setSpeed(g.speed ? 0 : (g.prevSpeed || 1)); break;
@@ -442,9 +517,17 @@ export class Input {
       case '7': ui.pressTool('transit'); break;
       case '8': ui.pressTool('terrain'); break;
       case 'x': case 'delete': ui.pressTool('bulldoze'); break;
-      case 'tab': e.preventDefault(); this.accessIndex++; this.ghostKey = ''; this.refresh(); break;
+      case 'tab':
+        e.preventDefault();
+        if (this.tool.kind === 'roadsel') { this.tool.box = !this.tool.box; ui.updateHint(); ui.renderInspector(true); }
+        else { this.accessIndex++; this.ghostKey = ''; }
+        this.refresh();
+        break;
       case 'enter': this.finishLine(); break;
-      case 'backspace': if (this.tool.kind === 'line') { this.tool.stops.pop(); ui.updateHint(); g.updateRouteOverlay(); } break;
+      case 'backspace':
+        if (this.tool.kind === 'line') { this.tool.stops.pop(); ui.updateHint(); g.updateRouteOverlay(); }
+        else if (this.tool.kind === 'roadsel') this.undoPick();
+        break;
       case 'o': ui.toggleOverlayMenu(); break;
       case 'b': ui.showBudget(); break;
       case 'p': ui.showPeople(); break;

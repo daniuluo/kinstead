@@ -1,7 +1,7 @@
 // World state and the rules for changing it (placing, upgrading, bulldozing).
 // Rendering and simulation listen to the events emitted here.
 
-import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST } from '../config.js';
+import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund } from '../config.js';
 import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, techForLevel } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
@@ -859,9 +859,11 @@ export class World {
   }
 
   removeRoad(x, z) {
-    if (!this.roadAt(x, z)) return false;
+    const L = this.roadAt(x, z);
+    if (!L) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
+    this.money += roadRefund(L, 0, this.terrain.isWater(x, z));
     this.updateRoadNetwork();
     return true;
   }

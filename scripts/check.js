@@ -502,6 +502,113 @@ const runUntil = (pred, days = 6) => {
   ok(!sch.workers.length && sim.seatsOf(sch) === 0 && sch.working === 0 && sch.blockers.includes('workers') && computeIssues(tg).some(i => /school with no workers/.test(i.text)), 'a school with no teachers has no places, and the issues panel says so');
 }
 
+// 3g. road shapes and road selection: corners turn in a curve and junction
+// corners are filled in; a click picks the stretch between junctions; plans
+// add up costs and refunds and say what can't change and who'd be cut off
+{
+  const { roadTile, surfaceAt, curvesAt } = await import('../src/world/roadShape.js');
+  const { roadRun, roadsInBox, planRoadEdit, applyRoadEdit } = await import('../src/world/roadEdit.js');
+  const { tilePolyline } = await import('../src/sim/path.js');
+  const { RoadsView } = await import('../src/render/roadsView.js');
+  const { runCommand } = await import('../src/commands.js');
+  const { roadRefund, ROAD_LEVELS } = await import('../src/config.js');
+  const tw = World.createNew({ N: 48, seed: 5, name: 'Bendwick' });
+  tw.money = 1e6;
+  // a free, gentle 9 × 9 patch for a little network
+  let o = null;
+  for (let z = 1; z < tw.N - 10 && !o; z++) for (let x = 1; x < tw.N - 10 && !o; x++) {
+    let free = true;
+    for (let dz = -1; dz < 10 && free; dz++) for (let dx = -1; dx < 10 && free; dx++) {
+      const X = x + dx, Z = z + dz;
+      if (tw.terrain.isWater(X, Z) || tw.roadAt(X, Z) || tw.railAt(X, Z) || tw.buildingOn(X, Z) || tw.terrain.slope(X, Z) > 0.5) free = false;
+    }
+    if (free) o = { x, z };
+  }
+  ok(!!o, 'found a free patch for the road-shape checks');
+  const P = (x, z) => [o.x + x, o.z + z];
+  // dirt (0..2, 1), cobbled junction (3, 1), paved (4..6, 1) turning down
+  // (6, 2..4), cobbled (3, 2..7), dirt (0..2, 5) meeting it at (3, 5)
+  tw.setSandbox({ unlockAll: true });
+  tw.placeRoads([0, 1, 2].map(x => P(x, 1)), 1);
+  tw.placeRoads([P(3, 1), ...[2, 3, 4, 5, 6, 7].map(z => P(3, z))], 2);
+  tw.placeRoads([...[4, 5, 6].map(x => P(x, 1)), ...[2, 3, 4].map(z => P(6, z))], 3);
+  tw.placeRoads([0, 1, 2].map(x => P(x, 5)), 1);
+  tw.setSandbox({ unlockAll: false });
+  const key = (l) => l.map(([x, z]) => `${x - o.x},${z - o.z}`).sort().join(' ');
+  // shapes
+  const bend = roadTile(tw, ...P(6, 1)), tee = roadTile(tw, ...P(3, 1)), straight = roadTile(tw, ...P(3, 3));
+  ok(bend.bend === 2 && !bend.fillets.length, 'a corner (west and south arms) is laid as a bend round its south-west corner');
+  ok(tee.bend < 0 && key([[0, 0]]) && tee.fillets.join() === '1,2', 'a T-junction fills in its two inside corners');
+  ok(straight.bend < 0 && !straight.fillets.length, 'a straight road has no curves');
+  const [bx, bz] = P(6, 1), [tx, tz] = P(3, 1);
+  ok(surfaceAt(tw, bx + 0.95, bz + 0.05) === 0 && surfaceAt(tw, bx + 0.04, bz + 0.96) === 0, 'the bend leaves grass at its outer and inner corners');
+  ok(surfaceAt(tw, bx + 1 - 0.5 * Math.SQRT1_2 - 0.5, bz + 0.5 * Math.SQRT1_2 + 0.5 - 0.5) > 0 || surfaceAt(tw, bx + 0.5 - 0.5 * Math.SQRT1_2 + 0.5 * Math.SQRT1_2, bz + 1 - 0.5) > 0, 'the bend is road along its curve');
+  ok(surfaceAt(tw, tx + 1 - 0.21, tz + 1 - 0.21) > 0 && surfaceAt(tw, tx + 0.95, tz + 0.95) === 0, 'a junction corner is road out to the fillet, grass right in the corner');
+  ok(curvesAt(tw, bx, bz) && !curvesAt(tw, o.x - 5, o.z - 5), 'walkers may curve on land roads only');
+  // villagers on the inside lane follow the bend and stay on the road
+  const walk = tilePolyline([P(4, 1), P(5, 1), P(6, 1), P(6, 2), P(6, 3)], 0.12, null, null, (x, z) => curvesAt(tw, x, z));
+  const corner = { x: bx, z: bz + 1 };
+  const onArc = walk.filter(([x, z]) => Math.abs(Math.hypot(x - corner.x, z - corner.z) - 0.38) < 1e-6);
+  ok(onArc.length >= 5 && walk.every(([x, z]) => surfaceAt(tw, x, z) > 0), `a villager turning the corner follows the curve (${onArc.length} points on it) and stays on the street`);
+  const view = new RoadsView(tw, scene);
+  ok([...view.surface.geometry.attributes.position.array].every(Number.isFinite) && view.surface.geometry.attributes.position.count > 0, 'road surfaces with bends and fillets build cleanly');
+  view.dispose();
+  // stretches between junctions
+  ok(key(roadRun(tw, ...P(1, 1))) === key([P(0, 1), P(1, 1), P(2, 1)]), 'a click picks the stretch up to the junction');
+  ok(key(roadRun(tw, ...P(4, 1))) === key([P(4, 1), P(5, 1), P(6, 1), P(6, 2), P(6, 3), P(6, 4)]), 'a stretch follows the road round a bend');
+  ok(key(roadRun(tw, ...P(3, 1))) === key([P(3, 1)]) && roadRun(tw, o.x + 8, o.z + 8).length === 0, 'a junction is a stretch of its own; grass picks nothing');
+  ok(key(roadRun(tw, ...P(3, 3))) === key([P(3, 2), P(3, 3), P(3, 4)]), 'a stretch stops at the next junction too');
+  const all = roadsInBox(tw, { x: o.x, z: o.z }, { x: o.x + 8, z: o.z + 8 });
+  ok(all.length === 3 + 1 + 6 + 6 + 3, `a box picks every road tile in it (${all.length})`);
+  // plans: costs, refunds, what can't change and why
+  const dirt = roadRun(tw, ...P(1, 1)), paved = roadRun(tw, ...P(4, 1)), cob = roadRun(tw, ...P(3, 3));
+  const locked = planRoadEdit(tw, all, 'up');
+  ok(locked.n === 0 && locked.blocked.some(b => /Unlocks at 25/.test(b.reason)) && locked.blocked.some(b => /paved/.test(b.reason)), 'upgrades wait for their unlock, and paved streets go no higher');
+  tw.setSandbox({ unlockAll: true });
+  const up = planRoadEdit(tw, all, 'up');
+  const want = all.reduce((s, [x, z]) => { const L = tw.roadAt(x, z); return s + (L < 3 ? ROAD_LEVELS[L + 1].cost - ROAD_LEVELS[L].cost : 0); }, 0);
+  ok(up.n === 13 && up.cost === want && up.blocked.length === 1 && up.blocked[0].n === 6, `upgrading the lot costs the sum of each step ($${up.cost}); the 6 paved tiles are skipped`);
+  const down = planRoadEdit(tw, [...dirt, ...paved], 'down');
+  ok(down.n === 6 && down.refund === 6 * roadRefund(3, 2, false) && down.blocked[0].n === 3, `downgrading pays back a quarter of the difference ($${down.refund}); dirt can't go lower`);
+  const rm = planRoadEdit(tw, cob, 'remove');
+  ok(rm.n === 3 && rm.refund === 3 * roadRefund(2, 0, false), `taking up 3 cobbled tiles pays back $${rm.refund}`);
+  ok(roadRefund(2, 0, true) === Math.round(ROAD_LEVELS[2].cost * 3 * 0.25), 'bridges pay back at bridge prices');
+  const entry = planRoadEdit(tw, [[tw.entry.x, tw.entry.z]], 'remove');
+  ok(entry.n === 0 && /outside world/.test(entry.blocked[0].reason), 'the road to the outside world must stay');
+  // who would be cut off: a home on the dirt street, a shop at the bend,
+  // and a coach line between them
+  const H1 = tw.placeBuilding('house', ...P(1, 0), { instant: true }).building;
+  const H2 = tw.placeBuilding('house', ...P(7, 3), { instant: true }).building;
+  tw.lines.push({ id: 9999, mode: 'coach', name: 'Test Line', color: '#fff', stops: [H1.id, H2.id], vehicles: 1 });
+  const before = tw.roads.slice();
+  const cutBend = planRoadEdit(tw, paved, 'remove');
+  ok(cutBend.lost.includes(H2.id) && !cutBend.lost.includes(H1.id) && cutBend.lines.includes(9999), 'taking up the bend leaves its house without a road and the coach line without a route');
+  const cutJunction = planRoadEdit(tw, [P(3, 1)], 'remove');
+  ok(!cutJunction.lost.length && cutJunction.lines.includes(9999), 'taking up the junction between the stops breaks the line too');
+  ok(!planRoadEdit(tw, cob, 'remove').lines.length, 'a stretch the line does not need leaves it alone');
+  ok(H1.front > 0 && planRoadEdit(tw, dirt, 'remove').back.includes(H1.id), 'a house standing forward into the street would step back');
+  // the town itself: taking up the road beside the way in cuts the town off
+  const th = [...tw.buildings.values()].find(b => b.type === 'townhall');
+  const way = [];
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (tw.roadAt(tw.entry.x + dx, tw.entry.z + dz)) way.push([tw.entry.x + dx, tw.entry.z + dz]);
+  const sever = planRoadEdit(tw, way, 'remove');
+  ok(sever.cut.includes(th.id), 'taking up the road next to the way in would cut the town hall off');
+  ok(tw.roads.every((v, i) => v === before[i]), 'plans change nothing');
+  // doing it
+  tw.money = 30;
+  const poor = applyRoadEdit(tw, dirt, 'up');
+  ok(!poor.ok && poor.reason === 'Not enough money' && tw.roadAt(...P(1, 1)) === 1 && tw.money === 30, 'an upgrade the town cannot afford changes nothing');
+  tw.money = 1000;
+  const did = applyRoadEdit(tw, dirt, 'up');
+  ok(did.ok && did.n === 3 && did.spent === 42 && tw.money === 958 && dirt.every(([x, z]) => tw.roadAt(x, z) === 2), 'upgrading the dirt stretch makes it cobbled and costs $42');
+  const g2 = { world: tw, demo: false, emit() {} };
+  ok(!runCommand(g2, { t: 'roadedit', op: 'paint', tiles: dirt }).ok, 'the roadedit command refuses unknown actions');
+  const gone = runCommand(g2, { t: 'roadedit', op: 'remove', tiles: cob });
+  ok(gone.ok && gone.refund === rm.refund && tw.money === 958 + rm.refund && cob.every(([x, z]) => !tw.roadAt(x, z)), 'taking the cobbled stretch up through the command pays back its refund');
+  const one = tw.money, [ux, uz] = P(5, 5);
+  ok(tw.removeRoad(...P(2, 5)) === true && tw.money === one + roadRefund(1, 0, false) && ux >= 0, 'taking up a single tile pays back too');
+}
+
 // 3z. every method the UI, game and input code call on themselves exists
 // (a missing one only shows up as a frozen game in the browser)
 {

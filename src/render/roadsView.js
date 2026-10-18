@@ -1,17 +1,18 @@
-// 3D road furniture: bridges, street lamps and railway track.
-// (Road and track surfaces themselves are painted into the terrain.)
+// Road surfaces and road furniture: crisp road surfaces with edging stones,
+// door paths, bridges, ramps, street lamps, power lines and railway track.
+// (A soft shoulder under each road is painted into the terrain.)
 
 import * as THREE from 'three';
 import { MAT } from './materials.js';
 import { GeoBuilder } from './geo.js';
 import { hash2 } from '../util/rng.js';
 
-// Road surface widths (half-width) and colours per road level, with a band
-// of kerb / edging stones on cobbled and paved streets.
-const HALF = [0, 0.16, 0.215, 0.27];
+// Road surface colours per road level, with a band of kerb / edging stones
+// on cobbled and paved streets (widths and shapes are in roadShape.js).
 const SURF = [null, new THREE.Color('#a3835a'), new THREE.Color('#9a9488'), new THREE.Color('#5f5d5a')];
 const KERB = [null, null, new THREE.Color('#bbb3a2'), new THREE.Color('#cfc9bc')];
-const BAND = 0.035, CELL = 0.125;
+const CELL = 0.125, ARC = 8;
+import { HALF, BAND, SIDES, roadTile, cornerFrame, shapeAt } from '../world/roadShape.js';
 import { bridgeDeckY, RAMP, isOpen } from '../world/world.js';
 import { BUILDINGS } from '../defs.js';
 import { CONFIG } from '../config.js';
@@ -67,8 +68,10 @@ export class RoadsView {
     this.surface.geometry = this._surfaces();
   }
 
-  // Each road tile is a centre square plus an arm towards every connected
-  // neighbour, laid as small quads that follow the ground. Cobbled and paved
+  // Each road tile is laid as small cells that follow the ground (see
+  // roadShape.js for the shapes): a centre square plus an arm towards every
+  // linked neighbour, a quarter ring where the road turns a corner, and a
+  // curved fillet in the inside corner where two arms meet. Cobbled and paved
   // streets get a band of edging stones wherever the road has an edge.
   _surfaces() {
     const w = this.world, t = w.terrain, N = w.N;
@@ -78,43 +81,111 @@ export class RoadsView {
       if (w.rampHeight(x, z) != null) return null;
       return t.heightAt(x, z) + 0.018;
     };
-    const rect = (x0, z0, x1, z1, L, edges, seed) => {
-      // split lines: regular cells plus the kerb band on edged sides
-      const xs = new Set([x0, x1]), zs = new Set([z0, z1]);
-      for (let k = 1; k * CELL < x1 - x0; k++) xs.add(x0 + k * CELL);
-      for (let k = 1; k * CELL < z1 - z0; k++) zs.add(z0 + k * CELL);
-      if (KERB[L]) {
-        if (edges.x0) xs.add(x0 + BAND); if (edges.x1) xs.add(x1 - BAND);
-        if (edges.z0) zs.add(z0 + BAND); if (edges.z1) zs.add(z1 - BAND);
-      }
-      const X = [...xs].sort((a, b) => a - b), Z = [...zs].sort((a, b) => a - b);
+    // one four-sided cell (corners in order round it) in one colour
+    const cell = (p, L, kerb) => {
+      const h = p.map(([x, z]) => height(x, z));
+      if (h.some(v => v == null)) return;
+      const mx = (p[0][0] + p[1][0] + p[2][0] + p[3][0]) / 4, mz = (p[0][1] + p[1][1] + p[2][1] + p[3][1]) / 4;
+      c.copy(kerb ? KERB[L] : SURF[L]);
+      c.multiplyScalar(1 + (hash2(Math.floor(mx * 16), Math.floor(mz * 16), 3) - 0.5) * (L === 2 ? 0.16 : 0.08));
+      // keep the faces pointing up whichever way round the corners run
+      let area = 0;
+      for (let i = 0; i < 4; i++) { const a = p[i], b = p[(i + 1) & 3]; area += a[0] * b[1] - b[0] * a[1]; }
+      for (const k of area < 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]) { pos.push(p[k][0], h[k], p[k][1]); col.push(c.r, c.g, c.b); }
+    };
+    // split lines across a piece: a grid shared by every tile, plus the kerb
+    // band on edged sides
+    const lines = (a, b, e0, e1, kb) => {
+      const lo = a + (e0 ? kb : 0), hi = b - (e1 ? kb : 0), v = [a, b];
+      if (e0 && kb) v.push(lo);
+      if (e1 && kb) v.push(hi);
+      for (let g = Math.ceil((lo + 0.03) / CELL); g * CELL < hi - 0.03; g++) v.push(g * CELL);
+      return v.sort((p, q) => p - q);
+    };
+    const rect = (x0, z0, x1, z1, L, e) => {
+      if (x1 - x0 < 1e-4 || z1 - z0 < 1e-4) return;
+      const kb = KERB[L] ? BAND : 0;
+      const X = lines(x0, x1, e.x0, e.x1, kb), Z = lines(z0, z1, e.z0, e.z1, kb);
       for (let i = 0; i + 1 < X.length; i++) for (let j = 0; j + 1 < Z.length; j++) {
         const ax = X[i], bx = X[i + 1], az = Z[j], bz = Z[j + 1];
         if (bx - ax < 1e-4 || bz - az < 1e-4) continue;
-        const h00 = height(ax, az), h01 = height(ax, bz), h10 = height(bx, az), h11 = height(bx, bz);
-        if (h00 == null || h01 == null || h10 == null || h11 == null) continue;
         const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-        const kerb = KERB[L] && ((edges.x0 && mx < x0 + BAND) || (edges.x1 && mx > x1 - BAND) || (edges.z0 && mz < z0 + BAND) || (edges.z1 && mz > z1 - BAND));
-        c.copy(kerb ? KERB[L] : SURF[L]);
-        const v = 1 + (hash2(Math.floor(mx * 16), Math.floor(mz * 16), seed) - 0.5) * (L === 2 ? 0.16 : 0.08);
-        c.multiplyScalar(v);
-        const tri = [[ax, h00, az], [ax, h01, bz], [bx, h10, az], [bx, h10, az], [ax, h01, bz], [bx, h11, bz]];
-        for (const p of tri) { pos.push(p[0], p[1], p[2]); col.push(c.r, c.g, c.b); }
+        const kerb = kb && ((e.x0 && mx < x0 + kb) || (e.x1 && mx > x1 - kb) || (e.z0 && mz < z0 + kb) || (e.z1 && mz > z1 - kb));
+        cell([[ax, az], [ax, bz], [bx, bz], [bx, az]], L, kerb);
+      }
+    };
+    // an axis-aligned piece between two points, edged on the given sides
+    const box = (L, px, pz, qx, qz, edged) => {
+      const e = { x0: false, x1: false, z0: false, z1: false };
+      for (const [dx, dz] of edged) { if (dx < 0) e.x0 = true; if (dx > 0) e.x1 = true; if (dz < 0) e.z0 = true; if (dz > 0) e.z1 = true; }
+      rect(Math.min(px, qx), Math.min(pz, qz), Math.max(px, qx), Math.max(pz, qz), L, e);
+    };
+    // the quarter of a tile round corner k with no fillet: a quarter of the
+    // centre square and the near half of each arm (arms narrow to meet a
+    // lesser road next door)
+    const quarter = (s, k) => {
+      const { x, z, L, hw, arms } = s, k2 = (k + 1) & 3;
+      const [ax, az] = SIDES[k], [bx, bz] = SIDES[k2], cx = x + 0.5, cz = z + 0.5;
+      box(L, cx, cz, cx + (ax + bx) * hw, cz + (az + bz) * hw, [arms[k] ? null : SIDES[k], arms[k2] ? null : SIDES[k2]].filter(Boolean));
+      if (arms[k]) box(L, cx + ax * hw, cz + az * hw, cx + ax * 0.5 + bx * arms[k], cz + az * 0.5 + bz * arms[k], [SIDES[k2]]);
+      if (arms[k2]) box(L, cx + bx * hw, cz + bz * hw, cx + bx * 0.5 + ax * arms[k2], cz + bz * 0.5 + az * arms[k2], [SIDES[k]]);
+    };
+    // the quarter of a tile round corner k where two arms meet: all road but
+    // a quarter ellipse of grass in the corner, edged along the curve. Cells
+    // fan out along rays from the corner to the arms' centre lines.
+    const fillet = (s, k) => {
+      const { x, z, L, arms } = s, f = cornerFrame(x, z, k);
+      const ru = 0.5 - arms[k], rv = 0.5 - arms[(k + 1) & 3];
+      const kb = KERB[L] ? BAND : 0;
+      const th = [Math.atan2(ru, rv)];
+      for (let i = 0; i <= ARC; i++) th.push((i / ARC) * Math.PI / 2);
+      th.sort((p, q) => p - q);
+      const rays = th.map((a) => {
+        const eu = ru * Math.cos(a), ev = rv * Math.sin(a), r = Math.hypot(eu, ev);
+        const tmax = Math.min(eu > 1e-9 ? 0.5 / eu : Infinity, ev > 1e-9 ? 0.5 / ev : Infinity);
+        const ts = kb ? [1, 1 + kb / r] : [1];
+        const t0 = ts[ts.length - 1];
+        for (let i = 1; i < 3; i++) ts.push(t0 + ((tmax - t0) * i) / 3);
+        ts.push(tmax);
+        return ts.map(q => [f.Kx + eu * q * f.ux + ev * q * f.vx, f.Kz + eu * q * f.uz + ev * q * f.vz]);
+      });
+      for (let i = 0; i + 1 < rays.length; i++) {
+        if (th[i + 1] - th[i] < 1e-6) continue;
+        const A = rays[i], B = rays[i + 1];
+        for (let j = 0; j + 1 < A.length; j++) cell([A[j], A[j + 1], B[j + 1], B[j]], L, kb && j === 0);
+      }
+    };
+    // a road turning a corner: a quarter ring round the inside tile corner,
+    // edged on both sides, widening or narrowing smoothly to meet each arm
+    const bend = (s) => {
+      const { x, z, L, arms } = s, k = s.bend, f = cornerFrame(x, z, k);
+      const a = arms[k], b = arms[(k + 1) & 3];
+      const kb = KERB[L] ? BAND : 0;
+      const n = Math.max(1, Math.round((2 * Math.max(a, b) - 2 * kb) / CELL));
+      const rays = [];
+      for (let i = 0; i <= ARC; i++) {
+        const th = ((i / ARC) * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+        const width = 2 * (a + ((b - a) * i) / ARC);
+        const q0 = kb / width, q1 = 1 - kb / width;
+        const qs = kb ? [0, q0] : [0];
+        for (let j = 1; j < n; j++) qs.push((kb ? q0 : 0) + (((kb ? q1 : 1) - (kb ? q0 : 0)) * j) / n);
+        if (kb) qs.push(q1);
+        qs.push(1);
+        rays.push(qs.map((q) => {
+          const u = co * (0.5 - a + 2 * a * q), v = si * (0.5 - b + 2 * b * q);
+          return [f.Kx + u * f.ux + v * f.vx, f.Kz + u * f.uz + v * f.vz];
+        }));
+      }
+      for (let i = 0; i < ARC; i++) {
+        const A = rays[i], B = rays[i + 1];
+        for (let j = 0; j + 1 < A.length; j++) cell([A[j], A[j + 1], B[j + 1], B[j]], L, kb && (j === 0 || j === A.length - 2));
       }
     };
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      const L = w.roads[w.idx(x, z)];
-      if (!L || t.isWater(x, z)) continue;
-      const hw = HALF[L], cx = x + 0.5, cz = z + 0.5;
-      const nb = (dx, dz) => w.roadAt(x + dx, z + dz);
-      const n = nb(0, -1), s = nb(0, 1), wv = nb(-1, 0), e = nb(1, 0);
-      rect(cx - hw, cz - hw, cx + hw, cz + hw, L, { x0: !wv, x1: !e, z0: !n, z1: !s }, 3);
-      // arms narrow to meet a lesser road next door
-      const arm = (L2) => Math.min(hw, HALF[L2] || hw);
-      if (n) { const a = arm(n); rect(cx - a, z, cx + a, cz - hw, L, { x0: true, x1: true }, 3); }
-      if (s) { const a = arm(s); rect(cx - a, cz + hw, cx + a, z + 1, L, { x0: true, x1: true }, 3); }
-      if (wv) { const a = arm(wv); rect(x, cz - a, cx - hw, cz + a, L, { z0: true, z1: true }, 3); }
-      if (e) { const a = arm(e); rect(cx + hw, cz - a, x + 1, cz + a, L, { z0: true, z1: true }, 3); }
+      const s = roadTile(w, x, z);
+      if (!s) continue;
+      if (s.bend >= 0) { bend(s); continue; }
+      for (let k = 0; k < 4; k++) if (s.fillets.includes(k)) fillet(s, k); else quarter(s, k);
     }
     this._doorPaths(pos, col);
     const g = new THREE.BufferGeometry();
@@ -131,7 +202,20 @@ export class RoadsView {
   _powerLines(gb) {
     const w = this.world, t = w.terrain, N = w.N;
     const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0;
-    const H = 0.5, at = (x, z) => [x + 0.81, t.heightAt(x + 0.81, z + 0.81) + H - 0.05, z + 0.81];
+    // a pole stands in the verge by the tile's south-east corner, tucked
+    // further into the corner where the road curves round it
+    const H = 0.5, spots = new Map();
+    const at = (x, z) => {
+      const key = z * N + x;
+      if (spots.has(key)) return spots.get(key);
+      const s = roadTile(w, x, z);
+      const on = (px, pz) => s && (shapeAt(s, px, pz, 0) || shapeAt(s, px - 0.035, pz) || shapeAt(s, px, pz - 0.035) || shapeAt(s, px - 0.025, pz - 0.025));
+      let k = 0.31;
+      while (k < 0.45 && on(x + 0.5 + k, z + 0.5 + k)) k += 0.02;
+      const p = [x + 0.5 + k, t.heightAt(x + 0.5 + k, z + 0.5 + k) + H - 0.05, z + 0.5 + k];
+      spots.set(key, p);
+      return p;
+    };
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       if (!has(x, z)) continue;
       const [px, py, pz] = at(x, z);
@@ -191,12 +275,24 @@ export class RoadsView {
 
   // A little path from every front door straight out to the street: stone
   // flags beside cobbled and paved streets, a worn earth path by dirt roads.
+  // It runs until it meets the roadway (further where the street curves away
+  // round a corner) and flares out in a curve where it joins it.
   _doorPaths(pos, col) {
-    const w = this.world, t = w.terrain;
+    const w = this.world, t = w.terrain, N = w.N;
     const c = new THREE.Color();
-    const quad = (ax, az, bx, bz, half, nx, nz, color, y) => {
-      const p = [[ax - nx * half, az - nz * half], [ax + nx * half, az + nz * half], [bx + nx * half, bz + nz * half], [bx - nx * half, bz - nz * half]];
-      const h = p.map(([x, z]) => y ?? t.heightAt(x, z) + 0.016);
+    const shapes = new Map();
+    const onRoad = (px, pz) => {
+      const key = Math.floor(pz) * N + Math.floor(px);
+      if (!shapes.has(key)) shapes.set(key, roadTile(w, Math.floor(px), Math.floor(pz)));
+      const s = shapes.get(key);
+      return s ? shapeAt(s, px, pz, 0) : 0;
+    };
+    const R = 0.06;
+    const flare = (d) => (d >= R ? 0 : d <= 0 ? R : R - Math.sqrt(R * R - (R - d) * (R - d)));
+    // a stretch of path from a to b, half0 / half1 wide either side at its ends
+    const quad = (ax, az, bx, bz, half0, half1, nx, nz, color) => {
+      const p = [[ax - nx * half0, az - nz * half0], [ax + nx * half0, az + nz * half0], [bx + nx * half1, bz + nz * half1], [bx - nx * half1, bz - nz * half1]];
+      const h = p.map(([x, z]) => t.heightAt(x, z) + 0.016);
       const tri = [0, 1, 2, 0, 2, 3];
       // keep the faces pointing up whichever way the path runs
       const cross = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
@@ -212,21 +308,28 @@ export class RoadsView {
       const sx = d.x + d.dx * 0.03, sz = d.z + d.dz * 0.03;
       // run out along the door's facing until the edge of the roadway
       const along = (cx - sx) * d.dx + (cz - sz) * d.dz;
-      const len = along - HALF[L] + 0.03;
+      let reach = along - HALF[L];
+      for (let s = 0; s <= along + 0.05; s += 0.01) if (onRoad(sx + d.dx * s, sz + d.dz * s)) { reach = s; break; }
+      const len = reach + 0.03;
       if (len < 0.03 || len > 1.6) continue;
       const nx = -d.dz, nz = d.dx;
+      // one piece of path, split finer where it flares into the street
+      const piece = (a, e, half, color) => {
+        const n = e > reach - R ? 3 : 1;
+        for (let i = 0; i < n; i++) {
+          const s0 = a + ((e - a) * i) / n, s1 = a + ((e - a) * (i + 1)) / n;
+          quad(sx + d.dx * s0, sz + d.dz * s0, sx + d.dx * s1, sz + d.dz * s1, half + flare(reach - s0), half + flare(reach - s1), nx, nz, color);
+        }
+      };
       if (L === 1) {
         c.set('#9a805c');
         const n = Math.ceil(len / 0.08);
-        for (let i = 0; i < n; i++) {
-          const a = (i / n) * len, e = ((i + 1) / n) * len;
-          quad(sx + d.dx * a, sz + d.dz * a, sx + d.dx * e, sz + d.dz * e, 0.036 + 0.006 * Math.sin(i * 2.1), nx, nz, c);
-        }
+        for (let i = 0; i < n; i++) piece((i / n) * len, ((i + 1) / n) * len, 0.036 + 0.006 * Math.sin(i * 2.1), c);
       } else {
         for (let a = 0, i = 0; a < len - 0.02; a += 0.068, i++) {
           const e = Math.min(len, a + 0.056);
           c.set(i % 2 ? '#d6ccb4' : '#c4b89c').multiplyScalar(0.95 + hash2(b.id, i, 7) * 0.1);
-          quad(sx + d.dx * a, sz + d.dz * a, sx + d.dx * e, sz + d.dz * e, 0.05, nx, nz, c);
+          piece(a, e, 0.05, c);
         }
       }
     }

@@ -34,6 +34,8 @@ import { showMultiplayer, renderNetBox } from './multiplayer.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
+import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel } from './roadSelect.js';
+import { roadRun } from '../world/roadEdit.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -184,6 +186,7 @@ export class UI {
         const d = ROAD_LEVELS[L];
         cards.push(card(`road:${L}`, ['🟫', '🪨', '⬛'][L - 1], d.name, `${d.cost} / tile`, pop < d.unlock ? d.unlock : 0, () => this.game.input.setTool({ kind: 'road', level: L }), 'Drag to build. Drawing over a lesser road upgrades it.'));
       }
+      cards.push(card('roadsel', '<span class="ms">highlight_alt</span>', 'Select roads', '', 0, () => this.game.input.setTool(roadSelTool()), 'Pick whole stretches of road, then upgrade, downgrade or take them all up at once.'));
     } else if (cat === 'terrain') {
       cards.push(card('terrain:raise', '⛰️', 'Raise land', `${TERRAFORM_COST}`, 0, () => this.game.input.setTool({ kind: 'terrain', mode: 'raise' })));
       cards.push(card('terrain:lower', '🕳️', 'Lower land', `${TERRAFORM_COST}`, 0, () => this.game.input.setTool({ kind: 'terrain', mode: 'lower' })));
@@ -238,6 +241,7 @@ export class UI {
     switch (t.kind) {
       case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
+      case 'roadsel': msg = `Click a road to pick its stretch · Shift-click adds · drag to pick a ${t.box ? 'box' : 'line'} (Tab: ${t.box ? 'line' : 'box'}) · Backspace undoes · right-click clears`; break;
       case 'build': msg = `Click to place a ${BUILDINGS[t.type].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
       case 'move': {
         const b = this.world.buildings.get(t.id);
@@ -339,11 +343,15 @@ export class UI {
       const L = w.roadAt(sel.x, sel.z);
       if (!L && !w.railAt(sel.x, sel.z)) { this.inspect(null); return; }
       html = this._roadHTML(sel.x, sel.z, L);
+    } else if (sel.kind === 'roadsel') {
+      html = roadSelHTML(this.game);
+      if (html == null) { this.inspect(null); return; }
     }
     el.innerHTML = `<button class="close" data-act="close">✕</button>` + ico(html);
     if (sel.kind === 'building') this._syncPreview(w.buildings.get(sel.id));
     el.classList.remove('hidden');
     for (const a of el.querySelectorAll('[data-act]')) a.onclick = (e) => this._act(a.dataset.act, a.dataset, e);
+    if (sel.kind === 'roadsel') bindRoadSel(this, el);
     // hovering an expansion option shows the plot it would take
     for (const a of el.querySelectorAll('[data-act="expand"]')) {
       a.onmouseenter = () => { this.game.input.previewTiles = a.dataset.tiles.split(';').map(t => { const [x, z] = t.split(',').map(Number); return { x, z, color: a.dataset.kind === 'takeover' ? '#ff6b5a' : a.dataset.kind === 'strip' ? '#ffd84a' : '#7fdc6a', alpha: 0.45 }; }); this.game.input.refresh(); };
@@ -622,6 +630,8 @@ export class UI {
         h += `<div class="actions"><button class="btn primary" data-act="roadup" ${c.ok && w.money >= c.cost ? '' : 'disabled'} title="${esc(c.reason || '')}">⬆ ${ROAD_LEVELS[L + 1].name} · $${c.cost ?? '—'}</button><button class="btn danger" data-act="roaddel">Remove</button></div>`;
         if (!c.ok) h += `<div class="req"><div class="no">${esc(c.reason)}</div></div>`;
       } else h += `<div class="actions"><button class="btn danger" data-act="roaddel">Remove</button></div>`;
+      const run = roadRun(w, x, z).length;
+      h += `<div class="actions"><button class="btn" data-act="roadrun" title="Pick the stretch of road between junctions to change it all at once"><span class="ms">highlight_alt</span> Select stretch${run > 1 ? ` · ${run} tiles` : ''}</button></div>`;
     } else {
       h += `<div class="head"><div class="big">🛤️</div><div><h3>Railway track</h3><div class="sub">upkeep 0.25/day</div></div></div>`;
       h += `<div class="actions"><button class="btn danger" data-act="raildel">Remove</button></div>`;
@@ -721,6 +731,8 @@ export class UI {
         });
         break;
       case 'raildel': g.cmd({ t: 'unrail', x: sel.x, z: sel.z }); this.inspect(null); break;
+      case 'roadrun': g.input.setTool(roadSelTool(roadRun(w, sel.x, sel.z), w.N)); break;
+      case 'rsel': roadSelAct(this, data); break;
     }
   }
 
@@ -1518,6 +1530,7 @@ function toolKey(t) {
     case 'trees': return 'trees';
     case 'rail': return 'rail';
     case 'line': return `line:${t.mode}`;
+    case 'roadsel': return 'roadsel';
     default: return '';
   }
 }

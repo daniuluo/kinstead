@@ -6,6 +6,7 @@ import { CONFIG } from '../config.js';
 import { BUILDINGS, servicesOf } from '../defs.js';
 import { doorPoint, fw, fd, isOpen } from '../world/world.js';
 import { tilePolyline } from './path.js';
+import { curvesAt } from '../world/roadShape.js';
 import { MAT } from '../render/materials.js';
 import { workArea } from '../render/buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -75,6 +76,8 @@ export class Agents {
   constructor(game) {
     this.game = game;
     this.world = game.world;
+    // villagers cut a corner along the road's curve (not on a bridge ramp)
+    this._curve = (x, z) => curvesAt(this.world, x, z);
     this.walkers = new Set();
     this.plannedDay = -1;
     const scene = game.renderer.scene;
@@ -259,7 +262,7 @@ export class Agents {
 
   _walk(r, A, B, tiles, startPos, onArrive) {
     const start = doorPoint(A), end = doorPoint(B);
-    const pts = tilePolyline(tiles, r.lk.lane, start, end);
+    const pts = tilePolyline(tiles, r.lk.lane, start, end, this._curve);
     const out = startPos ? null : this._doorway(A, r, false), into = this._doorway(B, r, true);
     // with a real door the plot-edge point is skipped (the front may stand
     // further forward than the plot edge)
@@ -394,7 +397,7 @@ export class Agents {
       const tiles = home.access ? this.game.paths.road(e.x, e.z, home.access.x, home.access.z) : null;
       if (!tiles) continue;
       const startEdge = { x: e.x + 0.5 + (e.x === 0 ? -0.5 : e.x === w.N - 1 ? 0.5 : 0), z: e.z + 0.5 + (e.z === 0 ? -0.5 : e.z === w.N - 1 ? 0.5 : 0) };
-      const pts = tilePolyline(tiles, r.lk.lane, startEdge, doorPoint(home));
+      const pts = tilePolyline(tiles, r.lk.lane, startEdge, doorPoint(home), this._curve);
       const into = this._doorway(home, r, true);
       if (into) { pts.pop(); pts.push(...into); }
       const delay = Math.random() * 1.5;
@@ -423,7 +426,7 @@ export class Agents {
       if (!from || !from.access) continue;
       const tiles = this.game.paths.road(from.access.x, from.access.z, e.x, e.z);
       if (!tiles) continue;
-      const pts = tilePolyline(tiles, r.lk.lane, doorPoint(from), null);
+      const pts = tilePolyline(tiles, r.lk.lane, doorPoint(from), null, this._curve);
       const out = this._doorway(from, r, false);
       if (out) { pts.shift(); pts.unshift(...out); }
       const wk = this._makeWalker(r.lk, pts, () => this._drop(wk));

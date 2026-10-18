@@ -9,6 +9,7 @@ import { BUILDINGS } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
 import { doorPoint, fw, fd } from '../world/world.js';
 import { railArc } from './roadsView.js';
+import { roadTile, cornerFrame, SIDES } from '../world/roadShape.js';
 
 export const SUB = 5;
 const BASE_Y = -2.2;
@@ -273,11 +274,25 @@ export class TerrainView {
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const L = w.roads[z * N + x];
       if (!L) continue;
-      const segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07);
+      // follow the road's own shape: round a bend, and filled in where two
+      // arms meet (see roadShape.js)
+      const shape = roadTile(w, x, z);
+      let segs;
+      if (shape && shape.bend >= 0) {
+        const arc = railArc(x, z, [SIDES[shape.bend], SIDES[(shape.bend + 1) & 3]]);
+        segs = [];
+        for (let k = 0; k < arc.length - 1; k++) segs.push([arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1]]);
+      } else segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07);
+      const corners = shape ? shape.fillets.map(k => cornerFrame(x, z, k)) : [];
       const hw = HW[L], sf = SOFT[L];
       this._range(x - 0.45, z - 0.45, x + 1.45, z + 1.45, (vi, px, pz) => {
         let d = 9;
         for (const s of segs) { const dd = segDist(px, pz, s[0], s[1], s[2], s[3]); if (dd < d) d = dd; }
+        // in a filled corner the edge is a quarter circle round the tile corner
+        for (const f of corners) {
+          const u = (px - f.Kx) * f.ux + (pz - f.Kz) * f.uz, v = (px - f.Kx) * f.vx + (pz - f.Kz) * f.vz;
+          if (u >= 0 && v >= 0 && u <= 0.5 && v <= 0.5) d = Math.min(d, Math.max(0, 0.5 - Math.hypot(u, v)));
+        }
         if (d > hw + sf * 2 + 0.1) return;
         const rough = L === 1 ? this.n3(px * 3.1, pz * 3.1) * 0.06 + this.n1(px * 9, pz * 9) * 0.025 : this.n3(px * 5, pz * 5) * 0.012;
         const c = 1 - smoothstep(hw - sf, hw + sf, d + rough);

@@ -74,6 +74,7 @@ function cursorOf(game) {
   if (t.kind === 'build') act = BUILDINGS[t.type]?.name || '';
   else if (t.kind === 'road') act = ROAD_LEVELS[t.level]?.name || '';
   else if (t.kind === 'rail') act = 'Laying track';
+  else if (t.kind === 'roadsel') act = 'Picking roads';
   else if (t.kind === 'bulldoze') act = 'Demolishing';
   else if (t.kind === 'terrain') act = t.mode === 'flatten' ? 'Levelling land' : t.mode === 'raise' ? 'Raising land' : 'Lowering land';
   else if (t.kind === 'trees') act = 'Planting trees';
