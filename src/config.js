@@ -14,6 +14,7 @@ export const CONFIG = {
   CART_SPEED: 0.36,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
   AUTOSAVE_DAYS: 1,
+  AUTOSAVE_SECONDS: 90,     // also this often in real time, paused or not
   VIEW_HEIGHT: 22,         // world units visible vertically at zoom 1
 };
 
@@ -55,10 +56,11 @@ export function roadRefund(from, to, water) {
 // Ways to dress a street (world.dress, one per road tile; see roadDress.js):
 // a price per tile, a little upkeep a day, and appeal for the homes and
 // shops beside it. minLevel: the road it needs (the median needs a wide one).
+// verge: it stands on the verges, so buildings there don't come forward.
 export const DRESSINGS = [
   null,
-  { key: 'trees', name: 'Tree-lined avenue', icon: 'park', cost: 28, upkeep: 0.1, appeal: 1, unlock: 25, desc: 'Street trees on the verges either side' },
-  { key: 'hedges', name: 'Hedged lane', icon: 'grass', cost: 12, upkeep: 0.05, appeal: 0.5, unlock: 0, desc: 'Low clipped hedges along both sides' },
+  { key: 'trees', name: 'Tree-lined avenue', icon: 'park', verge: true, cost: 28, upkeep: 0.1, appeal: 1, unlock: 25, desc: 'Street trees on the verges either side' },
+  { key: 'hedges', name: 'Hedged lane', icon: 'grass', verge: true, cost: 12, upkeep: 0.05, appeal: 0.5, unlock: 0, desc: 'Low clipped hedges along both sides' },
   { key: 'lamps', name: 'Lamp-lit street', icon: 'emoji_objects', cost: 24, upkeep: 0.12, appeal: 0.7, unlock: 25, desc: 'A street lamp every other tile, lit at night when the town has power' },
   { key: 'median', name: 'Planted boulevard', icon: 'nature', cost: 36, upkeep: 0.12, appeal: 1.2, unlock: 120, minLevel: 3, desc: 'A planted strip down the middle of a paved street' },
 ];

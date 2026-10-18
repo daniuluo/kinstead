@@ -20,6 +20,7 @@ import { UI } from './ui/ui.js';
 import { Input } from './ui/input.js';
 import { Sfx } from './ui/sfx.js';
 import { Music } from './ui/music.js';
+import { newTownId } from './util/text.js';
 import { serialize, deserialize, LocalSaves, downloadJSON, readJSONFile, saveFileName } from './save/saves.js';
 import { Drive } from './save/gdrive.js';
 import { randomSeed, RNG } from './util/rng.js';
@@ -96,7 +97,9 @@ export class Game {
 
     this._bindFileDrop();
     // closing or reloading the tab: say goodbye rather than leave the others waiting
-    window.addEventListener('pagehide', () => { if (this.net) this.net.close(); });
+    window.addEventListener('pagehide', () => { this.autosave(); if (this.net) this.net.close(); });
+    // switching away (or a phone locking) may be the last chance to save
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.autosave(); });
     this.clock = performance.now();
     // one bad frame must never stop the game: log it and carry on
     const loop = () => {
@@ -195,6 +198,7 @@ export class Game {
   newGame({ name, seed, N, sandbox, starter = null }) {
     this.endNet();
     const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox });
+    w.townId = newTownId();   // every game from the same starter is a town of its own
     this.load(w, { fresh: !starter });
     document.getElementById('title').classList.add('hidden');
     if (starter) this.ui.toast(`Welcome to ${name}! ${w.population} villagers are counting on you.`, 'big', '🏡');
@@ -210,7 +214,7 @@ export class Game {
   }
 
   toTitle() {
-    if (this.world && !this.demo && !this.replica && this.settings.autosave) this.saveLocal('autosave', true);
+    this.autosave();
     this.endNet();
     this.startDemo();
     this.showTitle();
@@ -219,7 +223,7 @@ export class Game {
   // ---------------------------------------------------------- multiplayer
   // A guest's copy of the host's town has arrived (see net/session.js).
   joinTown(snap, session) {
-    if (this.world && !this.demo && !this.replica && this.settings.autosave) this.saveLocal('autosave', true);
+    this.autosave();
     const w = worldFromSnapshot(snap);
     if (this.net && this.net !== session) this.endNet();
     this.net = session;
@@ -266,6 +270,7 @@ export class Game {
       const data = serialize(this.world);
       if (id === 'autosave') data.name = this.world.townName;
       LocalSaves.save(id, data, this.captureThumb());
+      this._savedAt = performance.now();
       if (!quiet) this.ui.toast('Saved', 'good', '💾');
       return true;
     } catch (e) {
@@ -275,6 +280,20 @@ export class Game {
   }
 
   quickSave() { this.saveLocal('quick'); }
+
+  // The town as it stands, to the autosave slot: at the turn of every day,
+  // every AUTOSAVE_SECONDS of real time (a day is long, and never ends while
+  // paused), when the tab is hidden or closed, and before leaving the town.
+  // Never a guest's copy of someone else's town.
+  autosave() {
+    if (!this.world || this.demo || this.replica || !this.settings.autosave) return;
+    // a different town is about to take the autosave slot: the one there
+    // moves to the "previous town" slot, so starting a new village or loading
+    // another never loses the last one (older saves go by name)
+    const cur = LocalSaves.list().find(e => e.id === 'autosave');
+    if (cur && (cur.town ? cur.town !== this.world.townId : cur.name !== this.world.townName)) LocalSaves.copy('autosave', 'previous');
+    this.saveLocal('autosave', true);
+  }
 
   // Plain .json download of the current town.
   downloadSave() {
@@ -327,7 +346,7 @@ export class Game {
     }
     this.transit.planCarts();
     // a guest's copy of someone else's town is not their autosave
-    if (this.settings.autosave && !this.replica && (this.world.day % CONFIG.AUTOSAVE_DAYS === 0)) this.saveLocal('autosave', true);
+    if (this.world.day % CONFIG.AUTOSAVE_DAYS === 0) this.autosave();
   }
 
   _onMilestone(t) {
@@ -497,6 +516,8 @@ export class Game {
     this.time += dt;
     const w = this.world;
     if (w) {
+      if (!this._savedAt) this._savedAt = now;
+      else if (now - this._savedAt > CONFIG.AUTOSAVE_SECONDS * 1000) { this._savedAt = now; this.autosave(); }
       const gameDt = this.sim.update(dt);
       this.sky.update(w.day, w.hours, w.seed);
       const env = this.env;

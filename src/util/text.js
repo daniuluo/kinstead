@@ -15,3 +15,7 @@ export function cleanColor(s, fallback = '#888888') {
 // Own keys only, so '__proto__' or 'constructor' never look like a building,
 // a research project or a command.
 export const hasKey = (obj, k) => typeof k === 'string' && Object.hasOwn(obj, k);
+
+// A random id for one town (saves of it share it; a new village gets a new one).
+export const newTownId = () => (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 12).padEnd(12, '0');
+export const isTownId = (s) => typeof s === 'string' && /^[a-z0-9]{6,24}$/.test(s);

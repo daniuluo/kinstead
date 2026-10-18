@@ -4,7 +4,7 @@ import { World } from '../world/world.js';
 import { Terrain } from '../world/terrain.js';
 import { BUILDINGS, TECHS } from '../defs.js';
 import { titleFor, DRESSINGS } from '../config.js';
-import { cleanText, cleanColor, hasKey } from '../util/text.js';
+import { cleanText, cleanColor, hasKey, newTownId, isTownId } from '../util/text.js';
 
 export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
 export const SAVE_VERSION = 1;
@@ -32,6 +32,7 @@ export function serialize(world) {
     version: SAVE_VERSION,
     savedAt: new Date().toISOString(),
     name: world.townName,
+    townId: world.townId || null,
     seed: world.seed,
     N: world.N,
     heights: toB64(new Uint8Array(q.buffer)),
@@ -61,6 +62,7 @@ export function deserialize(data) {
   for (let i = 0; i < q.length; i++) H[i] = q[i] / 1000;
   const w = new World(N, data.seed, new Terrain(N, H));
   w.townName = cleanText(data.name, 40) || 'Kinstead';
+  w.townId = isTownId(data.townId) ? data.townId : newTownId();
   w.roads.set(fromB64(data.roads).subarray(0, N * N));
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
   if (typeof data.buried === 'string') w.buried.set(fromB64(data.buried).subarray(0, N * N).map(v => (v ? 1 : 0)));
@@ -111,7 +113,7 @@ export const LocalSaves = {
   _writeIndex(idx) { localStorage.setItem(INDEX_KEY, JSON.stringify(idx)); },
   save(id, data, thumb) {
     const idx = this.list().filter(e => e.id !== id);
-    const entry = { id, name: data.name, day: data.meta.day, pop: data.meta.pop, money: data.meta.money, title: data.meta.title, savedAt: data.savedAt, thumb: thumb || null };
+    const entry = { id, name: data.name, town: data.townId || null, day: data.meta.day, pop: data.meta.pop, money: data.meta.money, title: data.meta.title, savedAt: data.savedAt, thumb: thumb || null };
     try {
       localStorage.setItem(SLOT_KEY(id), JSON.stringify(data));
       idx.unshift(entry);
@@ -140,6 +142,16 @@ export const LocalSaves = {
     this._writeIndex(this.list().filter(e => e.id !== id));
   },
   has(id) { return !!localStorage.getItem(SLOT_KEY(id)); },
+  // Copy one slot to another (quietly does nothing if storage is full).
+  copy(from, to) {
+    const s = localStorage.getItem(SLOT_KEY(from)), e = this.list().find(x => x.id === from);
+    if (!s || !e) return false;
+    try {
+      localStorage.setItem(SLOT_KEY(to), s);
+      this._writeIndex([...this.list().filter(x => x.id !== to), { ...e, id: to }]);
+      return true;
+    } catch { return false; }
+  },
 };
 
 export function downloadJSON(data, filename) {

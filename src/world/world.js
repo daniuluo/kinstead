@@ -1,10 +1,11 @@
 // World state and the rules for changing it (placing, upgrading, bulldozing).
 // Rendering and simulation listen to the events emitted here.
 
-import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund } from '../config.js';
+import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
 import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, techForLevel, growsInto, BURY_COST } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
+import { newTownId } from '../util/text.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
 
 // rot index → direction the building faces (its door side)
@@ -314,6 +315,8 @@ export class World {
     if (!b.access) return 0;
     const tiles = this._frontTiles(b);
     if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
+    // street trees and hedges take the verge, so it stays behind them
+    if (this.dress && tiles.some(([x, z]) => (DRESSINGS[this.dress[this.idx(x, z)]] || {}).verge)) return 0;
     // two buildings on a street corner facing the same road tile would meet
     // in its corner, so neither of them comes forward there. Nor does one
     // whose garden strip (b.ext) widens its front past a building on the corner.
@@ -1112,6 +1115,7 @@ export class World {
     const { terrain, start, entryPath } = generateTerrain(N, seed);
     const w = new World(N, seed, terrain);
     w.townName = name || 'Kinstead';
+    w.townId = newTownId();
     if (sandbox) w.setSandbox(sandbox);
     for (const [x, z] of entryPath) w.roads[w.idx(x, z)] = 1;
     const last = entryPath[entryPath.length - 1];

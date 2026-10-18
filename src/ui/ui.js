@@ -1036,10 +1036,10 @@ export class UI {
     if (!list.length) h += `<div class="empty">No saves in this browser yet.</div>`;
     h += `<div class="saves">${list.map(e => `<div class="save">
       ${e.thumb ? `<img src="${e.thumb}" alt="">` : '<div class="ph">🏡</div>'}
-      <div><div class="t">${esc(e.name)} ${e.id === 'autosave' ? '<span class="chip">Autosave</span>' : ''}</div>
+      <div><div class="t">${esc(e.name)} ${e.id === 'autosave' ? '<span class="chip">Autosave</span>' : e.id === 'previous' ? '<span class="chip">Previous town</span>' : ''}</div>
       <div class="m">Day ${e.day} · ${fmt(e.pop)} villagers · $${typeof e.money === "number" ? fmt(e.money) : e.money}</div><div class="m">${new Date(e.savedAt).toLocaleString()}</div></div>
       <div class="acts"><button class="btn small primary" data-load="${e.id}">Load</button>
-      ${inGame && e.id !== 'autosave' ? `<button class="btn small" data-over="${e.id}">Overwrite</button>` : ''}
+      ${inGame && e.id !== 'autosave' && e.id !== 'previous' ? `<button class="btn small" data-over="${e.id}">Overwrite</button>` : ''}
       <button class="btn small" data-dl="${e.id}" title="Download as .json">⬇</button>
       <button class="btn small danger" data-del="${e.id}">✕</button></div></div>`).join('')}</div>`;
     body.innerHTML = h;

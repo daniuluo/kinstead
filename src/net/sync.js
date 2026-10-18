@@ -261,7 +261,8 @@ export function applyDelta(game, d) {
   // power lines laid underground
   if (d.bu && grid(w.buried, d.bu)) w.emit('lines');
   // streets dressed with trees, hedges, lamps or a median
-  if (d.ds && grid(w.dress, d.ds)) w.emit('dress');
+  const dressed = !!(d.ds && grid(w.dress, d.ds));
+  if (dressed) w.emit('dress');
   let land = null;
   if (d.h) {
     const S = w.N + 1, H = w.terrain.H;
@@ -273,7 +274,7 @@ export function applyDelta(game, d) {
       land.x1 = Math.max(land.x1, cx); land.z1 = Math.max(land.z1, cz);
     }
   }
-  if (roads || land) structural = true;
+  if (roads || land || dressed) structural = true;   // dressings move buildings back from the verge too
 
   // 4. buildings added or changed (events wait until access is sorted out)
   const added = [], changed = [], refit = [], done = [];

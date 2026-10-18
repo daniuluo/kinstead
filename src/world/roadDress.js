@@ -60,7 +60,13 @@ export function planDress(w, list, kind) {
     t.refund = dressRefund(from);
     n++; cost += t.cost; refund += t.refund;
   }
-  const plan = { kind, tiles, n, cost, refund, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
+  // buildings standing forward onto tiles that get trees or hedges step back
+  const back = [];
+  if (D && D.verge && n) {
+    const on = new Set(tiles.filter(t => !t.reason).map(t => w.idx(t.x, t.z)));
+    for (const b of w.buildings.values()) if (b.front > 0 && w._frontTiles(b).some(([x, z]) => w.inBounds(x, z) && on.has(w.idx(x, z)))) back.push(b.id);
+  }
+  const plan = { kind, tiles, n, cost, refund, back, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
   if (n && cost - refund > w.money) plan.short = 'Not enough money';
   return plan;
 }
@@ -72,6 +78,7 @@ export function applyDress(w, list, kind) {
   if (plan.short) return { ok: false, reason: plan.short };
   for (const t of plan.tiles) if (!t.reason) w.dress[w.idx(t.x, t.z)] = kind;
   w.money += plan.refund - plan.cost;
+  w._updateFronts();   // trees and hedges send buildings standing forward back
   w.emit('dress');
   const skipped = plan.tiles.length - plan.n;
   return { ok: true, n: plan.n, spent: plan.cost, refund: plan.refund, failed: skipped ? plan.blocked[0].reason : null, skipped };

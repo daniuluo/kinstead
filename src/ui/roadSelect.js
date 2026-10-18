@@ -98,18 +98,19 @@ export function roadSelHTML(game) {
   }
   // dressing the street: one price per tile, a quarter back for what it replaces
   const dl = [];
-  let dh = '<div class="actions">';
+  let dh = '<div class="actions">', back = 0;
   for (let k = 1; k < DRESSINGS.length; k++) {
     const D = DRESSINGS[k], p = planDress(w, list, k), net = p.cost - p.refund;
     dh += btn(`dress:${k}`, esc(D.name), D.icon, '', p, `$${fmt(net)}`, `${D.desc} · $${D.cost} a tile, upkeep ${D.upkeep}/day · homes and shops beside it like it`);
     if (!p.n && p.blocked.length) dl.push(`<div class="no">${esc(D.name)}: ${esc(p.blocked[0].reason)}</div>`);
     else for (const b of p.blocked) dl.push(`<div class="no">${esc(D.name)} skips ${plural(b.n, 'tile')}: ${esc(b.reason)}</div>`);
+    if (p.back.length) back = Math.max(back, p.back.length);
     if (p.short && p.n) dl.push(`<div class="no">${esc(D.name)} needs $${fmt(net)}, you have $${fmt(w.money)}</div>`);
   }
   const bare = planDress(w, list, 0);
   if (bare.n) dh += btn('dress:0', 'Plain', 'block', '', bare, `+$${fmt(bare.refund)}`, 'Take the dressing away (a quarter of its price back)');
   dh += '</div>';
-  h += `<div class="sec"><h5>Dress the street</h5>${dh}<div class="req"><div class="ok">Junctions, bends and driveways are left open</div>${dl.join('')}</div></div>`;
+  h += `<div class="sec"><h5>Dress the street</h5>${dh}<div class="req"><div class="ok">Junctions, bends and driveways are left open</div>${back ? `<div class="ok">Trees and hedges: ${plural(back, 'building')} standing forward into the street would step back behind them</div>` : ''}${dl.join('')}</div></div>`;
   h += `<div class="actions"><button class="btn" data-act="rsel" data-op="clear">${ms('deselect')} Clear</button></div>`;
   return h;
 }

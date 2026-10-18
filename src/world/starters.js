@@ -196,6 +196,7 @@ function headlessGame(w) {
 export function growStarter(def, { onDay } = {}) {
   const { N, seed } = def;
   const w = World.createNew({ N, seed, name: def.town });
+  w.townId = ('starter' + def.id).replace(/[^a-z0-9]/g, '').slice(0, 24);   // grown the same every time (a game started from it gets its own)
   // The founders' research: a town a few weeks along has already worked
   // through its known list, so those points are banked from the start and
   // each project completes as soon as it can begin (in order, prerequisites

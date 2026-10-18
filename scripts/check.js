@@ -816,7 +816,7 @@ const runUntil = (pred, days = 6) => {
   const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
   const sim = new Sim(tg);
   sim.recompute();
-  const hi = tw.idx(H.x, H.z), before = sim.appeal[hi], m0 = tw.money;
+  const hi = tw.idx(H.x, H.z), before = sim.appeal[hi], m0 = tw.money, forward = H.front;
   sim._budget();
   const upkeep0 = sim.budget.expense.roads;
   ok(applyDress(tw, all, 1).ok && tw.money === m0 - trees.cost && tw.dress[tw.idx(...P(1, 2))] === 1, 'the avenue is planted and paid for');
@@ -830,6 +830,7 @@ const runUntil = (pred, days = 6) => {
   ok(sp.trees.length > 10 && !at(sp.trees, P(4, 2)).length && !at(sp.trees, P(4, 6)).length, `street trees (${sp.trees.length}) stand clear of the junction and the bend`);
   const door = doorPoint(H);
   const nearDoor = (list, gap) => list.filter(p => p.z > door.z - 0.5 && Math.abs(p.x - door.x) < gap && tileOf(p)[1] === o.z + 2);
+  ok(forward > 0 && trees.back.includes(H.id) && H.front === 0 && sp.trees.some(p => tileOf(p)[0] === o.x + 2 && tileOf(p)[1] === o.z + 2 && p.z > o.z + 2.5), 'the cottage that stood forward into the street steps back behind its trees');
   ok(!nearDoor(sp.trees, 0.2).length && (!H.front || !sp.trees.some(p => tileOf(p)[1] === o.z + 2 && tileOf(p)[0] === o.x + 2 && p.z > o.z + 2.5)), 'and leave the cottage its driveway');
   // hedges instead along the paved street: a quarter of the trees back
   const m1 = tw.money, hedge = applyDress(tw, paved, 2);
