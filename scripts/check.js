@@ -240,12 +240,19 @@ const runUntil = (pred, days = 6) => {
 };
 {
   w.money = 1e6;
+  // founders are random: make sure the builder's yard has a builder
+  const yard = [...w.buildings.values()].find(b => BUILDINGS[b.type].builders);
+  if (yard && ![...w.residents.values()].some(r => r.job === yard.id)) {
+    const hand = [...w.residents.values()].find(r => r.age === 'adult');
+    if (hand) { hand.job = yard.id; game.sim.recompute(); }
+  }
   const spot = freeSpot();
   const r = w.placeBuilding('house', spot.x, spot.z, {});
   ok(r.ok && r.building.con && r.building.con.kind === 'build', 'a new cottage starts as a building site');
   // hired hands start every site at once; make this one big enough that the
-  // town's builders get there before they finish it
-  r.building.con.work *= 6;
+  // town's builders, on their slow walk from the yard, get there before
+  // the hands finish it
+  r.building.con.work *= 20;
   const t0 = w.day * 24 + w.hours;
   const res = runUntil(() => !r.building.con);
   const took = w.day * 24 + w.hours - t0;
@@ -268,10 +275,11 @@ const runUntil = (pred, days = 6) => {
     const { runCommand } = await import('../src/commands.js');
     const sa = freeSpot(), A = w.placeBuilding('house', sa.x, sa.z, {}).building;
     const sb = freeSpot(), B = w.placeBuilding('house', sb.x, sb.z, {}).building;
+    A.con.work *= 20; B.con.work *= 20;   // so the hired hands don't finish them before the builders come
     const pr = runCommand(game, { t: 'priority', id: B.id, on: true });
     const crew = (b) => game.construction.crew.get(b.id) || { assigned: 0 };
     const got = runUntil(() => crew(A).assigned > 0 || crew(B).assigned > 0);
-    ok(pr.ok && B.con.priority === true && got.ok && crew(B).assigned > 0 && crew(A).assigned === 0, `a site put first gets the builders before an older one (${crew(B).assigned} at it, ${crew(A).assigned} at the older)`);
+    ok(pr.ok && B.con && B.con.priority === true && got.ok && crew(B).assigned > 0 && crew(A).assigned === 0, `a site put first gets the builders before an older one (${crew(B).assigned} at it, ${crew(A).assigned} at the older)`);
     ok(deserialize(JSON.parse(JSON.stringify(serialize(w)))).buildings.get(B.id).con.priority === true, "saves keep a site's priority");
     ok(!runCommand(game, { t: 'priority', id: h.id, on: true }).ok && !runCommand(game, { t: 'priority', id: B.id, on: 'yes' }).ok, 'only a building site can be put first, and only by a yes or no');
     ok(runUntil(() => !A.con && !B.con).ok, 'both sites get finished');
