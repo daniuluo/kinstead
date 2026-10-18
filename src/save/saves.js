@@ -6,7 +6,7 @@ import { BUILDINGS, TECHS } from '../defs.js';
 import { titleFor } from '../config.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
 
-export const SAVE_FORMAT = 'hearthvale-save';
+export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
 export const SAVE_VERSION = 1;
 
 function toB64(u8) {
@@ -51,15 +51,15 @@ export function serialize(world) {
 }
 
 export function deserialize(data) {
-  if (!data || data.format !== SAVE_FORMAT) throw new Error('This file is not a Hearthvale save.');
-  if (data.version > SAVE_VERSION) throw new Error('This save was made by a newer version of Hearthvale.');
+  if (!data || data.format !== SAVE_FORMAT) throw new Error('This file is not a Kinstead save.');
+  if (data.version > SAVE_VERSION) throw new Error('This save was made by a newer version of Kinstead.');
   const N = data.N;
   const raw = fromB64(data.heights);
   const q = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
   const H = new Float32Array(q.length);
   for (let i = 0; i < q.length; i++) H[i] = q[i] / 1000;
   const w = new World(N, data.seed, new Terrain(N, H));
-  w.townName = cleanText(data.name, 40) || 'Hearthvale';
+  w.townName = cleanText(data.name, 40) || 'Kinstead';
   w.roads.set(fromB64(data.roads).subarray(0, N * N));
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
   if (typeof data.buried === 'string') w.buried.set(fromB64(data.buried).subarray(0, N * N).map(v => (v ? 1 : 0)));
@@ -172,5 +172,5 @@ export function saveFileNameFor(data) {
 
 function fileNameOf(name, day) {
   const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'town';
-  return `${slug}-day${day}.hearthvale.json`;
+  return `${slug}-day${day}.kinstead.json`;
 }

@@ -217,7 +217,7 @@ export class HostSession extends Peerish {
   _hello(link, m) {
     if (this.guests.has(link)) return;
     const refuse = (reason) => { link.send({ t: 'refuse', reason }); setTimeout(() => link.close(), 1500); };
-    if (m.proto !== PROTOCOL) { refuse('This town is running a different version of Hearthvale. Reload both pages and try again.'); return; }
+    if (m.proto !== PROTOCOL) { refuse('This town is running a different version of Kinstead. Reload both pages and try again.'); return; }
     if (this.players.length >= MAX_PLAYERS) { refuse(`This town is full (${MAX_PLAYERS} players).`); return; }
     const id = this._next++;
     const used = new Set(this.players.map(p => p.color));

@@ -8,7 +8,7 @@
 
 const PEERJS_SRC = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js';
 const PEERJS_SRI = 'sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu';
-const PREFIX = 'hearthvale-';
+const PREFIX = 'hearthvale-';   // the game's old name: an internal id only, kept so the peer ids don't change
 // no 0/O, 1/I/L: easy to read out and type
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 6;
@@ -130,7 +130,7 @@ export async function connect(code) {
     };
     const t = setTimeout(() => fail(`Couldn't connect to the town ${formatCode(code)}. The host's network may block direct connections; try again in a moment.`), CONNECT_TIMEOUT);
     peer.on('error', (e) => fail(e && e.type === 'peer-unavailable'
-      ? `No town is open with the code ${formatCode(code)}. Check the code, and that the host still has Hearthvale open.`
+      ? `No town is open with the code ${formatCode(code)}. Check the code, and that the host still has Kinstead open.`
       : friendly(e)));
     conn.on('error', (e) => fail(friendly(e)));
     conn.on('open', () => {

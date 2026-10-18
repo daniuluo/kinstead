@@ -139,7 +139,7 @@ export class MergeDialog {
         <h3>Town ${side} <small>— ${role}</small></h3>
         ${chosen}
         ${this.fresh[side] ? freshForm(side) : `<div class="merge-list">${rows.join('')}</div>`}
-        <label class="btn small" title="A Hearthvale .json save file">${ms('upload_file')} Upload a .json save…<input type="file" accept=".json,application/json" hidden data-file="${side}"></label>
+        <label class="btn small" title="A Kinstead .json save file">${ms('upload_file')} Upload a .json save…<input type="file" accept=".json,application/json" hidden data-file="${side}"></label>
         <div class="merge-drop">…or drop a .json save here</div>
       </div>`;
     };

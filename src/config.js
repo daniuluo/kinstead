@@ -1,4 +1,4 @@
-// Global tunables for Hearthvale.
+// Global tunables for Kinstead.
 
 export const CONFIG = {
   // Google Drive cloud saves: paste your OAuth 2.0 Web Client ID here

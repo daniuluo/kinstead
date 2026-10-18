@@ -1,8 +1,8 @@
-# Hearthvale
+# Kinstead
 
 A little isometric village builder that runs in your browser — pixel-art rendering in the spirit of *Metropolis 1998* and the late-90s city sims, with a living village of tiny people going about their day.
 
-**Play it:** https://daniuluo.github.io/hearthvale/
+**Play it:** https://daniuluo.github.io/hearthvale/ (the web address still uses the game's old name, Hearthvale)
 
 ## Features
 
@@ -95,9 +95,9 @@ Every other player is treated as untrusted.
 
 ### Why PeerJS
 
-The site is static (GitHub Pages), so players need a public way to find each other. Hearthvale uses [PeerJS](https://peerjs.com/) 1.5.5, loaded from jsDelivr with a pinned version and a Subresource Integrity checksum, the first time someone hosts or joins. It was picked over Trystero and similar options for three reasons:
+The site is static (GitHub Pages), so players need a public way to find each other. Kinstead uses [PeerJS](https://peerjs.com/) 1.5.5, loaded from jsDelivr with a pinned version and a Subresource Integrity checksum, the first time someone hosts or joins. It was picked over Trystero and similar options for three reasons:
 
-- Its free cloud signalling server lets the host claim a chosen peer id, so the invite code simply *is* the peer id: `K7Q-M2P` is the peer `hearthvale-K7QM2P`.
+- Its free cloud signalling server lets the host claim a chosen peer id, so the invite code simply *is* the peer id: `K7Q-M2P` is the peer `hearthvale-K7QM2P` (the prefix keeps the game's old name).
 - It reports an unknown id explicitly, so a wrong or expired code gets a clear "no town is open with that code" message rather than an empty room.
 - It configures STUN and PeerJS's public TURN relay by default, so players behind awkward home networks can usually still connect.
 
@@ -140,7 +140,7 @@ Then open http://localhost:8080. Any static server also works, for example `npx 
 
 ## Google Drive saves
 
-Cloud saves use your own Google account through Google Identity Services and the Drive REST API. They use the narrow `drive.file` scope, so the game can only see files it created itself. Those files live in a **Hearthvale Saves** folder in your Drive.
+Cloud saves use your own Google account through Google Identity Services and the Drive REST API. They use the narrow `drive.file` scope, so the game can only see files it created itself. Those files live in a **Kinstead Saves** folder in your Drive (a **Hearthvale Saves** folder from before the game was renamed is still found and used).
 
 You need your own OAuth Client ID (it's free):
 

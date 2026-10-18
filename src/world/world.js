@@ -98,7 +98,7 @@ export class World {
     this.hours = 7;
     this.nextId = 1;
     this.entry = { x: 0, z: 0 };
-    this.townName = 'Hearthvale';
+    this.townName = 'Kinstead';
     this.history = [];
     this.titleIdx = 0;
     this.stats = { visits: 0, visitIncome: 0, todayVisitIncome: 0, arrivals: 0, departures: 0 };
@@ -1055,7 +1055,7 @@ export class World {
   static createNew({ N = 48, seed, name, sandbox = null }) {
     const { terrain, start, entryPath } = generateTerrain(N, seed);
     const w = new World(N, seed, terrain);
-    w.townName = name || 'Hearthvale';
+    w.townName = name || 'Kinstead';
     if (sandbox) w.setSandbox(sandbox);
     for (const [x, z] of entryPath) w.roads[w.idx(x, z)] = 1;
     const last = entryPath[entryPath.length - 1];

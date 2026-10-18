@@ -9,7 +9,7 @@ function fail(msg) {
 
 try {
   const game = new Game();
-  window.hearthvale = game;
+  window.kinstead = window.hearthvale = game;   // a handle for the console (the old name still works)
   game.startDemo();
   game.showTitle();
   // an invite link (…?join=ABC-DEF) opens the Multiplayer window with the code filled in
@@ -17,5 +17,5 @@ try {
   if (join) game.ui.showMultiplayer({ code: join });
 } catch (e) {
   console.error(e);
-  fail('Hearthvale could not start: ' + (e && e.message ? e.message : e) + ' — it needs a browser with WebGL.');
+  fail('Kinstead could not start: ' + (e && e.message ? e.message : e) + ' — it needs a browser with WebGL.');
 }

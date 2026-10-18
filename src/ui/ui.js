@@ -1052,7 +1052,7 @@ export class UI {
       return;
     }
     if (!drive.connected) {
-      body.innerHTML = `<div class="note">Saves go to a <b>Hearthvale Saves</b> folder in your Google Drive. The game can only see files it created.</div>
+      body.innerHTML = `<div class="note">Saves go to a <b>Kinstead Saves</b> folder in your Google Drive. The game can only see files it created.</div>
         <div class="actions"><button class="btn primary" id="gConnect">☁️ Connect Google Drive</button></div>`;
       body.querySelector('#gConnect').onclick = async () => {
         try { await drive.connect(true); this.showSaves('drive'); } catch (e) { this.toast(e.message, 'bad'); }
@@ -1064,7 +1064,7 @@ export class UI {
     try { files = await drive.list(); } catch (e) { body.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
     if (!body.isConnected) return;
     let h = `<div class="actions" style="margin:0 0 12px">${inGame ? '<button class="btn primary" id="gSave">☁️ Save to Drive</button>' : ''}<button class="btn" id="gOut">Disconnect</button></div>`;
-    if (!files.length) h += `<div class="empty">No Hearthvale saves in your Drive yet.</div>`;
+    if (!files.length) h += `<div class="empty">No Kinstead saves in your Drive yet.</div>`;
     h += `<div class="saves">${files.map(f => {
       const a = f.appProperties || {};
       return `<div class="save"><div class="ph">☁️</div><div><div class="t">${esc(a.town || f.name)}</div>

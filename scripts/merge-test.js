@@ -270,8 +270,8 @@ if (wi > 0) {
   const fs = await import('node:fs');
   const dir = process.argv[wi + 1] || '.';
   fs.mkdirSync(dir, { recursive: true });
-  for (const [k, d] of Object.entries(T)) fs.writeFileSync(`${dir}/${d.name.toLowerCase()}.hearthvale.json`, JSON.stringify(d));
-  if (sample) fs.writeFileSync(`${dir}/merged.hearthvale.json`, JSON.stringify(sample.data));
+  for (const [k, d] of Object.entries(T)) fs.writeFileSync(`${dir}/${d.name.toLowerCase()}.kinstead.json`, JSON.stringify(d));
+  if (sample) fs.writeFileSync(`${dir}/merged.kinstead.json`, JSON.stringify(sample.data));
   log(`  wrote saves to ${dir}`);
 }
 
