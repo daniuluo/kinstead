@@ -285,11 +285,25 @@ export class Game {
 
   rotateView(dir) {
     if (!this.world || this.demo) return;
-    this.renderer.rotate(dir);
+    this.renderer.rotate(dir, this._centerGround());
+  }
+
+  // The ground (or water) under the middle of the screen: the point the view
+  // turns and tilts around.
+  _centerGround() {
+    const tv = this.view && this.view.terrain;
+    if (!tv) return null;
+    // cast along the line of sight through the camera's target (not from the
+    // pixel-snapped camera), so repeated turns don't creep
+    const R = this.renderer, rc = this._centerRay || (this._centerRay = new THREE.Raycaster());
+    const dir = R.camera.getWorldDirection(new THREE.Vector3());
+    rc.set(R.rig.target.clone().addScaledVector(dir, -200), dir);
+    const hit = rc.intersectObjects([tv.surface, tv.water].filter(Boolean), true)[0];
+    return hit ? hit.point : null;
   }
 
   toggleTopDown() {
-    this.renderer.setTopDown(!this.renderer.rig.topDown);
+    this.renderer.setTopDown(!this.renderer.rig.topDown, this.world && !this.demo ? this._centerGround() : null);
     this.ui.syncToolbar();
   }
 

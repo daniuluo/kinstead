@@ -141,7 +141,18 @@ export class Renderer {
     this.rig.goal.set(x, this.rig.goal.y, z);
     if (instant) this.rig.target.copy(this.rig.goal);
   }
-  setTopDown(on) {
+  // The camera turns and tilts around its target. Moving the target along the
+  // line of sight doesn't change the (orthographic) picture, so before turning
+  // it is moved onto the ground under the middle of the screen, which then
+  // stays put. pivot: that ground point, or null to keep the current target.
+  _pivotOn(pivot) {
+    const rig = this.rig;
+    rig.anchor = null;
+    if (pivot) rig.target.copy(pivot);
+    rig.goal.copy(rig.target);
+  }
+  setTopDown(on, pivot = null) {
+    this._pivotOn(pivot);
     this.rig.topDown = on;
     this.rig.elevT = on ? Math.PI / 2 : ISO_ELEV;
     // the 2D map is grid-aligned; the isometric view sits at 45° to the grid
@@ -149,10 +160,9 @@ export class Renderer {
   }
   // Swing the camera a quarter turn around the middle of the screen
   // (dir = 1 turns the town clockwise on screen, -1 anticlockwise).
-  rotate(dir) {
+  rotate(dir, pivot = null) {
     const rig = this.rig;
-    rig.anchor = null;
-    rig.goal.copy(rig.target);
+    this._pivotOn(pivot);
     rig.view += dir;
     rig.turnT = rig.view * Math.PI / 2;
   }
