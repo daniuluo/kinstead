@@ -28,6 +28,21 @@ const RESTYLE = 0.3;
 const baseAreaOf = (type) => (BUILDINGS[type].merged ? 2 : BUILDINGS[type].size ** 2);
 const baseArea = (b) => baseAreaOf(b.type);
 export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
+// How high a building's floor sits on a plot whose ground runs from minH to
+// maxH. On a slope it is let into the hillside rather than raised on a
+// platform to the highest corner: up to a quarter of a storey below the top,
+// but never below the ground at its front door (so the door stays at street
+// level) or the lowest corner. What is left showing on the low side is drawn
+// as a stone lower floor (see footing in render/buildings.js). Buildings that
+// must meet track or water exactly, and parks, keep to the top.
+const SINK = 0.22;
+export function floorHeight(terrain, type, x, z, w, d, rot, minH, maxH) {
+  const def = BUILDINGS[type];
+  if (!def || def.needsRail || def.needsWater || def.park || !(maxH > minH)) return maxH;
+  const [dx, dz] = DIRS[rot] || [0, 1];
+  const front = terrain.heightAt(x + w / 2 + (dx * w) / 2, z + d / 2 + (dz * d) / 2);
+  return Math.min(maxH, Math.max(minH, front - 0.02, maxH - Math.min(SINK, (maxH - minH) * 0.6)));
+}
 // each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
   const v = BUILDINGS[b.type].levels[b.level][key] || 0;
@@ -311,7 +326,7 @@ export class World {
       variant,
       access: pick ? { x: pick.x, z: pick.z } : null,
       rail: chk.rail ? { x: chk.rail.x, z: chk.rail.z, dir: chk.rail.dir } : null,
-      baseY: chk.maxH, minY: chk.minH,
+      baseY: floorHeight(this.terrain, type, x, z, w, d, pick ? pick.rot : variant % 4, chk.minH, chk.maxH), minY: chk.minH,
       built: this.day,
       residents: [], workers: [],
       connected: !!(pick && this.connected[this.idx(pick.x, pick.z)]),
@@ -626,7 +641,7 @@ export class World {
       minH = Math.min(minH, this.terrain.tileMin(b.x + dx, b.z + dz));
       maxH = Math.max(maxH, this.terrain.tileMax(b.x + dx, b.z + dz));
     }
-    b.baseY = maxH; b.minY = minH;
+    b.baseY = floorHeight(this.terrain, b.type, b.x, b.z, b.w, b.d, b.rot, minH, maxH); b.minY = minH;
     this._updateFronts(b);
     this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
     // the land is the building's now, as a garden; what to build across it
@@ -760,7 +775,7 @@ export class World {
     const b = {
       id: rec.id, type: rec.type, level: Math.min(rec.level, def.levels.length - 1), x: rec.x, z: rec.z, size: Math.max(w, d), w, d,
       flavor: rec.flavor || null, look: rec.look || null, con: rec.con && typeof rec.con === 'object' ? { ...rec.con } : null,
-      rot: rec.rot, variant: rec.variant, access: null, rail: null, baseY: maxH, minY: minH, built: rec.built || 1,
+      rot: rec.rot, variant: rec.variant, access: null, rail: null, baseY: floorHeight(this.terrain, rec.type, rec.x, rec.z, w, d, rec.rot, minH, maxH), minY: minH, built: rec.built || 1,
       residents: [], workers: [], connected: false, happiness: 60, factors: null,
     };
     const spare = spareOf(rec.spare, w, d);
@@ -851,6 +866,35 @@ export class World {
     const homes = capOf({ ...b, type: target.type, level: target.level, spare: fills ? undefined : b.spare }, 'housing');
     const moveOut = (b.residents || []).length > homes ? this.movingOut(b, homes).length : 0;
     return { ok, next, target, cost, restyle, reqs, moveOut, reason: ok ? null : 'Requirements not met' };
+  }
+
+  // A home or shop can take on a new style without being upgraded: builders
+  // rebuild its fronts and roof, for the same share of what it is worth as a
+  // new style costs on an upgrade (RESTYLE).
+  restyleCheck(b, look) {
+    if (!b) return { ok: false, reason: 'That building is gone' };
+    const def = BUILDINGS[b.type];
+    if (def.cat !== 'residential' && def.cat !== 'commercial') return { ok: false, reason: "Only homes and shops come in styles" };
+    const cost = Math.max(30, Math.round(this.buildValue(b) * RESTYLE));
+    if (b.con) return { ok: false, reason: 'Construction under way', cost };
+    if ((look || null) === (b.look || null)) return { ok: false, reason: 'It is in that style already', cost };
+    if (look && !this.hasTech(STYLE_TECH_OF(look))) return { ok: false, reason: 'Research that style first', cost };
+    if (this.money < cost) return { ok: false, reason: 'Not enough money', cost };
+    return { ok: true, cost };
+  }
+
+  restyleBuilding(id, look) {
+    const b = this.buildings.get(id), chk = this.restyleCheck(b, look);
+    if (!chk.ok) return chk;
+    this.money -= chk.cost;
+    if (this.sandbox.instantBuild) {
+      b.look = look || null;
+      this.emit('building:change', b);
+      return { ok: true, building: b, cost: chk.cost, instant: true };
+    }
+    b.con = { kind: 'upgrade', to: b.level, toType: b.type, look: look || null, restyle: true, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
+    this.emit('building:change', b);
+    return { ok: true, building: b, cost: chk.cost };
   }
 
   upgradeBuilding(id, toType = null, look = undefined) {

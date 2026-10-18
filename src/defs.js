@@ -287,6 +287,25 @@ export const BUILDINGS = {
       { name: 'Grand Department Store', tech: 'civic', cost: 3200, jobs: 18, income: 9, visit: 15, unlock: 200, req: { power: true } },
     ],
   },
+  // A cottage joined with a workshop: the family lives over the workshop.
+  craftshouse: {
+    name: 'Workshop & Home', cat: 'industry', size: 2, merged: true, hidden: true, tech: 'industry2', icon: '🔨', branch: "Craftsman's house", accent: '#6e4a2e', pathIcon: 'handyman',
+    desc: "A family home with the workshop below and the yard behind: a craftsman's family at work and at home, with far less smoke than a works.",
+    levels: [
+      { name: "Craftsman's House", cost: 450, housing: 3, households: 1, jobs: 4, income: 13, pollution: 1 },
+      { name: "Artisans' Row", tech: 'industry3', cost: 1100, housing: 8, households: 3, jobs: 6, income: 14, pollution: 1, unlock: 60 },
+    ],
+  },
+  // A builder's yard joined with another, or with a woodcutter: one firm with
+  // its own timber, and faster builders.
+  contractor: {
+    name: 'Building Firm', cat: 'industry', size: 2, merged: true, hidden: true, builders: true, tech: 'carpentry', icon: '🧱', branch: 'Building yard', accent: '#7a5a3c', pathIcon: 'construction',
+    desc: 'A builder with a timber yard of its own: more builders, and they work faster with the wood to hand.',
+    levels: [
+      { name: 'Timber & Building Yard', cost: 600, upkeep: 4, jobs: 6, rate: 1.35 },
+      { name: 'Building Contractors', tech: 'masonry', cost: 1400, upkeep: 8, jobs: 10, rate: 1.7, unlock: 60 },
+    ],
+  },
   joinery: {
     name: 'Joinery', cat: 'industry', size: 2, merged: true, hidden: true, tech: 'woodwork', icon: '🪚', branch: 'Joinery', accent: '#6e5034', pathIcon: 'carpenter',
     desc: 'Timber in, furniture and doors out.',
@@ -318,6 +337,33 @@ export const BUILDINGS = {
     levels: [
       { name: 'Watch House', cost: 650, upkeep: 12, jobs: 5, radius: 10, edu: 1 },
       { name: 'Police Station', tech: 'services3', cost: 1500, upkeep: 20, jobs: 9, radius: 15, edu: 2, unlock: 120 },
+    ],
+  },
+  // Two herbalists joined: one small hospital with beds.
+  cottagehospital: {
+    name: 'Hospital', cat: 'services', size: 2, merged: true, hidden: true, service: 'health', tech: 'medicine', icon: '🩺', branch: 'Cottage hospital', accent: '#b83a32', pathIcon: 'local_hospital',
+    desc: 'A cottage hospital: a doctor, nurses and a ward of beds, reaching much further than two herbalists.',
+    levels: [
+      { name: 'Cottage Hospital', cost: 750, upkeep: 12, jobs: 5, radius: 10, edu: 2 },
+      { name: 'General Hospital', tech: 'hospitals', cost: 1700, upkeep: 22, jobs: 10, radius: 15, edu: 4, unlock: 120, req: { power: true } },
+    ],
+  },
+  // Two schoolhouses joined: a board school with separate rooms for each class.
+  boardschool: {
+    name: 'Board School', cat: 'services', size: 2, merged: true, hidden: true, service: 'education', tech: 'schooling', icon: '📚', branch: 'Board school', accent: '#8a4a2a', pathIcon: 'school',
+    desc: 'A brick board school with a classroom for every year, a bell turret and a walled playground: room for many more children.',
+    levels: [
+      { name: 'Board School', cost: 900, upkeep: 16, jobs: 5, radius: 10, seats: 70, teaches: 1, edu: 2 },
+      { name: 'Large Board School', cost: 1500, upkeep: 24, jobs: 8, radius: 12, seats: 120, teaches: 1, edu: 2, unlock: 60 },
+    ],
+  },
+  // A chapel joined with the cottage next door: the minister's family lives there.
+  vicarage: {
+    name: 'Parish Church', cat: 'services', size: 2, merged: true, hidden: true, service: 'culture', tech: 'masonry', icon: '🔔', branch: 'Vicarage', accent: '#5a4a6a', pathIcon: 'church',
+    desc: 'The chapel with its vicarage beside it and a churchyard round them: the minister lives on the spot, and the parish reaches further.',
+    levels: [
+      { name: 'Chapel & Vicarage', cost: 650, upkeep: 7, jobs: 1, radius: 9, housing: 4, households: 1 },
+      { name: 'Church & Rectory', cost: 1400, upkeep: 13, jobs: 3, radius: 13, housing: 6, households: 1, unlock: 60 },
     ],
   },
   fountaingarden: {
@@ -640,11 +686,13 @@ export const BUILDINGS = {
   },
   townhall: {
     name: 'Town Council', cat: 'services', size: 2, unique: true, icon: '🏛️',
-    desc: 'The heart of the village. Upgrading boosts tax income.',
+    desc: 'The heart of the town. Every upgrade raises taxes across the whole town, and its research.',
     levels: [
       { name: 'Town Hall', cost: 1000, upkeep: 5, jobs: 3, taxBonus: 0, edu: 2 },
       { name: 'Guild Hall', cost: 1600, upkeep: 10, jobs: 6, taxBonus: 0.1, edu: 3, unlock: 120 },
       { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 18, jobs: 10, taxBonus: 0.2, edu: 3, unlock: 200, req: { power: true } },
+      { name: 'City Hall', tech: 'municipal', cost: 5200, upkeep: 28, jobs: 14, taxBonus: 0.3, edu: 3, appeal: 6, radius: 4, unlock: 350, req: { power: true, happiness: 62 } },
+      { name: 'Civic Palace', tech: 'metropolis', cost: 8800, upkeep: 42, jobs: 18, taxBonus: 0.4, edu: 4, appeal: 10, radius: 5, unlock: 600, req: { power: true, happiness: 68, culture: true } },
     ],
   },
 
@@ -713,7 +761,7 @@ export const BRANCHES = [
   ['power', 'Power'], ['public', 'Public services'], ['learn', 'Learning'], ['transport', 'Transport'],
 ];
 export const TECHS = {
-  carpentry: { name: 'Carpentry', cost: 45, tier: 0, branch: 'build', needs: [], desc: 'Timber framing, and better tools for the builders.' },
+  carpentry: { name: 'Carpentry', cost: 45, tier: 0, branch: 'build', needs: [], desc: "Timber framing, better tools for the builders, and building yards joined from a builder's yard and a woodcutter." },
   joining: { name: 'Joining', cost: 115, tier: 1, branch: 'build', needs: ['carpentry'], desc: 'Knock two neighbouring buildings into one.' },
   surveying: { name: 'Plot Surveying', cost: 210, tier: 2, branch: 'build', needs: ['joining'], desc: 'Grow a building onto the plot next door, and buy strips of garden.' },
   relocation: { name: 'House Moving', cost: 300, tier: 3, branch: 'build', needs: ['surveying'], desc: 'Take buildings down and put them up somewhere else.' },
@@ -722,7 +770,7 @@ export const TECHS = {
   homes3: { name: 'Fine Homes', cost: 180, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
   flats: { name: 'Flats', cost: 300, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
   highrise: { name: 'Tall Buildings', cost: 1080, tier: 4, branch: 'homes', needs: ['flats', 'steam'], desc: 'Tenements, mansion blocks, office buildings and the tallest terraces.' },
-  masonry: { name: 'Masonry', cost: 60, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses and the masons' lodge." },
+  masonry: { name: 'Masonry', cost: 60, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses, the masons' lodge, and a chapel joined with the cottage next door as its vicarage." },
   stonework: { name: 'Dressed Stone', cost: 115, tier: 1, branch: 'stone', needs: ['masonry'], desc: 'Stone-fronted buildings and monuments.' },
   architecture: { name: 'Architecture', cost: 270, tier: 2, branch: 'stone', needs: ['stonework'], desc: 'Villas, manor houses and cobbled squares.' },
   grandarch: { name: 'Grand Architecture', cost: 675, tier: 3, branch: 'stone', needs: ['architecture', 'paints'], desc: 'Grand manors, country mansions and stately homes.' },
@@ -739,7 +787,7 @@ export const TECHS = {
   hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, and brewhouses joined from a tavern and a workshop.' },
   parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares and parks.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
-  industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: 'Second-level industry: sawmills, smithies, bigger farms, and ironmongers to sell their wares.' },
+  industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), ironmongers to sell their wares, and craftsman's houses joined from a cottage and a workshop." },
   woodwork: { name: 'Joinery', cost: 115, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
   industry3: { name: 'Manufacturing', cost: 300, tier: 2, branch: 'industry', needs: ['industry2'], desc: 'Third-level and higher industry.' },
   metallurgy: { name: 'Metallurgy', cost: 525, tier: 3, branch: 'industry', needs: ['industry3', 'brickmaking'], desc: 'Turn a smithy into an iron foundry, then a steelworks.' },
@@ -751,11 +799,13 @@ export const TECHS = {
   steam: { name: 'Steam Power', cost: 750, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
   cables: { name: 'Underground Cables', cost: 800, tier: 4, branch: 'power', needs: ['steam'], desc: 'Bury the power lines under the streets, street by street or the whole town: no more poles and wires, and prettier streets.' },
   services2: { name: 'Public Works', cost: 60, tier: 0, branch: 'public', needs: [], desc: 'Second-level public buildings (guardhouses, churches, water towers), post offices, and watch houses joined from two watch posts.' },
-  medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, almshouses, and apothecaries to make up the remedies.' },
+  medicine: { name: 'Medicine', cost: 135, tier: 1, branch: 'public', needs: ['services2'], desc: 'Proper clinics, almshouses, apothecaries to make up the remedies, and cottage hospitals joined from two herbalists.' },
   firefighting: { name: 'Fire Brigades', cost: 270, tier: 2, branch: 'public', needs: ['services2'], desc: 'Turn a guardhouse into a fire station.' },
   hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals, infirmaries and dispensing chemists.' },
   services3: { name: 'Civic Services', cost: 720, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
-  schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, and stationers to sell paper and books.' },
+  municipal: { name: 'Municipal Government', cost: 1800, tier: 5, branch: 'public', needs: ['civic', 'services3'], desc: 'The City Hall: council, courts and records under one clock tower, for more tax and research.' },
+  metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for the most tax and research.' },
+  schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, stationers to sell paper and books, and board schools joined from two schoolhouses.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
@@ -793,25 +843,31 @@ export const MERGES = [
   { a: ['tavern'], b: ['market', 'bakery', 'tavern'], to: 'inn' },
   { a: ['chapel'], b: ['school'], to: 'parishschool' },
   { a: ['clinic'], b: ['chapel', 'house'], to: 'almshouse' },
-  { a: ['well'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
+  { a: ['well', 'pump'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
   { a: ['workshop', 'lumber'], b: ['workshop', 'lumber'], to: 'joinery' },
   { a: ['garden', 'flowers'], b: ['garden', 'flowers', 'statue'], to: 'park' },
   // a grand home or a block of flats takes in the house next door (lead: the
   // first one's look carries on, not the cottage's)
-  { a: ['villa'], b: ['villa', 'house'], to: 'mansion', lead: true },
+  { a: ['villa'], b: ['villa', 'house', 'garden', 'flowers'], to: 'mansion', lead: true },
   { a: ['flats'], b: ['flats', 'house'], to: 'apartments', lead: true },
   { a: ['middleschool'], b: ['middleschool', 'school'], to: 'highschool' },
   { a: ['tavern'], b: ['workshop'], to: 'brewhouse' },
   { a: ['watch'], b: ['watch'], to: 'watchhouse' },
   { a: ['fishery'], b: ['market'], to: 'fishmarket' },
+  { a: ['clinic'], b: ['clinic'], to: 'cottagehospital' },
+  { a: ['school'], b: ['school'], to: 'boardschool' },
+  { a: ['chapel'], b: ['house'], to: 'vicarage', lead: true },
+  { a: ['builder'], b: ['builder', 'lumber'], to: 'contractor', lead: true },
+  { a: ['workshop'], b: ['house'], to: 'craftshouse' },
 ];
 
 // What a building on an expanded (double) plot can be rebuilt as.
 export const LARGE = {
   house: ['mansion', 'apartments', 'terrace'], villa: ['mansion'], flats: ['apartments'],
   market: ['arcade'], bakery: ['arcade'], grocer: ['arcade'], butcher: ['arcade'], draper: ['deptstore'], offices: ['exchange'],
-  tavern: ['inn', 'brewhouse'], workshop: ['joinery'], lumber: ['joinery'],
-  school: ['parishschool'], clinic: ['almshouse'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
+  tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
+  school: ['parishschool', 'boardschool'], clinic: ['almshouse', 'cottagehospital'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
+  chapel: ['vicarage'], builder: ['contractor'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).
@@ -870,6 +926,8 @@ export const NEEDS = {
   lumber: { power: { from: 2, use: 'machines', without: 0.6, what: 'its powered saws' } },
   workshop: { power: { from: 2, use: 'machines', without: 0, what: 'its steam-driven machines' } },
   joinery: { power: { from: 1, use: 'machines', without: 0.5, what: 'its lathes and saws' } },
+  craftshouse: { power: { from: 1, use: 'machines', without: 0.6, what: 'its lathes and treadle machines' } },
+  cottagehospital: { water: { from: 0, without: 0.5, what: 'washing and medicines' }, power: { from: 1, use: 'machines', without: 0.5, what: 'its wards and equipment' } },
   timberworks: { power: { from: 1, use: 'machines', without: 0.5, what: 'its steam saws and planers' } },
   foundry: { power: { from: 0, use: 'machines', without: 0.4, what: 'the furnace blowers and rolling mill' } },
   papermill: { power: { from: 0, use: 'machines', without: 0.4, what: 'the pulpers and presses' }, water: { from: 0, without: 0.5, what: 'the pulp vats' } },
@@ -896,7 +954,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], townhall: [3, 5, 8], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 
