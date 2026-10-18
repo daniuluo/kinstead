@@ -40,7 +40,7 @@ export function serialize(world) {
     rails: toB64(world.rails),
     ...(world.buried && world.buried.some((v, i) => v && world.roads[i]) ? { buried: toB64(world.buried.map((v, i) => (v && world.roads[i] ? 1 : 0))) } : {}),
     ...(world.dress && world.dress.some((v, i) => v && world.roads[i]) ? { dress: toB64(world.dress.map((v, i) => (world.roads[i] ? v : 0))) } : {}),
-    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null]),
+    buildings: [...world.buildings.values()].map(b => [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, b.w ?? b.size, b.d ?? b.size, b.flavor || null, b.con || null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.spare ? [b.spare.w, b.spare.d] : null]),
     trees,
     residents: [...world.residents.values()].map(r => [r.id, r.first, r.last, r.age, r.home ?? -1, r.job ?? -1, r.look, r.wealth ?? null, r.fam ?? null, r.years != null ? Math.round(r.years * 100) / 100 : null, r.edu ?? null, r.edYrs ?? null]),
     lines: world.lines.map(l => ({ id: l.id, mode: l.mode, name: l.name, color: l.color, stops: l.stops.slice(), vehicles: l.vehicles })),
@@ -69,10 +69,10 @@ export function deserialize(data) {
   if (typeof data.dress === 'string') w.dress.set(fromB64(data.dress).subarray(0, N * N).map((v, i) => (v < DRESSINGS.length && w.roads[i] ? v : 0)));
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
-  for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look] of data.buildings) {
+  for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, spare] of data.buildings) {
     if (type === 'house' && level >= 2) [type, level] = level === 2 ? ['flats', 0] : ['villa', level - 2];
     if (!hasKey(BUILDINGS, type)) continue;
-    w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look });
+    w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare });
   }
   const oldEdu = (data.state && data.state.eduScale) !== 5;
   for (const [id, first, last, age, home, job, look, wealth, fam, years, edu, edYrs] of data.residents) {

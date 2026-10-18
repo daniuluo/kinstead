@@ -40,7 +40,14 @@ export function sizeKFor(type, w, d) {
   const def = BUILDINGS[type];
   return Math.max(1, 1 + 0.5 * ((w * d) / (def.merged ? 2 : def.size ** 2) - 1));
 }
-export const sizeK = (b) => sizeKFor(b.type, fw(b), fd(b));
+// A building whose plot has grown but which hasn't been built out across it
+// yet (b.spare: the footprint it does cover) is still its old size.
+export const sizeK = (b) => (b.spare ? sizeKFor(b.type, b.spare.w, b.spare.d) : sizeKFor(b.type, fw(b), fd(b)));
+// b.spare as saved or sent: [w, d] (or { w, d }), only if smaller than the plot
+export function spareOf(s, w, d) {
+  const [sw, sd] = Array.isArray(s) ? s : s && typeof s === 'object' ? [s.w, s.d] : [];
+  return Number.isInteger(sw) && Number.isInteger(sd) && sw >= 1 && sd >= 1 && sw <= w && sd <= d && sw * sd < w * d ? { w: sw, d: sd } : undefined;
+}
 // A level's figures for a building of that size: capacities, outputs, upkeep, price.
 const SCALED = ['housing', 'jobs', 'seats', 'supply', 'kw', 'upkeep', 'cost'];
 export function scaledLevel(L, k) {
@@ -402,6 +409,7 @@ export class World {
       if (con.toType && BUILDINGS[con.toType]) b.type = con.toType;
       if (con.look !== undefined) b.look = con.look;
       b.level = Math.min(con.to, BUILDINGS[b.type].levels.length - 1);
+      this._fill(b, con.extend);
     }
     if (con.kind === 'build') b.built = this.day;
     b.con = null;
@@ -411,6 +419,12 @@ export class World {
     this.emit('building:done', { building: b, kind: con.kind, moved: !!con.moved });
     this._shrunk(b, homes);
     if (BUILDINGS[b.type].spacious) this.tryEncroach(b);
+  }
+
+  // Built out across the whole plot: extended, or rebuilt as a building whose
+  // own footprint is the plot (a Country Mansion on a double plot).
+  _fill(b, extend) {
+    if (b.spare && (extend || baseArea(b) >= fw(b) * fd(b))) delete b.spare;
   }
 
   // A home rebuilt to hold fewer people (a Grand Manor on a double plot
@@ -523,14 +537,14 @@ export class World {
         if (hi - lo > 1.2) continue;
         const trees = tiles.reduce((n, [x, z]) => n + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
         const [fx, fz] = DIRS[b.rot], where = (along ? -fz === s && !fx : -fx === s && !fz) ? 'behind it' : 'beside it';
-        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where, cost: Math.round(200 + 0.3 * def.levels[b.level].cost) + trees, label: `Grow into a 2×2 estate ${where}` });
+        out.push({ dir: 10 + (s + 1), x: tiles[0][0], z: tiles[0][1], tiles, kind: 'estate', where, cost: 2 * CONFIG.PLOT_PRICE + trees, label: `Take the two plots ${where} for a 2×2 estate` });
       }
       return out;
     }
     if (!b || b.con || def.merged || def.park || def.stop || fw(b) !== 1 || fd(b) !== 1 || def.size !== 1) return out;
     // only where the double plot opens up something bigger to upgrade into
     if (!growsInto(b.type, 2).length) return out;
-    const base = Math.round(80 + 0.35 * def.levels[b.level].cost);
+    const base = CONFIG.PLOT_PRICE;   // the land, whatever stands beside it
     const front = DIRS[b.rot];
     const sideOf = (k) => (k === b.rot ? 'in front' : (k + 2) % 4 === b.rot ? 'behind' : 'beside');
     const names = { 0: 'z1', 1: 'x1', 2: 'z0', 3: 'x0' };
@@ -552,9 +566,9 @@ export class World {
       if (o.type === 'house' && !be[side] && !(be[perp + '0'] > 0 || be[perp + '1'] > 0) && !(oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0)) {
         out.push({ dir: k, x, z, kind: 'strip', where, other: o, side, opp, cost: 60 + 40 * b.level, label: `Buy a strip of the ${oname}'s garden ${where}`, warn: `The ${oname} next door gets a smaller garden (its owners are paid)` });
       }
-      const comp = Math.round(this.buildValue(o) * 0.5);
+      const comp = this.buildValue(o);   // its owners are paid what their building is worth
       out.push({ dir: k, x, z, kind: 'takeover', where, other: o, cost: base + comp, comp, label: `Take over the ${oname} ${where}`,
-        warn: `The ${oname} will be demolished${o.residents.length ? ` and its ${o.residents.length} resident${o.residents.length > 1 ? 's' : ''} rehoused` : ''} ($${comp} compensation included)` });
+        warn: `The ${oname} will be demolished${o.residents.length ? ` and its ${o.residents.length} resident${o.residents.length > 1 ? 's' : ''} rehoused` : ''} ($${comp} to its owners included)` });
     });
     return out;
   }
@@ -588,11 +602,13 @@ export class World {
     this.money -= opt.cost;
     this._dissolveLeases(b);
     const tiles = opt.tiles || [[opt.x, opt.z]];
+    const spare = b.spare || { w: fw(b), d: fd(b) };   // what the building itself covers
     for (const [x, z] of tiles) { this._clearTrees(x, z); this.buildingAt[this.idx(x, z)] = b.id; }
     const xs = [b.x, b.x + fw(b) - 1, ...tiles.map(t => t[0])], zs = [b.z, b.z + fd(b) - 1, ...tiles.map(t => t[1])];
     const x0 = Math.min(...xs), z0 = Math.min(...zs);
     b.w = Math.max(...xs) - x0 + 1; b.d = Math.max(...zs) - z0 + 1;
     b.x = x0; b.z = z0; b.size = Math.max(b.w, b.d);
+    b.spare = spare;
     let minH = Infinity, maxH = -Infinity;
     for (let dz = 0; dz < b.d; dz++) for (let dx = 0; dx < b.w; dx++) {
       minH = Math.min(minH, this.terrain.tileMin(b.x + dx, b.z + dz));
@@ -601,7 +617,9 @@ export class World {
     b.baseY = maxH; b.minY = minH;
     this._updateFronts(b);
     this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
-    if (!this.sandbox.instantBuild) b.con = { kind: 'upgrade', to: b.level, toType: b.type, work: workNeeded(opt.cost, 'upgrade'), done: 0, expand: true };
+    // the land is the building's now, as a garden; what to build across it
+    // (the bigger buildings it opens up, or the same one extended) is the
+    // next choice, under Upgrade
     this.emit('trees');
     this.emit('building:change', b);
     return { ok: true, building: b, kind: opt.kind };
@@ -647,6 +665,7 @@ export class World {
       w: fw(b), d: fd(b), level: b.level, variant: b.variant, flavor: b.flavor, look: b.look, accessIndex: opts.accessIndex,
       happiness: b.happiness, factors: b.factors,
     });
+    if (b.spare) nb.spare = { ...b.spare };
     this._occupy(nb);
     this.money -= chk.cost;
     this._retarget(b.id, nb.id);
@@ -729,6 +748,8 @@ export class World {
       rot: rec.rot, variant: rec.variant, access: null, rail: null, baseY: maxH, minY: minH, built: rec.built || 1,
       residents: [], workers: [], connected: false, happiness: 60, factors: null,
     };
+    const spare = spareOf(rec.spare, w, d);
+    if (spare) b.spare = spare;
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) this.buildingAt[this.idx(rec.x + dx, rec.z + dz)] = b.id;
     if (Array.isArray(rec.leases) && rec.leases.length) {
       b.leases = rec.leases.map(l => ({ ...l }));
@@ -761,6 +782,8 @@ export class World {
     if (fw(b) * fd(b) >= 4 && ESTATE[b.type]) {
       for (const type of ESTATE[b.type]) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), estate: true });
     }
+    // ...or the building as it is can be built out across the land it took
+    if (b.spare) out.push({ type: b.type, level: b.level, extend: true });
     return out;
   }
 
@@ -768,20 +791,31 @@ export class World {
   // A new style means new fronts and roofs, so it costs more than keeping the old one.
   upgradeCheck(b, toType = null, look = undefined) {
     const opts = this.upgradeOptions(b);
-    const target = opts.find(o => o.type === toType) || opts[0];
+    const target = toType === 'extend' ? opts.find(o => o.extend) : opts.find(o => o.type === toType && !o.extend) || opts.find(o => !o.extend) || opts[0];
     if (!target) return { ok: false, reason: 'Fully upgraded', max: true };
-    // a building on a grown plot is that much bigger, and so is its upgrade
-    const next = scaledLevel(BUILDINGS[target.type].levels[target.level], sizeKFor(target.type, fw(b), fd(b)));
-    const restyle = look !== undefined && (look || null) !== (b.look || null) ? Math.round(next.cost * RESTYLE) : 0;
-    const cost = next.cost + restyle;
+    // a building on a grown plot is that much bigger, and so is its upgrade;
+    // one not yet built out across it stays its own size unless the new
+    // building fills the plot
+    const fills = !!target.extend || baseAreaOf(target.type) >= fw(b) * fd(b);
+    const k = b.spare && !fills ? sizeKFor(target.type, b.spare.w, b.spare.d) : sizeKFor(target.type, fw(b), fd(b));
+    const next = scaledLevel(BUILDINGS[target.type].levels[target.level], k);
+    // extending costs what the building is worth, times how much bigger it gets
+    let price = next.cost;
+    if (target.extend) {
+      let v = 0;
+      for (let l = 0; l <= b.level; l++) v += BUILDINGS[b.type].levels[l].cost;
+      price = Math.max(20, Math.round(v * (k - sizeK(b))));
+    }
+    const restyle = look !== undefined && (look || null) !== (b.look || null) ? Math.round(price * RESTYLE) : 0;
+    const cost = price + restyle;
     if (b.con) return { ok: false, reason: 'Construction under way', busy: true, next, target, cost, restyle, reqs: [] };
-    const unlock = unlockOf(target.type, target.level);
-    const tech = techForLevel(target.type, target.level);
+    const unlock = target.extend ? 0 : unlockOf(target.type, target.level);
+    const tech = target.extend ? null : techForLevel(target.type, target.level);
     const reqs = [];
     const free = this.sandbox.freeUpgrades;
     if (free) reqs.push({ label: 'Sandbox: no requirements', met: true });
     if (unlock && !free) reqs.push({ label: `${unlock} villagers`, met: this.unlockPop >= unlock });
-    if (next.req && !free) {
+    if (next.req && !free && !target.extend) {
       if (next.req.happiness) reqs.push({ label: `Happiness ${next.req.happiness}%`, met: (b.happiness || 0) >= next.req.happiness });
       for (const s of ['water', 'health', 'education', 'safety', 'culture']) {
         if (next.req[s]) reqs.push({ label: `${s[0].toUpperCase() + s.slice(1)} coverage`, met: !!(b.factors && b.factors[s]) });
@@ -799,7 +833,7 @@ export class World {
     reqs.push({ label: restyle ? `$${cost} (with $${restyle} for the new style)` : `$${cost}`, met: this.money >= cost });
     const ok = reqs.every(r => r.met);
     // residents of the households that won't fit in what it becomes
-    const homes = capOf({ ...b, type: target.type, level: target.level }, 'housing');
+    const homes = capOf({ ...b, type: target.type, level: target.level, spare: fills ? undefined : b.spare }, 'housing');
     const moveOut = (b.residents || []).length > homes ? this.movingOut(b, homes).length : 0;
     return { ok, next, target, cost, restyle, reqs, moveOut, reason: ok ? null : 'Requirements not met' };
   }
@@ -817,11 +851,13 @@ export class World {
       b.type = type;
       b.level = level;
       if (look !== undefined) b.look = look;
+      this._fill(b, chk.target.extend);
       this.emit('building:change', b);
       this._shrunk(b, homes);
       return { ok: true, building: b, instant: true };
     }
     b.con = { kind: 'upgrade', to: level, toType: type, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
+    if (chk.target.extend) b.con.extend = true;
     if (look !== undefined) b.con.look = look;
     this.emit('building:change', b);
     return { ok: true, building: b };
