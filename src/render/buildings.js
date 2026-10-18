@@ -2719,8 +2719,9 @@ MODELS.vicarage = (c, L) => {
     const zz = z0 - d / 2 + (i + 0.5) * (d / 3);
     for (const side of [1, -1]) stainedGlass(c, nx + side * (w / 2 + 0.007), h * 0.3, zz, 0.065, h * 0.45, i + (side > 0 ? 0 : 1), side > 0 ? 'r' : 'l');
   }
-  // the tower at the street end, its door the way in
-  const tw = L ? 0.2 : 0.16, th = L ? 1.0 : 0.66, tz = z0 + d / 2 - tw / 2 + 0.03, sp = L ? 0.46 : 0.32;
+  // the tower at the street end, standing clear above the ridge, its door
+  // the way in
+  const tw = L ? 0.2 : 0.17, th = L ? 1.08 : 0.86, tz = z0 + d / 2 - tw / 2 + 0.03, sp = L ? 0.46 : 0.34;
   gb.cbox(nx, 0, tz, tw, th, tw, wall, 0, 0.016);
   gb.roof(nx, th, tz, tw + 0.03, tw + 0.03, sp, 0, L ? pal.slate : pal.roof);
   gb.box(nx, th + sp, tz, 0.011, 0.09, 0.011, '#c9a43a');
