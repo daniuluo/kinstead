@@ -1,5 +1,6 @@
-// Tilt-shift (the "miniature model" look): the picture is sharp around a
-// point and goes soft by degrees all the way out to every edge, the way a
+// Tilt-shift (the "miniature model" look): the picture is sharp in the
+// middle of the screen (always there, whatever is selected or wherever the
+// camera goes) and goes soft by degrees all the way out to every edge, the way a
 // tilted lens makes a photo of a real town look like a tabletop model. The
 // sharp area is a wide oval, stretched across the view; the blur eases in
 // from it, so there's no line where it starts. A little extra colour and

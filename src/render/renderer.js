@@ -12,7 +12,7 @@ import { TiltShiftPass } from './tiltShift.js';
 // Classic 2:1 pixel-art isometric (dimetric) projection: 26.57° above the ground.
 export const ISO_ELEV = Math.atan(0.5);
 const DIST = 140;
-const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3(), _f = new THREE.Vector3();
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3();
 
 export class Renderer {
   constructor(container) {
@@ -36,9 +36,6 @@ export class Renderer {
     // scale: the share of the screen's resolution drawn (the Performance
     // settings; pixel art gets chunkier pixels instead)
     this.gfx = { pixelArt: true, pixelSize: 2, ao: true, scale: 1, tilt: null, tiltBand: 'normal' };
-    // the tilt-shift's focus: where it is on the screen (0 to 1 across and up),
-    // gliding toward goal (see setFocus)
-    this.focus = { x: 0.5, y: 0.5, gx: 0.5, goal: 0.5 };
 
     this.hemi = new THREE.HemisphereLight('#cfe6f7', '#7f6f55', 0.9);
     this.sun = new THREE.DirectionalLight('#ffffff', 2.8);
@@ -132,19 +129,6 @@ export class Renderer {
     }
     document.body.classList.toggle('pixel', !!g.pixelArt);
     this.resize();
-  }
-
-  // Keep the tilt-shift's focus on this point of the world (a selected
-  // building), or on the middle of the screen (null). Not too near an edge,
-  // where there's no room for the blur.
-  setFocus(v) {
-    let x = 0.5, y = 0.5;
-    if (v && this.post?.tilt) {
-      const p = _f.copy(v).project(this.camera);
-      if (Math.abs(p.x) < 1 && Math.abs(p.y) < 1) { x = Math.min(0.8, Math.max(0.2, p.x * 0.5 + 0.5)); y = Math.min(0.8, Math.max(0.2, p.y * 0.5 + 0.5)); }
-    }
-    this.focus.gx = x;
-    this.focus.goal = y;
   }
 
   // size of one rendered pixel in device pixels
@@ -333,9 +317,6 @@ export class Renderer {
     const noFog = this.gfx.pixelArt ? 1000 : 0;
     this.scene.fog.near = DIST + 3 + top * 400 + noFog;
     this.scene.fog.far = DIST + 3 + top * 400 + 150 / Math.max(0.5, rig.zoom) + noFog;
-    const f = this.focus, glide = 1 - Math.pow(0.02, dt);
-    f.y = Math.abs(f.goal - f.y) < 1e-3 ? f.goal : f.y + (f.goal - f.y) * glide;
-    f.x = Math.abs(f.gx - f.x) < 1e-3 ? f.gx : f.x + (f.gx - f.x) * glide;
     this._fitShadow();
   }
 
@@ -372,7 +353,6 @@ export class Renderer {
   get lightDir() { return _lz.copy(this.sunDir); }
 
   render() {
-    if (this.post?.tilt) { this.post.tilt.focus.x = this.focus.x; this.post.tilt.focus.y = this.focus.y; }
     if (this.post) this.post.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }

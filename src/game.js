@@ -534,23 +534,6 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- frame
-  // What the tilt-shift keeps sharp: the selected building or villager (null:
-  // the middle of the screen).
-  _focusPoint() {
-    const sel = this.ui?.selection, w = this.world;
-    if (!sel || !w || !this.renderer.post?.tilt) return null;
-    const v = this._focusV ||= new THREE.Vector3();
-    if (sel.kind === 'building') {
-      const b = w.buildings.get(sel.id);
-      return b ? v.set(b.x + fw(b) / 2, b.baseY + 0.5, b.z + fd(b) / 2) : null;
-    }
-    if (sel.kind === 'resident') {
-      const r = w.residents.get(sel.id), p = r && this.agents.positionOf(r);
-      return p ? v.set(p.x, p.y ?? 0, p.z) : null;
-    }
-    return null;
-  }
-
   frame(render = true) {
     const now = performance.now();
     let dt = (now - this.clock) / 1000;
@@ -602,7 +585,6 @@ export class Game {
       if (!this.demo) this.ui.update(dt);
     }
     if (!render) return;
-    this.renderer.setFocus(this._focusPoint());
     this.renderer.updateCamera(dt);
     this.renderer.render();
   }
