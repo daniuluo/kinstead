@@ -6,7 +6,7 @@
 // all come from the host (see sync.js).
 
 import { CONFIG } from '../config.js';
-import { BUILDINGS } from '../defs.js';
+import { BUILDINGS, visitOf } from '../defs.js';
 import { isOpen, capOf } from '../world/world.js';
 import { Sim } from '../sim/sim.js';
 import { Construction } from '../sim/construction.js';
@@ -40,7 +40,7 @@ export class ReplicaSim extends Sim {
   }
 
   // Shop visits and fares still pop up coins here, but the money is the host's.
-  recordVisit(b, fare = null) { return fare ?? (BUILDINGS[b.type].levels[b.level].visit || 0); }
+  recordVisit(b, fare = null) { return fare ?? visitOf(b); }
 
   // The host rehouses (or loses) the people of a demolished building, or of
   // a home rebuilt to hold fewer.

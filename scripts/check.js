@@ -998,6 +998,174 @@ const placePair = (tw, ta, tb) => {
   ok(Object.values(ESTATE).flat().every(t => BUILDINGS[t].estate && techForLevel(t, 0) && BUILDINGS[t].levels.every((_, i) => techForLevel(t, i))), 'every estate level is gated by research');
 }
 
+// 3d1d. parks: every park type looks different from one plot to the next
+// (its own seed) and the same every time it is drawn, keeps its layout as
+// it goes up a level, follows the seasons, and gives its visitors somewhere
+// to stroll to; a park joined from a little one keeps that one's feature
+{
+  const { parkFeature } = await import('../src/world/world.js');
+  // (where everything is and what colour)
+  const hashOf = (geo) => { let h = 0; const a = geo.attributes.position.array, c = geo.attributes.color.array; for (let i = 0; i < a.length; i += 5) h = (Math.imul(h, 31) + Math.round(a[i] * 1000) + Math.round(c[i] * 255)) | 0; return h; };
+  const mk = (type, level, variant, season = 1) => {
+    const d = BUILDINGS[type], W = d.merged ? 2 : d.size, D = d.merged ? 1 : d.size;
+    return buildModel({ type, level, variant, size: Math.max(W, D), w: W, d: D, baseY: 0.5, minY: 0.2, rot: 0 }, { flat: true, season });
+  };
+  const alike = [], unstable = [], still = [], nowhere = [];
+  for (const [type, d] of Object.entries(BUILDINGS)) {
+    if (!d.park) continue;
+    const L = d.levels.length - 1;
+    const looks = new Set([1, 2, 3, 4, 5, 6].map(v => hashOf(mk(type, L, v * 7919 + 13).geo)));
+    if (looks.size < 4) alike.push(`${type} (${looks.size} looks in 6)`);
+    if (hashOf(mk(type, L, 4242).geo) !== hashOf(mk(type, L, 4242).geo)) unstable.push(type);
+    if (type !== 'statue' && hashOf(mk(type, L, 4242, 1).geo) === hashOf(mk(type, L, 4242, 3).geo)) still.push(type);
+    if (d.outdoor && !mk(type, L, 4242).spots.length) nowhere.push(type);
+  }
+  ok(!alike.length, `every park type looks different from one plot to the next${alike.length ? ': not ' + alike.join(', ') : ''}`);
+  ok(!unstable.length, `...and the same every time it is drawn${unstable.length ? ': not ' + unstable.join(', ') : ''}`);
+  ok(!still.length, `every park follows the seasons${still.length ? ': not ' + still.join(', ') : ''}`);
+  ok(!nowhere.length, `every open-air park gives its visitors somewhere to stroll to${nowhere.length ? ': not ' + nowhere.join(', ') : ''}`);
+  // its layout stays as it goes up a level: the green's great tree (or its
+  // pump, maypole or yews) stands in the same corner at every level
+  const corner = (geo) => { const p = geo.attributes.position.array; let sx = 0, sz = 0, n = 0; for (let i = 0; i < p.length; i += 3) if (p[i + 1] > 0.3) { sx += p[i]; sz += p[i + 2]; n++; } return n ? [Math.sign(sx), Math.sign(sz)] : [0, 0]; };
+  const moved = [11, 22, 33, 44, 55, 66].filter(v => { const a = corner(mk('garden', 0, v).geo), b = corner(mk('garden', 1, v).geo); return a[0] !== b[0] || a[1] !== b[1]; });
+  ok(moved.length <= 1, `a green keeps its great tree in its corner as it becomes a garden (${6 - moved.length} of 6)`);
+  ok(parkFeature('park', ['garden', 'bandstand']) === 'bandstand' && parkFeature('lakepark', ['pond', 'pond']) === null && parkFeature('botanic', ['physic', 'pond']) === 'pond', 'a park joined from a little park with a feature of its own keeps it');
+}
+
+// 3d1e. parks grow: a little park takes the empty plot beside it and is
+// rebuilt as the double-plot park; a double-plot park grows into a 2×2
+// estate taking in the little parks in the way; and with Public Parks a 2×2
+// park grows into 3×3 grounds and those into 4×4, laid out round the park
+// it was (in the corner it stood in), saved and loaded back
+{
+  const { parkOrigin, GRAND, techForLevel } = await import('../src/defs.js');
+  const { runCommand } = await import('../src/commands.js');
+  const { CONFIG } = await import('../src/config.js');
+  const tw = World.createNew({ N: 64, seed: 41, name: 'Greenwick' });
+  tw.setSandbox({ infiniteMoney: true, instantBuild: true, freeUpgrades: true });
+  for (const t of ['surveying', 'joining', 'gardening', 'bigplots', 'parks2']) tw.research.done.push(t);
+  // an open 6×5 block with a street along its front
+  let at = null;
+  for (let z = 3; z < tw.N - 8 && !at; z++) for (let x = 3; x < tw.N - 8 && !at; x++) {
+    let open = true;
+    for (let dz = 0; dz < 5 && open; dz++) for (let dx = 0; dx < 6; dx++) {
+      const tx = x + dx, tz = z + dz;
+      if (tw.buildingOn(tx, tz) || tw.roadAt(tx, tz) || tw.terrain.isWater(tx, tz) || tw.fields[tw.idx(tx, tz)] >= 0 || tw.terrain.tileMax(tx, tz) - tw.terrain.tileMin(x, z) > 0.5) open = false;
+    }
+    if (open && [0, 1, 2, 3, 4, 5].every(dx => tw.checkRoad(x + dx, z + 5, 1).ok)) at = { x, z };
+  }
+  const { x, z } = at;
+  tw.placeRoads([0, 1, 2, 3, 4, 5].map(dx => [x + dx, z + 5]), 1);
+  const put = (type, px, pz, o = {}) => tw.placeBuilding(type, px, pz, { instant: true, ignoreUnlock: true, ...o }).building;
+  // a pond takes the empty plot beside it and becomes a lake garden
+  const pond = put('pond', x + 5, z + 4);
+  const land = tw.expandOptions(pond).find(o => o.kind === 'land' && o.x === x + 5);
+  ok(land && !tw.expandOptions(pond).some(o => o.kind !== 'land'), 'a little park can take the empty plot beside it (and only empty land)');
+  tw.expandBuilding(pond.id, land.dir, 'land');
+  const up = tw.upgradeOptions(pond);
+  ok(up.some(o => o.type === 'lakepark' && o.large) && !up.some(o => o.extend), `...and be rebuilt across the double plot as a lake garden, not extended as it is (${up.map(o => o.type + (o.extend ? '+' : '')).join(', ')})`);
+  ok(tw.upgradeBuilding(pond.id, 'lakepark').ok && pond.type === 'lakepark' && fw(pond) * fd(pond) === 2 && !pond.spare, 'the pond is a lake garden on its double plot');
+  // a garden and a rose garden join into a park that keeps its roses...
+  const g1 = put('garden', x, z + 4), g2 = put('rosegarden', x + 1, z + 4);
+  const park = tw.mergeBuildings(g1.id, g2.id).building;
+  ok(park && park.type === 'park' && park.flavor === 'rosegarden', `a garden and a rose garden join into a park laid out round the roses (${park && park.flavor})`);
+  // ...which grows onto the plots behind it, taking in the pond there
+  const duck = put('pond', x, z + 3), stat = put('statue', x + 2, z + 2);
+  const est = tw.expandOptions(park).find(o => o.kind === 'estate' && o.absorb.length);
+  ok(est && est.absorb[0] === duck && /becomes part of the park/.test(est.warn || '') && est.cost < 2 * CONFIG.PLOT_PRICE, `a park growing into a 2×2 estate takes in the little park in the way, paying only for the empty plot ($${est && est.cost})`);
+  tw.expandBuilding(park.id, est.dir, 'estate');
+  ok(!tw.buildings.has(duck.id) && tw.buildingOn(x, z + 3) === park && fw(park) * fd(park) === 4, 'the pond is now part of the park');
+  ok(tw.upgradeBuilding(park.id, 'landscapepark').ok && park.type === 'landscapepark' && park.flavor === 'rosegarden', 'rebuilt as a landscape park, it keeps its roses');
+  // grounds: only with Public Parks
+  ok(!tw.expandOptions(park).length, 'a 2×2 park only grows into bigger grounds once Public Parks is researched');
+  tw.research.done.push('publicparks');
+  const grand = tw.expandOptions(park).filter(o => o.kind === 'grand');
+  const g3 = grand.find(o => o.absorb.includes(stat));
+  ok(grand.length >= 1 && grand.every(o => o.tiles.length === 5) && g3, `...then it can take the land round a corner (${grand.length} ways), taking in the statue in the way`);
+  ok(g3 && runCommand({ world: tw, demo: false }, { t: 'expand', id: park.id, dir: g3.dir, kind: 'grand' }).ok, 'the expand command takes the land for bigger grounds');
+  const sp0 = { ...(park.spare || {}) };
+  ok(fw(park) === 3 && fd(park) === 3 && park.spare && park.spare.w === 2 && !tw.buildings.has(stat.id), `the park now stands on 3×3 grounds, the landscape park in its corner (${JSON.stringify(park.spare)})`);
+  const gup = tw.upgradeOptions(park);
+  ok(gup.some(o => o.type === 'grandpark' && o.grand) && !gup.some(o => o.extend), 'it can be laid out as a Grand Park');
+  tw.upgradeBuilding(park.id, 'grandpark');
+  const o1 = parkOrigin(park.flavor);
+  ok(park.type === 'grandpark' && o1 && o1.type === 'landscapepark' && o1.sx === sp0.sx && o1.sz === sp0.sz && o1.inner === 'rosegarden' && !park.spare, `the Grand Park is laid out round the landscape park it was, in its corner (${park.flavor})`);
+  // and again into 4×4: a City Park
+  const city = tw.expandOptions(park).filter(o => o.kind === 'grand');
+  ok(city.length && city.every(o => o.tiles.length === 7), `a Grand Park grows again onto 7 more plots (${city.length} ways)`);
+  if (city.length) {
+    tw.expandBuilding(park.id, city[0].dir, 'grand');
+    tw.upgradeBuilding(park.id, 'citypark');
+    const o2 = parkOrigin(park.flavor), o3 = o2 && parkOrigin(o2.inner);
+    ok(park.type === 'citypark' && fw(park) === 4 && o2.type === 'grandpark' && o3 && o3.type === 'landscapepark' && !tw.expandOptions(park).length, `a City Park on 4×4 grounds round the Grand Park, round the landscape park (${park.flavor})`);
+    const m0 = buildModel(park), cells = new Set();
+    for (let dz = 0; dz < 4; dz++) for (let dx = 0; dx < 4; dx++) cells.add(tw.buildingAt[tw.idx(park.x + dx, park.z + dz)]);
+    ok(m0.geo.attributes.position.count > 0 && cells.size === 1 && cells.has(park.id), 'every plot of the City Park is the park\'s, and it builds');
+    // saved and loaded back: same grounds, same layout
+    const back = deserialize(JSON.parse(JSON.stringify(serialize(tw)))).buildings.get(park.id);
+    const h = (geo) => { let s = 0; const a = geo.attributes.position.array; for (let i = 0; i < a.length; i += 11) s = (Math.imul(s, 31) + Math.round(a[i] * 1000)) | 0; return s; };
+    ok(back && back.type === 'citypark' && fw(back) === 4 && fd(back) === 4 && back.flavor === park.flavor && h(buildModel(back).geo) === h(m0.geo), 'a save keeps the City Park, its grounds and what it grew from, drawn the same');
+  }
+  ok(Object.values(GRAND).flat().every(t => BUILDINGS[t].grand && BUILDINGS[t].levels.every((_, i) => techForLevel(t, i) === 'publicparks')), 'every level of the grand parks takes Public Parks');
+}
+
+// 3d1f. what the new parks do: a bandstand brings culture to the streets
+// round it, allotments cheer homes with the retired in them (and the old go
+// and dig there), and the boating lake and the zoo charge their visitors
+{
+  const tw = World.createNew({ N: 48, seed: 39, name: 'Bandbury' });
+  tw.setSandbox({ infiniteMoney: true, unlockAll: true, instantBuild: true });
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  // on the town's own street, so they are connected
+  const conn = (t, x, z) => { const c = tw.checkBuild(t, x, z); return c.ok && c.access.some(a => a.conn); };
+  let home = null, stand = null;
+  for (let z = 1; z < tw.N - 1 && !stand; z++) for (let x = 1; x < tw.N - 2 && !stand; x++) {
+    if (!conn('house', x, z) || !conn('bandstand', x + 1, z)) continue;
+    home = tw.placeBuilding('house', x, z, { instant: true }).building;
+    stand = tw.placeBuilding('bandstand', x + 1, z, { instant: true }).building;
+  }
+  sim.recompute();
+  const i = tw.idx(home.x, home.z);
+  const cult = sim.coverage.culture[i];
+  tw.removeBuilding(stand.id, 0);
+  sim.recompute();
+  ok(cult && !sim.coverage.culture[i], 'a bandstand brings culture to the homes round it');
+  const old = { id: tw.newId(), first: 'Ada', last: 'Spade', age: 'elder', years: 70, edu: 1, home: home.id, job: null, look: 4321, mood: 60 };
+  tw.residents.set(old.id, old); home.residents.push(old.id);
+  const potter = () => { sim.recompute(); sim._happiness(); const p = home.factors.parts.find(q => q[0] === 'potter'); return p ? p[1] : null; };
+  const before = potter();
+  const plot = tw.placeBuilding('allotment', stand.x, stand.z, { instant: true }).building;
+  const after = potter();
+  ok(before === 0 && after === 3, `a home with someone retired in it is happier with allotments in reach (${before} → +${after})`);
+  const A = { world: tw, _nearest: Agents.prototype._nearest, _shopFor: Agents.prototype._shopFor, _places: Agents.prototype._places, _candidates: (pred) => [...tw.buildings.values()].filter(b => b.access && pred(BUILDINGS[b.type], b)) };
+  // (with a green beside it too, so the allotment isn't the only park to go to)
+  const green = tw.placeBuilding('garden', home.x, home.z - 1, { instant: true }).building || tw.placeBuilding('garden', home.x, home.z + 1, { instant: true }).building;
+  let digs = 0;
+  for (let k = 0; k < 200; k++) { A._lists = null; Agents.prototype.planDay.call(A, old, null); if (old.plan.some(p => p.dest === plot.id && p.t < 11.5)) digs++; }
+  ok(green && digs > 50 && digs < 180, `the old go and dig their allotment of a morning, some mornings (${digs} in 200)`);
+  // a boat hired on the boating lake is paid for; a stroll in the town park isn't
+  const pay = (type, level) => {
+    const W = 2, D = BUILDINGS[type].merged ? 1 : 2;
+    let b = { ok: false };
+    for (let pz = 1; pz < tw.N - 3 && !b.ok; pz++) for (let px = 1; px < tw.N - 3 && !b.ok; px++) if (tw.checkBuild(type, px, pz, { w: W, d: D, ignoreUnlock: true }).ok) b = tw.placeBuilding(type, px, pz, { instant: true, ignoreUnlock: true, level, w: W, d: D });
+    if (!b.ok) return null;
+    b.building.wet = 2;
+    const m0 = tw.stats.visitIncome, ag = { world: tw, game: { sim, emit() {} }, _visiting: Agents.prototype._visiting, _occupancy: () => new Map(), _drop() {} };
+    b.building.working = 1;
+    Agents.prototype._arrive.call(ag, { id: -1, age: 'adult', home: home.id, job: null, walk: null }, b.building.id);
+    tw.removeBuilding(b.building.id, 0);
+    return Math.round(tw.stats.visitIncome - m0);
+  };
+  const boat = pay('lakepark', 1), stroll = pay('park', 0), zoo = pay('zoo', 0);
+  ok(boat === BUILDINGS.lakepark.levels[1].visit && stroll === 0 && zoo === BUILDINGS.zoo.levels[0].visit, `the boating lake takes $${boat} a visit and the zoo $${zoo}; a walk in the park is free (${stroll})`);
+  // grounds keep the uses of the park they grew from
+  const { researchOf, visitOf } = await import('../src/defs.js');
+  const gz = { type: 'grandpark', level: 0, flavor: 'zoo#1@1,1' }, gp = { type: 'citypark', level: 1, flavor: 'grandpark#0@1,1/palmhouse#1@-1,1' };
+  ok(visitOf(gz) === BUILDINGS.zoo.levels[1].visit && researchOf(gp) === 8 && researchOf({ type: 'grandpark', level: 0, flavor: 'landscapepark#1' }) === 0 && visitOf({ type: 'grandpark', level: 0, flavor: null }) === 0,
+    `grounds grown from a zoo keep its gate ($${visitOf(gz)}), and from the royal botanic gardens their research (${researchOf(gp)} a day)`);
+}
+
 // 3d2. demolition takes a crew and some time
 {
   const target = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);

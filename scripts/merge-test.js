@@ -37,7 +37,7 @@ function gameFor(w) {
 
 // A lived-in town: grown streets and buildings, founders, a coach line, a
 // house being moved and a building site, so ids and references get exercised.
-function makeTown(N, seed, name, { day = 1, research = null } = {}) {
+function makeTown(N, seed, name, { day = 1, research = null, bigParks = false } = {}) {
   const w = World.createNew({ N, seed, name });
   growDemoTown(w, seed, 1);
   const g = gameFor(w);
@@ -64,6 +64,14 @@ function makeTown(N, seed, name, { day = 1, research = null } = {}) {
   for (let z = 2; z < N - 2; z++) {
     const c = w.checkBuild('house', N >> 1, z, { ignoreMoney: true });
     if (c.ok) { w.placeBuilding('house', N >> 1, z, {}); break; }
+  }
+  // a City Park and a Grand Park, laid out round what they grew from
+  if (bigParks) for (const [type, flavor] of [['citypark', 'grandpark#1@1,-1/zoo#0@-1,1'], ['grandpark', 'landscapepark#1@-1,1/rosegarden']]) {
+    const S = BUILDINGS[type].size;
+    let done = false;
+    for (let z = 2; z < N - S - 1 && !done; z++) for (let x = 2; x < N - S - 1 && !done; x++) {
+      if (w.checkBuild(type, x, z, { ignoreMoney: true, ignoreUnlock: true }).ok) done = w.placeBuilding(type, x, z, { instant: true, ignoreUnlock: true, ignoreMoney: true, free: true, flavor }).ok;
+    }
   }
   w.day = day;
   if (research) w.research = { done: research.slice(), current: null, progress: 0, bank: 5 };
@@ -228,6 +236,19 @@ for (const [label, a, b, arr, days] of runs) {
   if (!r) continue;
   rivers += r.rep.rivers; moved += r.rep.moved.length; refunded += r.rep.refunded.length;
   if (label === 'overlap 28,6') sample = r;
+}
+// a town's 3×3 and 4×4 parks come through a merge whole, turned with their
+// town, laid out round what they grew from
+{
+  const P = makeTown(48, 101, 'Parkhurst', { bigParks: true });
+  const big = (d) => d.buildings.filter(r => BUILDINGS[r[1]].grand).map(r => `${r[1]}:${r[8]}×${r[9]}:${r[10]}`).sort();
+  const before = big(P);
+  for (const [label, arr] of [['big parks beside', { ...besideOffset(48, 48, 'right'), rot: 0 }], ['big parks turned 90°', { ...besideOffset(48, 48, 'left'), rot: 1 }]]) {
+    const r = checkMerge(label, T.b, P, arr);
+    if (!r) continue;
+    const after = big(r.data);
+    ok(before.length === 2 && JSON.stringify(after) === JSON.stringify(before), `${label}: the City Park and the Grand Park come through whole (${after.join(', ')})`);
+  }
 }
 // rivers that reach the join a few tiles apart flow on into the other valley
 {

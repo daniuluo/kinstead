@@ -256,6 +256,27 @@ let ended = null;
       ok(!(await ask(guest, { t: 'fields', id: farm.id, tiles: 'lots', add: true })).ok, 'a malformed fields command is refused');
     } else ok(false, 'no farm for the fields check');
   }
+  // a guest grows a 2×2 park onto the land round it and lays it out as a
+  // Grand Park: the guest's copy has the same 3×3 grounds and what it grew from
+  {
+    let park = null, opt = null;
+    for (let z = 2; z < hw.N - 5 && !opt; z++) for (let x = 2; x < hw.N - 5 && !opt; x++) {
+      const c = hw.checkBuild('landscapepark', x, z, { ignoreMoney: true, ignoreUnlock: true });
+      if (!c.ok || !c.access.some(a => a.conn)) continue;
+      const p = hw.placeBuilding('landscapepark', x, z, { instant: true, ignoreUnlock: true });
+      if (!p.ok) continue;
+      const o = hw.expandOptions(p.building).find(o => o.kind === 'grand');
+      if (o) { park = p.building; opt = o; } else hw.removeBuilding(p.building.id, 0);
+    }
+    if (opt) {
+      const er = await ask(guest, { t: 'expand', id: park.id, dir: opt.dir, kind: 'grand' });
+      const ur = await ask(guest, { t: 'upgrade', id: park.id, to: 'grandpark' });
+      await until(() => { const g2 = gw().buildings.get(park.id); return g2 && g2.type === 'grandpark' && fw(g2) === 3; });
+      const g2 = gw().buildings.get(park.id);
+      ok(er.ok && ur.ok && hw.buildings.get(park.id).type === 'grandpark' && g2 && fw(g2) === 3 && fd(g2) === 3 && g2.flavor === hw.buildings.get(park.id).flavor && /^landscapepark#/.test(g2.flavor),
+        `a guest grows a landscape park into 3×3 grounds and lays out a Grand Park, and sees it (${g2 && g2.flavor})`);
+    } else ok(false, 'no room to grow a 2×2 park into bigger grounds');
+  }
   // move a building
   const mover = [...hw.buildings.values()].find(b => b.type === 'house' && !b.con && fw(b) === 1 && fd(b) === 1);
   spot = freeSpot(hw);

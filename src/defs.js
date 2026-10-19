@@ -27,8 +27,13 @@
 // Type flags: hidden types never appear in the build menu (merged buildings);
 // play: somewhere children play (homes with children within its reach are
 // happier, and children head there after school);
+// potter: somewhere the retired dig and potter (homes with elders within its
+// reach are happier, and the elders go there of a morning);
+// a park with a `visit` charge (boat hire, the zoo's gate) takes it from
+// each visitor, like a shop;
 // merged types occupy a 2×1 plot made from two neighbouring buildings;
-// estate types a 2×2 plot grown from a double plot (see ESTATE).
+// estate types a 2×2 plot grown from a double plot (see ESTATE), and grand
+// types the 3×3 and 4×4 grounds a 2×2 park grows into (see GRAND).
 
 export const CATEGORIES = [
   { id: 'residential', name: 'Homes', icon: '🏡', key: '2' },
@@ -396,10 +401,30 @@ export const BUILDINGS = {
   },
   park: {
     name: 'Parkland', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, tech: 'gardening', icon: '🌳', branch: 'Park', accent: '#3f6a2f', pathIcon: 'park',
-    desc: 'Lawns, a pond and a bandstand.',
+    desc: 'Lawns, walks and trees, with a pond, a bandstand or a rose garden: what it was joined from shows.',
     levels: [
       { name: 'Town Park', cost: 450, upkeep: 5, appeal: 18, radius: 6 },
       { name: 'Pleasure Gardens', cost: 1100, upkeep: 9, appeal: 28, radius: 8, unlock: 60 },
+    ],
+  },
+  // A pond joined with another pond or a garden: a little lake to walk round,
+  // then boats for hire.
+  lakepark: {
+    name: 'Lake Garden', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, tech: 'gardening', icon: '⛵', branch: 'Lake garden', accent: '#2f6a7a', pathIcon: 'sailing',
+    desc: 'A little lake with an island, reeds and a walk round the water. The Boating Lake hires out rowing boats: every visitor pays a little.',
+    levels: [
+      { name: 'Lake Garden', cost: 420, upkeep: 5, appeal: 18, radius: 6 },
+      { name: 'Boating Lake', cost: 1050, upkeep: 9, appeal: 26, radius: 8, visit: 1, unlock: 60 },
+    ],
+  },
+  // A herb garden joined with another, a garden or a pond: order beds of
+  // plants from far away, and a glasshouse later.
+  botanic: {
+    name: 'Botanic Garden', cat: 'parks', size: 2, merged: true, hidden: true, park: true, outdoor: true, visitors: 4, tech: 'botany', icon: '🌴', branch: 'Botanic garden', accent: '#3a6a4a', pathIcon: 'nature',
+    desc: 'Labelled beds of plants from round the world: its botanists add to research every day. The Glasshouse Garden grows the tender ones under glass.',
+    levels: [
+      { name: 'Botanic Garden', cost: 750, upkeep: 9, appeal: 16, radius: 6 },
+      { name: 'Glasshouse Garden', cost: 1600, upkeep: 15, appeal: 24, radius: 8, unlock: 120 },
     ],
   },
   mansion: {
@@ -495,6 +520,48 @@ export const BUILDINGS = {
     levels: [
       { name: 'Landscape Park', cost: 1500, upkeep: 12, appeal: 30, radius: 9, unlock: 60 },
       { name: 'Royal Park', tech: 'parks2', cost: 2800, upkeep: 18, appeal: 40, radius: 11, unlock: 120 },
+    ],
+  },
+  maze: {
+    name: 'Hedge Maze', cat: 'parks', size: 2, hidden: true, estate: true, park: true, outdoor: true, play: true, visitors: 4, tech: 'bigplots', icon: '🧩', branch: 'Hedge maze', accent: '#2f5a2a', pathIcon: 'extension',
+    desc: 'A maze of clipped yew round a lookout in the middle, with lawns and topiary beside it: the children race to the middle, and everyone else gets lost.',
+    levels: [
+      { name: 'Hedge Maze', cost: 1300, upkeep: 12, appeal: 26, radius: 8, unlock: 60 },
+      { name: 'Great Maze', cost: 2500, upkeep: 18, appeal: 36, radius: 10, unlock: 120 },
+    ],
+  },
+  lido: {
+    name: 'Lido', cat: 'parks', size: 2, hidden: true, estate: true, park: true, outdoor: true, play: true, visitors: 5, tech: 'bigplots', icon: '🏊', branch: 'Lido', accent: '#2f7a9a', pathIcon: 'pool',
+    desc: 'An open-air swimming pool with changing cabins and a terrace to sit out on. Swimmers pay at the gate; in winter it is drained and quiet.',
+    levels: [
+      { name: 'Open-Air Pool', cost: 1300, upkeep: 14, appeal: 12, radius: 7, visit: 2, unlock: 60 },
+      { name: 'Lido', cost: 2600, upkeep: 22, appeal: 18, radius: 9, visit: 3, unlock: 120 },
+    ],
+  },
+  palmhouse: {
+    name: 'Palm House', cat: 'parks', size: 2, hidden: true, estate: true, park: true, outdoor: true, visitors: 5, tech: 'bigplots', icon: '🌴', branch: 'Palm house', accent: '#2f6a5a', pathIcon: 'nature',
+    desc: 'A great glass palm house among the botanic beds, glowing at night: its botanists add plenty to research.',
+    levels: [
+      { name: 'Palm House', cost: 2400, upkeep: 20, appeal: 30, radius: 9, unlock: 120 },
+      { name: 'Royal Botanic Gardens', cost: 4200, upkeep: 30, appeal: 40, radius: 11, unlock: 200 },
+    ],
+  },
+  // A 2×2 park grown onto the land round it (Public Parks): 3×3 grounds,
+  // then 4×4, laid out round what it grew from.
+  grandpark: {
+    name: 'Grand Park', cat: 'parks', size: 3, hidden: true, grand: true, park: true, outdoor: true, play: true, visitors: 4, tech: 'publicparks', icon: '🏞️', branch: 'Grand park', accent: '#2f5a24', pathIcon: 'nature_people',
+    desc: 'Grounds of 3×3 plots: walks between lawns, a lake, a bandstand, gardens and a playground, all round what it grew from.',
+    levels: [
+      { name: 'Grand Park', cost: 3600, upkeep: 24, appeal: 44, radius: 12, unlock: 120 },
+      { name: 'Pleasure Grounds', tech: 'publicparks', cost: 6000, upkeep: 34, appeal: 54, radius: 14, unlock: 200 },
+    ],
+  },
+  citypark: {
+    name: 'City Park', cat: 'parks', size: 4, hidden: true, grand: true, park: true, outdoor: true, play: true, visitors: 4, tech: 'publicparks', icon: '🏞️', branch: 'City park', accent: '#24502a', pathIcon: 'forest',
+    desc: 'Grounds of 4×4 plots, the green heart of a city: avenues, a great lake, gardens, games and the whole town out on a Sunday.',
+    levels: [
+      { name: 'City Park', cost: 7000, upkeep: 40, appeal: 60, radius: 15, unlock: 350 },
+      { name: 'Central Park', tech: 'publicparks', cost: 11000, upkeep: 55, appeal: 72, radius: 17, unlock: 600 },
     ],
   },
 
@@ -752,8 +819,48 @@ export const BUILDINGS = {
   },
   statue: {
     name: 'Monument', cat: 'parks', size: 1, park: true, unlock: 60, tech: 'stonework', icon: '🗽',
-    desc: 'A monument to your founders.',
+    desc: 'A monument to your founders: a statue, an obelisk, a column or a memorial cross.',
     levels: [{ name: 'Statue', cost: 260, upkeep: 1, appeal: 8, radius: 4 }],
+  },
+  pond: {
+    name: 'Pond', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 3, icon: '🦆',
+    desc: 'A pond with ducks, reeds and a bench by the water. Join two ponds, or a pond and a garden, into a lake garden.',
+    levels: [
+      { name: 'Duck Pond', cost: 55, upkeep: 1, appeal: 6, radius: 3 },
+      { name: 'Lily Pond', cost: 160, upkeep: 2, appeal: 10, radius: 4 },
+    ],
+  },
+  rosegarden: {
+    name: 'Rose Garden', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 3, tech: 'gardening', icon: '🌹',
+    desc: 'Roses round a sundial inside a clipped hedge: a great deal of beauty on one plot, for the homes right round it. It takes gardeners to keep.',
+    levels: [
+      { name: 'Rose Garden', cost: 150, upkeep: 3, appeal: 12, radius: 3 },
+      { name: 'Rose Arbour', cost: 380, upkeep: 5, appeal: 18, radius: 4, unlock: 25 },
+    ],
+  },
+  bandstand: {
+    name: 'Bandstand', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 5, service: 'culture', tech: 'parks2', icon: '🎺',
+    desc: 'The town band plays here on summer evenings: culture for the streets round it, and a lawn to listen on.',
+    levels: [
+      { name: 'Bandstand', cost: 280, upkeep: 4, appeal: 6, radius: 4 },
+      { name: 'Band Pavilion', cost: 650, upkeep: 6, appeal: 9, radius: 6, unlock: 60 },
+    ],
+  },
+  allotment: {
+    name: 'Allotments', cat: 'parks', size: 1, park: true, outdoor: true, potter: true, visitors: 3, icon: '🥬',
+    desc: 'Plots of vegetables with sheds and water butts. The retired go and dig of a morning, and homes with elders nearby are happier.',
+    levels: [
+      { name: 'Allotments', cost: 45, upkeep: 1, appeal: 2, radius: 4 },
+      { name: 'Allotment Gardens', cost: 150, upkeep: 2, appeal: 4, radius: 6, unlock: 25 },
+    ],
+  },
+  physic: {
+    name: 'Herb Garden', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 3, tech: 'botany', icon: '🪴',
+    desc: 'Beds of healing herbs, each one labelled: the gardeners who study them add to research. Join two, or one and a garden or pond, into a botanic garden.',
+    levels: [
+      { name: 'Herb Garden', cost: 220, upkeep: 3, appeal: 4, radius: 3 },
+      { name: 'Physic Garden', cost: 520, upkeep: 5, appeal: 7, radius: 4, unlock: 60 },
+    ],
   },
   // Places to play and to play games.
   playground: {
@@ -781,6 +888,14 @@ export const BUILDINGS = {
       { name: 'Playing Field', cost: 350, upkeep: 4, appeal: 8, radius: 6 },
       { name: 'Cricket Ground', cost: 900, upkeep: 7, appeal: 14, radius: 8, unlock: 120 },
       { name: 'Football Ground', tech: 'railways', cost: 1800, upkeep: 12, appeal: 18, radius: 10, unlock: 200 },
+    ],
+  },
+  zoo: {
+    name: 'Zoo', cat: 'parks', size: 2, park: true, outdoor: true, play: true, visitors: 5, unlock: 120, tech: 'zoology', icon: '🐘',
+    desc: 'Animals from far away in paddocks, pools and an aviary on a 2×2 plot: every visitor pays at the gate, and the children beg to go.',
+    levels: [
+      { name: 'Menagerie', cost: 1400, upkeep: 16, appeal: 12, radius: 7, visit: 3 },
+      { name: 'Zoological Gardens', cost: 3200, upkeep: 28, appeal: 20, radius: 9, visit: 5, unlock: 200 },
     ],
   },
   // A play area joined with another, a games lawn or a green: room for the
@@ -833,7 +948,7 @@ export const TECHS = {
   joining: { name: 'Joining', cost: 115, tier: 1, branch: 'build', needs: ['carpentry'], desc: 'Knock two neighbouring buildings into one.' },
   surveying: { name: 'Plot Surveying', cost: 210, tier: 2, branch: 'build', needs: ['joining'], desc: 'Grow a building onto the plot next door, and buy strips of garden.' },
   relocation: { name: 'House Moving', cost: 300, tier: 3, branch: 'build', needs: ['surveying'], desc: 'Take buildings down and put them up somewhere else.' },
-  bigplots: { name: 'Great Plots', cost: 810, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates, and rebuild them as manor estates, mansion quadrangles, market halls, coaching inns, timber works, cathedral closes, infirmary courts, college quads and landscape parks.' },
+  bigplots: { name: 'Great Plots', cost: 810, tier: 4, branch: 'build', needs: ['relocation', 'architecture'], desc: 'Grow double plots into 2×2 estates, and rebuild them as manor estates, mansion quadrangles, market halls, coaching inns, timber works, cathedral closes, infirmary courts, college quads, landscape parks, hedge mazes, lidos and palm houses. A park can take in the little parks beside it as it grows.' },
   homes2: { name: 'Better Homes', cost: 45, tier: 0, branch: 'homes', needs: [], desc: 'Second-level home upgrades, like the Family House.' },
   homes3: { name: 'Fine Homes', cost: 180, tier: 1, branch: 'homes', needs: ['homes2'], desc: 'Third-level and higher home upgrades.' },
   flats: { name: 'Flats', cost: 300, tier: 2, branch: 'homes', needs: ['homes3', 'urban'], desc: 'Stack households into flats and apartment courts.' },
@@ -851,9 +966,10 @@ export const TECHS = {
   arcades: { name: 'Arcades', cost: 270, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
   trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades, savings banks, department stores joined from a draper and the shop next door, and exchanges joined from two offices.' },
   civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, town banks, grand department stores, stock exchanges, the Grand Hall, grand squares and covered markets.' },
-  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Join gardens into town parks, bowling greens, and recreation grounds joined from play areas and games lawns.' },
+  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Rose gardens and bowling greens; gardens joined (or grown onto the plot next door) into town parks, ponds into lake gardens, and recreation grounds joined from play areas and games lawns.' },
   hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, brewhouses joined from a tavern and a workshop, and tea gardens joined from a coffee house and a green.' },
-  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, and playing fields.' },
+  parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, playing fields, and bandstands that bring culture to the streets round them.' },
+  publicparks: { name: 'Public Parks', cost: 1100, tier: 4, branch: 'leisure', needs: ['parks2', 'bigplots'], desc: 'Grow a 2×2 park onto the land round it into a 3×3 Grand Park, and that into a 4×4 City Park, taking in the little parks in the way.' },
   theatre: { name: 'Theatre', cost: 450, tier: 3, branch: 'leisure', needs: ['hospitality', 'paints'], desc: 'Turn an inn into a music hall, then a theatre.' },
   industry2: { name: 'Mills & Smithies', cost: 60, tier: 0, branch: 'industry', needs: [], desc: "Second-level industry (sawmills, smithies, bigger farms), ironmongers to sell their wares, and craftsman's houses joined from a cottage and a workshop." },
   woodwork: { name: 'Joinery', cost: 115, tier: 1, branch: 'industry', needs: ['carpentry'], desc: 'Clapboard walls, and joinery works from a workshop and a woodcutter.' },
@@ -861,6 +977,8 @@ export const TECHS = {
   metallurgy: { name: 'Metallurgy', cost: 525, tier: 3, branch: 'industry', needs: ['industry3', 'brickmaking'], desc: 'Turn a smithy into an iron foundry, then a steelworks.' },
   papermaking: { name: 'Papermaking', cost: 540, tier: 4, branch: 'industry', needs: ['industry3', 'woodwork'], desc: 'Turn a sawmill into a paper mill — it adds to research.' },
   horticulture: { name: 'Orchards', cost: 160, tier: 1, branch: 'farm', needs: ['industry2'], desc: 'Turn a farm into an orchard with a cider mill.' },
+  botany: { name: 'Botany', cost: 210, tier: 2, branch: 'farm', needs: ['horticulture', 'schooling'], desc: 'Herb and physic gardens whose gardeners add to research, and botanic gardens joined from two herb gardens or a herb garden and a garden or pond.' },
+  zoology: { name: 'Zoology', cost: 480, tier: 3, branch: 'farm', needs: ['botany', 'hospitality'], desc: 'Zoos: animals from far away on a 2×2 plot, with a charge at the gate.' },
   hydraulics: { name: 'Hydraulics', cost: 75, tier: 0, branch: 'water', needs: [], desc: 'River pumps and water towers.' },
   fountains: { name: 'Fountains', cost: 135, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
   electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets, and the telegraph at the General Post Office.' },
@@ -896,7 +1014,7 @@ export function techForLevel(type, level) {
   return t ? t[Math.min(level, 2) - 1] : null;
 }
 // Abilities that research unlocks (not buildings).
-export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots into 2×2 estates', cables: 'Bury the power lines under the streets' };
+export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots into 2×2 estates', publicparks: 'Grow 2×2 parks into 3×3 and 4×4 grounds', cables: 'Bury the power lines under the streets' };
 
 // Burying the power lines under a street, per road tile.
 export const BURY_COST = 12;
@@ -941,7 +1059,9 @@ export const MERGES = [
   { a: ['clinic'], b: ['chapel', 'house'], to: 'almshouse' },
   { a: ['well', 'pump'], b: ['garden', 'flowers', 'statue'], to: 'fountaingarden' },
   { a: ['workshop', 'lumber'], b: ['workshop', 'lumber'], to: 'joinery' },
-  { a: ['garden', 'flowers'], b: ['garden', 'flowers', 'statue'], to: 'park' },
+  { a: ['garden', 'flowers', 'rosegarden'], b: ['garden', 'flowers', 'statue', 'rosegarden', 'bandstand'], to: 'park' },
+  { a: ['pond'], b: ['pond', 'garden', 'flowers', 'rosegarden', 'bandstand', 'statue'], to: 'lakepark' },
+  { a: ['physic'], b: ['physic', 'garden', 'flowers', 'rosegarden', 'pond'], to: 'botanic' },
   { a: ['playground', 'courts'], b: ['playground', 'courts', 'garden'], to: 'recground' },
   // a grand home or a block of flats takes in the house next door (lead: the
   // first one's look carries on, not the cottage's)
@@ -967,18 +1087,70 @@ export const LARGE = {
   tavern: ['inn', 'brewhouse'], workshop: ['joinery', 'craftshouse'], lumber: ['joinery'],
   school: ['parishschool', 'boardschool'], clinic: ['almshouse', 'cottagehospital'], well: ['fountaingarden'], watch: ['watchhouse'], fishery: ['fishmarket'],
   chapel: ['vicarage'], builder: ['contractor'], coffeehouse: ['teagarden'], stationer: ['library'], playground: ['recground'], courts: ['recground'],
+  garden: ['park'], rosegarden: ['park'], pond: ['lakepark'], physic: ['botanic'],
 };
 // ...and what a double-plot building can be rebuilt as once it has grown
 // into a 2×2 estate (Great Plots).
 export const ESTATE = {
   mansion: ['manor'], apartments: ['quadrangle'], arcade: ['markethall'], inn: ['coachinginn'], joinery: ['timberworks'],
-  parishschool: ['cathedralclose'], almshouse: ['infirmary'], highschool: ['collegequad'], college: ['collegequad'], park: ['landscapepark'],
+  parishschool: ['cathedralclose'], almshouse: ['infirmary'], highschool: ['collegequad'], college: ['collegequad'],
+  park: ['landscapepark', 'maze'], lakepark: ['landscapepark'], botanic: ['palmhouse'], recground: ['lido'],
 };
 // The 2×2 buildings an estate can become.
 export const ESTATE_TYPES = [...new Set(Object.values(ESTATE).flat())];
+// ...and what a 2×2 park can be laid out as once it has grown onto the land
+// round it (Public Parks): 3×3 grounds, and those again into 4×4.
+export const GRAND = {
+  landscapepark: ['grandpark'], maze: ['grandpark'], palmhouse: ['grandpark'], lido: ['grandpark'], sportsground: ['grandpark'], zoo: ['grandpark'],
+  grandpark: ['citypark'],
+};
+// The 3×3 and 4×4 parks.
+export const GRAND_TYPES = [...new Set(Object.values(GRAND).flat())];
 // A plot may only grow when the bigger plot opens up a bigger building to
 // upgrade into: these are the options for a plot growing to `area` tiles.
-export const growsInto = (type, area) => (area >= 4 ? ESTATE[type] : LARGE[type]) || [];
+export const growsInto = (type, area) => (area >= 9 ? GRAND[type] : area >= 4 ? ESTATE[type] : LARGE[type]) || [];
+// What a park's grounds grew from (b.flavor of a Grand or City Park):
+// "type#level@sx,sz" is the 2×2 (or 3×3) park it was, at its level, and the
+// corner of the grounds it stands in (in the park's own frame, as b.spare
+// gives it), and "/..." what that one kept in turn (a City Park's Grand
+// Park, and the 2×2 park inside it). A park joined from a little one keeps
+// just that one's type.
+export function parkOrigin(flavor) {
+  if (typeof flavor !== 'string') return null;
+  const [head, ...rest] = flavor.split('/');
+  const m = /^([a-z]+)(?:#(\d))?(?:@(-1|0|1),(-1|0|1))?$/.exec(head);
+  if (!m || !Object.hasOwn(BUILDINGS, m[1])) return null;
+  return { type: m[1], level: m[2] != null ? +m[2] : null, sx: m[3] != null ? +m[3] : null, sz: m[4] != null ? +m[4] : null, inner: rest.join('/') || null };
+}
+// The park at the heart of a grand park's grounds (the 2×2 park they first
+// grew from, however often they grew again), or the park itself: { type,
+// level }. The grounds keep its uses: its research, its charge at the gate.
+export function parkCore(b) {
+  let type = b.type, level = b.level, flavor = b.flavor;
+  for (let k = 0; k < 4 && BUILDINGS[type] && BUILDINGS[type].grand; k++) {
+    const o = parkOrigin(flavor);
+    if (!o) break;
+    type = o.type; level = Math.min(o.level ?? level, BUILDINGS[type].levels.length - 1); flavor = o.inner;
+  }
+  return { type, level };
+}
+// What a visit costs (a shop's or tavern's takings, the zoo's gate, boats
+// for hire), and the research a building makes a day at full work.
+export function visitOf(b) {
+  const v = BUILDINGS[b.type].levels[b.level].visit;
+  if (v || !BUILDINGS[b.type].grand) return v || 0;
+  const c = parkCore(b);
+  return BUILDINGS[c.type].levels[c.level].visit || 0;
+}
+export function researchOf(b) {
+  const c = !RESEARCH_SOURCES[b.type] && BUILDINGS[b.type].grand ? parkCore(b) : b, s = RESEARCH_SOURCES[c.type];
+  return s ? s[Math.min(c.level, s.length - 1)] : 0;
+}
+// What a plot of `area` tiles is called.
+export const plotName = (area) => (area >= 16 ? '4×4 grounds' : area >= 9 ? '3×3 grounds' : area >= 4 ? '2×2 estate' : area >= 2 ? 'double plot' : 'plot');
+// A little park a growing park can take in: a one-plot park, not being built
+// or taken down.
+export const isSmallPark = (b) => !!(b && !b.con && BUILDINGS[b.type].park && BUILDINGS[b.type].size === 1 && !BUILDINGS[b.type].merged && (b.w ?? 1) === 1 && (b.d ?? 1) === 1);
 
 // Every service a building provides (combined buildings can provide two).
 export const servicesOf = (def) => def.services || (def.service ? [def.service] : []);
@@ -1042,6 +1214,8 @@ export const NEEDS = {
   university: { power: { from: 0, use: 'machines', without: 0.6, what: 'its laboratories' } },
   fountaingarden: { water: { from: 0, without: 0.6, what: 'the fountain' } },
   plaza: { water: { from: 1, without: 0.7, what: 'the fountain' } },
+  zoo: { water: { from: 0, without: 0.5, what: "the animals' pools and troughs" } },
+  lido: { water: { from: 0, without: 0.2, what: 'filling the pool' } },
   townhall: { staff: false },
   station: { staff: false },
 };
@@ -1055,7 +1229,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { papermill: [2, 3], stationer: [1, 2], library: [3, 5], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { physic: [1, 2], botanic: [3, 4], palmhouse: [5, 8], papermill: [2, 3], stationer: [1, 2], library: [3, 5], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 

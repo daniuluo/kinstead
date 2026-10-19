@@ -1,7 +1,7 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS } from '../config.js';
-import { BUILDINGS, SERVICES, TRANSIT, RESEARCH_SOURCES, servicesOf, needsOf, hasFields, produceOf } from '../defs.js';
+import { BUILDINGS, SERVICES, TRANSIT, servicesOf, needsOf, hasFields, produceOf, researchOf, visitOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf, sizeK, householdCap } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
@@ -366,14 +366,15 @@ export class Sim {
     // places to play, stops. near(): is one of them (not the home itself)
     // within radius of the home's middle, or for a place to play, does its
     // own reach (its level's radius) take the home in?
-    const shops = [], play = [], stops = [];
+    const shops = [], play = [], stops = [], potter = [];
     for (const o of w.buildings.values()) {
       if (!isOpen(o)) continue;
       const def = BUILDINGS[o.type];
-      if (!(def.shop || def.leisure || def.play || def.stop)) continue;
+      if (!(def.shop || def.leisure || def.play || def.stop || def.potter)) continue;
       const at = { o, x: o.x + fw(o) / 2, z: o.z + fd(o) / 2, r: (def.levels[o.level].radius || 0) + 0.5 };
       if (def.shop || def.leisure) shops.push(at);
       if (def.play) play.push(at);
+      if (def.potter) potter.push(at);
       if (def.stop) stops.push(at);
     }
     const near = (list, b, radius) => {
@@ -409,6 +410,11 @@ export class Sim {
       if (b.residents.some(id => { const r = w.residents.get(id); return r && r.age === 'child'; })) {
         f.play = near(play, b);
         add('play', f.play ? 4 : 0, 4);
+      }
+      // ...and an allotment to dig, for homes with elders
+      if (b.residents.some(id => { const r = w.residents.get(id); return r && r.age === 'elder'; })) {
+        f.potter = near(potter, b);
+        add('potter', f.potter ? 3 : 0, 3);
       }
       f.transit = near(stops, b, 4);
       add('transit', f.transit ? 3 : 0, 3);
@@ -448,9 +454,10 @@ export class Sim {
   researchSources() {
     const w = this.world, by = new Map();
     for (const b of w.buildings.values()) {
-      const src = RESEARCH_SOURCES[b.type];
+      // (a grand park keeps the research of the botanic gardens it grew from)
+      const src = researchOf(b);
       if (!src || !isOpen(b) || !b.connected) continue;
-      const p = Math.round(src[Math.min(b.level, src.length - 1)] * sizeK(b) * Math.min(1, b.working ?? 1));
+      const p = Math.round(src * sizeK(b) * Math.min(1, b.working ?? 1));
       if (p <= 0) continue;
       const name = BUILDINGS[b.type].levels[b.level].name;
       if (!by.has(name)) by.set(name, { name, n: 0, points: 0 });
@@ -944,7 +951,7 @@ export class Sim {
 
   recordVisit(b, fare = null) {
     const w = this.world;
-    let v = fare ?? (BUILDINGS[b.type].levels[b.level].visit || 0);
+    let v = fare ?? visitOf(b);
     if (fare == null && v) v = Math.round(v * this.visitShare(b));
     if (!v) return 0;
     w.money += v;

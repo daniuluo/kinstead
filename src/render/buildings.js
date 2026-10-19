@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, produceOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { CONFIG } from '../config.js';
+import { PARK_MODELS, parkTree, blooms, spot } from './parks.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
 
@@ -249,7 +250,7 @@ function chimney(c, x, y0, top, z, kind = 'home', color = STONE) {
 }
 
 // stone footing from the ground up to y=0 under a rectangle (only when needed)
-function footing(c, x, z, w, d, color = STONE) {
+export function footing(c, x, z, w, d, color = STONE) {
   let lo = 0;
   for (const [px, pz] of [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]]) lo = Math.min(lo, c.gy(px, pz));
   if (lo > -0.015) return;
@@ -392,7 +393,7 @@ function unseen(c, skip, draw) {
 // Style comes from the palette: material (plaster, painted, brick, stone,
 // timber-frame, clapboard or a stone/brick ground floor), roof shape and
 // pitch, jettied upper floors, bay windows, porches, ivy, shutters and more.
-function house(c, o) {
+export function house(c, o) {
   const { gb, rng, pal } = c;
   if (o.timber === undefined && pal.forced && pal.timber) o = { ...o, timber: true };
   const w = o.w, d = o.d, h = o.h, floors = o.floors || 1;
@@ -523,7 +524,7 @@ function house(c, o) {
   return { doorX };
 }
 
-function bush(c, x, z, s = 1, color) {
+export function bush(c, x, z, s = 1, color) {
   const col = color || c.rng.pick(LEAF);
   const y = c.gy(x, z);
   c.gb.sphere(x, y + 0.045 * s, z, 0.075 * s, col, 1, 0.75);
@@ -561,7 +562,7 @@ function crate(c, x, z, s = 1, color = '#94714a') {
   c.gb.cbox(x, c.gy(x, z), z, 0.065 * s, 0.06 * s, 0.065 * s, color, c.rng.float(-0.4, 0.4), 0.006);
 }
 
-function bench(c, x, z, ry = 0) {
+export function bench(c, x, z, ry = 0) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   gb.box(0, 0.036, 0, 0.17, 0.014, 0.05, '#7a5636');
@@ -571,7 +572,7 @@ function bench(c, x, z, ry = 0) {
   gb.pop();
 }
 
-function lamp(c, x, z, h = 0.32, y = c.gy(x, z)) {
+export function lamp(c, x, z, h = 0.32, y = c.gy(x, z)) {
   const { gb } = c;
   gb.cyl(x, y, z, 0.011, 0.016, h, 6, '#2f2c2a');
   gb.glow(2.2, 1.6, 0.8, 3.0);
@@ -582,7 +583,7 @@ function lamp(c, x, z, h = 0.32, y = c.gy(x, z)) {
 }
 
 // Split-rail fence around a rectangle, leaving a gap on the front side.
-function fence(c, x0, z0, x1, z1, color = FENCE, gap = null) {
+export function fence(c, x0, z0, x1, z1, color = FENCE, gap = null) {
   const { gb } = c;
   const segs = [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]];
   for (const [ax, az, bx, bz] of segs) {
@@ -655,11 +656,11 @@ function handcart(c, x, z) {
   gb.pop();
 }
 
-function hedge(c, x, z, w, d, h = 0.075) {
+export function hedge(c, x, z, w, d, h = 0.075) {
   c.gb.cbox(x, c.gy(x, z) - 0.01, z, w, h + 0.01, d, '#4a7036', 0, 0.02);
 }
 
-function sign(c, x, y, z, w, h, color, ry = 0) {
+export function sign(c, x, y, z, w, h, color, ry = 0) {
   c.gb.box(x, y, z, w, h, 0.014, color, ry);
 }
 
@@ -1072,7 +1073,7 @@ const FASCIA = ['#2f3e2a', '#3b2f2a', '#2a3a4a', '#4a2a2a', '#2f2f3a', '#1f3a3a'
 const GOLD = '#d0a03a', IRON_D = '#2f2c2a', STUCCO = '#ebe4d6';
 // A pick of the building's own that stays the same at every level (c.rng
 // changes with the level).
-const ownPick = (c, list, salt = 0) => new RNG(((c.variant || 0) ^ (0x9e3779 + salt * 7919)) >>> 0).pick(list);
+export const ownPick = (c, list, salt = 0) => new RNG(((c.variant || 0) ^ (0x9e3779 + salt * 7919)) >>> 0).pick(list);
 
 // The body of a shop: a house with the front of its ground floor (or of
 // `bare` floors) left bare for the shopfront. Its stack stands on the ridge
@@ -1745,7 +1746,7 @@ function bookBarrow(c, x, z) {
 }
 
 // A café table with two chairs, under a parasol if one is given.
-function cafeTable(c, x, z, parasol = null) {
+export function cafeTable(c, x, z, parasol = null) {
   const { gb } = c;
   const y = c.gy(x, z);
   gb.cyl(x, y, z, 0.006, 0.012, 0.055, 5, IRON_D);
@@ -1760,7 +1761,7 @@ function cafeTable(c, x, z, parasol = null) {
   }
 }
 // A palm or bay tree in a tub.
-function tubPlant(c, x, z, palm = false) {
+export function tubPlant(c, x, z, palm = false) {
   const { gb } = c;
   const y = c.gy(x, z);
   gb.cyl(x, y, z, 0.028, 0.022, 0.042, 8, palm ? '#a8603a' : '#4e5a4a');
@@ -2216,7 +2217,7 @@ function pavementWares(c, flavor, x, z) {
 }
 
 // A clock face on a wall facing +z, lit at night.
-function wallClock(c, x, y, z, r = 0.04) {
+export function wallClock(c, x, y, z, r = 0.04) {
   const { gb } = c;
   gb.cyl(x, y, z, r, r, 0.014, 12, '#3a3a3e', 0, Math.PI / 2);
   gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(x, y, z + 0.006, r * 0.8, r * 0.8, 0.012, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
@@ -2954,136 +2955,9 @@ MODELS.townhall = (c, L) => {
   }
 };
 
-MODELS.garden = (c, L) => {
-  const { gb, rng } = c;
-  c.work = [-0.4, -0.4, 0.4, 0.4];
-  if (L === 0) {
-    bench(c, 0, 0.12, rng.float(-0.3, 0.3));
-    smallTree(c, rng.float(-0.32, -0.2), rng.float(-0.32, -0.2), 1.25);
-    bush(c, 0.32, -0.3, 1.2); bush(c, -0.34, 0.34);
-    flowers(c, 0.26, 0.26, 5, 0.07);
-  } else if (L === 1) {
-    for (const [x, z, w, d] of [[-0.3, -0.44, 0.34, 0.08], [0.3, -0.44, 0.34, 0.08], [-0.44, -0.3, 0.08, 0.34], [0.44, -0.3, 0.08, 0.34], [-0.44, 0.3, 0.08, 0.34], [0.44, 0.3, 0.08, 0.34]]) hedge(c, x, z, w, d);
-    for (const [x, z] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22]]) {
-      gb.cbox(x, c.gy(x, z) - 0.01, z, 0.22, 0.04, 0.22, '#5e432c', 0, 0.01);
-      flowers(c, x, z, 7, 0.08);
-    }
-    const y = c.gy(0, 0);
-    gb.cyl(0, y - 0.01, 0, 0.05, 0.065, 0.09, 8, STONE);
-    gb.cyl(0, y + 0.08, 0, 0.085, 0.05, 0.03, 8, STONE);
-    bench(c, 0.26, 0.42, Math.PI);
-  } else {
-    const py = c.gy(-0.18, 0.18);
-    gb.cyl(-0.18, py - 0.01, 0.18, 0.21, 0.22, 0.02, 14, '#c9b99a');
-    gb.cyl(-0.18, py + 0.0, 0.18, 0.18, 0.18, 0.016, 14, '#4b8fb0');
-    for (let i = 0; i < 4; i++) gb.box(-0.33 + i * 0.03, py, 0.33 - i * 0.02, 0.006, 0.075, 0.006, '#5d7f3a');
-    const gx = 0.2, gz = -0.2, gy = c.gy(gx, gz);
-    gb.cyl(gx, gy - 0.02, gz, 0.18, 0.19, 0.05, 6, '#ddd2bc');
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      gb.box(gx + Math.cos(a) * 0.15, gy + 0.03, gz + Math.sin(a) * 0.15, 0.02, 0.19, 0.02, '#ece4d4');
-    }
-    gb.cone(gx, gy + 0.22, gz, 0.21, 0.13, 6, '#8a432e');
-    smallTree(c, -0.36, -0.3, 1.35);
-    smallTree(c, 0.36, 0.32, 1.15);
-    lamp(c, 0.02, 0.4, 0.3);
-    bench(c, -0.05, -0.4, 0);
-    flowers(c, 0.34, 0.05, 6, 0.06);
-  }
-};
 
-MODELS.plaza = (c, L) => {
-  const { gb, rng } = c;
-  c.work = [-0.85, -0.85, 0.85, 0.85];
-  // low stone kerb around the paved square (paving itself is painted on the ground)
-  for (const [x, z, w, d] of [[0, -0.93, 1.86, 0.05], [0, 0.93, 1.86, 0.05], [-0.93, 0, 0.05, 1.86], [0.93, 0, 0.05, 1.86]]) {
-    gb.cbox(x, c.gy(x, z) - 0.02, z, w, 0.045, d, '#9a9284', 0, 0.01);
-  }
-  if (L === 0) {
-    footing(c, 0, 0, 0.3, 0.3);
-    gb.cbox(0, 0, 0, 0.28, 0.13, 0.28, STONE, 0, 0.015);
-    gb.cbox(0, 0.13, 0, 0.2, 0.2, 0.2, '#b8b0a2', 0, 0.015);
-    gb.cyl(0, 0.33, 0, 0.055, 0.075, 0.13, 8, '#7a6a48');
-    gb.sphere(0, 0.49, 0, 0.045, '#7a6a48', 1);
-  } else {
-    footing(c, 0, 0, 1.0, 1.0);
-    gb.cyl(0, -0.02, 0, 0.5, 0.53, 0.12, 18, STONE);
-    gb.cyl(0, 0.04, 0, 0.45, 0.45, 0.07, 18, '#4b8fb0');
-    gb.cyl(0, 0, 0, 0.065, 0.085, 0.38, 8, '#b8b0a2');
-    gb.cyl(0, 0.38, 0, 0.21, 0.085, 0.065, 12, '#b8b0a2');
-    gb.cyl(0, 0.4, 0, 0.18, 0.18, 0.03, 12, '#5aa0c4');
-    gb.cyl(0, 0.44, 0, 0.032, 0.042, 0.13, 6, '#b8b0a2');
-    c.fountain = [0, 0.58, 0];
-  }
-  for (const [x, z] of [[-0.62, -0.62], [0.62, -0.62], [-0.62, 0.62], [0.62, 0.62]]) {
-    gb.cbox(x, c.gy(x, z) - 0.01, z, 0.22, 0.09, 0.22, STONE, 0, 0.012);
-    smallTree(c, x, z, 1.15);
-  }
-  for (const [x, z, ry] of [[0, 0.7, Math.PI], [0, -0.7, 0], [0.7, 0, -Math.PI / 2], [-0.7, 0, Math.PI / 2]]) bench(c, x, z, ry);
-  for (const [x, z] of [[-0.36, 0.84], [0.36, 0.84], [-0.36, -0.84], [0.36, -0.84]]) lamp(c, x, z, 0.33);
-  if (L) for (const [x, z] of [[-0.86, 0], [0.86, 0]]) { gb.cbox(x, c.gy(x, z) - 0.01, z, 0.12, 0.07, 0.3, '#6b4a2f', 0, 0.01); flowers(c, x, z, 8, 0.1); }
-  if (L >= 2) {
-    // a bandstand and market umbrellas around the fountain
-    const bx = 0.55, bz = 0.0;
-    gb.cyl(bx, c.gy(bx, bz) - 0.01, bz, 0.2, 0.21, 0.06, 8, STONE);
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; gb.box(bx + Math.cos(a) * 0.17, c.gy(bx, bz) + 0.05, bz + Math.sin(a) * 0.17, 0.014, 0.2, 0.014, '#ece4d4'); }
-    gb.cone(bx, c.gy(bx, bz) + 0.25, bz, 0.23, 0.14, 8, '#3f5a46');
-    for (const [ux, uz, col] of [[-0.5, 0.35, '#a8473a'], [-0.5, -0.35, '#3f6a8f'], [-0.25, 0.55, '#c08a3a']]) {
-      const uy = c.gy(ux, uz);
-      gb.cbox(ux, uy, uz, 0.14, 0.07, 0.09, '#86613e', 0, 0.006);
-      gb.cyl(ux, uy + 0.07, uz, 0.006, 0.006, 0.14, 4, '#3f342c');
-      gb.cone(ux, uy + 0.2, uz, 0.12, 0.05, 8, col);
-    }
-  }
-  void rng;
-};
 
-MODELS.flowers = (c) => {
-  const { gb, rng } = c;
-  const n = rng.int(1, 3);
-  if (n === 1) {
-    const y = c.gy(0, 0);
-    gb.cyl(0, y - 0.02, 0, 0.33, 0.35, 0.07, 14, STONE);
-    gb.cyl(0, y - 0.01, 0, 0.3, 0.3, 0.07, 14, '#4e3a28');
-    for (let ring = 0; ring < 3; ring++) {
-      const col = rng.pick(FLOWER);
-      const r = 0.06 + ring * 0.09, k = 5 + ring * 6;
-      for (let i = 0; i < k; i++) {
-        const a = (i / k) * Math.PI * 2;
-        gb.sphere(Math.cos(a) * r, y + 0.085, Math.sin(a) * r, 0.026, col, 1);
-      }
-    }
-  } else {
-    for (let b = 0; b < n; b++) {
-      const z = -0.3 + (b + 0.5) * (0.6 / n) * 1.2 - 0.06;
-      const y = c.gy(0, z);
-      gb.cbox(0, y - 0.02, z, 0.76, 0.07, 0.19, '#6b4a2f', 0, 0.01);
-      gb.box(0, y - 0.01, z, 0.72, 0.065, 0.16, '#4e3a28');
-      const col = rng.pick(FLOWER), col2 = rng.pick(FLOWER);
-      for (let i = 0; i < 12; i++) gb.sphere(-0.33 + i * 0.06, y + 0.075, z + (i % 2 ? 0.035 : -0.035), 0.025, i % 3 ? col : col2, 1);
-    }
-  }
-  bush(c, 0.4, 0.4, 0.85); bush(c, -0.4, -0.4, 0.85);
-};
 
-MODELS.statue = (c) => {
-  const { gb, rng } = c;
-  const mat = rng.chance(0.5) ? '#7a6a48' : '#cfc8ba';
-  footing(c, 0, 0, 0.3, 0.3);
-  gb.cbox(0, 0, 0, 0.28, 0.07, 0.28, STONE, 0, 0.012);
-  gb.cbox(0, 0.07, 0, 0.19, 0.24, 0.19, '#b8b0a2', 0, 0.012);
-  gb.cbox(0, 0.31, 0, 0.23, 0.035, 0.23, STONE, 0, 0.008);
-  gb.box(-0.026, 0.345, 0, 0.032, 0.13, 0.042, mat);
-  gb.box(0.026, 0.345, 0, 0.032, 0.13, 0.042, mat);
-  gb.cyl(0, 0.47, 0, 0.042, 0.053, 0.15, 8, mat);
-  gb.sphere(0, 0.66, 0, 0.037, mat, 1);
-  gb.box(0.052, 0.57, 0, 0.024, 0.14, 0.024, mat, 0, 0, -0.5);
-  gb.box(-0.058, 0.51, 0, 0.024, 0.11, 0.024, mat, 0, 0, 0.2);
-  for (const [x, z] of [[-0.38, 0.38], [0.38, -0.38]]) bush(c, x, z, 1.2);
-  lamp(c, 0.38, 0.38, 0.3);
-  lamp(c, -0.38, -0.38, 0.3);
-  bench(c, -0.3, 0.42, Math.PI);
-};
 
 // ----------------------------------------------------- play and games
 // Play areas, games lawns and playing fields: the parks people use rather
@@ -3093,7 +2967,7 @@ const PAINT = ['#c8423a', '#3f6a8f', '#4f7a45', '#d8a630', '#7a5a8a'];
 const SAND = '#e0cf9a', LINE = '#f2efe6';
 
 // An A-frame swing with n seats hanging from its beam, the beam along x.
-function swings(c, x, z, ry, n = 2, color = '#6e5034') {
+export function swings(c, x, z, ry, n = 2, color = '#6e5034') {
   const { gb } = c;
   const w = 0.07 + n * 0.07, h = 0.2;
   gb.push(x, c.gy(x, z), z, ry);
@@ -3107,7 +2981,7 @@ function swings(c, x, z, ry, n = 2, color = '#6e5034') {
   gb.pop();
 }
 // A slide: a ladder up to a little platform and the chute down, facing +z.
-function slide(c, x, z, ry, color = '#c8423a') {
+export function slide(c, x, z, ry, color = '#c8423a') {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   for (const s of [-1, 1]) gb.box(s * 0.022, 0, -0.1, 0.01, 0.17, 0.01, '#5a5a5e');
@@ -3117,7 +2991,7 @@ function slide(c, x, z, ry, color = '#c8423a') {
   for (const s of [-1, 1]) gb.boxC(s * 0.026, 0.1, 0.03, 0.006, 0.02, 0.22, shade(color, 0.8), 0.72);
   gb.pop();
 }
-function seesaw(c, x, z, ry, color = '#3f6a8f') {
+export function seesaw(c, x, z, ry, color = '#3f6a8f') {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   gb.box(0, 0, 0, 0.03, 0.04, 0.03, '#5e432c');
@@ -3125,7 +2999,7 @@ function seesaw(c, x, z, ry, color = '#3f6a8f') {
   for (const s of [-1, 1]) gb.box(s * 0.1, 0.045 + s * -0.016 + 0.008, 0, 0.006, 0.03, 0.026, '#3a3a3e');
   gb.pop();
 }
-function roundabout(c, x, z, color = '#d8a630') {
+export function roundabout(c, x, z, color = '#d8a630') {
   const { gb } = c;
   const y = c.gy(x, z);
   gb.cyl(x, y, z, 0.012, 0.012, 0.03, 6, '#3a3a3e');
@@ -3133,7 +3007,7 @@ function roundabout(c, x, z, color = '#d8a630') {
   for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2; gb.box(x + Math.cos(a) * 0.055, y + 0.04, z + Math.sin(a) * 0.055, 0.006, 0.04, 0.006, '#3a3a3e'); }
   gb.cyl(x, y + 0.075, z, 0.058, 0.058, 0.006, 10, '#3a3a3e');
 }
-function sandpit(c, x, z, w, d) {
+export function sandpit(c, x, z, w, d) {
   const { gb } = c;
   const y = c.gy(x, z);
   gb.cbox(x, y - 0.01, z, w, 0.035, d, '#7a5a3c', 0, 0.006);
@@ -3143,7 +3017,7 @@ function sandpit(c, x, z, w, d) {
 }
 // A wooden climbing fort: a platform on posts with a pyramid roof, a
 // scramble net up one side and a slide off the other, facing +z.
-function fort(c, x, z, roof) {
+export function fort(c, x, z, roof) {
   const { gb } = c;
   const y = c.gy(x, z), h = 0.16;
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(x + sx * 0.07, y, z + sz * 0.07, 0.016, h + 0.14, 0.016, '#6e5034');
@@ -3156,7 +3030,7 @@ function fort(c, x, z, roof) {
   slide(c, x + 0.17, z, Math.PI / 2, '#d8a630');
 }
 // A shelter: posts carrying a hipped roof over a bench.
-function shelter(c, x, z, w, d, roof, ry = 0) {
+export function shelter(c, x, z, w, d, roof, ry = 0) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * (w / 2 - 0.015), 0, sz * (d / 2 - 0.015), 0.018, 0.2, 0.018, '#5e432c');
@@ -3166,7 +3040,7 @@ function shelter(c, x, z, w, d, roof, ry = 0) {
   gb.pop();
 }
 // Mown stripes over a lawn (w across x, d across z), at the ground.
-function stripes(c, x, z, w, d, n, a = '#7fb04f', b = '#8fbd5a', alongZ = false) {
+export function stripes(c, x, z, w, d, n, a = '#7fb04f', b = '#8fbd5a', alongZ = false) {
   for (let i = 0; i < n; i++) {
     const u = -0.5 + (i + 0.5) / n;
     const sx = alongZ ? x + u * w : x, sz = alongZ ? z : z + u * d;
@@ -3174,7 +3048,7 @@ function stripes(c, x, z, w, d, n, a = '#7fb04f', b = '#8fbd5a', alongZ = false)
   }
 }
 // A small timber pavilion with a veranda, facing +z.
-function pavilion(c, x, z, w, d, wall, roof, clock = false) {
+export function pavilion(c, x, z, w, d, wall, roof, clock = false) {
   const { gb } = c;
   house(c, { x, z, w, d, h: 0.22, floors: 1, wall, roof, roofType: 'gable', rh: 0.14, nFront: 2, doorX: 0, chimney: false, fancy: false, lit: 0.7 });
   gb.box(x, -0.005, z + d / 2 + 0.05, w, 0.02, 0.1, '#86663f');
@@ -3188,181 +3062,11 @@ function pavilion(c, x, z, w, d, wall, roof, clock = false) {
   }
 }
 
-// Swing Green: a pair of swings on a green, a see-saw and a bench under a
-// tree. The Playground has a sandpit, a slide, a roundabout and railings
-// round it; the Adventure Playground a wooden fort with a scramble net and
-// a slide, big swings and a shelter for the parents.
-MODELS.playground = (c, L) => {
-  const { gb, rng, pal } = c;
-  c.work = [-0.4, -0.4, 0.4, 0.4];
-  if (L === 0) {
-    swings(c, -0.12, -0.1, 0.2);
-    seesaw(c, 0.2, 0.2, 0.6);
-    smallTree(c, 0.3, -0.3, 1.2);
-    bench(c, -0.28, 0.3, Math.PI + 0.3);
-    flowers(c, 0.34, 0.36, 4, 0.05);
-  } else {
-    sandpit(c, -0.22, 0.2, 0.26, 0.2);
-    if (L === 1) {
-      swings(c, -0.12, -0.24, 0, 3, '#3a3a3e');
-      slide(c, 0.24, -0.1, 0, rng.pick(PAINT));
-      roundabout(c, 0.2, 0.26, rng.pick(PAINT));
-      seesaw(c, -0.32, -0.02, Math.PI / 2);
-      lamp(c, 0.4, 0.42, 0.28);
-    } else {
-      fort(c, 0.06, -0.18, pal.roof);
-      swings(c, -0.28, -0.28, Math.PI / 2, 2, '#3a3a3e');
-      roundabout(c, 0.22, 0.24, rng.pick(PAINT));
-      shelter(c, 0.32, -0.32, 0.18, 0.14, pal.slate, -Math.PI / 2);
-      lamp(c, -0.42, 0.42, 0.28);
-    }
-    fence(c, -0.46, -0.46, 0.46, 0.46, '#3a3a3e', { x: 0, z: 0.46, w: 0.1 });
-    bench(c, 0.02, 0.36, Math.PI);
-  }
-};
 
-// Bowling Green: a level lawn mown in stripes inside a low hedge, bowls and
-// the jack on the grass, a little hut for the woods. The Croquet Lawn has
-// hoops and a peg and a pavilion with a veranda; the Tennis Courts a court
-// with its net and lines inside a wire fence, a clubhouse and an umpire's
-// chair.
-MODELS.courts = (c, L) => {
-  const { gb, rng, pal } = c;
-  c.work = [-0.4, -0.4, 0.4, 0.4];
-  if (L < 2) {
-    const z0 = 0.12, w = 0.8, d = 0.6;
-    stripes(c, 0, z0, w, d, L ? 6 : 8, L ? '#6fa848' : '#7fb04f', L ? '#82b85a' : '#90c060');
-    hedge(c, 0, z0 - d / 2 - 0.02, w + 0.04, 0.04, 0.05);
-    for (const s of [-1, 1]) hedge(c, s * (w / 2 + 0.02), z0, 0.04, d, 0.05);
-    for (const s of [-1, 1]) hedge(c, s * 0.26, z0 + d / 2 + 0.02, 0.32, 0.04, 0.05);
-    if (L === 0) {
-      for (let i = 0; i < 6; i++) { const x = rng.float(-0.3, 0.3), z = rng.float(-0.2, 0.3); gb.sphere(x, c.gy(x, z) + 0.012, z, 0.013, i % 2 ? '#2a2420' : '#5a2a22', 0); }
-      gb.sphere(0.02, c.gy(0.02, 0.1) + 0.007, 0.1, 0.007, '#f2ede0', 0);
-      const hx = -0.3, hz = -0.36;
-      gb.cbox(hx, c.gy(hx, hz), hz, 0.16, 0.13, 0.12, pal.wood, 0, 0.008);
-      gb.wedge(hx, c.gy(hx, hz) + 0.13, hz, 0.19, 0.15, 0.05, pal.roof, 0);
-      bench(c, 0.2, -0.36, 0);
-    } else {
-      for (const [x, z] of [[-0.25, -0.08], [0.25, -0.08], [-0.25, 0.32], [0.25, 0.32], [0, 0.04], [0, 0.2]]) {
-        const y = c.gy(x, z);
-        for (const s of [-1, 1]) gb.box(x + s * 0.012, y, z, 0.004, 0.026, 0.004, LINE);
-        gb.box(x, y + 0.024, z, 0.028, 0.004, 0.004, LINE);
-      }
-      gb.cyl(0, c.gy(0, 0.12), 0.12, 0.006, 0.006, 0.05, 5, '#c8423a');
-      for (let i = 0; i < 4; i++) { const x = rng.float(-0.25, 0.25), z = rng.float(-0.06, 0.32); gb.sphere(x, c.gy(x, z) + 0.01, z, 0.01, PAINT[i], 0); }
-      pavilion(c, 0, -0.39, 0.4, 0.1, rng.chance(0.5) ? '#ece6da' : pal.wall, pal.roof);
-      for (const x of [-0.33, 0.33]) {
-        const z = -0.3, y = c.gy(x, z);
-        gb.boxC(x, y + 0.03, z, 0.04, 0.004, 0.06, '#d8c8a0', -0.5);
-        gb.boxC(x, y + 0.04, z + 0.004, 0.036, 0.05, 0.003, rng.pick(['#3f6a8f', '#c8423a', '#4f7a45']), -0.3);
-      }
-    }
-  } else {
-    // the court, its lines, the net, and a wire fence round it
-    const cx = 0, cz = 0.1, cw = 0.74, cd = 0.56;
-    gb.box(cx, c.gy(cx, cz) - 0.006, cz, cw, 0.01, cd, rng.chance(0.5) ? '#6fa848' : '#b8673e');
-    const ly = c.gy(cx, cz) + 0.004, iw = cw - 0.14, id = cd - 0.1;
-    for (const s of [-1, 1]) { gb.box(cx + s * iw / 2, ly, cz, 0.008, 0.003, id, LINE); gb.box(cx, ly, cz + s * id / 2, iw, 0.003, 0.008, LINE); gb.box(cx + s * iw * 0.36, ly, cz, 0.006, 0.003, id, LINE); }
-    gb.box(cx, ly, cz, 0.006, 0.003, id * 0.5, LINE);
-    for (const s of [-1, 1]) gb.box(cx, ly, cz + s * id / 4, iw * 0.72, 0.003, 0.006, LINE);
-    for (const s of [-1, 1]) gb.box(cx + s * (iw / 2 + 0.03), ly - 0.004, cz, 0.012, 0.06, 0.012, '#3a3a3e');
-    gb.box(cx, ly + 0.012, cz, iw + 0.05, 0.035, 0.004, '#4a4a4e');
-    gb.box(cx, ly + 0.047, cz, iw + 0.05, 0.007, 0.006, LINE);
-    const fx = cw / 2 + 0.03, fz0 = cz - cd / 2 - 0.03, fz1 = cz + cd / 2 + 0.03, fh = 0.2;
-    const post = (x, z) => gb.box(x, c.gy(x, z) - 0.01, z, 0.01, fh + 0.01, 0.01, '#2f3a2f');
-    for (let i = 0; i <= 6; i++) { const x = -fx + (i * 2 * fx) / 6; post(x, fz0); post(x, fz1); }
-    for (let i = 1; i < 5; i++) { const z = fz0 + (i * (fz1 - fz0)) / 5; post(-fx, z); post(fx, z); }
-    for (const y of [0.06, 0.13, fh - 0.006]) {
-      gb.box(0, y, fz0, 2 * fx, 0.004, 0.004, '#3a463a'); gb.box(0, y, fz1, 2 * fx, 0.004, 0.004, '#3a463a');
-      gb.box(-fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a'); gb.box(fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a');
-    }
-    // the umpire's chair, and the clubhouse behind
-    const ux = cx + iw / 2 + 0.06, uy = c.gy(ux, cz);
-    for (const s of [-1, 1]) gb.box(ux, uy, cz + s * 0.015, 0.008, 0.11, 0.008, '#ece6da');
-    gb.box(ux, uy + 0.11, cz, 0.03, 0.008, 0.04, '#ece6da');
-    pavilion(c, -0.08, -0.39, 0.5, 0.1, pal.wall, pal.slate, true);
-  }
-};
 
-// Playing Field: a big field mown in stripes, goalposts at each end, a hut
-// to change in and trees round the edge. The Cricket Ground has a wicket
-// with its stumps in the middle, sightscreens, a boundary rope, a
-// scoreboard and a white pavilion with a clock; the Football Ground a marked
-// pitch with netted goals, a covered grandstand along the back, a bank of
-// terracing at one end, and a turnstile gate on the street.
-MODELS.sportsground = (c, L) => {
-  const { gb, rng, pal } = c;
-  c.work = [-0.85, -0.85, 0.85, 0.85];
-  if (L === 0) {
-    stripes(c, 0, 0.06, 1.6, 1.5, 10, '#7fb04f', '#8cbc58', true);
-    for (const s of [-1, 1]) goal(c, s * 0.72, 0.06, s > 0 ? -Math.PI / 2 : Math.PI / 2, false);
-    const hx = -0.7, hz = -0.82;
-    gb.cbox(hx, c.gy(hx, hz), hz, 0.26, 0.15, 0.14, pal.wood, 0, 0.008);
-    gb.gable(hx, c.gy(hx, hz) + 0.15, hz, 0.26, 0.14, 0.07, pal.wood, pal.roof, 0.03);
-    for (const [x, z] of [[0.8, -0.8], [0.45, -0.82], [-0.82, 0.45], [0.82, 0.55], [-0.25, -0.84]]) smallTree(c, x, z, rng.float(1.05, 1.2));
-    bench(c, 0.1, -0.84, 0); bench(c, -0.4, 0.88, Math.PI);
-  } else if (L === 1) {
-    stripes(c, 0, 0.04, 1.7, 1.66, 12, '#76ac4a', '#86b956', true);
-    // the wicket and its stumps
-    const wy = c.gy(0, 0.04);
-    gb.box(0, wy - 0.003, 0.04, 0.08, 0.008, 0.46, '#c8b27a');
-    for (const s of [-1, 1]) { for (const k of [-1, 0, 1]) gb.box(k * 0.01, wy, 0.04 + s * 0.2, 0.004, 0.035, 0.004, LINE); gb.box(0, wy + 0.035, 0.04 + s * 0.2, 0.026, 0.004, 0.004, '#d8b060'); }
-    for (const s of [-1, 1]) gb.box(0, wy + 0.005, 0.04 + s * 0.16, 0.08, 0.002, 0.004, LINE);
-    // the boundary rope, a ring of white
-    for (let i = 0; i < 40; i++) { const a = (i / 40) * Math.PI * 2, x = Math.cos(a) * 0.8, z = 0.04 + Math.sin(a) * 0.76; gb.box(x, c.gy(x, z), z, 0.012, 0.008, 0.012, LINE); }
-    for (const s of [-1, 1]) { const z = 0.04 + s * 0.88 - (s > 0 ? 0.03 : 0); const y = c.gy(0, z); for (const x of [-0.1, 0.1]) gb.box(x, y, z, 0.012, 0.08, 0.012, '#5e432c'); gb.box(0, y + 0.03, z, 0.26, 0.12, 0.012, LINE); }
-    pavilion(c, -0.55, -0.82, 0.5, 0.18, '#ece6da', pal.slate, true);
-    gb.box(-0.76, 0.3, -0.82, 0.008, 0.18, 0.008, IRON_D);
-    gb.box(-0.715, 0.43, -0.82, 0.09, 0.05, 0.004, rng.pick(['#3f6a8f', '#a8473a', '#2f6a4a']));
-    // the scoreboard
-    const sx = 0.62, sz = -0.86, sy = c.gy(sx, sz);
-    for (const s of [-1, 1]) gb.box(sx + s * 0.1, sy, sz, 0.014, 0.12, 0.014, '#5e432c');
-    gb.box(sx, sy + 0.1, sz, 0.26, 0.12, 0.02, '#2a2a30');
-    for (let i = 0; i < 4; i++) gb.box(sx - 0.09 + i * 0.06, sy + 0.14, sz + 0.012, 0.035, 0.045, 0.003, LINE);
-    for (const [x, z, r] of [[0.32, -0.86, 0], [-0.88, 0.2, Math.PI / 2], [0.88, 0.3, -Math.PI / 2], [0.4, 0.88, Math.PI]]) bench(c, x, z, r);
-    for (const [x, z] of [[0.82, -0.82], [-0.82, 0.8], [0.82, 0.8]]) smallTree(c, x, z, 1.15);
-  } else {
-    // the pitch and its markings
-    const px = 0, pz = 0.16, pw = 1.56, pd = 0.98;
-    stripes(c, px, pz, pw + 0.1, pd + 0.1, 12, '#6fa848', '#7db654', true);
-    const ly = c.gy(px, pz) + 0.001;
-    for (const s of [-1, 1]) { gb.box(px, ly, pz + s * pd / 2, pw, 0.003, 0.01, LINE); gb.box(px + s * pw / 2, ly, pz, 0.01, 0.003, pd, LINE); }
-    gb.box(px, ly, pz, 0.01, 0.003, pd, LINE);
-    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; gb.box(px + Math.cos(a) * 0.13, ly, pz + Math.sin(a) * 0.13, 0.05, 0.003, 0.01, LINE, -a + Math.PI / 2); }
-    for (const s of [-1, 1]) {
-      const ex = px + s * pw / 2, bx = ex - s * 0.12;
-      gb.box(bx, ly, pz, 0.01, 0.003, 0.44, LINE);
-      for (const k of [-1, 1]) gb.box((ex + bx) / 2, ly, pz + k * 0.22, 0.24, 0.003, 0.01, LINE);
-      goal(c, ex, pz, s > 0 ? -Math.PI / 2 : Math.PI / 2, true);
-    }
-    // the grandstand: tiers of benches under a roof on iron columns
-    const gx = 0.1, gz = -0.78, gw = 1.3, gd = 0.3;
-    footing(c, gx, gz, gw, gd);
-    for (let k = 0; k < 4; k++) gb.box(gx, 0, gz - gd / 2 + 0.04 + k * 0.06, gw, 0.06 * (4 - k), 0.06, k % 2 ? '#8a7a62' : '#7a6a52');
-    gb.box(gx, 0, gz - gd / 2 + 0.01, gw + 0.02, 0.36, 0.02, pal.brick);
-    for (const s of [-1, 1]) gb.box(gx + s * (gw / 2), 0, gz, 0.02, 0.32, gd, pal.brick);
-    for (let i = 0; i <= 6; i++) gb.box(gx - gw / 2 + (i * gw) / 6, 0, gz + gd / 2 - 0.01, 0.012, 0.32, 0.012, '#2f3a4a');
-    gb.wedge(gx, 0.32, gz, gw + 0.06, gd + 0.08, 0.08, pal.slate, 0);
-    gb.cbox(gx, 0.36, gz - 0.02, 0.24, 0.1, 0.12, pal.brick, 0, 0.006);
-    gb.gable(gx, 0.46, gz - 0.02, 0.26, 0.12, 0.08, pal.brick, pal.slate, 0.02, true);
-    wallClock(c, gx, 0.42, gz + 0.042, 0.03);
-    for (const s of [-1, 1]) { gb.box(gx + s * 0.6, 0.4, gz, 0.008, 0.2, 0.008, IRON_D); gb.box(gx + s * 0.6 + 0.045, 0.54, gz, 0.08, 0.05, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#e8e0d0'])); }
-    // terracing at the far end
-    const tx = -0.84;
-    for (let k = 0; k < 3; k++) gb.box(tx + 0.05 - k * 0.045, 0, -0.32, 0.05, 0.03 * (k + 1), 0.58, STONE);
-    // the turnstile gate on the street, railings either side
-    const fz = 0.86;
-    frontage(c, -0.95, -0.12, fz, [], 'railings');
-    frontage(c, 0.12, 0.95, fz, [], 'railings');
-    gb.cbox(0, c.gy(0, fz), fz, 0.2, 0.18, 0.08, pal.brick, 0, 0.006);
-    gb.box(0, c.gy(0, fz), fz + 0.041, 0.07, 0.12, 0.004, '#3a2f28');
-    gb.gable(0, c.gy(0, fz) + 0.18, fz, 0.22, 0.1, 0.05, pal.brick, pal.slate, 0.015);
-    lamp(c, -0.2, fz + 0.04, 0.3); lamp(c, 0.2, fz + 0.04, 0.3);
-  }
-};
 // Goalposts on the goal line at (x, z), the goal opening along z and the
 // net (if any) behind, the way ry turns +z.
-function goal(c, x, z, ry, net) {
+export function goal(c, x, z, ry, net) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   for (const s of [-1, 1]) gb.box(s * 0.09, 0, 0, 0.012, 0.1, 0.012, LINE);
@@ -3374,45 +3078,6 @@ function goal(c, x, z, ry, net) {
   gb.pop();
 }
 
-// Recreation Ground: a playground at one end, a lawn with goalposts at the
-// other, a shelter between them and railings round. The People's Park
-// adds a paddling pool, a drinking fountain, flower beds and lamps.
-MODELS.recground = (c, L) => {
-  const { gb, rng, pal } = c;
-  const f = rowFrame(c);
-  const W = f.len - 0.1, D = f.dep - 0.1, x0 = -W / 2, x1 = W / 2;
-  // the play end
-  const px = x0 + 0.34;
-  sandpit(c, px - 0.08, 0.2, 0.26, 0.18);
-  swings(c, px - 0.1, -0.24, 0, 2, '#3a3a3e');
-  slide(c, px + 0.22, -0.06, 0, rng.pick(PAINT));
-  roundabout(c, px + 0.22, 0.26, rng.pick(PAINT));
-  // the games end
-  const gx = x1 - 0.42;
-  stripes(c, gx, 0.02, 0.7, D - 0.1, 6, '#7fb04f', '#8cbc58', true);
-  for (const s of [-1, 1]) goal(c, gx + s * 0.3, 0.02, s > 0 ? -Math.PI / 2 : Math.PI / 2, false);
-  // the shelter between, and a path across
-  gb.box(0.02, c.gy(0.02, 0) - 0.006, 0, 0.12, 0.012, D - 0.04, '#c8b894');
-  if (L) {
-    // an octagonal shelter, a paddling pool, a drinking fountain, beds and lamps
-    const sx = 0.02, sz = -0.26, sy = c.gy(sx, sz);
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; gb.box(sx + Math.cos(a) * 0.1, sy, sz + Math.sin(a) * 0.1, 0.014, 0.18, 0.014, '#ece6da'); }
-    gb.cyl(sx, sy + 0.18, sz, 0.13, 0.13, 0.02, 8, '#ece6da');
-    gb.cone(sx, sy + 0.2, sz, 0.14, 0.1, 8, pal.slate, Math.PI / 8);
-    const py = c.gy(0.02, 0.26);
-    gb.cyl(0.02, py - 0.01, 0.26, 0.14, 0.15, 0.03, 12, STONE);
-    gb.cyl(0.02, py + 0.02, 0.26, 0.125, 0.125, 0.004, 12, POOL);
-    const fx = -0.2, fz = -0.36, fy = c.gy(fx, fz);
-    gb.cyl(fx, fy, fz, 0.02, 0.026, 0.1, 8, STONE); gb.cyl(fx, fy + 0.1, fz, 0.03, 0.022, 0.02, 8, STONE);
-    flowers(c, 0.2, 0.32, 6, 0.06); flowers(c, -0.16, 0.34, 6, 0.06);
-    lamp(c, 0.12, 0.42, 0.28); lamp(c, -0.1, -0.42, 0.28);
-  } else {
-    shelter(c, 0.02, -0.28, 0.22, 0.16, pal.roof);
-    bench(c, 0.02, 0.3, Math.PI);
-  }
-  fence(c, x0, -D / 2 - 0.02, x1, D / 2 + 0.02, '#3a3a3e', { x: 0.02, z: D / 2 + 0.02, w: 0.1 });
-  if (f.turned) gb.pop();
-};
 
 MODELS.coachstop = (c) => {
   const { gb, pal } = c;
@@ -3669,14 +3334,14 @@ MODELS.builder = (c, L) => {
 
 // Merged buildings run along the longer side of their plot. On a deep plot
 // (road at the short end) the row is turned so it runs back from the road.
-function rowFrame(c) {
+export function rowFrame(c) {
   const turned = c.Ez > c.Ex + 1e-6;
   if (turned) c.gb.push(0, 0, 0, Math.PI / 2);
   return { len: Math.max(c.Ex, c.Ez) * 2, dep: Math.min(c.Ex, c.Ez) * 2, turned };
 }
 
 // A low front-garden boundary with gaps at the doors.
-function frontage(c, x0, x1, z, gaps, kind) {
+export function frontage(c, x0, x1, z, gaps, kind) {
   const { gb } = c;
   const cuts = gaps.slice().sort((a, b) => a - b);
   let a = x0;
@@ -4196,36 +3861,6 @@ MODELS.almshouse = (c, L) => {
   if (f.turned) gb.pop();
 };
 
-MODELS.fountaingarden = (c, L) => {
-  const { gb, rng } = c;
-  const f = rowFrame(c);
-  const W = f.len - 0.1, D = f.dep - 0.1;
-  hedge(c, 0, -D / 2, W, 0.06); hedge(c, -W / 2, 0, 0.06, D); hedge(c, W / 2, 0, 0.06, D);
-  hedge(c, -W * 0.3, D / 2, W * 0.36, 0.06); hedge(c, W * 0.3, D / 2, W * 0.36, 0.06);
-  // gravel walks crossing at the fountain
-  gb.box(0, c.gy(0, 0) - 0.006, 0, W - 0.12, 0.012, 0.1, '#cdbf9e');
-  gb.box(0, c.gy(0, 0) - 0.006, 0, 0.1, 0.012, D - 0.1, '#cdbf9e');
-  const y = c.gy(0, 0);
-  gb.cyl(0, y - 0.02, 0, 0.22, 0.24, 0.07, 16, STONE);
-  gb.cyl(0, y + 0.04, 0, 0.2, 0.2, 0.01, 16, '#3f7f9f');
-  gb.cyl(0, y + 0.04, 0, 0.04, 0.05, L ? 0.26 : 0.18, 8, STONE);
-  gb.cyl(0, y + (L ? 0.22 : 0.15), 0, 0.09, 0.07, 0.03, 10, STONE);
-  c.fountain = [0, y + (L ? 0.3 : 0.22), 0];
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const x = sx * W * 0.3, z = sz * D * 0.25;
-    flowers(c, x, z, 8, 0.1);
-    if (L) smallTree(c, sx * W * 0.42, sz * D * 0.3, 0.8);
-  }
-  // the old well-house in one corner
-  const wx = -W / 2 + 0.16, wz = -D / 2 + 0.16, wy = c.gy(wx, wz);
-  gb.cyl(wx, wy - 0.02, wz, 0.08, 0.09, 0.1, 10, STONE);
-  for (const s of [-1, 1]) gb.box(wx + s * 0.07, wy + 0.06, wz, 0.016, 0.18, 0.016, '#4e3a2a');
-  gb.gable(wx, wy + 0.24, wz, 0.2, 0.14, 0.07, '#6e4a2c', '#8a432e', 0.02);
-  bench(c, W * 0.2, D / 2 - 0.12, Math.PI); bench(c, -W * 0.2, -D / 2 + 0.12, 0);
-  lamp(c, W / 2 - 0.08, D / 2 - 0.08, 0.28);
-  void rng;
-  if (f.turned) gb.pop();
-};
 
 MODELS.joinery = (c, L) => {
   const { gb, pal } = c;
@@ -4969,29 +4604,6 @@ MODELS.library = (c, L) => {
   if (f.turned) gb.pop();
 };
 
-MODELS.park = (c, L) => {
-  const { gb, rng } = c;
-  const f = rowFrame(c);
-  const W = f.len - 0.08, D = f.dep - 0.08;
-  // winding walk, a pond and a bandstand among trees
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8, x = -W / 2 + 0.08 + t * (W - 0.16), z = Math.sin(t * Math.PI * 2) * D * 0.22;
-    gb.box(x, c.gy(x, z) - 0.006, z, 0.14, 0.012, 0.09, '#cdbf9e', Math.cos(t * Math.PI * 2) * 0.6);
-  }
-  const px = W * 0.22, pz = -D * 0.12, py = c.gy(px, pz);
-  gb.cyl(px, py - 0.03, pz, 0.2, 0.22, 0.04, 14, '#9a9284');
-  gb.cyl(px, py + 0.005, pz, 0.18, 0.18, 0.006, 14, '#3f7f9f');
-  for (let i = 0; i < 2; i++) gb.sphere(px - 0.05 + i * 0.08, py + 0.02, pz + 0.03, 0.018, '#f2ede0', 0);
-  const bx = -W * 0.22, bz = D * 0.1, by = c.gy(bx, bz);
-  gb.cyl(bx, by - 0.01, bz, 0.13, 0.14, 0.05, 8, STONE);
-  for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; gb.cyl(bx + Math.cos(a) * 0.11, by + 0.04, bz + Math.sin(a) * 0.11, 0.008, 0.008, 0.18, 5, '#ece6da'); }
-  gb.cone(bx, by + 0.22, bz, 0.16, 0.1, 8, L ? '#2f6a4a' : '#8a432e');
-  for (let i = 0; i < (L ? 9 : 6); i++) smallTree(c, rng.float(-W / 2 + 0.1, W / 2 - 0.1), rng.chance(0.5) ? -D / 2 + 0.1 : D / 2 - 0.1, rng.float(0.8, 1.2));
-  for (const x of [-W * 0.4, W * 0.42]) flowers(c, x, 0, 8, 0.09);
-  bench(c, 0, D / 2 - 0.14, Math.PI); bench(c, W * 0.05, -D / 2 + 0.14, 0);
-  if (L) { lamp(c, -W / 2 + 0.06, 0, 0.3); lamp(c, W / 2 - 0.06, 0, 0.3); }
-  if (f.turned) gb.pop();
-};
 
 MODELS.mansion = (c, L) => {
   const { gb, pal } = c;
@@ -5127,7 +4739,7 @@ MODELS.university = (c, L) => {
 
 const GRAVEL = '#cdbf9e', LAWN_G = '#7fae4f', IRON = '#2f2f33', GLASS_ROOF = '#a9c4c8', POOL = '#3f7f9f';
 
-function gravel(c, x, z, w, d, color = GRAVEL) {
+export function gravel(c, x, z, w, d, color = GRAVEL) {
   c.gb.box(x, c.gy(x, z) - 0.008, z, w, 0.012, d, color);
 }
 
@@ -5190,7 +4802,7 @@ function parapet(c, x, y, z, w, d, color) {
 }
 
 // Gate piers with ball finials either side of a gap at (x, z).
-function gatePiers(c, x, z, gap, color = STONE) {
+export function gatePiers(c, x, z, gap, color = STONE) {
   for (const s of [-1, 1]) {
     const px = x + (s * gap) / 2, y = c.gy(px, z);
     c.gb.cbox(px, y - 0.01, z, 0.06, 0.17, 0.06, color, 0, 0.008);
@@ -5231,7 +4843,7 @@ function basin(c, x, z, r, jet = 0.12) {
 // lit from within at night. Same frame as GeoBuilder.gable.
 // lift: how far the panes stand off the slope (more than the slates' thickness
 // when they're laid over a roof).
-function glassRoof(c, x, y, z, w, d, h, alongZ, n = 6, lift = 0.03) {
+export function glassRoof(c, x, y, z, w, d, h, alongZ, n = 6, lift = 0.03) {
   const { gb } = c;
   gb.push(x, y, z, alongZ ? Math.PI / 2 : 0);
   if (alongZ) [w, d] = [d, w];
@@ -6056,83 +5668,6 @@ MODELS.collegequad = (c, L) => {
   if (f.turned) gb.pop();
 };
 
-// Landscape Park: a lake with an island and a boat, an avenue of trees up to
-// a temple on the rise, a winding walk, clumps of trees round the edge (a
-// bandstand, a palm house and a fountain in the lake at the Royal Park).
-MODELS.landscapepark = (c, L) => {
-  const { gb, rng } = c;
-  const f = rowFrame(c);
-  const side = rng.chance(0.5) ? 1 : -1;
-  // the lake: overlapping pools, their water as low as the ground under them
-  const lx = side * 0.36, lz = -0.3;
-  const pools = [[0, 0, 0.3], [side * 0.22, 0.14, 0.2], [-side * 0.2, -0.12, 0.19], [side * 0.06, -0.3, 0.17]];
-  let ly = Infinity;
-  for (const [px, pz, r] of pools) for (const [ox, oz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) ly = Math.min(ly, c.gy(lx + px + ox, lz + pz + oz));
-  for (const [px, pz, r] of pools) gb.cyl(lx + px, ly - 0.05, lz + pz, r + 0.03, r + 0.035, 0.05, 16, '#6f8a4a');
-  for (const [px, pz, r] of pools) gb.cyl(lx + px, ly - 0.03, lz + pz, r, r, 0.035, 16, POOL);
-  gb.blob(lx - side * 0.04, ly - 0.01, lz - 0.02, 0.07, 0.035, 0.06, '#6f8a4a');
-  gb.cyl(lx - side * 0.04, ly, lz - 0.02, 0.012, 0.016, 0.14, 5, '#5e432c');
-  gb.sphere(lx - side * 0.04, ly + 0.17, lz - 0.02, 0.07, rng.pick(LEAF), 1);
-  // a jetty and a rowing boat on the near shore
-  const jz = lz + 0.28, jy = ly + 0.008;
-  gb.box(lx + side * 0.04, jy, jz, 0.09, 0.012, 0.2, '#8a6a48');
-  for (const s of [-1, 1]) gb.box(lx + side * 0.04 + s * 0.04, jy - 0.04, jz - 0.08, 0.014, 0.05, 0.014, '#5e432c');
-  gb.push(lx + side * 0.17, jy - 0.004, jz - 0.04, 0.3);
-  gb.roof(0, 0, 0, 0.1, 0.26, 0.05, 0, '#6e4a2c', 0);
-  gb.box(0, 0, 0, 0.09, 0.03, 0.2, '#7d5b3b');
-  gb.box(0, 0.03, 0, 0.08, 0.008, 0.02, '#4a3a2c');
-  gb.pop();
-  if (L) { c.fountain = [lx, ly + 0.08, lz]; gb.cyl(lx, ly - 0.01, lz, 0.03, 0.04, 0.04, 8, STONE); }
-  // the avenue from the gate up to the temple on the rise
-  const ax = -side * 0.52;
-  gravel(c, ax, 0.28, 0.1, 1.36);
-  const pairs = L ? [0.78, 0.5, 0.22, -0.06] : [0.72, 0.4, 0.08];
-  for (const z of pairs) for (const s of [-1, 1]) smallTree(c, ax + s * 0.15, z, rng.float(0.95, 1.15));
-  if (L) for (const z of [0.64, 0.36]) for (const s of [-1, 1]) { const x = ax + s * 0.1, y = c.gy(x, z); gb.cbox(x, y - 0.01, z, 0.04, 0.06, 0.04, STONE, 0, 0.006); gb.cyl(x, y + 0.05, z, 0.01, 0.014, 0.07, 6, '#d8d2c4'); }
-  const tx = ax, tz = -0.58, ty = c.gy(tx, tz);
-  gb.cyl(tx, ty - 0.03, tz, 0.17, 0.19, 0.07, 12, STONE);
-  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.cyl(tx + Math.cos(a) * 0.13, ty + 0.04, tz + Math.sin(a) * 0.13, 0.013, 0.016, 0.3, 6, '#ece6da'); }
-  gb.cyl(tx, ty + 0.34, tz, 0.16, 0.16, 0.035, 12, '#ece6da');
-  gb.sphere(tx, ty + 0.375, tz, 0.15, '#8fa89a', 1, 0.6);
-  gb.cyl(tx, ty + 0.46, tz, 0.012, 0.012, 0.05, 6, '#ece6da');
-  gb.cbox(tx, ty + 0.04, tz, 0.05, 0.05, 0.05, STONE, 0, 0.006);
-  gb.cyl(tx, ty + 0.09, tz, 0.016, 0.022, 0.1, 6, '#d8d2c4');
-  gb.sphere(tx, ty + 0.205, tz, 0.018, '#d8d2c4', 0);
-  // a winding walk from the avenue round the near side of the lake
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8, x = ax + side * (0.12 + t * 0.9), z = 0.3 + Math.sin(t * Math.PI) * 0.12 - t * 0.12;
-    const dz = 0.12 * Math.PI * Math.cos(t * Math.PI) - 0.12;
-    gb.box(x, c.gy(x, z) - 0.006, z, 0.14, 0.012, 0.08, GRAVEL, Math.atan2(-dz, 0.9 * side));
-  }
-  for (const [x, z, ry] of [[lx - side * 0.1, 0.12, Math.PI], [lx + side * 0.3, 0.2, Math.PI], [ax + side * 0.1, -0.3, (-side * Math.PI) / 2]]) bench(c, x, z, ry);
-  // clumps of trees round the edge, a shrub beside each
-  const clumps = [[side * 0.74, -0.76, 1], [side * 0.04, -0.8, 1.1], [-side * 0.78, -0.82, 1], [-side * 0.08, 0.8, 1], [side * 0.78, 0.12, 1]];
-  if (!L) clumps.push([side * 0.76, 0.5, 1.2], [side * 0.56, 0.76, 1.1]);
-  for (const [x, z, s] of clumps) {
-    smallTree(c, x, z, s * rng.float(0.95, 1.1));
-    bush(c, x - Math.sign(x) * 0.13, z - Math.sign(z) * 0.08, rng.float(0.8, 1.1));
-  }
-  flowers(c, ax + side * 0.2, 0.82, 7, 0.07); flowers(c, ax - side * 0.2, 0.84, 6, 0.06);
-  if (L) {
-    // a bandstand on the lawn and a palm house in the corner by the lake
-    const bx = side * 0.15, bz = 0.6, by = c.gy(bx, bz);
-    gb.cyl(bx, by - 0.01, bz, 0.13, 0.14, 0.05, 8, STONE);
-    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; gb.box(bx + Math.cos(a) * 0.11, by + 0.04, bz + Math.sin(a) * 0.11, 0.01, 0.16, 0.01, '#ece4d4'); }
-    gb.cone(bx, by + 0.2, bz, 0.16, 0.1, 8, '#3f5a46');
-    const px = side * 0.78, pz = 0.64, py = c.gy(px, pz);
-    gb.cbox(px, py - 0.01, pz, 0.2, 0.04, 0.4, STONE, 0, 0.008);
-    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(px, py + 0.03, pz, 0.18, 0.14, 0.38, '#9fbcc0'); gb.noGlow();
-    gb.cyl(px, py + 0.17, pz - 0.19, 0.09, 0.09, 0.38, 10, '#c8dadc', 0, Math.PI / 2);
-    for (let i = 0; i < 3; i++) gb.sphere(px, py + 0.1, pz - 0.12 + i * 0.12, 0.04, rng.pick(LEAF), 0);
-    smallTree(c, side * 0.5, 0.82, 0.9);
-    for (const z of [0.9, 0.08]) for (const s of [-1, 1]) lamp(c, ax + s * 0.08, z, 0.3);
-  }
-  // a hedge round the park, gate piers at the avenue
-  frontage(c, -0.96, 0.96, 0.95, [ax], L ? 'railings' : 'hedge');
-  gatePiers(c, ax, 0.95, 0.16);
-  hedge(c, 0, -0.95, 1.9, 0.05); hedge(c, -0.95, 0, 0.05, 1.86); hedge(c, 0.95, 0, 0.05, 1.86);
-  if (f.turned) gb.pop();
-};
 
 // ------------------------------------------------- side-branch buildings
 
@@ -6305,6 +5840,7 @@ export function buildModel(b, opts = {}) {
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !(BUILDINGS[b.type].fields && !BUILDINGS[b.type].fruit),
     inWorld: !!ground,   // standing in the town (not a picture in a menu)
     smoke: [], glows: [], spin: null, work: null, fountain: null,
+    spots: [],   // where a park's visitors like to stroll to (see parks.js spot)
     beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
@@ -6334,7 +5870,7 @@ export function buildModel(b, opts = {}) {
   // as a whole has none), so taking land doesn't shift it
   const own = annex && b.spare && (def.merged ? 2 : def.size ** 2) === 1 && !opts.flat ? jitterOf({ type: b.type, variant: b.variant, size: 1 }) : null;
   const fit = own || jit;
-  MODELS[b.type](c, b.level);
+  (MODELS[b.type] || PARK_MODELS[b.type])(c, b.level);
   let geo = gb.build();
   if (geo) { weather(geo); tint(geo, pal.tint); }
   // Never poke into the neighbours: shrink the model sideways if, after its
@@ -6349,13 +5885,14 @@ export function buildModel(b, opts = {}) {
     const ya = Math.abs(fit.yaw), cy = Math.cos(ya), sy = Math.sin(ya);
     const m = 0.02 + Math.abs(fit.ox) + Math.abs(fit.oz);
     const k = Math.min(1, (hx - m) / (ex * cy + ez * sy), (hz - m) / (ex * sy + ez * cy));
+    if (opts.fit) Object.assign(opts.fit, { k, ex, ez, hx, hz });   // (for tests: how much it was shrunk to fit)
     if (k < 1 || tx || tz) {
       geo.translate(tx - bcx, 0, tz - bcz);
       geo.scale(k, 1, k);
       geo.translate(bcx, 0, bcz);
       geo.computeBoundingSphere();
       const sc = (p) => { p.x = (p.x + tx - bcx) * k + bcx; p.z = (p.z + tz - bcz) * k + bcz; };
-      c.smoke.forEach(sc); c.glows.forEach(sc);
+      c.smoke.forEach(sc); c.glows.forEach(sc); c.spots.forEach(sc);
       if (c.fountain) { const p = { x: c.fountain[0], z: c.fountain[2] }; sc(p); c.fountain[0] = p.x; c.fountain[2] = p.z; }
       if (c.spin) { sc(c.spin); c.spin.geo.scale(k, k, k); }
       if (c.doorAt) sc(c.doorAt);
@@ -6367,7 +5904,7 @@ export function buildModel(b, opts = {}) {
     const ox = own.ox * co - own.oz * si, oz = own.ox * si + own.oz * co, cy = Math.cos(own.yaw), sy = Math.sin(own.yaw);
     geo.translate(-px, 0, -pz); geo.rotateY(own.yaw); geo.translate(px + ox, 0, pz + oz); geo.computeBoundingSphere();
     const mv = (p) => { const x = p.x - px, z = p.z - pz; p.x = px + ox + x * cy + z * sy; p.z = pz + oz - x * sy + z * cy; };
-    c.smoke.forEach(mv); c.glows.forEach(mv);
+    c.smoke.forEach(mv); c.glows.forEach(mv); c.spots.forEach(mv);
     if (c.fountain) { const p = { x: c.fountain[0], z: c.fountain[2] }; mv(p); c.fountain[0] = p.x; c.fountain[2] = p.z; }
     if (c.spin) { mv(c.spin); c.spin.ry = (c.spin.ry || 0) + own.yaw; }
     if (c.doorAt) { mv(c.doorAt); const d = c.doorAt, dx = d.dx; d.dx = dx * cy + d.dz * sy; d.dz = -dx * sy + d.dz * cy; }
@@ -6377,7 +5914,7 @@ export function buildModel(b, opts = {}) {
     const gb2 = new GeoBuilder();
     gb2.vary = 0.09;
     const c2 = makeCtx(gb2, new RNG((b.variant * 2654435761 + 7) >>> 0));
-    c2.smoke = c.smoke; c2.glows = c.glows;
+    c2.smoke = c.smoke; c2.glows = c.glows; c2.spots = c.spots;
     c2.doorAt = c.doorAt || { x: 0, y: 0, z: 0, dx: 0, dz: 1 };   // the building's own door stays the way in
     // the building's main house (the biggest it drew), for an extension to join on to
     const main = c.houses.reduce((m, hs) => (!m || (hs.x1 - hs.x0) * (hs.z1 - hs.z0) > (m.x1 - m.x0) * (m.z1 - m.z0) ? hs : m), null);
@@ -6391,12 +5928,12 @@ export function buildModel(b, opts = {}) {
     const gb3 = new GeoBuilder();
     gb3.vary = 0.09;
     const c3 = makeCtx(gb3, new RNG((b.variant * 2654435761 + 13) >>> 0));
-    c3.smoke = c.smoke; c3.glows = c.glows;
+    c3.smoke = c.smoke; c3.glows = c.glows; c3.spots = c.spots;
     for (const draw of c.beyond) draw(c3);
     const g3 = gb3.build();
     if (g3) { weather(g3); tint(g3, pal.tint); geo = mergeGeometries([geo, g3], false); geo.computeBoundingSphere(); }
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, houses: c.houses };
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, houses: c.houses, spots: c.spots };
 }
 
 // A home, shop or service built out across the land it took: the house itself
@@ -6481,13 +6018,17 @@ function buildAnnex(c, def, A, top, spare = false, main = null) {
   const L = def.levels[c.level] || def.levels[0];
   if (def.park || spare) {
     // more garden: a gravel walk, trees, beds and a bench, inside a hedge
+    // (a park's following the seasons)
     hedge(c, cx, A.z0 + 0.06, aw - 0.12, 0.05);
     gb.box(cx, c.gy(cx, (A.z0 + A.z1) / 2) - 0.008, (A.z0 + A.z1) / 2, 0.09, 0.012, ad - 0.2, '#c8b894');
     for (const sx of [-1, 1]) {
-      smallTree(c, cx + sx * aw * 0.28, A.z0 + ad * 0.3, rng.float(0.9, 1.2));
-      flowers(c, cx + sx * aw * 0.25, A.z0 + ad * 0.72, rng.int(5, 8), 0.08);
+      if (def.park) parkTree(c, cx + sx * aw * 0.28, A.z0 + ad * 0.3, rng.float(0.9, 1.2), 'round');
+      else smallTree(c, cx + sx * aw * 0.28, A.z0 + ad * 0.3, rng.float(0.9, 1.2));
+      if (def.park) blooms(c, cx + sx * aw * 0.25, A.z0 + ad * 0.72, rng.int(5, 8), 0.08);
+      else flowers(c, cx + sx * aw * 0.25, A.z0 + ad * 0.72, rng.int(5, 8), 0.08);
     }
     bench(c, cx + aw * 0.16, (A.z0 + A.z1) / 2, -Math.PI / 2);
+    if (def.park) spot(c, cx, (A.z0 + A.z1) / 2);
     return;
   }
   if (def.cat === 'industry') {
