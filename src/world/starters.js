@@ -176,7 +176,7 @@ export const STARTERS = [
     // takes a few seconds to lay out, so it's grown only when it's picked (heavy).
     id: 'metropolis', name: 'Metropolis', town: 'Greatwick', N: 80, seed: 943464, city: true, dense: true, heavy: true, radius: null, seat: 'parliament', seatStyle: 'gothic',
     xEvery: 13, workforce: 0.58, skilled: 0.3, parks: 0.015, fill: 1, stopGap: [12, 10], day: 481, settle: 4, money: 100000,
-    desc: 'The most people a valley can hold: some 48,000 villagers in mansion blocks from edge to edge round the Gothic Houses of Parliament, with offices and market halls, power stations and waterworks along the road in.',
+    desc: 'The most people a valley can hold: some 47,000 villagers in mansion blocks from edge to edge round the Gothic Houses of Parliament, with offices and market halls, power stations and waterworks along the road in.',
   },
 ];
 
