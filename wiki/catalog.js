@@ -117,6 +117,7 @@ function notes(type) {
   if (d.unique) out.push('Only one per town.');
   if (d.nearTrees) out.push('Earns more with trees around it.');
   if (d.play) out.push('Somewhere to play: children head here after school, and homes with children in its reach are happier.');
+  if (d.potter) out.push('Allotments to dig: elders go there in the mornings, and homes with elders in its reach are happier.');
   if (d.generator) out.push(`Makes electricity (${pl('power-water/power', 'Power')}).`);
   if (d.builders) out.push(`Its workers are builders (${pl('construction/builders', 'Builders')}).`);
   if (d.fields) out.push(`Ploughs fields beyond its plot${choosesProduce(type) ? ' and chooses what it grows' : ''} (${pl('farms', 'Farms and fields')}).`);

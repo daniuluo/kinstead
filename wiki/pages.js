@@ -300,6 +300,7 @@ export const PAGES = [
           ['Scenery', `up to +${fact('happyAppeal', 0)}`, 'Trees, water, gardens and parks, grand homes, dressed streets and buried power lines nearby'],
           ['Shops nearby', `+${fact('happyShops', 1)}`, `A shop, café or tavern within ${fact('happyShops', 0)} tiles`],
           ['Play', `+${fact('happyPlay')}`, 'For homes with children: a play area or playing field whose reach takes the home in'],
+          ['Allotment', `+${fact('happyPotter')}`, 'For homes with elders: allotments whose reach takes the home in (the elders go and dig there in the mornings)'],
           ['Transport', `+${fact('happyTransit', 1)}`, `A coach stop or station within ${fact('happyTransit', 0)} tiles`],
           ['Garden deal', `+${fact('happyLand', 0)} / +${fact('happyLand', 1)}`, 'A home that bought a garden strip from a neighbour (or sold one)'],
           ['Taxes', `${fmt(-(fact('taxRange', 1) - fact('happyTax', 0)) * fact('happyTax', 1))} to +${fmt(fact('happyTax', 0) * fact('happyTax', 2))}`, `Below ${fact('happyTax', 0)}% cheers them, above it costs ${fact('happyTax', 1)} a point (${pl('taxes', 'Taxes')})`],
@@ -308,7 +309,7 @@ export const PAGES = [
           ['Work', `down to −${fact('happyJobs')}`, 'Grown-ups in the home looking for work (all of them: the full amount)'],
           ['Road', `−${fact('happyRoad')}`, "Not connected to the town's roads"],
         ])}
-        <p>The best a home can do is ${fact('happyBase') + fact('happyWater') + fact('happyHealth') + fact('happyEducation') + fact('happySafety') + fact('happyCulture') + fact('happyPower') + fact('happyAppeal', 0) + fact('happyShops', 1) + fact('happyPlay') + fact('happyTransit', 1) + fact('happyLand', 0) + fact('happyTax', 0) * fact('happyTax', 2)} before the cap of 100.</p>` },
+        <p>The best a home can do is ${fact('happyBase') + fact('happyWater') + fact('happyHealth') + fact('happyEducation') + fact('happySafety') + fact('happyCulture') + fact('happyPower') + fact('happyAppeal', 0) + fact('happyShops', 1) + fact('happyPlay') + fact('happyPotter') + fact('happyTransit', 1) + fact('happyLand', 0) + fact('happyTax', 0) * fact('happyTax', 2)} before the cap of 100.</p>` },
       { id: 'see', title: 'Seeing what is missing', html: `
         <p>Click the happiness figure in the top bar for the whole town: how many points each factor adds now, how many the average villager could gain, how many homes miss out, and a button that takes you to the fix. A home's panel lists its own gaps first, with what to do, and each villager's page shows their mood and what would make them happier. The Happiness overlay (${k('O')}) colours the map.</p>` },
       { id: 'arrive', title: 'Newcomers and leavers', html: `

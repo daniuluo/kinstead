@@ -17,6 +17,7 @@ export const FACTS = {
   happyAppeal: { value: [16, 0.8], file: 'src/sim/sim.js', re: /f\.appeal = Math\.min\((\d+), this\.appeal\[i\] \* ([\d.]+)\)/ },
   happyShops: { value: [7, 5], file: 'src/sim/sim.js', re: /f\.shops = near\(shops, b, (\d+)\);\s*add\('shops', f\.shops \? (\d+) : 0/ },
   happyPlay: { value: 4, file: 'src/sim/sim.js', re: /add\('play', f\.play \? (\d+) : 0/ },
+  happyPotter: { value: 3, file: 'src/sim/sim.js', re: /add\('potter', f\.potter \? (\d+) : 0/ },
   happyTransit: { value: [4, 3], file: 'src/sim/sim.js', re: /f\.transit = near\(stops, b, (\d+)\);\s*add\('transit', f\.transit \? (\d+) : 0/ },
   happySmoke: { value: 22, file: 'src/sim/sim.js', re: /f\.pollution = Math\.min\((\d+), this\.pollution\[i\]\)/ },
   happyLand: { value: [3, 2], file: 'src/sim/sim.js', re: /add\('land', f\.land === 'buyer' \? (\d+) : (\d+)/ },
@@ -25,7 +26,7 @@ export const FACTS = {
   happyJobs: { value: 14, file: 'src/sim/sim.js', re: /add\('jobs', -f\.unemployed \* (\d+)/ },
   happyRoad: { value: 25, file: 'src/sim/sim.js', re: /add\('road', b\.connected \? 0 : -(\d+)/ },
   // every factor the game adds up, so a new one fails the check until the wiki lists it
-  happyKeys: { keys: ['base', 'water', 'health', 'education', 'safety', 'culture', 'power', 'appeal', 'shops', 'play', 'transit', 'pollution', 'land', 'tax', 'crowded', 'jobs', 'road'], file: 'src/sim/sim.js', all: /\badd\('(\w+)'|\['(base)', \d+/g },
+  happyKeys: { keys: ['base', 'water', 'health', 'education', 'safety', 'culture', 'power', 'appeal', 'shops', 'play', 'potter', 'transit', 'pollution', 'land', 'tax', 'crowded', 'jobs', 'road'], file: 'src/sim/sim.js', all: /\badd\('(\w+)'|\['(base)', \d+/g },
   moodWork: { value: [4, 8], file: 'src/sim/sim.js', re: /r\.job \? (\d+) : r\.school != null \? 0 : -(\d+)/ },
 
   // ---------------------------------------------------- arrivals and leaving
