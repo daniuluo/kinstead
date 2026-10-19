@@ -227,6 +227,15 @@ function win(c, x, y, z, w, h, face, lit = 0.75) {
   }
 }
 
+// The way in, where it's drawn already (an engine bay, an open-fronted shed):
+// remembered as the door villagers walk in and out of, facing +z at z.
+function entrance(c, x, z) {
+  if (c.doorAt) return;
+  const p = new THREE.Vector3(x, 0, z + 0.015).applyMatrix4(c.gb.M), q = new THREE.Vector3(x, 0, z + 1).applyMatrix4(c.gb.M);
+  const len = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+  c.doorAt = { x: p.x, y: p.y, z: p.z, dx: (q.x - p.x) / len, dz: (q.z - p.z) / len };
+}
+
 function door(c, x, z, w, h, color) {
   const { gb } = c;
   // remember the main (first) door so villagers can walk in and out of it
@@ -664,7 +673,7 @@ export function sign(c, x, y, z, w, h, color, ry = 0) {
   c.gb.box(x, y, z, w, h, 0.014, color, ry);
 }
 
-function logs(c, x, z, n = 3, ry = 0) {
+export function logs(c, x, z, n = 3, ry = 0) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   for (let row = 0; row < n; row++) {
@@ -894,6 +903,8 @@ MODELS.market = (c, L) => {
   const { gb, rng, pal } = c;
   const awnA = pal.awning, awnB = '#e9dfc9';
   const stall = (x, z, ry, s = 1) => marketStall(c, x, z, ry, s, awnA);
+  // the stalls and the Market Hall's arcade are open: shoppers wander among them
+  if (L === 0 || L >= 3) c.openAir = true;
   if (L === 0) {
     stall(-0.14, 0.06, 0);
     stall(0.22, -0.22, -Math.PI / 2, 0.85);
@@ -2608,6 +2619,7 @@ MODELS.workshop = (c, L) => {
       z: -0.17, w: 0.66, d: 0.42, h: 0.38, wall: pal.stoneWall, roof: pal.slate, roofType: 'gable', rh: 0.2, lit: 0.5,
       noDoor: true,
     });
+    door(c, 0.24, 0.04, 0.08, 0.17, '#4e3a2a');
     for (const sx of [-1, 1]) gb.box(sx * 0.3, c.gy(sx * 0.3, 0.2) - 0.01, 0.2, 0.026, 0.3, 0.026, '#4e3a2a');
     gb.wedge(0, 0.28, 0.12, 0.68, 0.24, 0.09, '#4e5357');
     gb.cbox(-0.12, 0, 0.06, 0.2, 0.13, 0.13, STONE_D, 0, 0.012);
@@ -3291,6 +3303,7 @@ MODELS.builder = (c, L) => {
   const { gb, rng, pal } = c;
   if (L === 0) {
     shed(c, 0.04, -0.24, 0.66, 0.34, 0.28, pal.roof);
+    entrance(c, 0.04, -0.07);
     plankStack(c, -0.18, -0.25, 3);
     plankStack(c, -0.24, 0.2, 4, 0.1);
     stoneStack(c, 0.22, 0.18, 3);
@@ -3746,7 +3759,8 @@ MODELS.arcade = (c, L) => {
   gb.box(0, h * 0.6, fz - 0.04, W + 0.04, 0.05, 0.1, trim);
   for (let i = 0; i < n; i++) {
     const x = -W / 2 + ((i + 0.5) * W) / n;
-    win(c, x, 0.05, fz - 0.11, (W / n) * 0.55, 0.15, 'f', 0.95);
+    if (i === n >> 1) door(c, x, fz - 0.11, 0.1, 0.18, '#3f4f5a');
+    else win(c, x, 0.05, fz - 0.11, (W / n) * 0.55, 0.15, 'f', 0.95);
     gb.boxC(x, h * 0.5, fz + 0.06, W / n, 0.012, 0.12, i % 2 ? '#e9dfc9' : pal.awning, 0.45);
   }
   for (let k = 1; k < (L ? 3 : 2); k++) for (let i = 0; i < n; i++) win(c, -W / 2 + ((i + 0.5) * W) / n, h * 0.6 + 0.06 + (k - 1) * 0.18, fz - 0.06, 0.07, 0.1, 'f');
@@ -3987,7 +4001,8 @@ MODELS.fishmarket = (c, L) => {
     gb.box(mx, h + 0.39, mz, 0.008, 0.08, 0.008, '#2f2c2a');
     gb.box(mx, h + 0.46, mz, 0.1, 0.03, 0.006, '#c9a640');
   } else {
-    // posts carrying a long roof, open all round
+    // posts carrying a long roof, open all round (shoppers wander under it)
+    c.openAir = true;
     const eave = 0.3;
     for (let i = 0; i <= 4; i++) for (const s of [-1, 1]) {
       const x = mx - mw / 2 + 0.03 + (i * (mw - 0.06)) / 4, z = mz + s * (md / 2 - 0.03);
@@ -5738,6 +5753,7 @@ MODELS.firestation = (c, L) => {
   // red-brick engine house with big doors and a hose-drying tower
   const wall = '#9a3a2a';
   house(c, { x: -0.06, z: -0.12, w: 0.7, d: 0.54, h: L ? 0.6 : 0.46, floors: 2, wall, roof: pal.slate, roofType: 'gable', rh: 0.2, nFront: 3, noDoor: true, chimney: true, fancy: false, lit: 0.9 });
+  entrance(c, L ? 0 : -0.14, 0.152);
   for (const x of L ? [-0.24, 0, 0.24] : [-0.14, 0.14]) {
     gb.box(x, 0, 0.152, 0.18, 0.22, 0.012, '#e3dccd');
     gb.box(x, 0, 0.158, 0.15, 0.19, 0.012, '#c8423a');
@@ -5933,7 +5949,7 @@ export function buildModel(b, opts = {}) {
     const g3 = gb3.build();
     if (g3) { weather(g3); tint(g3, pal.tint); geo = mergeGeometries([geo, g3], false); geo.computeBoundingSphere(); }
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, houses: c.houses, spots: c.spots };
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, open: !!c.openAir, houses: c.houses, spots: c.spots };
 }
 
 // A home, shop or service built out across the land it took: the house itself

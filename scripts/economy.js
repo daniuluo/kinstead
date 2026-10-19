@@ -14,7 +14,7 @@ const rows = [];
 for (const [type, d] of Object.entries(BUILDINGS)) {
   d.levels.forEach((L, i) => {
     const area = d.merged ? 2 : d.size ** 2;
-    const uses = d.park ? [d.play && 'play', d.potter && 'potter'].filter(Boolean).join(' ') : '';
+    const uses = d.park ? [d.play && 'play', d.potter && 'potter', L.culture && `culture r${L.culture}`].filter(Boolean).join(' ') : '';
     const hk = L.tax ?? 1 + 0.25 * i;
     const res = RESEARCH_SOURCES[type] ? RESEARCH_SOURCES[type][Math.min(i, RESEARCH_SOURCES[type].length - 1)] : 0;
     const svc = servicesOf(d);

@@ -200,6 +200,8 @@ export class Sim {
       const def = BUILDINGS[b.type], L = def.levels[b.level];
       const reach = this.reachOf(b), sv = servicesOf(def).filter(s => s !== 'water');
       if (b.connected && reach && sv.length) this._cover(b, reach, sv.map(s => this.coverage[s]));
+      // a grand monument brings culture to the streets round it too
+      if (b.connected && L.culture && b.working > 0) this._cover(b, L.culture, [this.coverage.culture]);
       // a park's fountain may be off; homes and orchards keep their looks
       const look = def.park ? b.working : 1;
       if ((def.park || L.appeal) && look > 0) {

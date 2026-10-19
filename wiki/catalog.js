@@ -5,7 +5,7 @@
 
 import {
   BUILDINGS, CATEGORIES, SERVICES, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, FARM_JOIN, NEEDS, RESEARCH_SOURCES, CORNER_SHOPS,
-  STYLE_TECH, CAPABILITIES, unlockOf, techForLevel, workNeeded, choosesProduce,
+  STYLE_TECH, CAPABILITIES, kindsOf, unlockOf, techForLevel, workNeeded, choosesProduce,
 } from '../src/defs.js';
 import { CONFIG } from '../src/config.js';
 import { stats, placement } from '../src/ui/guide.js';
@@ -118,6 +118,8 @@ function notes(type) {
   if (d.nearTrees) out.push('Earns more with trees around it.');
   if (d.play) out.push('Somewhere to play: children head here after school, and homes with children in its reach are happier.');
   if (d.potter) out.push('Allotments to dig: elders go there in the mornings, and homes with elders in its reach are happier.');
+  if (kindsOf(type)) out.push(`Comes in ${Object.keys(kindsOf(type)).length} kinds (${Object.values(kindsOf(type)).map(x => esc(x.name.toLowerCase())).join(', ')}), chosen when it is built or reworked later (${pl('kinds', 'Plantings and monuments')}).`);
+  d.levels.forEach((L, i) => { if (L.culture) out.push(`The ${bl(type, i)} brings culture to the streets within ${L.culture} tiles.`); });
   if (d.generator) out.push(`Makes electricity (${pl('power-water/power', 'Power')}).`);
   if (d.builders) out.push(`Its workers are builders (${pl('construction/builders', 'Builders')}).`);
   if (d.fields) out.push(`Ploughs fields beyond its plot${choosesProduce(type) ? ' and chooses what it grows' : ''} (${pl('farms', 'Farms and fields')}).`);

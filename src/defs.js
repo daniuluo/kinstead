@@ -812,15 +812,24 @@ export const BUILDINGS = {
       { name: 'Grand Square', tech: 'civic', cost: 1500, upkeep: 10, appeal: 28, radius: 9, unlock: 120 },
     ],
   },
+  // A planting and a monument come in kinds (PLANTINGS, MONUMENTS: see KINDS)
   flowers: {
     name: 'Planting', cat: 'parks', size: 1, park: true, icon: '🌼',
-    desc: 'A splash of colour.',
-    levels: [{ name: 'Flower Bed', cost: 25, upkeep: 0.5, appeal: 3, radius: 2 }],
+    desc: 'A splash of colour: bedding, a cottage border, bulbs, street planters or wild flowers, and with research a rockery, topiary, roses on an arch, a herb knot or a tree in a raised bed. Each grows more elaborate as it is upgraded.',
+    levels: [
+      { name: 'Flower Bed', cost: 25, upkeep: 0.5, appeal: 3, radius: 2 },
+      { name: 'Ornamental Garden', tech: 'gardening', cost: 90, upkeep: 1, appeal: 6, radius: 3 },
+      { name: 'Show Garden', tech: 'parks2', cost: 220, upkeep: 2, appeal: 9, radius: 4, unlock: 25 },
+    ],
   },
   statue: {
     name: 'Monument', cat: 'parks', size: 1, park: true, unlock: 60, tech: 'stonework', icon: '🗽',
-    desc: 'A monument to your founders: a statue, an obelisk, a column or a memorial cross.',
-    levels: [{ name: 'Statue', cost: 260, upkeep: 1, appeal: 8, radius: 4 }],
+    desc: "A monument to your town: a founder's statue, an obelisk, a market cross, a war memorial, an angel or an urn, and with research a rider, a column, a fountain with figures, a clock tower or a triumphal arch. Upgraded it gains a paved, railed setting, then grows into a grander work lit at night that brings culture to the streets round it.",
+    levels: [
+      { name: 'Monument', cost: 260, upkeep: 1, appeal: 8, radius: 4 },
+      { name: 'Civic Monument', tech: 'architecture', cost: 560, upkeep: 3, appeal: 12, radius: 5 },
+      { name: 'Grand Monument', tech: 'grandarch', cost: 1300, upkeep: 6, appeal: 16, radius: 6, culture: 6, unlock: 120 },
+    ],
   },
   pond: {
     name: 'Pond', cat: 'parks', size: 1, park: true, outdoor: true, visitors: 3, icon: '🦆',
@@ -1028,6 +1037,49 @@ export const hasFields = (type) => !!(BUILDINGS[type] && BUILDINGS[type].fields)
 // Shops that carry their shopfront round a street corner when they stand
 // on one (b.corner, which the world works out from the roads).
 export const CORNER_SHOPS = new Set(['market', 'bakery', 'tavern', 'grocer', 'butcher', 'cobbler', 'draper', 'ironmonger', 'chemist', 'stationer', 'coffeehouse', 'bank', 'postoffice', 'shophouse']);
+
+// What a planting or a monument is (kept in b.flavor), chosen when it is
+// built (the bar above the build menu) or later in its panel, when builders
+// rework it for a share of what it is worth (REKIND). One without a kind is
+// one of the kinds that need no research, by its seed (kindOf). icon: a
+// Material Symbols name.
+export const PLANTINGS = {
+  bedding: { name: 'Bedding', icon: 'filter_vintage', desc: 'Rows of bedding plants; then tiered round beds; then carpet bedding laid out in a pattern.' },
+  cottage: { name: 'Cottage border', icon: 'local_florist', desc: 'Hollyhocks, foxgloves and lupins in a happy jumble along a picket fence, a seat among them later.' },
+  bulbs: { name: 'Bulbs', icon: 'emoji_nature', desc: 'Daffodils and tulips in blocks of colour: a blaze in spring, lilies and alliums after.' },
+  planters: { name: 'Street planters', icon: 'potted_plant', desc: 'Troughs and tubs along the street, then hanging baskets on posts and clipped bays in stone urns.' },
+  wild: { name: 'Wild flowers', icon: 'grass', desc: 'Poppies, cornflowers and ox-eye daisies in long grass, mown paths through it and bees.' },
+  rockery: { name: 'Rockery', icon: 'landscape', tech: 'gardening', desc: 'Alpines between weathered stones; then dwarf conifers; then a rock garden with a little cascade.' },
+  topiary: { name: 'Topiary', icon: 'park', tech: 'gardening', desc: 'Box and yew clipped into cones, balls and spirals, and at last a peacock.' },
+  roses: { name: 'Rose arch', icon: 'spa', tech: 'gardening', desc: 'Climbing roses over an arch and a bed of roses beneath; then a walk of arches.' },
+  knot: { name: 'Herb knot', icon: 'yard', tech: 'botany', desc: 'Low box hedges woven into a knot with herbs between them, round a sundial.' },
+  tree: { name: 'Specimen tree', icon: 'nature', tech: 'parks2', desc: 'A flowering tree in a raised stone bed, a seat round it and bulbs beneath.' },
+};
+export const MONUMENTS = {
+  founder: { name: "Founder's statue", icon: 'person', desc: 'The town\'s founder in bronze or stone, one arm raised, on a tall pedestal.' },
+  obelisk: { name: 'Obelisk', icon: 'arrow_upward', desc: 'A tall tapering needle of stone with a gilded tip.' },
+  cross: { name: 'Market cross', icon: 'add', desc: 'A stone cross on steps where the market met; later under a roofed buttercross.' },
+  memorial: { name: 'War memorial', icon: 'local_florist', desc: 'A cross or cenotaph on steps, wreaths of poppies at its foot, the names round its base.' },
+  angel: { name: 'Angel', icon: 'self_improvement', desc: 'A marble angel with folded wings.' },
+  urn: { name: 'Memorial urn', icon: 'emoji_events', desc: 'A draped stone urn on a fluted pedestal.' },
+  rider: { name: 'Equestrian statue', icon: 'military_tech', tech: 'architecture', desc: 'A rider on a prancing horse, high on a carved plinth.' },
+  column: { name: 'Column', icon: 'view_column', tech: 'architecture', desc: 'A fluted column with a figure on the top, lions at its foot later.' },
+  fountain: { name: 'Figure fountain', icon: 'water_drop', tech: 'fountains', desc: 'Bronze figures in a stone basin, water playing over them.' },
+  clock: { name: 'Clock tower', icon: 'schedule', tech: 'civic', desc: 'A clock tower with four faces, lit at night, for the whole town to set its watches by.' },
+  arch: { name: 'Triumphal arch', icon: 'account_balance', tech: 'grandarch', desc: 'A great stone arch carved with reliefs, a chariot on the top at last.' },
+};
+export const KINDS = { flowers: PLANTINGS, statue: MONUMENTS };
+// reworking a planting or a monument as another kind costs this much of what it is worth
+export const REKIND = 0.4;
+export const kindsOf = (type) => KINDS[type] || null;
+// The kind a planting or monument is (b.flavor, or one by its seed), or null.
+export function kindOf(b) {
+  const K = KINDS[b && b.type];
+  if (!K) return null;
+  if (typeof b.flavor === 'string' && Object.hasOwn(K, b.flavor)) return b.flavor;
+  const free = Object.keys(K).filter(k => !K[k].tech);
+  return free[(((b.variant || 0) >>> 5) % free.length + free.length) % free.length];
+}
 
 // What a farm grows or raises (kept in b.flavor; none: mixed farming), and
 // what that means: the hands its plot and fields take (× its jobs), what each

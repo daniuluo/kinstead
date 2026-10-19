@@ -2,7 +2,7 @@
 // card, and the full picture (every level, its needs and where it can lead)
 // in the Building guide window when one is picked.
 
-import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, GRAND, RESEARCH_SOURCES, servicesOf, unlockOf, techForLevel, workNeeded, sellsText } from '../defs.js';
+import { BUILDINGS, SERVICES, TECHS, MERGES, LARGE, ESTATE, GRAND, RESEARCH_SOURCES, KINDS, servicesOf, unlockOf, techForLevel, workNeeded, sellsText } from '../defs.js';
 import { EDU } from '../sim/people.js';
 import { visitorCap, visitKind } from '../sim/agents.js';
 import { thumb } from './thumbs.js';
@@ -31,6 +31,7 @@ export function stats(type, level) {
   if (L.visit) out.push(['Per visit', `$${L.visit}`]);
   if (def.play) out.push(['Play', 'homes with children nearby are happier']);
   if (def.potter) out.push(['Digging', 'homes with elders nearby are happier']);
+  if (L.culture) out.push(['Culture reach', `${L.culture} tiles`]);
   const res = RESEARCH_SOURCES[type];
   if (res) out.push(['Research', `${res[Math.min(level, res.length - 1)]} a day`]);
   if (L.income) out.push(['Earnings', `$${L.income} a worker a day`]);
@@ -117,6 +118,12 @@ export function showBuildingGuide(ui, type) {
     if (nd.length) h += `<div class="guide-needs">${nd.map(n => `<span class="${n.met === false ? 'no' : n.met ? 'ok' : ''}">${esc(n.text)}</span>`).join('')}</div>`;
     h += '</div></div>';
   });
+  // the kinds it comes in
+  if (KINDS[type]) {
+    h += `<div class="guide-more"><h5>${Object.keys(KINDS[type]).length} kinds</h5><div class="note">Choose one in the bar above the build menu, or let its seed choose; builders can rework it as another later, from its panel.</div>`;
+    for (const x of Object.values(KINDS[type])) h += `<div><span class="ms">${x.icon}</span> <b>${esc(x.name)}</b>${x.tech ? ` <span class="${world.hasTech(x.tech) ? 'ok' : 'no'}">(${esc(TECHS[x.tech].name)})</span>` : ''}: ${esc(x.desc)}</div>`;
+    h += '</div>';
+  }
   // where it can lead beyond its own levels
   const more = [];
   for (const b of def.branches || []) more.push(`At the top level it can become: <b>${esc(BUILDINGS[b].levels[0].name)}</b> (${esc(BUILDINGS[b].name)})`);

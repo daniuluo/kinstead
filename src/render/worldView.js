@@ -151,6 +151,7 @@ export class WorldView {
     b.work = workArea(b);
     b.spots = model.spots && model.spots.length ? model.spots.map(p => { const v = toWorld({ x: p.x, y: 0, z: p.z }); return [v.x, v.z]; }) : null;
     b.door = this._doorOf(model, mesh, b);
+    b.open = !!model.open;   // open-air: villagers wander in it rather than going in
     this.items.set(b.id, item);
     if (animate) {
       mesh.scale.set(1, 0.01, 1);
@@ -165,7 +166,7 @@ export class WorldView {
     const opts = { season: this.season, seasonW: this.seasonW, ground: this.groundFn };
     const con = b.con;
     const up = con.kind === 'upgrade';
-    const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look } : b, opts);
+    const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look, flavor: con.flavor !== undefined ? con.flavor : b.flavor } : b, opts);
     const old = up ? buildModel(b, opts) : null;
     for (const m of [target, old]) if (m && m.spin) m.spin.geo.dispose();
     const jit = target.jitter;
@@ -189,6 +190,7 @@ export class WorldView {
     b.spots = null;
     mesh.updateMatrixWorld(true);
     b.door = this._doorOf(old || target, mesh, b);
+    b.open = !!(old || target).open;
     this.items.set(b.id, item);
     this._refreshSite(item);
     if (animate) this.dust(cx, b.baseY, cz, b.size, false);

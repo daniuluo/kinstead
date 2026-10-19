@@ -277,6 +277,19 @@ let ended = null;
         `a guest grows a landscape park into 3×3 grounds and lays out a Grand Park, and sees it (${g2 && g2.flavor})`);
     } else ok(false, 'no room to grow a 2×2 park into bigger grounds');
   }
+  // a guest builds a planting of a kind of their choosing, and has a
+  // monument reworked as another kind; the guest's copy follows
+  {
+    const s = find(hw, (x, z) => (hw.checkBuild('flowers', x, z, { ignoreMoney: true, ignoreUnlock: true }).ok ? { x, z } : null));
+    const pr = await ask(guest, { t: 'place', type: 'flowers', x: s.x, z: s.z, flavor: 'topiary' });
+    const s2 = find(hw, (x, z) => (hw.checkBuild('statue', x, z, { ignoreMoney: true, ignoreUnlock: true }).ok ? { x, z } : null));
+    const mr = await ask(guest, { t: 'place', type: 'statue', x: s2.x, z: s2.z });
+    const kr = mr.ok && await ask(guest, { t: 'kind', id: mr.building.id, kind: 'clock' });
+    await until(() => { const a = pr.ok && gw().buildings.get(pr.building.id), b = mr.ok && gw().buildings.get(mr.building.id); return a && a.flavor === 'topiary' && b && b.flavor === 'clock'; });
+    const ga = pr.ok && gw().buildings.get(pr.building.id), gm = mr.ok && gw().buildings.get(mr.building.id);
+    ok(pr.ok && kr && kr.ok && ga && ga.flavor === 'topiary' && gm && gm.flavor === 'clock', `a guest builds a topiary planting and has a monument reworked as a clock tower, and sees both (${ga && ga.flavor}, ${gm && gm.flavor})`);
+    ok(!(await ask(guest, { t: 'kind', id: mr.building.id, kind: 'nonsense' })).ok, 'an unknown kind is refused');
+  }
   // move a building
   const mover = [...hw.buildings.values()].find(b => b.type === 'house' && !b.con && fw(b) === 1 && fd(b) === 1);
   spot = freeSpot(hw);

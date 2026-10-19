@@ -16,7 +16,7 @@ import { Agents, visitorCap } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
-import { BUILDINGS, TECHS, PRODUCE } from '../src/defs.js';
+import { BUILDINGS, TECHS, PRODUCE, KINDS, kindOf } from '../src/defs.js';
 import { STYLES } from '../src/render/buildings.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { computeIssues } from '../src/ui/issues.js';
@@ -53,7 +53,7 @@ game.animals = new Animals(game);
 game.construction = new Construction(game);
 game.on('day', () => game.transit.planCarts());
 w.on('roads', () => game.paths.invalidate?.());
-const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, estates: 0, estateBuilt: 0, grounds: 0, groundsBuilt: 0, moves: 0, demolish: 0, roads: 0, research: 0, born: 0, died: 0, grads: 0 };
+const counts = { placed: 0, upgrades: 0, merges: 0, expands: 0, estates: 0, estateBuilt: 0, grounds: 0, groundsBuilt: 0, moves: 0, demolish: 0, roads: 0, research: 0, rekinds: 0, born: 0, died: 0, grads: 0 };
 game.on('born', (b) => { counts.born += b.length; });
 game.on('died', (d) => { counts.died += d.length; });
 game.on('graduated', () => { counts.grads++; });
@@ -80,7 +80,10 @@ function place(type, near) {
   // near the middle if there's room, else further out
   const s = spots(type, near)[0] || spots(type, near, 22)[0];
   if (!s) return null;
-  const r = w.placeBuilding(type, s.x, s.z, { variant: (rng.next() * 1e9) | 0 });
+  // a planting or monument is half the time built as a kind of the bot's choosing
+  const kinds = KINDS[type] && Object.keys(KINDS[type]).filter(k => w.hasTech(KINDS[type][k].tech));
+  const flavor = kinds && kinds.length && rng.chance(0.5) ? rng.pick(kinds) : undefined;
+  const r = w.placeBuilding(type, s.x, s.z, { variant: (rng.next() * 1e9) | 0, flavor });
   if (r.ok) counts.placed++;
   return r.ok ? r.building : null;
 }
@@ -119,8 +122,14 @@ function botDay() {
   const sim = game.sim;
   if (w.money < 150) return;
   // (the busy modes try every kind of little park too)
-  const parks = MODE !== 'economy' ? ['pond', 'rosegarden', 'bandstand', 'allotment', 'physic'] : [];
+  const parks = MODE !== 'economy' ? ['pond', 'rosegarden', 'bandstand', 'allotment', 'physic', 'flowers', 'statue'] : [];
   for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well', ...parks]); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
+  // and now and then has a planting or a monument reworked as another kind
+  if (MODE !== 'economy' && rng.chance(0.3)) {
+    const cands = [...w.buildings.values()].filter(b => KINDS[b.type] && !b.con);
+    const b = cands.length ? rng.pick(cands) : null, keys = b ? Object.keys(KINDS[b.type]).filter(k => w.kindCheck(b, k).ok) : [];
+    if (keys.length && w.setKind(b.id, rng.pick(keys)).ok) counts.rekinds++;
+  }
   const issues = computeIssues(game);
   const has = (t) => issues.some(i => i.text.includes(t));
   // research: cheapest available project, but water and power once the
@@ -362,6 +371,10 @@ console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(
   const big = [...w.buildings.values()].filter(b => BUILDINGS[b.type].grand);
   const parkTypes = new Set([...w.buildings.values()].filter(b => BUILDINGS[b.type].park).map(b => b.type));
   console.log(`park grounds: ${counts.grounds} grown, ${counts.groundsBuilt} laid out · standing: ${big.map(b => `${BUILDINGS[b.type].levels[b.level].name} ${fw(b)}×${fd(b)}`).join(', ') || 'none'} · ${parkTypes.size} kinds of park in town`);
+  // plantings and monuments by kind and level, and how many were reworked
+  const kinds = {};
+  for (const b of w.buildings.values()) if (KINDS[b.type]) { const k = `${KINDS[b.type][kindOf(b)].name} L${b.level}`; kinds[k] = (kinds[k] || 0) + 1; }
+  console.log(`plantings and monuments: ${Object.entries(kinds).sort().map(([k, v]) => `${k} ×${v}`).join(', ') || 'none'} · ${counts.rekinds} reworked`);
 }
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');
 {

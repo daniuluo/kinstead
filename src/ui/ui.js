@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST, streetPart, lookPart } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, KINDS, kindOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -187,9 +187,38 @@ export class UI {
     else if (this.category) active = this.category;
     for (const b of $('toolbar').querySelectorAll('.tool')) b.classList.toggle('on', b.dataset.tool === active);
     for (const c of $('flyout').querySelectorAll('.card')) c.classList.toggle('on', c.dataset.key === toolKey(t));
+    this.renderKindBar();
     $('btnView').textContent = this.game.renderer.rig.topDown ? 'ISO' : '2D';
     $('btnView').classList.toggle('on', this.game.renderer.rig.topDown);
     this.updateHint();
+  }
+
+  // While building a planting or a monument, a bar above the build menu
+  // picks its kind ("By its seed": one of those that need no research,
+  // different from one to the next). The choice is kept for the next one.
+  renderKindBar() {
+    const bar = $('kindBar'), t = this.game.input.tool, K = t.kind === 'build' && KINDS[t.type];
+    if (!bar) return;
+    const hint = $('toolHint');
+    if (!K || this.uiHidden) { bar.classList.add('hidden'); bar.dataset.key = ''; if (hint) hint.style.bottom = ''; return; }
+    const cur = t.flavor || '';
+    const key = `${t.type}|${cur}|${Object.keys(K).map(k => +this.world.hasTech(K[k].tech)).join('')}`;
+    bar.classList.remove('hidden');
+    if (bar.dataset.key !== key) this._fillKindBar(bar, t, K, cur, key);
+    // just above the build menu (as tall as the screen makes it), the hint above that
+    const box = bar.offsetParent ? bar.offsetParent.getBoundingClientRect().bottom : innerHeight, fly = $('flyout');
+    if (fly && !fly.classList.contains('hidden')) bar.style.bottom = `${Math.round(box - fly.getBoundingClientRect().top + 4)}px`;
+    if (hint) hint.style.bottom = `${Math.round(box - bar.getBoundingClientRect().top + 4)}px`;
+  }
+  _fillKindBar(bar, t, K, cur, key) {
+    bar.dataset.key = key;
+    const btn = (k, icon, name, title, ok) => `<button class="btn small ${cur === k ? 'on' : ''}" data-kind="${k}" ${ok ? '' : 'disabled'} title="${esc(title)}">${ok ? '' : '🔒'}<span class="ms">${icon}</span> ${esc(name)}</button>`;
+    bar.innerHTML = `<span class="kb-label">${esc(BUILDINGS[t.type].name)}:</span>${btn('', 'casino', 'By its seed', 'A different one each time, from the kinds that need no research', true)}${Object.entries(K).map(([k, x]) => btn(k, x.icon, x.name, this.world.hasTech(x.tech) ? x.desc : `Research ${TECHS[x.tech].name}`, this.world.hasTech(x.tech))).join('')}`;
+    for (const el of bar.querySelectorAll('button[data-kind]')) el.onclick = () => {
+      const k = el.dataset.kind || null;
+      (this.kindChoice ||= {})[t.type] = k;
+      this.game.input.setTool({ kind: 'build', type: t.type, flavor: k });
+    };
   }
 
   // ------------------------------------------------------------- flyouts
@@ -215,7 +244,7 @@ export class UI {
         if (def.cat !== cat || def.hidden) continue;
         const u = unlockOf(type, 0);
         const lock = pop < u ? u : !this.world.hasTech(def.tech) ? `🔬 ${TECHS[def.tech].name}` : 0;
-        cards.push({ ...card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type }), def.desc), type });
+        cards.push({ ...card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type, flavor: (this.kindChoice || {})[type] || null }), def.desc), type });
       }
       if (cat === 'parks') cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
       if (cat === 'transit') {
@@ -280,7 +309,7 @@ export class UI {
       case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
       case 'roadsel': msg = `Click a road to pick its stretch · Shift-click adds · drag to pick a ${t.box ? 'box' : 'line'} (Tab: ${t.box ? 'line' : 'box'}) · Backspace undoes · right-click clears`; break;
-      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
+      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name}${KINDS[t.type] ? ` (${t.flavor ? KINDS[t.type][t.flavor].name.toLowerCase() : 'its kind by its seed'}: choose above)` : ''} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
       case 'move': {
         const b = this.world.buildings.get(t.id);
         msg = b ? `Click a new plot for the ${BUILDINGS[b.type].levels[b.level].name} · it is taken down, carted over and rebuilt · Tab flips the entrance · right-click to cancel` : '';
@@ -493,6 +522,7 @@ export class UI {
     const title = con.kind === 'demolish' ? 'Being demolished' : con.kind === 'dismantle' ? 'Being taken down for a move'
       : con.wait === 'dismantle' ? 'Waiting for the old building to come down'
         : con.wait === 'haul' ? 'Materials on their way by cart'
+          : con.kind === 'upgrade' && KINDS[b.type] && typeof con.flavor === 'string' && Object.hasOwn(KINDS[b.type], con.flavor) ? `Being reworked · ${KINDS[b.type][con.flavor].name}`
           : con.kind === 'upgrade' ? `Upgrading to ${target}`
             : con.kind === 'merge' ? `Joining into ${target}`
               : con.moved ? 'Going back up on its new plot' : 'Under construction';
@@ -522,7 +552,8 @@ export class UI {
     const def = BUILDINGS[b.type], L = def.levels[b.level], S = scaledLevel(L, sizeK(b));
     const open = isOpen(b);
     const stars = def.levels.length > 1 ? `<span class="stars">${'★'.repeat(b.level + 1)}${'☆'.repeat(def.levels.length - b.level - 1)}</span>` : '';
-    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}<button class="btn small pm-open" data-act="paths" title="Every upgrade, rebuild and join it can lead to"><span class="ms">account_tree</span> Paths</button></div></div></div>`;
+    const kind = KINDS[b.type] ? KINDS[b.type][kindOf(b)] : null;
+    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(kind ? `${def.name} · ${kind.name}` : def.name)} ${stars}<button class="btn small pm-open" data-act="paths" title="Every upgrade, rebuild and join it can lead to"><span class="ms">account_tree</span> Paths</button></div></div></div>`;
     if (b.con) h += this._siteHTML(b);
     const chips = [];
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
@@ -553,6 +584,7 @@ export class UI {
     if (visitOf(b)) rows.push(['Per visit', `$${visitOf(b)}`]);
     if (L.upkeep) rows.push(['Upkeep', `$${S.upkeep} / day`]);
     for (const s of servicesOf(def)) rows.push(s === 'water' ? [`${SERVICES[s].icon} Water`, 'Into the mains along the roads'] : [`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
+    if (L.culture) rows.push([`${SERVICES.culture.icon} Culture reach`, `${L.culture} tiles`]);
     if (def.park) rows.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
     if (L.pollution) rows.push(['Pollution', `${L.pollution} tile radius`]);
     if (L.taxBonus) rows.push(['Tax bonus', `+${Math.round(L.taxBonus * 100)}%`]);
@@ -607,6 +639,14 @@ export class UI {
         const r = w.residents.get(id);
         return r ? `<span class="chip link" data-act="resident" data-id="${id}">${esc(r.first)} ${esc(r.last[0])}.</span>` : '';
       }).join('')}${b.workers.length > 16 ? `<span class="chip">+${b.workers.length - 16}</span>` : ''}</div></div>`;
+    }
+    // a planting or monument: another of its kinds, reworked by the builders
+    if (!b.con && KINDS[b.type]) {
+      const K = KINDS[b.type], cur = kindOf(b), cost = w.kindCheck(b, '__probe__').cost || 0;
+      h += `<div class="sec kinds"><h5>${def.icon} ${b.type === 'statue' ? 'What it is' : 'What is planted'}</h5><div class="note">${esc(K[cur].desc)}</div><div class="note">Builders can rework it as another kind, keeping its level, for $${fmt(cost)}.</div><div class="produce">${Object.entries(K).map(([k, x]) => {
+        const unlocked = w.hasTech(x.tech), on = k === cur;
+        return `<button class="btn small ${on ? 'on' : ''}" data-act="kind" data-kind="${k}" ${!on && unlocked && w.money >= cost ? '' : 'disabled'} title="${esc(unlocked ? x.desc : `Research ${TECHS[x.tech].name}`)}">${unlocked ? '' : '🔒'}<span class="ms">${x.icon}</span> ${esc(x.name)}</button>`;
+      }).join('')}</div></div>`;
     }
     // a farm: what it grows or raises, and its fields beyond the plot
     if (!b.con && def.fields) {
@@ -784,6 +824,14 @@ export class UI {
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
       case 'paths': { const pb = w.buildings.get(sel.id); if (pb) showPathMap(this, pb); break; }
+      case 'kind': {
+        const kb = w.buildings.get(sel.id), K = kb && KINDS[kb.type];
+        g.cmd({ t: 'kind', id: sel.id, kind: data.kind }, (r) => {
+          if (r.ok) { g.sfx('build'); this.toast(r.instant ? `Reworked · ${K[data.kind].name}` : `Builders will rework it · ${K[data.kind].name}`, 'good', '🏗️'); } else if (r.reason) this.toast(r.reason, 'bad');
+          if (this.selection) this.renderInspector(true);
+        });
+        break;
+      }
       case 'produce':
         g.cmd({ t: 'produce', id: sel.id, produce: data.produce }, (r) => {
           if (r.ok) { g.sfx('click'); this.toast(`Now ${PRODUCE[data.produce].name.toLowerCase()}`, 'good', PRODUCE[data.produce].icon); } else if (r.reason) this.toast(r.reason, 'bad');
@@ -1122,7 +1170,7 @@ export class UI {
   showSaves(tab = 'local') {
     const g = this.game;
     const inGame = !!g.world && !g.demo;
-    const tabs = [['local', '💻 This browser'], ['drive', '☁️ Google Drive'], ['file', '📁 File']];
+    const tabs = [['local', '💻 This browser'], ['file', '📁 File']];
     this.openModal(`<h2>Save & load</h2><p class="lead">${inGame ? `Saving <b>${esc(this.world.townName)}</b> — day ${this.world.day}, ${fmt(this.world.population)} villagers.` : 'Pick a saved village to continue.'}</p>
       <div class="actions" style="margin:0 0 10px">
         ${inGame ? '<button class="btn primary" id="svDownload" title="Ctrl+Shift+S">⬇ Download save (.json)</button>' : ''}
@@ -1141,7 +1189,6 @@ export class UI {
       };
       const body = c.querySelector('#saveBody');
       if (tab === 'local') this._localTab(body, inGame);
-      else if (tab === 'drive') this._driveTab(body, inGame);
       else this._fileTab(body, inGame);
     });
   }
@@ -1171,74 +1218,6 @@ export class UI {
     for (const b of body.querySelectorAll('[data-del]')) b.onclick = () => {
       if (b.dataset.confirm) { LocalSaves.remove(b.dataset.del); this.showSaves('local'); }
       else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; }
-    };
-  }
-
-  async _driveTab(body, inGame) {
-    const g = this.game, drive = g.drive;
-    if (!drive.configured) {
-      body.innerHTML = `<div class="note">Cloud saves use your own Google account through the Google Drive API. To switch them on,
-        create an <b>OAuth 2.0 Client ID</b> (type “Web application”) in Google Cloud Console, enable the <b>Google Drive API</b>,
-        and add <code>${esc(location.origin)}</code> as an authorised JavaScript origin. Then paste the Client ID below.
-        Full steps are in the README.</div>
-        <div class="field"><label>Google OAuth Client ID</label><input id="gcid" placeholder="1234567890-abc.apps.googleusercontent.com"></div>
-        <div class="actions"><button class="btn primary" id="gcidSave">Save Client ID</button></div>`;
-      body.querySelector('#gcidSave').onclick = () => {
-        const v = body.querySelector('#gcid').value.trim();
-        if (!/\.apps\.googleusercontent\.com$/.test(v)) { this.toast('That does not look like a Google OAuth Client ID.', 'bad'); return; }
-        drive.setClientId(v);
-        this.showSaves('drive');
-      };
-      return;
-    }
-    if (!drive.connected) {
-      body.innerHTML = `<div class="note">Saves go to a <b>Kinstead Saves</b> folder in your Google Drive. The game can only see files it created.</div>
-        <div class="actions"><button class="btn primary" id="gConnect">☁️ Connect Google Drive</button></div>`;
-      body.querySelector('#gConnect').onclick = async () => {
-        try { await drive.connect(true); this.showSaves('drive'); } catch (e) { this.toast(e.message, 'bad'); }
-      };
-      return;
-    }
-    body.innerHTML = `<div class="empty">Loading your Drive saves…</div>`;
-    let files = [];
-    try { files = await drive.list(); } catch (e) { body.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-    if (!body.isConnected) return;
-    let h = `<div class="actions" style="margin:0 0 12px">${inGame ? '<button class="btn primary" id="gSave">☁️ Save to Drive</button>' : ''}<button class="btn" id="gOut">Disconnect</button></div>`;
-    if (!files.length) h += `<div class="empty">No Kinstead saves in your Drive yet.</div>`;
-    h += `<div class="saves">${files.map(f => {
-      const a = f.appProperties || {};
-      return `<div class="save"><div class="ph">☁️</div><div><div class="t">${esc(a.town || f.name)}</div>
-        <div class="m">${a.day ? `Day ${esc(a.day)} · ${esc(a.pop)} villagers · $${esc(a.money)}` : esc(f.name)}</div>
-        <div class="m">${new Date(f.modifiedTime).toLocaleString()}</div></div>
-        <div class="acts"><button class="btn small primary" data-gload="${f.id}">Load</button>
-        ${inGame ? `<button class="btn small" data-gover="${f.id}">Overwrite</button>` : ''}
-        <button class="btn small" data-gdl="${f.id}" title="Download as .json">⬇</button>
-        <button class="btn small danger" data-gdel="${f.id}">✕</button></div></div>`;
-    }).join('')}</div>`;
-    body.innerHTML = h;
-    const busy = (b, t) => { b.disabled = true; b.textContent = t; };
-    const sv = body.querySelector('#gSave');
-    if (sv) sv.onclick = async () => { busy(sv, 'Saving…'); try { await drive.save(serialize(g.world)); this.toast('Saved to Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); } this.showSaves('drive'); };
-    body.querySelector('#gOut').onclick = () => { drive.disconnect(); this.showSaves('drive'); };
-    for (const b of body.querySelectorAll('[data-gload]')) b.onclick = async () => {
-      busy(b, '…');
-      try { g.loadData(await drive.load(b.dataset.gload)); this.closeModal(); this.toast('Loaded from Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); b.disabled = false; b.textContent = 'Load'; }
-    };
-    for (const b of body.querySelectorAll('[data-gdl]')) b.onclick = async () => {
-      busy(b, '…');
-      try { const data = await drive.load(b.dataset.gdl); downloadJSON(data, saveFileNameFor(data)); } catch (e) { this.toast(e.message, 'bad'); }
-      b.disabled = false; b.textContent = '⬇';
-    };
-    for (const b of body.querySelectorAll('[data-gover]')) b.onclick = async () => {
-      busy(b, '…');
-      try { await drive.save(serialize(g.world), b.dataset.gover); this.toast('Saved to Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); }
-      this.showSaves('drive');
-    };
-    for (const b of body.querySelectorAll('[data-gdel]')) b.onclick = async () => {
-      if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'Delete?'; return; }
-      busy(b, '…');
-      try { await drive.remove(b.dataset.gdel); } catch (e) { this.toast(e.message, 'bad'); }
-      this.showSaves('drive');
     };
   }
 
@@ -1331,8 +1310,7 @@ export class UI {
 
   // ------------------------------------------------------- settings/help
   // Settings, in group boxes: how the town looks, how hard the computer
-  // works, sound, pop-ups, the game, and this town's sandbox switches (and,
-  // tucked away, the Google Drive key). Every change applies as it's made.
+  // works, sound, pop-ups, the game, and this town's sandbox switches . Every change applies as it's made.
   showSettings() {
     const g = this.game;
     const s = g.settings;
@@ -1365,8 +1343,6 @@ export class UI {
     this.openModal(`<h2>Settings</h2>
       <p class="lead">Changes apply as you make them.</p>
       <div class="set-cols"><div>${display}${perfHTML(s)}</div><div>${sound}${pops}${game}${sandbox}</div></div>
-      <details class="set-more"><summary>Advanced</summary>
-        <div class="field"><label for="stGcid">Google OAuth client ID (for saving to Google Drive)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div></details>
       <div class="actions set-actions"><button class="btn" id="stMenu">Quit to title</button><span style="flex:1"></span><button class="btn primary" id="stOk">Close</button></div>`, (c) => {
       c.classList.add('settings-win');
       bindSegs(c);
@@ -1404,7 +1380,6 @@ export class UI {
           const opts = { infiniteMoney: val('stInf').checked, unlockAll: val('stAll').checked, freeUpgrades: val('stFree').checked, instantBuild: val('stInst').checked };
           if (Object.entries(opts).some(([k, v]) => !!g.world.sandbox[k] !== v)) g.cmd({ t: 'sandbox', opts }, (r) => { if (r.ok) this.refreshAfterSandbox(); });
         }
-        if (e && e.target.id === 'stGcid') { const id = val('stGcid').value.trim(); if (id !== g.drive.clientId) g.drive.setClientId(id); }
       };
       c.addEventListener('change', apply);
       val('stMusicVol').addEventListener('input', apply);
@@ -1817,7 +1792,7 @@ export class UI {
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
         Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
-        6. Save to this browser, a file, or Google Drive from 💾.
+        6. Save to this browser or to a file from 💾.
       </div></div>`);
   }
 }
