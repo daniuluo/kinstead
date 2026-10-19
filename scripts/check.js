@@ -159,14 +159,44 @@ ok(true, `all building models build (${verts} verts total)`);
     tw.placeRoads(sideRoad, 1);
     // facing -z (rot 2), the side street at x + 1 is on its left
     ok(shop.corner === 1 && refits.includes(shop.id), `a side street turning the corner makes it a corner shop, rebuilt (corner ${shop.corner})`);
+    ok(shop.sides === 1, `and the world knows its left side is on a street, for its walls there (sides ${shop.sides})`);
     const saved = JSON.stringify(serialize(tw));
     ok(!saved.includes('corner'), 'the corner is never saved');
     const tw2 = deserialize(JSON.parse(saved));
-    ok(tw2.buildings.get(shop.id).corner === 1, 'a loaded town works the corner out again');
+    ok(tw2.buildings.get(shop.id).corner === 1 && tw2.buildings.get(shop.id).sides === 1, 'a loaded town works the corner and the street sides out again');
     refits.length = 0;
     for (const [x, z] of sideRoad) tw.removeRoad(x, z);
-    ok(!shop.corner && refits.includes(shop.id), 'taking the side street up makes it an ordinary shop again');
+    ok(!shop.corner && !shop.sides && refits.includes(shop.id), 'taking the side street up makes it an ordinary shop again');
   }
+}
+
+// 1d. a building with a street along its side or back has windows on that
+// wall (b.sides), whatever its looks; yards, farms, towers and open stalls,
+// whose street side is a yard or has no walls, aside
+{
+  const YARDS = new Set(['windgen', 'well', 'farm', 'homestead', 'orchard', 'builder', 'contractor', 'joinery']);
+  const DIRS = { left: [-1, 0], right: [1, 0], back: [0, -1] };
+  const blank = [];
+  let n = 0;
+  for (const [type, d] of Object.entries(BUILDINGS)) {
+    if (d.park || d.stop || YARDS.has(type)) continue;
+    const W = d.merged ? 2 : d.size, D = d.merged ? 1 : d.size;
+    for (let level = 0; level < d.levels.length; level++) for (const variant of [777, 4242, 31337]) {
+      if (type === 'market' && level === 0) continue;
+      const g = buildModel({ type, level, variant, size: d.size, w: W, d: D, baseY: 0, minY: 0, rot: 0, rail: d.needsRail ? { x: 0, z: 0, dir: 2 } : null, sides: 7 }, { flat: true }).geo;
+      const P = g.attributes.position.array, Nn = g.attributes.normal.array, C = g.attributes.color.array, E = g.attributes.emit.array;
+      const cnt = { left: 0, right: 0, back: 0 };
+      for (let i = 0; i < P.length / 3; i++) {
+        const r = C[i * 3], gg = C[i * 3 + 1], bl = C[i * 3 + 2];
+        if (!(E[i * 4 + 3] > 0 || (bl > r * 1.25 && bl < 0.12 && gg < 0.09))) continue;
+        for (const [k, [dx, dz]] of Object.entries(DIRS)) if (Nn[i * 3] * dx + Nn[i * 3 + 2] * dz > 0.9 && P[i * 3] * dx + P[i * 3 + 2] * dz > -0.1) cnt[k]++;
+      }
+      n++;
+      const none = Object.keys(cnt).filter(k => !cnt[k]);
+      if (none.length) blank.push(`${type} L${level} (${variant}): ${none.join(', ')}`);
+    }
+  }
+  ok(!blank.length, `a building with streets at its sides and back has windows on every wall facing them (${n} models)${blank.length ? ': ' + blank.slice(0, 8).join('; ') : ''}`);
 }
 
 // 2. terrain generation over many seeds

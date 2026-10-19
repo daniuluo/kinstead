@@ -476,6 +476,25 @@ export class World {
     return m;
   }
 
+  // Which of a building's other sides have a road along them (b.sides: 1 its
+  // left, 2 its right, 4 its back, as seen from the street in front), so its
+  // walls there get windows and a door rather than a blank face.
+  _sidesOf(b) {
+    if (!b.access) return 0;
+    const [fx, fz] = DIRS[b.rot], [rx, rz] = DIRS[(b.rot + 1) % 4];
+    let m = 0;
+    for (const [bit, ax, az] of [[1, -rx, -rz], [2, rx, rz], [4, -fx, -fz]]) {
+      // the plot's tiles along that side, and the road beyond them
+      let best = -Infinity;
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) best = Math.max(best, (b.x + dx) * ax + (b.z + dz) * az);
+      for (let dz = 0; dz < fd(b) && !(m & bit); dz++) for (let dx = 0; dx < fw(b); dx++) {
+        const x = b.x + dx, z = b.z + dz;
+        if (x * ax + z * az === best && this.roadAt(x + ax, z + az)) { m |= bit; break; }
+      }
+    }
+    return m;
+  }
+
   // Re-decide every building's street front (after building, demolishing or
   // re-laying roads). The new building itself, if any, is not refitted.
   // The plot comes forward only where the street runs the whole width of it
@@ -487,8 +506,9 @@ export class World {
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b);
-      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0)) {
+      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b), sd = this._sidesOf(b);
+      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0)) {
+        if (sd) b.sides = sd; else delete b.sides;
         b.front = f;
         if (own === undefined) delete b.ownFront; else b.ownFront = own;
         if (cn) b.corner = cn; else delete b.corner;

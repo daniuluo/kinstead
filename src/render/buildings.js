@@ -402,6 +402,21 @@ function unseen(c, skip, draw) {
 // Style comes from the palette: material (plaster, painted, brick, stone,
 // timber-frame, clapboard or a stone/brick ground floor), roof shape and
 // pitch, jettied upper floors, bay windows, porches, ivy, shutters and more.
+// Does a wall face one of the streets along the building's sides (c.sides,
+// from b.sides)? lx, lz: the wall's outward direction and ox, oz its middle,
+// in the current frame; the wall must stand near that edge of the plot (not
+// a party wall inside a row).
+function facesStreet(c, lx, lz, ox, oz) {
+  if (!c.sides || !c.box) return false;
+  const e = c.gb.M.elements, B = c.box;
+  const nx = e[0] * lx + e[8] * lz, nz = e[2] * lx + e[10] * lz;
+  const px = e[0] * ox + e[8] * oz + e[12], pz = e[2] * ox + e[10] * oz + e[14];
+  if (nx > 0.9) return !!(c.sides & 2) && B.x1 - px < 0.55;
+  if (nx < -0.9) return !!(c.sides & 1) && px - B.x0 < 0.55;
+  if (nz < -0.9) return !!(c.sides & 4) && pz - B.z0 < 0.55;
+  return false;
+}
+
 export function house(c, o) {
   const { gb, rng, pal } = c;
   if (o.timber === undefined && pal.forced && pal.timber) o = { ...o, timber: true };
@@ -466,6 +481,11 @@ export function house(c, o) {
   const doorX = o.doorX ?? (fancy && pal.doorPos === 'center' ? 0
     : (nF > 1 && (nF % 2 === 1 || (fancy && pal.doorPos === 'side'))) ? -hw + (w / nF) * 0.5 : 0);
   const ww = o.ww || (fancy ? pal.winW : 0.075);
+  // walls along a street at the side or back: every window, and a door on
+  // the ground floor (the side door nearest the front; the back door in the
+  // middle, unless the back is kept for one already)
+  const onR = facesStreet(c, 1, 0, w / 2, 0), onL = facesStreet(c, -1, 0, -w / 2, 0), onB = !o.noBack && facesStreet(c, 0, -1, 0, -d / 2);
+  const sideDoorH = Math.min(0.17, fh * 0.7), doorCol = o.door || pal.door;
   for (let f = 0; f < floors; f++) {
     const wh = Math.min(0.11, fh * 0.4);
     const wy = f * fh + fh * 0.38;
@@ -476,10 +496,11 @@ export function house(c, o) {
       const shop = f === 0 && o.shopWindow;
       // bareFront: the ground-floor front (or that many floors) is left for a shopfront
       if (f >= (o.bareFront === true ? 1 : o.bareFront || 0)) win(c, u, wy - (shop ? 0.02 : 0), hd + jz, shop ? ww * 1.6 : ww, shop ? wh * 1.3 : wh, 'f', o.lit);
-      if (!o.noBack && rng.chance(0.7)) {
+      if (!o.noBack && (rng.chance(0.7) || onB)) {
         // o.backClear: stretches of the back wall kept for a door, a sign or
         // the like; o.backBars: the ground-floor windows barred
         const clear = o.backClear && o.backClear.some(([x0, x1, y0, y1]) => u >= x0 && u <= x1 && wy >= y0 && wy <= y1);
+        if (onB && f === 0 && !o.backClear && i === nF >> 1 && nF > 1) { plainDoor(c, u, -hd, 0.075, sideDoorH, doorCol, 'b'); continue; }
         unseen(c, clear, () => win(c, u, wy, -hd - jz, ww, wh, 'b', o.lit));
         if (!clear && o.backBars && f === 0) for (let k = 1; k < 4; k++) gb.box(u - ww / 2 + (k * ww) / 4, wy, -hd - 0.014, 0.006, wh * (c.winH || 1), 0.006, IRON_D);
       }
@@ -489,8 +510,9 @@ export function house(c, o) {
       // o.bareSide: the ground floor of the left (1) or right (2) side kept
       // for a shopfront round the corner
       const bare = (k) => f === 0 && o.bareSide & k;
-      if (rng.chance(0.8)) unseen(c, bare(2), () => win(c, hw + jz, wy, u, ww, wh, 'r', o.lit));
-      if (rng.chance(0.8)) unseen(c, bare(1), () => win(c, -hw - jz, wy, u, ww, wh, 'l', o.lit));
+      const door = (k, on) => on && f === 0 && !bare(k) && i === nS - 1 && nS > 1 && !o.shopWindow;
+      if (rng.chance(0.8) || onR) { if (door(2, onR)) plainDoor(c, hw, u, 0.075, sideDoorH, doorCol, 'r'); else unseen(c, bare(2), () => win(c, hw + jz, wy, u, ww, wh, 'r', o.lit)); }
+      if (rng.chance(0.8) || onL) { if (door(1, onL)) plainDoor(c, -hw, u, 0.075, sideDoorH, doorCol, 'l'); else unseen(c, bare(1), () => win(c, -hw - jz, wy, u, ww, wh, 'l', o.lit)); }
     }
   }
   if (alongZ && roofType !== 'hip' && roofType !== 'flat' && rh > 0.16) win(c, 0, h + rh * 0.22, rd / 2, 0.06, 0.07, 'f', o.lit);
@@ -4883,7 +4905,7 @@ function worksShed(c, x, z, w, d, h, floors, wall, roof, rh, skip = () => false)
     for (let i = 0; i < nF; i++) {
       const u = x - w / 2 + (i + 0.5) * (w / nF);
       if (k || !skip(u)) win(c, u, y, z + d / 2, 0.075, wh, 'f', 0.8);
-      if (rng.chance(0.7)) win(c, u, y, z - d / 2, 0.075, wh, 'b', 0.8);
+      if (rng.chance(0.7) || facesStreet(c, 0, -1, u, z - d / 2)) win(c, u, y, z - d / 2, 0.075, wh, 'b', 0.8);
     }
     for (let i = 0; i < nS; i++) {
       const v = z - d / 2 + (i + 0.5) * (d / nS);
@@ -5851,7 +5873,7 @@ export function buildModel(b, opts = {}) {
   const ground = opts.ground;
   const makeCtx = (gb, rng) => {
   const c = {
-    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, corner: b.corner || 0, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
+    gb, rng, pal, E, Ex, Ez, box: plotBox(b, Ex, Ez), boxAware: false, level: b.level, variant: b.variant, flavor: b.flavor || null, corner: b.corner || 0, sides: b.sides || 0, shutters: pal.shutters ? pal.accent : null, flowerBoxes: false,
     houses: [],   // every house() drawn, where it stands (see annexes)
     frame: pal.frame, winH: pal.winH, arched: (pal.arched ?? pal.style === 'stone') && !(BUILDINGS[b.type].fields && !BUILDINGS[b.type].fruit),
     inWorld: !!ground,   // standing in the town (not a picture in a menu)
