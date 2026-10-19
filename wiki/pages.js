@@ -113,9 +113,6 @@ export const SETTINGS = [
     ['Upgrades without their needs', 'On / off', 'Upgrade without the happiness, services or electricity a level asks for.'],
     ['Instant building', 'On / off', 'No builders needed: buildings appear at once.'],
   ] },
-  { group: 'Advanced', rows: [
-    ['Google OAuth client ID (for saving to Google Drive)', 'Text', 'Your own Client ID for Google Drive saves, kept in this browser only (see Saving).'],
-  ] },
 ];
 
 // ------------------------------------------------------------------ pages
@@ -128,13 +125,13 @@ export const PAGES = [
       { id: 'about', title: 'What Kinstead is', html: `
         <p>You lay out a village in a green valley: streets, cottages, a market, a well. Families move in from the edge of the map, find work and school places, and go about their day. As the village grows you upgrade its buildings, research new ones, join neighbours into bigger buildings, and keep everyone housed, employed, supplied and happy, until the hamlet is a market town or a cathedral city.</p>
         <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same.</p>
-        <p>Kinstead is free and runs in any modern browser with WebGL: there's nothing to install, and your towns are saved in your browser (or to a file, or Google Drive).</p>` },
+        <p>Kinstead is free and runs in any modern browser with WebGL: there's nothing to install, and your towns are saved in your browser (or to a file).</p>` },
       { id: 'title', title: 'The title screen', html: `
         <p>Behind the title card a little demo village goes about its evening. The buttons:</p>
         ${list([
           '<b>Continue</b> loads the town you saved last (it only shows when there is one).',
           '<b>New village</b> starts a town: pick a name, a seed and a valley size, or a ready-made ' + pl('starters', 'starter town') + '.',
-          '<b>Load a save…</b> lists the towns saved in this browser, and loads a <code>.json</code> save file or one from Google Drive.',
+          '<b>Load a save…</b> lists the towns saved in this browser, and loads a <code>.json</code> save file.',
           '<b>Multiplayer…</b> hosts a town for friends or joins theirs with an invite code (' + pl('multiplayer', 'Multiplayer') + ').',
           '<b>Merge villages…</b> joins two saved towns into one valley (' + pl('merging', 'Merging villages') + ').',
         ])}
@@ -163,7 +160,6 @@ export const PAGES = [
           `<b>Autosave.</b> The town is saved to this browser every in-game day (Settings → Game), every ${CONFIG.AUTOSAVE_SECONDS} seconds whatever the speed, and whenever you switch away from or close the tab. When a different town takes the autosave (say you start a new village), the last one is kept as <b>Previous town</b>.`,
           `<b>Save slots.</b> ${k('Ctrl')} ${k('S')} saves at once; the 💾 button opens the Save window with every slot, each with a download button.`,
           `<b>Files.</b> <b>Download save (.json)</b> at the top of the Save window, or ${k('Ctrl')} ${k('Shift')} ${k('S')}. Drop a <code>.json</code> save onto the game to load it.`,
-          '<b>Google Drive.</b> Saves go to a <b>Kinstead Saves</b> folder in your Drive, using the narrow <code>drive.file</code> permission (the game sees only files it made). It needs a Google OAuth Client ID, set up once: the README on GitHub explains the steps.',
         ])}
         <p>Saves are kept per website, not per page, so a town saved anywhere on this site can be continued from the home page's <b>Continue</b> button too.</p>` },
     ],
@@ -686,7 +682,6 @@ export const PAGES = [
         sec(G('Pop-ups'), 'popups', `<p>All of them at once: the bell button in the top bar, or ${k('N')}.</p>`),
         sec(G('Game'), 'game'),
         sec(G('Sandbox · this town only'), 'sandbox', '<p>The sandbox switches belong to the town and are saved with it. In multiplayer only the host can change them.</p>'),
-        sec(G('Advanced'), 'advanced'),
       ];
     },
     see: ['controls', 'start/saving'],

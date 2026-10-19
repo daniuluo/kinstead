@@ -69,12 +69,12 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Speed and sandbox** — pause, or run at 1×, 2×, 4×, 8×, 16× or 32× (`[` and `]` step through them). Four sandbox switches, available for a new game or from Settings: unlimited money, unlock every building, upgrade without meeting needs, and instant construction.
 - **Pop-ups** — money pop-ups, notices, hover tips, the name tag over a followed villager and the warning badges over buildings with no power, water or workers can each be switched off in Settings, or all at once with the bell button or `N`.
 - **Hide the interface** — the eye button in the top bar (or **V**) hides every panel, button and pop-up to leave just the town, for a picture or to take it in. The camera, zoom, turning and game speed still work; clicks on the town do nothing. **V**, **Esc** or the faint *Show interface* button in the corner brings it all back.
-- **Settings** — in group boxes, in two columns (one on a phone): Display (pixel-art look and pixel size, soft contact shadows, tilt-shift), Performance (presets and a row of buttons for each choice), Sound, Pop-ups, Game (autosave), the town's Sandbox switches, and the Google Drive key under Advanced. Every change applies as it's made; Close just closes the window.
+- **Settings** — in group boxes, in two columns (one on a phone): Display (pixel-art look and pixel size, soft contact shadows, tilt-shift), Performance (presets and a row of buttons for each choice), Sound, Pop-ups, Game (autosave), and the town's Sandbox switches. Every change applies as it's made; Close just closes the window.
 - **Always daytime** — Settings → Display → *Always daytime* keeps the light in the day: the sky shows the real light from 8:00 to 16:30 and then drifts gently back to the morning's light over the evening and night, never dark and never jumping. The clock, the villagers' days, the seasons and the weather run on as usual.
 - **Tilt-shift** — Settings → Display → Tilt-shift (Subtle or Strong) makes the town look like a tabletop model: the middle of the screen stays sharp (always the middle, whatever is selected or wherever the camera goes), and the view goes soft by degrees out to every edge: a wide oval, the blur easing in with no line where it starts, growing faster up and down than across, and slower below the middle than above, so the sharp area reaches further down the screen. The colours get a little lift. The sharp middle can be narrow, normal or wide. It works in pixel-art mode (the blur keeps to the art's pixels) and in smooth mode, and is cheap: the blur is drawn at half resolution or less, about 0.05–0.1 ms of GPU time a frame at 1080p on a desktop card. It's off by default, and Battery saver turns it off.
 - **Performance settings** — if the game runs slowly or keeps a laptop's fan going, Settings → Performance can cap the frame rate (60 or 30 a second instead of as fast as the screen refreshes), draw at 75% or 50% resolution (chunkier pixels in pixel-art mode), lower or turn off shadows, reduce or turn off smoke, dust, fireworks, snow and rain, draw only about half the villagers or only those near the middle of the view, and draw just a few frames a second while the game is paused and nothing moves. **Battery saver** sets them all low in one click (and turns off ambient occlusion), **Best look** puts them back. They're saved with the other settings; the defaults look exactly as before.
 - **Multiplayer** — host your town and send friends a short invite code; they join from their own browsers and build the same town with you, live. Everyone sees each other's cursors and what they are building. See [Multiplayer](#multiplayer).
-- **Saves** — in this browser (autosaved every game day, every minute and a half, and when you switch away from or close the tab; when a different town takes the autosave, say when you start a new village, the last one is kept as **Previous town**), as plain `.json` files, or to **Google Drive**. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
+- **Saves** — in this browser (autosaved every game day, every minute and a half, and when you switch away from or close the tab; when a different town takes the autosave, say when you start a new village, the last one is kept as **Previous town**), or as plain `.json` files. **Download save (.json)** sits at the top of the Save window (or press `Ctrl+Shift+S`), every saved slot has its own download button, and you can drop a `.json` save onto the game to load it.
 - **Merge villages** — join two saved towns into one valley, from the Save window or the title menu. While playing, the map-pin button in the top bar merges a village into your town: a saved one, or a brand-new one (an empty valley or a starter town). You drag it into place right in the game view. See [Merging villages](#merging-villages).
 
 ## Controls
@@ -177,7 +177,7 @@ The site at https://daniuluo.github.io/kinstead/ (GitHub Pages, from `main`) has
   - **What's new**: the latest commits, from GitHub's API (kept for an hour per visitor).
 
   Its figures (buildings, levels, research projects, shops, joins and estates, and the Battery saver's settings) are read from `src/defs.js` and `src/config.js`, so they change with the game. It loads no other game code. Its pictures are small WebP files at the art's own resolution, scaled up crisply.
-- **The game** (`play/`) was moved off the root. Its page loads `../style.css`, `../src/main.js` and the same importmap. Saves are kept per site (origin), not per page, so towns saved at the old address carry on, and so does the Google Drive setup (its authorised origin is the same).
+- **The game** (`play/`) was moved off the root. Its page loads `../style.css`, `../src/main.js` and the same importmap. Saves are kept per site (origin), not per page, so towns saved at the old address carry on.
 - **Wiki** (`wiki/`): one page that shows one wiki page at a time, addressed by the hash.
   - Addresses: `#taxes` is a page, `#taxes/who` a section, `#homes/villa` a building, `#homes/villa.1` one of its levels and `#research/carpentry` a research project. `#villa` or `#carpentry` on their own find their way too.
   - A search box covers pages, sections, buildings, every level and research projects (`/` jumps to it). On a phone the contents fold away.
@@ -216,24 +216,6 @@ powershell -ExecutionPolicy Bypass -File serve.ps1
 
 Then open http://localhost:8080 for the landing page, http://localhost:8080/play/ for the game and http://localhost:8080/wiki/ for the wiki. Any static server also works, for example `npx serve .` or `python -m http.server 8080`.
 
-## Google Drive saves
-
-Cloud saves use your own Google account through Google Identity Services and the Drive REST API. They use the narrow `drive.file` scope, so the game can only see files it created itself. Those files live in a **Kinstead Saves** folder in your Drive (a **Hearthvale Saves** folder from before the game was renamed is still found and used).
-
-You need your own OAuth Client ID (it's free):
-
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a project.
-2. Go to **APIs & Services → Library**, find **Google Drive API** and enable it.
-3. Go to **APIs & Services → OAuth consent screen**, choose **External**, and fill in the app name and your email. Add the scope `.../auth/drive.file`. While the app is in *Testing*, add your Google account under **Test users**.
-4. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID** and pick **Web application**. Under **Authorized JavaScript origins**, add:
-   - `https://daniuluo.github.io`
-   - `http://localhost:8080` (for local play)
-5. Copy the Client ID (`…apps.googleusercontent.com`), then do one of:
-   - paste it into `GOOGLE_CLIENT_ID` in [`src/config.js`](src/config.js) and push, so it works for everyone, or
-   - paste it in-game under **Save → Google Drive**, or in **Settings**. This stores it in your browser only.
-
-A Client ID isn't a secret, so committing it is fine.
-
 ## Project layout
 
 ```
@@ -254,7 +236,7 @@ src/sim/                  economy & migration, villagers, transit, pathfinding
 src/render/               renderer & pixel pass, sky, terrain painter,
                           procedural buildings, nature, particles, overlays
 src/ui/                   HUD & dialogs, input/tools, thumbnails, sound
-src/save/                 save format + local slots, Google Drive, merging towns
+src/save/                 save format + local slots, merging towns
 src/net/                  multiplayer: sessions, sync, guests' replica sim, PeerJS links, cursors
 scripts/check.js          headless smoke test
 scripts/net-check.js      headless multiplayer test

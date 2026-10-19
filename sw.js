@@ -3,7 +3,7 @@
 // and code, or a mix of old and new files. This asks the server about the
 // page and every file of the game each time (a quick "not modified" when
 // nothing changed) and only falls back to the browser's copy when offline.
-// Other sites (PeerJS, Google Drive, the CDN, GitHub's API) are left alone.
+// Other sites (PeerJS, the CDN, GitHub's API) are left alone.
 //
 // It sits at the top of the site, so its scope takes in the landing page,
 // the game in play/ and the wiki in wiki/ (each registers it as ../sw.js or

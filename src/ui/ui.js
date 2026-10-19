@@ -1160,7 +1160,7 @@ export class UI {
   showSaves(tab = 'local') {
     const g = this.game;
     const inGame = !!g.world && !g.demo;
-    const tabs = [['local', '💻 This browser'], ['drive', '☁️ Google Drive'], ['file', '📁 File']];
+    const tabs = [['local', '💻 This browser'], ['file', '📁 File']];
     this.openModal(`<h2>Save & load</h2><p class="lead">${inGame ? `Saving <b>${esc(this.world.townName)}</b> — day ${this.world.day}, ${fmt(this.world.population)} villagers.` : 'Pick a saved village to continue.'}</p>
       <div class="actions" style="margin:0 0 10px">
         ${inGame ? '<button class="btn primary" id="svDownload" title="Ctrl+Shift+S">⬇ Download save (.json)</button>' : ''}
@@ -1179,7 +1179,6 @@ export class UI {
       };
       const body = c.querySelector('#saveBody');
       if (tab === 'local') this._localTab(body, inGame);
-      else if (tab === 'drive') this._driveTab(body, inGame);
       else this._fileTab(body, inGame);
     });
   }
@@ -1209,74 +1208,6 @@ export class UI {
     for (const b of body.querySelectorAll('[data-del]')) b.onclick = () => {
       if (b.dataset.confirm) { LocalSaves.remove(b.dataset.del); this.showSaves('local'); }
       else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; }
-    };
-  }
-
-  async _driveTab(body, inGame) {
-    const g = this.game, drive = g.drive;
-    if (!drive.configured) {
-      body.innerHTML = `<div class="note">Cloud saves use your own Google account through the Google Drive API. To switch them on,
-        create an <b>OAuth 2.0 Client ID</b> (type “Web application”) in Google Cloud Console, enable the <b>Google Drive API</b>,
-        and add <code>${esc(location.origin)}</code> as an authorised JavaScript origin. Then paste the Client ID below.
-        Full steps are in the README.</div>
-        <div class="field"><label>Google OAuth Client ID</label><input id="gcid" placeholder="1234567890-abc.apps.googleusercontent.com"></div>
-        <div class="actions"><button class="btn primary" id="gcidSave">Save Client ID</button></div>`;
-      body.querySelector('#gcidSave').onclick = () => {
-        const v = body.querySelector('#gcid').value.trim();
-        if (!/\.apps\.googleusercontent\.com$/.test(v)) { this.toast('That does not look like a Google OAuth Client ID.', 'bad'); return; }
-        drive.setClientId(v);
-        this.showSaves('drive');
-      };
-      return;
-    }
-    if (!drive.connected) {
-      body.innerHTML = `<div class="note">Saves go to a <b>Kinstead Saves</b> folder in your Google Drive. The game can only see files it created.</div>
-        <div class="actions"><button class="btn primary" id="gConnect">☁️ Connect Google Drive</button></div>`;
-      body.querySelector('#gConnect').onclick = async () => {
-        try { await drive.connect(true); this.showSaves('drive'); } catch (e) { this.toast(e.message, 'bad'); }
-      };
-      return;
-    }
-    body.innerHTML = `<div class="empty">Loading your Drive saves…</div>`;
-    let files = [];
-    try { files = await drive.list(); } catch (e) { body.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-    if (!body.isConnected) return;
-    let h = `<div class="actions" style="margin:0 0 12px">${inGame ? '<button class="btn primary" id="gSave">☁️ Save to Drive</button>' : ''}<button class="btn" id="gOut">Disconnect</button></div>`;
-    if (!files.length) h += `<div class="empty">No Kinstead saves in your Drive yet.</div>`;
-    h += `<div class="saves">${files.map(f => {
-      const a = f.appProperties || {};
-      return `<div class="save"><div class="ph">☁️</div><div><div class="t">${esc(a.town || f.name)}</div>
-        <div class="m">${a.day ? `Day ${esc(a.day)} · ${esc(a.pop)} villagers · $${esc(a.money)}` : esc(f.name)}</div>
-        <div class="m">${new Date(f.modifiedTime).toLocaleString()}</div></div>
-        <div class="acts"><button class="btn small primary" data-gload="${f.id}">Load</button>
-        ${inGame ? `<button class="btn small" data-gover="${f.id}">Overwrite</button>` : ''}
-        <button class="btn small" data-gdl="${f.id}" title="Download as .json">⬇</button>
-        <button class="btn small danger" data-gdel="${f.id}">✕</button></div></div>`;
-    }).join('')}</div>`;
-    body.innerHTML = h;
-    const busy = (b, t) => { b.disabled = true; b.textContent = t; };
-    const sv = body.querySelector('#gSave');
-    if (sv) sv.onclick = async () => { busy(sv, 'Saving…'); try { await drive.save(serialize(g.world)); this.toast('Saved to Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); } this.showSaves('drive'); };
-    body.querySelector('#gOut').onclick = () => { drive.disconnect(); this.showSaves('drive'); };
-    for (const b of body.querySelectorAll('[data-gload]')) b.onclick = async () => {
-      busy(b, '…');
-      try { g.loadData(await drive.load(b.dataset.gload)); this.closeModal(); this.toast('Loaded from Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); b.disabled = false; b.textContent = 'Load'; }
-    };
-    for (const b of body.querySelectorAll('[data-gdl]')) b.onclick = async () => {
-      busy(b, '…');
-      try { const data = await drive.load(b.dataset.gdl); downloadJSON(data, saveFileNameFor(data)); } catch (e) { this.toast(e.message, 'bad'); }
-      b.disabled = false; b.textContent = '⬇';
-    };
-    for (const b of body.querySelectorAll('[data-gover]')) b.onclick = async () => {
-      busy(b, '…');
-      try { await drive.save(serialize(g.world), b.dataset.gover); this.toast('Saved to Google Drive', 'good', '☁️'); } catch (e) { this.toast(e.message, 'bad'); }
-      this.showSaves('drive');
-    };
-    for (const b of body.querySelectorAll('[data-gdel]')) b.onclick = async () => {
-      if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'Delete?'; return; }
-      busy(b, '…');
-      try { await drive.remove(b.dataset.gdel); } catch (e) { this.toast(e.message, 'bad'); }
-      this.showSaves('drive');
     };
   }
 
@@ -1369,8 +1300,7 @@ export class UI {
 
   // ------------------------------------------------------- settings/help
   // Settings, in group boxes: how the town looks, how hard the computer
-  // works, sound, pop-ups, the game, and this town's sandbox switches (and,
-  // tucked away, the Google Drive key). Every change applies as it's made.
+  // works, sound, pop-ups, the game, and this town's sandbox switches . Every change applies as it's made.
   showSettings() {
     const g = this.game;
     const s = g.settings;
@@ -1403,8 +1333,6 @@ export class UI {
     this.openModal(`<h2>Settings</h2>
       <p class="lead">Changes apply as you make them.</p>
       <div class="set-cols"><div>${display}${perfHTML(s)}</div><div>${sound}${pops}${game}${sandbox}</div></div>
-      <details class="set-more"><summary>Advanced</summary>
-        <div class="field"><label for="stGcid">Google OAuth client ID (for saving to Google Drive)</label><input id="stGcid" value="${esc(g.drive.clientId)}" placeholder="Not set"></div></details>
       <div class="actions set-actions"><button class="btn" id="stMenu">Quit to title</button><span style="flex:1"></span><button class="btn primary" id="stOk">Close</button></div>`, (c) => {
       c.classList.add('settings-win');
       bindSegs(c);
@@ -1442,7 +1370,6 @@ export class UI {
           const opts = { infiniteMoney: val('stInf').checked, unlockAll: val('stAll').checked, freeUpgrades: val('stFree').checked, instantBuild: val('stInst').checked };
           if (Object.entries(opts).some(([k, v]) => !!g.world.sandbox[k] !== v)) g.cmd({ t: 'sandbox', opts }, (r) => { if (r.ok) this.refreshAfterSandbox(); });
         }
-        if (e && e.target.id === 'stGcid') { const id = val('stGcid').value.trim(); if (id !== g.drive.clientId) g.drive.setClientId(id); }
       };
       c.addEventListener('change', apply);
       val('stMusicVol').addEventListener('input', apply);
@@ -1855,7 +1782,7 @@ export class UI {
         4. Watch the RCI bars to see what's in demand, and pick 🔬 research projects (K) to unlock new buildings, upgrade paths and styles.<br>
         Bigger works need ⚡ power and 💧 water, and every workplace its workers: a badge over a building shows what it lacks, and its panel says what to do.<br>
         5. When the town grows, link 🚏 coach stops into lines, or lay 🛤️ track between 🚉 stations.<br>
-        6. Save to this browser, a file, or Google Drive from 💾.
+        6. Save to this browser or to a file from 💾.
       </div></div>`);
   }
 }

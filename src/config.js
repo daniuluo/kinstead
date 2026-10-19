@@ -1,11 +1,6 @@
 // Global tunables for Kinstead.
 
 export const CONFIG = {
-  // Google Drive cloud saves: paste your OAuth 2.0 Web Client ID here
-  // (see README → "Google Drive saves"). It can also be entered in-game
-  // under Settings, which stores it in this browser only.
-  GOOGLE_CLIENT_ID: '',
-
   DAY_SECONDS: 480,        // real seconds per in-game day at 1x speed (an unhurried walking pace needs a long day)
   DAYS_PER_SEASON: 6,
   WATER_LEVEL: 0,

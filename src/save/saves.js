@@ -189,7 +189,7 @@ export function saveFileName(world) {
   return fileNameOf(world.townName, world.day);
 }
 
-// File name for an already-serialized save (e.g. a browser slot or a Drive file).
+// File name for an already-serialized save (e.g. a browser slot).
 export function saveFileNameFor(data) {
   return fileNameOf(data.name || 'town', data.meta?.day ?? data.state?.day ?? 1);
 }

@@ -22,7 +22,6 @@ import { Sfx } from './ui/sfx.js';
 import { Music } from './ui/music.js';
 import { newTownId } from './util/text.js';
 import { serialize, deserialize, LocalSaves, downloadJSON, readJSONFile, saveFileName } from './save/saves.js';
-import { Drive } from './save/gdrive.js';
 import { randomSeed, RNG } from './util/rng.js';
 import { townName } from './util/names.js';
 import { runCommand } from './commands.js';
@@ -37,7 +36,6 @@ export class Game {
     this.THREE = THREE;
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
-    this.drive = new Drive();
     this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, v: 3, ...PERF_DEFAULTS };
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}

@@ -686,8 +686,6 @@ table.hap.big td { padding: 4px 8px; }
 .seg button { border: 0; background: var(--face); box-shadow: var(--raised); height: 24px; padding: 0 8px; font: inherit; font-size: 12px; cursor: pointer; flex: 1 1 auto; }
 .seg button.on { box-shadow: var(--sunken); background: #b5b5b5; font-weight: 700; }
 .seg button:disabled { color: #888; cursor: default; }
-.set-more { margin: 2px 0 8px; font-size: 13px; }
-.set-more summary { cursor: pointer; font-weight: 700; font-size: 12px; }
 .set-actions { display: flex; align-items: center; }
 @media (max-width: 640px) {
   .set-cols { grid-template-columns: 1fr; }
