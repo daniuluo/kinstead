@@ -6,6 +6,6 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "check": "node scripts/check.js && node scripts/net-check.js"
+    "check": "node scripts/check.js && node scripts/net-check.js && node scripts/site-check.js"
   }
 }

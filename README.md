@@ -2,7 +2,7 @@
 
 A little isometric village builder that runs in your browser — pixel-art rendering in the spirit of *Metropolis 1998* and the late-90s city sims, with a living village of tiny people going about their day.
 
-**Play it:** https://daniuluo.github.io/kinstead/
+**Play it:** https://daniuluo.github.io/kinstead/play/ · **Wiki:** https://daniuluo.github.io/kinstead/wiki/ · **Home page:** https://daniuluo.github.io/kinstead/
 
 ## Features
 
@@ -20,7 +20,7 @@ A little isometric village builder that runs in your browser — pixel-art rende
 - **Branching homes** — a Cottage becomes a Family House, which then goes one of two ways: a **grand home** (Villa → Manor House → Grand Manor: few, wealthy residents who pay much more tax) or **flats** (Townhouse Flats → Tenement → Mansion Block: many households on one plot). Pick a **style** for any home or shop upgrade — timber frame, limewash, painted, brick, stone or clapboard — and tick **Preview in town** to see it in place before building. Each style builds differently, not just in different colours: timber frame has steep roofs, a jettied upper floor and a central stack; limewash has thatch or half-hipped roofs, a chimney up the outside wall and a deep front garden; painted is a symmetrical Georgian front with a hipped roof, a centred door and a chimney at each end; brick has gables, bay windows, round-topped windows and paired stacks; stone has low slate or saltbox roofs, deep-set round-topped windows and an outside stack; clapboard has a saltbox roof, dormers, shutters and a deep porch. On a bigger plot a home can become a **Country Mansion** or a block of **Apartments**, and on a 2×2 estate a **Manor Estate** or a **Mansion Quadrangle**.
 - **Construction** — nothing appears instantly. Builders from the **Builder's Yard** walk to each site and work round the scaffolding; a building goes up in stages (pegged-out plot and materials, foundations, walls rising, roof) and only progresses while someone is working on it. Hired hands from the village start every site straight away and keep at it until the town's builders arrive, so a job never waits for the walk out from the yard; with no builders in town, they do all of it. Each job takes a third of the work it first did (`BUILD_PACE` in [`src/defs.js`](src/defs.js)): a cottage goes up in under two game hours, and bigger buildings still need the builders. Tick **Priority** on a site's panel to send the builders there before anywhere else; a flag marks it until it's finished. A sandbox switch builds instantly.
 - **Town hall** — five levels: Town Hall, Guild Hall, Grand Hall (Civic Planning), a stone **City Hall** with a clock-tower spire and a fountain in its forecourt (Municipal Government), and a domed **Civic Palace** with a colonnade and statues (Metropolitan Government). Each raises taxes across the whole town (up to +40%) and the research it puts in each day (3, 5, 8, 11, 14 points), and the last two make the streets around them nicer to live on.
-- **Research tree** — press `K` for 50 projects in 14 branches (building works, homes, stone, brick, colour, trade, leisure, industry, farming, water, power, public services, learning and transport). Each branch has levels: unlocking a building gives its first levels, and later projects unlock its higher upgrades and other paths. Capabilities are researched too: **Joining** neighbours, **Plot Surveying** (expanding and buying garden strips), **House Moving** and **Great Plots** (2×2 estates, and the buildings they open up). Click a project to see pictures of what it unlocks. Research points come from town halls, schools, colleges, chapels and your villagers (1 for every 40) each day, and later projects cost more, so a town works through the tree over many years. The top bar shows the current project's progress (or your banked points) and points per day, and the research window lists where each day's points come from.
+- **Research tree** — press `K` for 50 projects in 14 branches (building works, homes, stone, brick, colour, trade, leisure, industry, farming, water, power, public services, learning and transport). Each branch has levels: unlocking a building gives its first levels, and later projects unlock its higher upgrades and other paths. Capabilities are researched too: **Joining** neighbours, **Plot Surveying** (expanding and buying garden strips), **House Moving** and **Great Plots** (2×2 estates, and the buildings they open up). Click a project to see pictures of what it unlocks. Research points come from town halls, schools, colleges, chapels and your villagers (1 for every 60) each day, and later projects cost more, so a town works through the tree over many years. The top bar shows the current project's progress (or your banked points) and points per day, and the research window lists where each day's points come from.
 - **Water and electricity** — a **Utilities** menu (`U`) with wells, water towers and river pumps (each draws water for a number of people), and power from water wheels, wind generators and coal power stations. Water flows through mains under the streets and power along them on poles and wires, to every road-connected building, so it doesn't matter where on the roads a well or generator stands; when demand outstrips supply, some buildings go dry or dark. Powered homes are happier, powered businesses earn more, and the grandest upgrades need electricity. With **Underground Cables** researched, the power lines can be buried, one street at a time from a road's panel or the whole town at once from a generator's: the poles and wires come down and the street looks the better for it.
 - **What it takes to work** — buildings need more than a road. Street lamps are electric and go dark without power; homes without it fall back to dim candlelight. Powered machinery (manufactories, foundries, paper mills, timber yards, furniture works, waterworks and pumping stations, hospitals, university laboratories) stops or slows without power, and shops and inns past their first levels do little trade after dark without electric light. Bakeries, taverns and inns, paper mills, cider works, clinics and almshouses, fire stations and fountains need running water; homes without it can't upgrade, expand or grow their family. Services, schools and utilities only work as well as they are staffed: a clinic with nobody in it cares for nobody, and a school has as many places as its teachers can manage. Stopped works go dark, their chimneys cold and their wheels still; small badges over a building show everything it is missing, side by side (red for what stops it, amber for what holds it back), the building panel says what is missing and what to do, and the Issues panel groups them ("2 workshops stopped — no power"). Early buildings — cottages, wells, farms, woodcutters, fishing huts, builders — need none of this. The rules for each type are in `NEEDS` in [`src/defs.js`](src/defs.js).
 - **Parks with character** — every park lays itself out from its own seed and keeps that layout as it is upgraded and across reloads, so two greens side by side never match: a great oak, a cherry, a pump, a maypole or a pair of yews in its corner; beds in quarters, long borders, a round bed with a sundial or a pergola walk; a pond, gazebo, fountain, glasshouse or tea kiosk at the top level. Monuments are figures, riders, obelisks, columns, memorial crosses, angels or urns. Everything planted follows the season (blossom, autumn colour, bare trees, bulbs, frozen ponds, a drained lido) and the lamps, bandstand lanterns and glasshouses light up at night. A park joined from a little one keeps it: a garden and a bandstand make a park round its bandstand. Visitors stroll between a park's walks and seats rather than into its pond. The models live in `src/render/parks.js`.
@@ -164,6 +164,44 @@ How the join is made:
 - **Transit** — stops that are gone are dropped from their lines, and a line left with fewer than two stops closes, refunding its vehicles. Clashing line names and colours are changed.
 - **Town** — research is everything either town discovered. Money is the two treasuries added together, plus refunds. The day and season are the later town's. Daily history is added up day by day, and sandbox switches carry over if either town had them on.
 
+## Website
+
+The site at https://daniuluo.github.io/kinstead/ (GitHub Pages, from `main`) has three parts. They share one header (Play · Wiki · Features) and the game's look: `style.css` for the windows, buttons and fonts, plus `site/site.css` for the page layouts.
+
+- **Landing page** (`index.html`, the site root):
+  - a picture of the Cathedral city and a big **Play** button;
+  - a **Continue** button for the town saved last in this browser (`play/?continue` loads it straight away);
+  - the main features, with pictures taken in the game, and links into the wiki;
+  - **What's new**: the latest commits, from GitHub's API (kept for an hour per visitor).
+
+  Its figures (buildings, levels, research projects, shops, joins and estates, and the Battery saver's settings) are read from `src/defs.js` and `src/config.js`, so they change with the game. It loads no other game code. Its pictures are small WebP files at the art's own resolution, scaled up crisply.
+- **The game** (`play/`) was moved off the root. Its page loads `../style.css`, `../src/main.js` and the same importmap. Saves are kept per site (origin), not per page, so towns saved at the old address carry on, and so does the Google Drive setup (its authorised origin is the same).
+- **Wiki** (`wiki/`): one page that shows one wiki page at a time, addressed by the hash.
+  - Addresses: `#taxes` is a page, `#taxes/who` a section, `#homes/villa` a building, `#homes/villa.1` one of its levels and `#research/carpentry` a research project. `#villa` or `#carpentry` on their own find their way too.
+  - A search box covers pages, sections, buildings, every level and research projects (`/` jumps to it). On a phone the contents fold away.
+  - **Prose** (`wiki/pages.js`) explains every mechanic. It's written as functions of the game's data: prices, upkeep and the tables of roads, dressings, produce, trades, joins, estates and utilities come from `src/defs.js` and `src/config.js`. Numbers that only live inside the game's code (happiness points, tax per worker, the join, move and restyle prices, the research the villagers add…) are in `wiki/facts.js`, each with the file and the pattern where the code has it.
+  - **Generated pages** (`wiki/catalog.js`):
+    - a page for each building menu, with every building and every level: cost, upkeep, homes and households, jobs and their schooling, places, reach, visitors, earnings, water, power, smoke, research points, fields, builder-hours, what each level needs (villagers, research, happiness, services, electricity), how to get it and where it can lead. The figures are the in-game building guide's (`src/ui/guide.js`);
+    - the research tree, with what every project unlocks and leads to;
+    - the starter towns, each grown in the browser by the game's own code and drawn as a map.
+  - **Pictures** are drawn by the game's own thumbnail renderer (`src/ui/thumbs.js`, with three.js from the same importmap), one at a time as they scroll into view.
+- **Old links.** The root used to be the game. An invite link (`…/kinstead/?join=K7Q-M2P`) or a Continue link reaching the root goes straight on to `play/` with the same query and hash, before the landing page loads. Anything else gets the landing page, whose Play button is one click to the game. Invite links made now point at `play/`.
+- **Service worker.** `sw.js` stays at the top of the site and every page registers it there (the game and the wiki as `../sw.js`), so its scope covers all three. Each visit asks the server for fresh copies of every file, the wiki's included (it reads the game's own `src/` files).
+
+### Keeping the website in step with the game
+
+The wiki reads the game, so the building pages, the research tree, the starter towns and most figures follow every change by themselves. Prose doesn't: a new mechanic wants a line in `wiki/pages.js`, and a headline feature a card on the landing page. `node scripts/site-check.js` (part of `npm run check`) fails when the wiki falls behind:
+
+- a building, level, research project, research branch or starter town without its entry;
+- a key in `src/ui/input.js` missing from the Controls page, or one listed that the game no longer has;
+- a setting in the Settings window missing from the Settings page, or one that's gone;
+- a happiness factor in `src/sim/sim.js` that the Happiness page doesn't list;
+- a number in `wiki/facts.js` that no longer matches the game's code;
+- a broken link inside the wiki or from the landing page into it, an icon a page shows but doesn't load, or a file a page loads that isn't there;
+- the root no longer forwarding a query the game reads.
+
+The landing page's pictures are taken in the game. `node scripts/site-shots.js` serves the site with a shots page at http://localhost:8121/shots, which sets up each picture in a real town (the starter towns, a merged valley), draws it with the game's renderer and saves it in `img/`; `/shots?only=hero,night` retakes some. Retake them when the game's look changes.
+
 ## Running locally
 
 There is no build step: it's plain ES modules plus three.js from a CDN. It only needs to be served over HTTP, because modules don't load from `file://`.
@@ -174,7 +212,7 @@ On Windows, use the bundled PowerShell server (no Node or Python needed):
 powershell -ExecutionPolicy Bypass -File serve.ps1
 ```
 
-Then open http://localhost:8080. Any static server also works, for example `npx serve .` or `python -m http.server 8080`.
+Then open http://localhost:8080 for the landing page, http://localhost:8080/play/ for the game and http://localhost:8080/wiki/ for the wiki. Any static server also works, for example `npx serve .` or `python -m http.server 8080`.
 
 ## Google Drive saves
 
@@ -197,7 +235,14 @@ A Client ID isn't a secret, so committing it is fine.
 ## Project layout
 
 ```
-index.html, style.css     page shell and the 90s-desktop UI
+index.html                the landing page (site root); forwards game links to play/
+play/index.html           the game's page shell
+style.css                 the 90s-desktop UI (the game's, and the website's windows and buttons)
+sw.js                     service worker: fresh files after an update, for the whole site
+site/                     the website's own styles and the landing page's live figures
+wiki/                     the wiki: a page shell, its prose pages, the pages generated from
+                          the game's data, and the facts it quotes from the game's code
+img/                      the landing page's pictures, taken in the game (scripts/site-shots.js)
 src/main.js, game.js      boot + game orchestrator (loop, saving, overlays)
 src/commands.js           every player action as a checked command (local and multiplayer)
 src/config.js, defs.js    tunables and the building catalogue
@@ -217,6 +262,9 @@ scripts/people.js         residents and jobs vs floor area audit of every buildi
 scripts/starters.js       headless test of the starter towns
 scripts/merge-test.js     headless test for merging villages
 scripts/audit.js          town invariants shared by the headless tests
+scripts/site-check.js     headless test of the website: files, links, root forwarding, and the
+                          wiki keeping up with the game
+scripts/site-shots.js     takes the landing page's pictures in the game (with site-shots-page.js)
 ```
 
 ### Smoke test
@@ -232,7 +280,7 @@ This builds every building model at every level (and a shop with homes above for
 node scripts/net-check.js
 ```
 
-The multiplayer test runs a host and two guests in one process, joined by in-memory links. It checks the command dispatcher (malformed or rule-bending commands are refused, the sandbox switches are host-only), has a guest build, lay roads, research, set taxes and speed, upgrade in a style, join, expand, move, terraform, plant and demolish, dress a street with hedges and upgrade that stretch of road, plough fields for a farm and turn it to cattle, and open a coach line. It runs three days at 8× and checks that the towns stay identical throughout, that a keyframe repairs anything that drifted, that a second guest can join mid-game, that cursors are relayed, and that guests are told when the host closes the town. `npm run check` runs both tests.
+The multiplayer test runs a host and two guests in one process, joined by in-memory links. It checks the command dispatcher (malformed or rule-bending commands are refused, the sandbox switches are host-only), has a guest build, lay roads, research, set taxes and speed, upgrade in a style, join, expand, move, terraform, plant and demolish, dress a street with hedges and upgrade that stretch of road, plough fields for a farm and turn it to cattle, and open a coach line. It runs three days at 8× and checks that the towns stay identical throughout, that a keyframe repairs anything that drifted, that a second guest can join mid-game, that cursors are relayed, and that guests are told when the host closes the town. `npm run check` runs both tests, and the website check (see [Website](#website)).
 
 ### Playtest
 

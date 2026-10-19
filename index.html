@@ -3,143 +3,196 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script>
+    // The game used to live here. An invite link (…/kinstead/?join=K7Q-M2P) or
+    // any other link the game reads goes straight on to the game, with its
+    // query and hash; everyone else gets the landing page.
+    if (/[?&](join|continue)(=|&|$)/.test(location.search)) location.replace('play/' + location.search + location.hash);
+  </script>
   <title>Kinstead — a cozy isometric town builder</title>
-  <meta name="description" content="Build a little village in your browser: roads, homes, services, parks, transit, seasons and day/night — with villagers going about their lives.">
+  <meta name="description" content="Kinstead is a cozy isometric village builder that runs in your browser: pixel-art 3D, a living town of villagers, farms and high streets, research, seasons, and live multiplayer. Free, no download.">
+  <meta property="og:title" content="Kinstead — a cozy isometric town builder">
+  <meta property="og:description" content="Build a little village in your browser: pixel-art 3D, villagers with lives of their own, farms, high streets, research, seasons and live multiplayer.">
+  <meta property="og:image" content="https://daniuluo.github.io/kinstead/img/og.jpg">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#000080">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><path d=%22M8 30 32 10l24 20v26H8z%22 fill=%22%23d8c29a%22/><path d=%22M4 32 32 8l28 24-4 4L32 15 8 36z%22 fill=%22%239c4a32%22/><rect x=%2227%22 y=%2240%22 width=%2210%22 height=%2216%22 fill=%22%235c3d26%22/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0&display=block" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0&icon_names=add_location_alt,agriculture,battery_saver,code,diversity_3,eco,group_add,join_inner,menu_book,nightlight,play_arrow,science,star,storefront,tune,villa&display=block" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="site/site.css">
+  <link rel="preload" as="image" href="img/hero.webp" fetchpriority="high">
 </head>
-<body>
-  <div id="sky"></div>
-  <canvas id="stars"></canvas>
-  <div id="app"></div>
-  <div id="vignette"></div>
+<body class="site landing">
+  <a class="skip" href="#features">Skip to the features</a>
+  <header class="site-head"><div class="wrap">
+    <a class="site-logo" href="./" aria-label="Kinstead home"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 30 32 10l24 20v26H8z" fill="#d8c29a"/><path d="M4 32 32 8l28 24-4 4L32 15 8 36z" fill="#9c4a32"/><rect x="27" y="40" width="10" height="16" fill="#5c3d26"/></svg>Kinstead</a>
+    <nav class="site-nav" aria-label="Site">
+      <a class="play" href="play/"><span class="ms" aria-hidden="true">play_arrow</span>Play</a>
+      <a href="wiki/"><span class="ms" aria-hidden="true">menu_book</span>Wiki</a>
+      <a href="#features"><span class="ms" aria-hidden="true">star</span>Features</a>
+    </nav>
+  </div></header>
 
-  <div id="hud" class="hidden">
-    <!-- badges, coins and labels over buildings: first, so every panel and menu covers them -->
-    <div id="popups"></div>
-    <div class="topbar">
-      <div class="panel town" id="townBox" title="Rename your town">
-        <div class="town-name" id="townName">Kinstead</div>
-        <div class="town-title" id="townTitle">Hamlet</div>
-      </div>
-      <div class="panel clock">
-        <div id="clockIcon"><span class="ms">light_mode</span></div>
-        <div>
-          <div id="clockTime">07:00</div>
-          <div id="clockDate">Day 1 · Spring</div>
-        </div>
-        <div class="speed" id="speed">
-          <button data-speed="0" title="Pause (Space)"><span class="ms">pause</span></button>
-          <button data-speed="1" title="Normal speed" class="on"><span class="ms">play_arrow</span></button>
-          <button data-speed="2" title="2× speed">2×</button>
-          <button data-speed="4" title="4× speed">4×</button>
-          <button data-speed="8" title="8× speed">8×</button>
-          <button data-speed="16" title="16× speed">16×</button>
-          <button data-speed="32" title="32× speed">32×</button>
+  <main>
+    <section class="hero" aria-label="Kinstead">
+      <img class="hero-town" src="img/hero.webp" width="960" height="480" fetchpriority="high" alt="A pixel-art city: streets of brick and stone houses, shops and offices around a domed civic palace, with a lake, works and a wind farm beyond.">
+      <div class="wrap">
+        <div class="hero-card win">
+          <div class="tb">Kinstead<span class="tb-btns" aria-hidden="true"><i></i><i></i></span></div>
+          <div class="body">
+            <h1 class="logo">Kinstead</h1>
+            <p class="tagline">A cozy isometric town builder that runs in your browser. Lay the streets, raise the houses and watch your villagers go about their day.</p>
+            <a class="btn primary big" href="play/"><span class="ms" aria-hidden="true">play_arrow</span>Play now</a>
+            <a class="btn cont hidden" id="cont" href="play/?continue"></a>
+            <a class="btn" href="wiki/"><span class="ms" aria-hidden="true">menu_book</span>Read the wiki</a>
+            <p class="facts" id="facts">Free · no download, no sign-up · saves in your browser</p>
+          </div>
         </div>
       </div>
-      <div class="panel stats">
-        <div class="stat" title="Coins in the treasury, and the daily balance">
-          <span class="ico ms">payments</span><b id="money">0</b><small id="net">+0 / day</small>
+    </section>
+
+    <div class="wrap">
+      <section class="sect" id="features">
+        <h2>What's in the valley</h2>
+        <p class="lead">Kinstead draws a real 3D town as crisp late-90s pixel art. Everything in it is made in code: every house is grown from a seed, and every villager has a name, a home, a job and a routine.</p>
+        <div class="feats">
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">villa</span>Starter towns</div>
+            <div class="body">
+              <div class="shot"><img src="img/starters.webp" width="480" height="300" loading="lazy" alt="The Market village starter: a cobbled high street of shops and houses."></div>
+              <p>Found a village in an empty valley, or take over one that's a few weeks along: a riverside hamlet, a market village, a mill town, a crossroads village, or the <b>Cathedral city</b>, ten years on with some 3,000 villagers and a domed Civic Palace.</p>
+              <a class="more" href="wiki/#starters">Starter towns in the wiki →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">science</span>A research tree</div>
+            <div class="body">
+              <div class="shot"><div class="tree-mini" id="treeMini" aria-hidden="true"></div></div>
+              <p id="treeText">Dozens of projects in branches from building works to transport unlock buildings, upgrade paths, building styles and new abilities: joining neighbours, buying land, moving houses, 2×2 estates and burying the power lines.</p>
+              <a class="more" href="wiki/#research">The research tree →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">join_inner</span>Joins and estates</div>
+            <div class="body">
+              <div class="shot"><img src="img/estates.webp" width="480" height="300" loading="lazy" alt="A cathedral close and grand buildings round a green."></div>
+              <p id="joinText">Knock two neighbours into one: two cottages make a terrace, a home and a shop a shophouse, a tavern and a workshop a brewhouse. Grow a double plot onto the two beside it and rebuild it as a manor estate, a cathedral close or a college quad.</p>
+              <a class="more" href="wiki/#joins">Joining buildings →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">agriculture</span>Farms and fields</div>
+            <div class="body">
+              <div class="shot"><img src="img/farms.webp" width="480" height="300" loading="lazy" alt="A farm with ploughed fields behind its yard."></div>
+              <p>Plough fields out beyond the farmyard and choose what each farm grows: wheat, barley or vegetables, or sheep, cattle and poultry on fenced pasture. The crops ripen and fall back to stubble with the seasons.</p>
+              <a class="more" href="wiki/#farms">Farms and fields →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">storefront</span>The high street</div>
+            <div class="body">
+              <div class="shot"><img src="img/highstreet.webp" width="480" height="300" loading="lazy" alt="A busy street of shops with awnings and shopfronts."></div>
+              <p id="shopText">A shop for every trade, from the greengrocer to the bank. Shopfronts turn the corner, the backs show the trade, and shoppers go to the nearer shops that sell what they're after.</p>
+              <a class="more" href="wiki/#highstreet">The high street →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">group_add</span>Live multiplayer</div>
+            <div class="body">
+              <div class="shot mp"><div class="mp-demo" aria-hidden="true"><div class="mp-code">K7Q-M2P</div><div class="mp-cursors"><span style="color:#d9534f"><i></i>Ada</span><span style="color:#3f7fbf"><i></i>Bram</span><span style="color:#4f9a5a"><i></i>Cleo</span></div></div></div>
+              <p>Host your town and send friends a six-character code. Up to eight players build the same town live from their own browsers, see each other's cursors, and the host decides who gets in.</p>
+              <a class="more" href="wiki/#multiplayer">Multiplayer →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">add_location_alt</span>Merging villages</div>
+            <div class="body">
+              <div class="shot"><img src="img/merge.webp" width="480" height="300" loading="lazy" alt="Two towns joined into one valley."></div>
+              <p>Join two saved towns into one valley. Drag the incoming village into place in the game view, and the ground, rivers, roads, homes and people are knitted together.</p>
+              <a class="more" href="wiki/#merging">Merging villages →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">eco</span>Seasons and weather</div>
+            <div class="body">
+              <div class="shot seasons"><img src="img/seasons.webp" width="480" height="300" loading="lazy" alt="One view of a village across the year: spring, summer, autumn and winter snow from left to right."><span style="left:2%">Spring</span><span style="left:27%">Summer</span><span style="left:52%">Autumn</span><span style="left:77%">Winter</span></div>
+              <p>Spring blossom, golden fields, autumn leaves and winter snow, the trees turning a few at a time. Showers roll through, snow settles on the roofs, and after dark the windows and street lamps light up.</p>
+              <a class="more" href="wiki/#seasons">Time, seasons and weather →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">tune</span>Pixel art and tilt-shift</div>
+            <div class="body">
+              <div class="shot"><img src="img/tiltshift.webp" width="480" height="300" loading="lazy" alt="The town with a tilt-shift blur, like a model village."></div>
+              <p>Real 3D drawn small with outlines and scaled up crisply, in the spirit of the late-90s city sims. Turn the view, flip to a 2D map, pick a pixel size, or switch on tilt-shift for a model-village look.</p>
+              <a class="more" href="wiki/#settings/display">Display settings →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">battery_saver</span>Battery saver</div>
+            <div class="body">
+              <div class="shot"><dl class="saver" id="saver"><dt>Frame rate</dt><dd>30 a second</dd><dt>Resolution</dt><dd>75%</dd><dt>Shadows</dt><dd>Low</dd><dt>Smoke &amp; dust</dt><dd>Fewer</dd><dt>Villagers shown</dt><dd>About half</dd><dt>While paused</dt><dd>A few frames a second</dd></dl></div>
+              <p>Keeps a laptop cool and quiet: one click in Settings sets every performance choice low, and <b>Best look</b> puts them back. Each choice can be set on its own too.</p>
+              <a class="more" href="wiki/#settings/performance">Performance settings →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">diversity_3</span>A living town</div>
+            <div class="body">
+              <div class="shot"><img src="img/villagers.webp" width="480" height="300" loading="lazy" alt="Ten villagers lined up on the street by the well: a shopkeeper, a farmhand in a straw hat, children, a builder, a pensioner with a basket, a clerk, a nurse and the watch."></div>
+              <p>Every villager has a name, an age, a family, a home, friends and a trait or two. Children go to school, grown-ups to work or college, shoppers carry home their baskets, and families move in when the town is a happy place to live.</p>
+              <a class="more" href="wiki/#people">People →</a>
+            </div>
+          </article>
+          <article class="win feat">
+            <div class="tb"><span class="ms" aria-hidden="true">nightlight</span>Day and night</div>
+            <div class="body">
+              <div class="shot"><img src="img/night.webp" width="480" height="300" loading="lazy" alt="The town at night with lit windows and street lamps."></div>
+              <p>A day passes in eight minutes at normal speed. Lamps come on once the town has power, villagers carry lanterns home, and a soundtrack made up as it plays slows into a minor key at night.</p>
+              <a class="more" href="wiki/#seasons/day">Days and nights →</a>
+            </div>
+          </article>
         </div>
-        <div class="stat" title="Villagers and free homes">
-          <span class="ico ms">groups</span><b id="pop">0</b><small id="housing">0 free homes</small>
+      </section>
+
+      <section class="sect two">
+        <div class="win news">
+          <div class="tb"><span class="ms" aria-hidden="true">star</span>What's new</div>
+          <div class="body" id="news"><p class="empty">The latest changes to the game appear here.</p></div>
         </div>
-        <div class="stat" title="Average happiness">
-          <span class="ico ms" id="happyIco">sentiment_satisfied</span><b id="happy">60%</b><small>happiness</small>
+        <div class="win">
+          <div class="tb"><span class="ms" aria-hidden="true">menu_book</span>Explore the wiki</div>
+          <div class="body">
+            <p style="margin-top:0;font-size:14px">Every mechanic, and every building at every level, straight from the game's own data.</p>
+            <nav class="wiki-links" aria-label="Wiki">
+              <a href="wiki/#start">Getting started</a>
+              <a href="wiki/#controls">Controls and keys</a>
+              <a href="wiki/#homes">Buildings</a>
+              <a href="wiki/#research">Research tree</a>
+              <a href="wiki/#happiness">Happiness</a>
+              <a href="wiki/#economy">Money and the budget</a>
+              <a href="wiki/#power-water">Power and water</a>
+              <a href="wiki/#people">People</a>
+            </nav>
+          </div>
         </div>
-        <div class="stat" title="Jobs filled / jobs available">
-          <span class="ico ms">work</span><b id="jobs">0/0</b><small>jobs filled</small>
-        </div>
-        <div class="stat" id="resStat" title="Research points (click for the research tree)">
-          <span class="ico ms">science</span><b id="resPts">0</b><small id="resRate">+0 / day</small>
-        </div>
-        <div class="stat" title="Electricity used / generated, and water drawn / available">
-          <span class="ico ms">bolt</span><b id="power">—</b><small id="water">water —</small>
-        </div>
-        <div class="rci" title="Demand — Homes / Commerce / Industry">
-          <div class="bar r"><i id="demR"></i></div>
-          <div class="bar c"><i id="demC"></i></div>
-          <div class="bar i"><i id="demI"></i></div>
-          <span>RCI</span>
-        </div>
-      </div>
-      <div class="panel netbox hidden" id="netBox" title="Multiplayer (M)"></div>
-      <div class="panel menu">
-        <button id="btnRotL" title="Rotate the view anticlockwise (Q)"><span class="ms">rotate_left</span></button>
-        <button id="btnView" title="Toggle 2D top-down / isometric view (T)">2D</button>
-        <button id="btnRotR" title="Rotate the view clockwise (E)"><span class="ms">rotate_right</span></button>
-        <button id="btnHideUI" title="Hide the interface, to see just the town (V)"><span class="ms">visibility_off</span></button>
-        <button id="btnOverlay" title="Data overlays (O)"><span class="ms">layers</span></button>
-        <button id="btnLines" title="Transit lines (L)"><span class="ms">route</span></button>
-        <button id="btnResearch" title="Research (K)"><span class="ms">science</span></button>
-        <button id="btnPeople" title="Villagers (P)"><span class="ms">groups</span></button>
-        <button id="btnPops" title="Hide pop-ups (N)"><span class="ms">notifications</span></button>
-        <button id="btnMusic" title="Turn off the music"><span class="ms">music_note</span></button>
-        <button id="btnBudget" title="Budget & statistics (B)"><span class="ms">bar_chart</span></button>
-        <button id="btnNet" title="Multiplayer: host this town or join one (M)"><span class="ms">group_add</span></button>
-        <button id="btnMergeIn" title="Merge a village into this town"><span class="ms">add_location_alt</span></button>
-        <button id="btnSave" title="Save & load (Ctrl+S)"><span class="ms">save</span></button>
-        <button id="btnSettings" title="Settings"><span class="ms">settings</span></button>
-        <button id="btnHelp" title="How to play (H)"><span class="ms">help</span></button>
-      </div>
+      </section>
     </div>
+  </main>
 
-    <div class="panel zoom">
-      <button id="zoomIn" title="Zoom in (+ / mouse wheel)"><span class="ms">add</span></button>
-      <button id="zoomOut" title="Zoom out (− / mouse wheel)"><span class="ms">remove</span></button>
-    </div>
+  <footer class="site-foot"><div class="wrap">
+    <nav aria-label="Footer"><a href="play/">Play</a><a href="wiki/">Wiki</a><a href="https://github.com/daniuluo/kinstead">Source on GitHub</a></nav>
+    <span class="grow"></span>
+    <span>Made with three.js · fonts Pixelify Sans, icons Material Symbols · MIT licence</span>
+  </div></footer>
 
-    <div id="overlayMenu" class="panel overlay-menu hidden"></div>
-    <div id="legend" class="panel legend hidden"></div>
-    <div id="flyout" class="panel flyout hidden"></div>
-    <div id="toolHint" class="hint hidden"></div>
-    <div id="toolbar" class="panel toolbar"></div>
-    <div id="inspector" class="panel inspector hidden"></div>
-    <div id="toasts"></div>
-    <div id="issues" class="panel issues hidden">
-      <div class="ihead" id="issuesHead" title="Town issues (I)"><span class="ms">report</span><span>Issues</span><b id="issueCount">0</b><span class="ms caret" id="issueCaret">expand_more</span></div>
-      <div id="issueList"></div>
-    </div>
-  </div>
-
-  <div id="tooltip" class="tooltip hidden"></div>
-  <!-- with the interface hidden: the way back -->
-  <button id="showUI" class="show-ui" title="Show the interface again (V or Esc)"><span class="ms">visibility</span> Show interface</button>
-  <div id="windows"></div>
-
-  <div id="title" class="title-screen">
-    <div class="title-card panel">
-      <div class="titlebar">Kinstead</div>
-      <div class="logo">Kinstead</div>
-      <div class="tagline">A little village builder</div>
-      <button class="btn primary" id="btnContinue">Continue</button>
-      <button class="btn gold" id="btnNew">New village</button>
-      <button class="btn" id="btnLoad">Load a save…</button>
-      <button class="btn" id="btnMulti">Multiplayer…</button>
-      <button class="btn" id="btnMerge">Merge villages…</button>
-      <div class="title-foot">Built with three.js · saves locally or to Google Drive</div>
-    </div>
-  </div>
-
-  <noscript>Kinstead needs JavaScript and WebGL.</noscript>
   <script>
-    // after an update, load the new game files rather than the browser's old copies (see sw.js)
-    // (only on the live site: a local test server has no ten-minute caching to get round)
+    // fresh files after an update (see sw.js; only on the live site)
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
   </script>
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="site/landing.js"></script>
 </body>
 </html>
