@@ -390,15 +390,16 @@ export class TerrainView {
 
   // Road / rail skeleton for one tile: segments from a (gently wobbling)
   // centre to each linked edge, so paths meander instead of ruling straight lines.
-  _arms(x, z, grid, amp = 0) {
+  // cut: sides not to link across (a boulevard's median, as world.blvd bits).
+  _arms(x, z, grid, amp = 0, cut = 0) {
     const w = this.world, N = w.N;
     const j = (px, pz) => this.n2(px * 0.9 + 7.3, pz * 0.9 - 2.1) * amp;
     const cx = x + 0.5 + j(x + 0.5, z + 0.5), cz = z + 0.5 + j(z + 0.5, x + 0.5);
     const segs = [];
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const [dx, dz, bit] of [[1, 0, 2], [-1, 0, 8], [0, 1, 4], [0, -1, 1]]) {
       const nx = x + dx, nz = z + dz;
       const linked = (nx >= 0 && nz >= 0 && nx < N && nz < N) ? grid[nz * N + nx] : (grid === w.roads && x === w.entry.x && z === w.entry.z);
-      if (!linked) continue;
+      if (!linked || (cut & bit)) continue;
       const mx = x + 0.5 + dx * 0.5, mz = z + 0.5 + dz * 0.5;
       const off = j(mx, mz);
       segs.push([cx, cz, mx + (dz ? off : 0), mz + (dx ? off : 0)]);
@@ -427,7 +428,7 @@ export class TerrainView {
         const arc = railArc(x, z, [SIDES[shape.bend], SIDES[(shape.bend + 1) & 3]]);
         segs = [];
         for (let k = 0; k < arc.length - 1; k++) segs.push([arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1]]);
-      } else segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07);
+      } else segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07, w.blvd ? w.blvd[z * N + x] : 0);
       const corners = shape ? shape.fillets.map(k => cornerFrame(x, z, k)) : [];
       const hw = HW[L], sf = SOFT[L];
       this._range(x - 0.45, z - 0.45, x + 1.45, z + 1.45, (vi, px, pz) => {

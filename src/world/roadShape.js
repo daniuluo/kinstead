@@ -26,11 +26,20 @@ export const BAND = 0.035;
 export const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 // Road level across one side of a tile (the road to the outside world runs on
-// off the edge of the map).
-function linkL(w, x, z, dx, dz) {
+// off the edge of the map); 0 across a boulevard's median (w.blvd, see
+// boulevard.js), where the lanes keep apart.
+function linkL(w, x, z, dx, dz, k) {
   const nx = x + dx, nz = z + dz;
+  if (w.blvd && w.inBounds(x, z) && (w.blvd[z * w.N + x] & (1 << k))) return 0;
   if (w.inBounds(nx, nz)) return w.roads[nz * w.N + nx];
   return x === w.entry.x && z === w.entry.z ? w.roads[z * w.N + x] : 0;
+}
+
+// Whether the road on tile (x, z) runs on across side k into the road next
+// door (not across a median).
+export function linked(w, x, z, k) {
+  const [dx, dz] = SIDES[k];
+  return !!w.roadAt(x, z) && !!w.roadAt(x + dx, z + dz) && !(w.blvd && (w.blvd[z * w.N + x] & (1 << k)));
 }
 
 // Shape of the road on a land tile, or null (no road, or a bridge):
@@ -44,7 +53,7 @@ export function roadTile(w, x, z) {
   const arms = [0, 0, 0, 0], bridge = [false, false, false, false];
   for (let k = 0; k < 4; k++) {
     const [dx, dz] = SIDES[k];
-    const Ln = linkL(w, x, z, dx, dz);
+    const Ln = linkL(w, x, z, dx, dz, k);
     if (!Ln) continue;
     arms[k] = Math.min(hw, HALF[Ln]);
     bridge[k] = w.inBounds(x + dx, z + dz) && w.terrain.isWater(x + dx, z + dz);

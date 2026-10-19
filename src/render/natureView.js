@@ -6,7 +6,9 @@ import { MAT } from './materials.js';
 import { TREE, homeField, farmlandOf, fw, fd } from '../world/world.js';
 import { hash2 } from '../util/rng.js';
 import { dressSpots } from '../world/roadDress.js';
+import { boulevardSpots } from '../world/boulevard.js';
 import { BUILDINGS, produceOf } from '../defs.js';
+import { streetPart } from '../config.js';
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 
@@ -179,8 +181,9 @@ export class NatureView {
       }
     }
     // dressed streets: avenue trees, hedges, and shrubs and flowers on a
-    // planted median (positions from roadDress.js)
-    this.dressed = !!(w.dress && w.dress.some(Boolean));
+    // planted median (positions from roadDress.js; they keep clear of front
+    // doors, so a building changing replants them: this.dressed)
+    this.dressed = !!(w.dress && w.dress.some(v => streetPart(v)));
     if (this.dressed) {
       const sp = dressSpots(w);
       for (const tr of sp.trees) {
@@ -198,6 +201,48 @@ export class NatureView {
         put('bush', sh.x, y, sh.z, 0.5, sh.r, mixC(FOLIAGE.bush[s][Math.floor(h * 3)], FOLIAGE.bush[n][Math.floor(h * 3)], turn(h)));
         if (hash2(Math.floor(sh.x * 70), Math.floor(sh.z * 70), 12) < flowering) for (const o of [-0.07, 0.07]) put('bloom', sh.x + o * Math.cos(sh.r), y + 0.005, sh.z + o * Math.sin(sh.r), 1, 0, BLOOMS[Math.floor(hash2(Math.floor(sh.x * 50), Math.floor(sh.z * 50), 8 + o) * BLOOMS.length)]);
       }
+    }
+    // boulevards: trees, hedges, clipped balls, shrubs, the flowers in their
+    // beds and the grass of their medians (positions from boulevard.js)
+    if (w.blvd && w.blvd.some(Boolean)) {
+      const sp = boulevardSpots(w);
+      for (const tr of sp.trees) {
+        const y = t.heightAt(tr.x, tr.z) - 0.01, h = hash2(Math.floor(tr.x * 100), Math.floor(tr.z * 100), 3);
+        const k = turn(h), bare = bareOf(k), leaf = (q) => FOLIAGE.round[q][Math.floor(h * Math.min(3, FOLIAGE.round[q].length))];
+        put('trunk', tr.x, y, tr.z, tr.s, tr.r, '#6e4d31', 1.35);
+        put('round', tr.x, y + 0.03 + bare * 0.04, tr.z, tr.s * (1 - bare * 0.3), tr.r, mixC(leaf(s), leaf(n), k));
+      }
+      for (const hg of sp.hedges) {
+        const hi = Math.floor(hash2(Math.floor(hg.x * 40), Math.floor(hg.z * 40), 5) * 3), c = mixC(HEDGE[s][hi], HEDGE[n][hi], sw);
+        put('bush', hg.x, t.heightAt(hg.x, hg.z) - 0.005, hg.z, 0.66, hg.r, c, 1);
+      }
+      for (const b of sp.balls) {
+        const c = mixC(HEDGE[s][0], HEDGE[n][0], sw), y = t.heightAt(b.x, b.z);
+        put('trunk', b.x, y - 0.01, b.z, 0.3, b.r, '#5e432c', 0.6);
+        put('bush', b.x, y + 0.035, b.z, 0.62, b.r, c, 1.15);
+      }
+      for (const sh of sp.shrubs) {
+        const h = hash2(Math.floor(sh.x * 100), Math.floor(sh.z * 100), 7), c = mixC(HEDGE[s][1], HEDGE[n][1], sw);
+        put('bush', sh.x, t.heightAt(sh.x, sh.z), sh.z, 0.45 + h * 0.1, sh.r, c, 0.85);
+      }
+      // bedding: each bed in its own pair of colours in spring and summer,
+      // autumn's warmer ones, and nothing but the soil in winter
+      const bedPal = [['#d9363a', '#f2d040'], ['#e88fae', '#f2ede0'], ['#9c74c9', '#f2d040'], ['#e8823f', '#d9536b'], ['#6a8ad9', '#f2ede0']];
+      const autumn = ['#c8702a', '#8a2a3a', '#d8a030', '#9c74c9'];
+      const leafy = [['#5f8a42', '#55803c'], ['#4f7a3a', '#5a8540'], ['#6a6a34', '#7a6232'], null];
+      for (const bl of sp.blooms) {
+        const q = hash2(Math.floor(bl.x * 90), Math.floor(bl.z * 90), 13);
+        // the plants themselves, cut back to the soil for the winter
+        const grown = s === 3 ? sw : n === 3 ? 1 - sw : 1;
+        if (q >= grown) continue;
+        const y = t.heightAt(bl.x, bl.z) + 0.024, lf = leafy[s] || leafy[0];
+        put('crop', bl.x, y - 0.012, bl.z, 1.25, bl.r, lf[q < 0.5 ? 0 : 1]);
+        const out = s === 2 ? (q < 0.6 ? 1 : 0) * (1 - sw) : flowering;
+        if (q >= out) continue;
+        const col = s === 2 ? autumn[Math.floor(q * 40) % autumn.length] : bedPal[Math.floor(bl.h * bedPal.length)][q < 0.5 ? 0 : 1];
+        for (const o of [-0.016, 0.016]) put('bloom', bl.x + o * Math.cos(bl.r), y - 0.005, bl.z + o * Math.sin(bl.r), 1.25, 0, col);
+      }
+      for (const tf of sp.tufts) put('tuft', tf.x, t.heightAt(tf.x, tf.z), tf.z, tf.s, tf.r, mixC(TUFT[s], TUFT[n], sw));
     }
     // farmland (a farm's own field behind its yard and its fields beyond, as
     // one): rows of crop tufts in the farm's frame (none in winter, or on

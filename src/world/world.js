@@ -1,15 +1,18 @@
 // World state and the rules for changing it (placing, upgrading, bulldozing).
 // Rendering and simulation listen to the events emitted here.
 
-import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
+import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, dressRefundAll, streetPart, lookPart, packDress, DRESSINGS } from '../config.js';
 import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
+import { findBoulevards, dressFits } from './boulevard.js';
 import { newTownId } from '../util/text.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
 
 // rot index → direction the building faces (its door side)
 export const DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+// the world.blvd bit for the side of a tile towards (dx, dz) (N 1, E 2, S 4, W 8)
+export const sideBit = (dx, dz) => (dz < 0 ? 1 : dx > 0 ? 2 : dz > 0 ? 4 : 8);
 
 // Footprint in tiles along world x / z (merged buildings can be 2×1).
 export const fw = (b) => b.w ?? b.size;
@@ -193,7 +196,8 @@ export class World {
     this.roads = new Uint8Array(N * N);
     this.rails = new Uint8Array(N * N);
     this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
-    this.dress = new Uint8Array(N * N);    // how the street is dressed: an index into DRESSINGS (0: plain)
+    this.dress = new Uint8Array(N * N);    // how the street is dressed, and a boulevard lane's look (see packDress in config.js)
+    this.blvd = new Uint8Array(N * N);     // boulevards: the sides of each tile with a median across them (from the roads, never saved; see boulevard.js)
     this.fields = new Int32Array(N * N).fill(-1);   // the farm a tile is a field of (-1: none)
     this.fieldTiles = new Map();           // farm id → its field tiles (kept by _countFields)
     this.lines = [];
@@ -295,11 +299,12 @@ export class World {
   rampHeight(x, z) {
     const tx = Math.floor(x), tz = Math.floor(z);
     if (!this.inBounds(tx, tz) || !this.roads[this.idx(tx, tz)] || this.terrain.isWater(tx, tz)) return null;
-    const deck = bridgeDeckY();
+    const deck = bridgeDeckY(), med = this.blvd[this.idx(tx, tz)];
     let best = null;
     for (const [dx, dz] of DIRS) {
       const nx = tx + dx, nz = tz + dz;
       if (!this.inBounds(nx, nz) || !this.roads[this.idx(nx, nz)] || !this.terrain.isWater(nx, nz)) continue;
+      if (med & sideBit(dx, dz)) continue;   // a boulevard's other lane, not a bridge this one climbs to
       const d = dx > 0 ? tx + 1 - x : dx < 0 ? x - tx : dz > 0 ? tz + 1 - z : z - tz;
       if (d >= RAMP) continue;
       const fx = dx ? (dx > 0 ? tx + 1 - RAMP : tx + RAMP) : x, fz = dz ? (dz > 0 ? tz + 1 - RAMP : tz + RAMP) : z;
@@ -426,7 +431,7 @@ export class World {
     const tiles = this._frontTiles(b, part);
     if (!tiles.every(([x, z]) => this.roadAt(x, z))) return 0;
     // street trees and hedges take the verge, so it stays behind them
-    if (this.dress && tiles.some(([x, z]) => (DRESSINGS[this.dress[this.idx(x, z)]] || {}).verge)) return 0;
+    if (this.dress && tiles.some(([x, z]) => (DRESSINGS[streetPart(this.dress[this.idx(x, z)])] || {}).verge)) return 0;
     // two buildings on a street corner facing the same road tile would meet
     // in its corner, so neither of them comes forward there. Nor does one
     // whose garden strip (b.ext) widens its front past a building on the corner.
@@ -1220,18 +1225,20 @@ export class World {
       this._clearTrees(x, z);
       this._clearTreesNear(x, z, 1, 1, 0.2);
     }
-    if (placed) { this.updateRailLinks(); this.emit('trees'); }
+    if (placed) { this._boulevards(true); this.updateRailLinks(); this.emit('trees'); }
     return { placed, spent, failed };
   }
 
   removeRail(x, z) {
     if (!this.railAt(x, z)) return false;
     this.rails[this.idx(x, z)] = 0;
+    this._boulevards(true);
     this.updateRailLinks();
     return true;
   }
 
   updateRailLinks() {
+    this._boulevards();   // a level crossing breaks a boulevard's median
     for (const b of this.buildings.values()) {
       if (!BUILDINGS[b.type].needsRail) continue;
       const r = this.findRail(b.x, b.z, fw(b), fd(b));
@@ -1272,7 +1279,7 @@ export class World {
       this.roads[this.idx(x, z)] = level;
       this._clearTrees(x, z);
     }
-    if (placed) { this.updateRoadNetwork(); this.emit('trees'); }
+    if (placed) { this._boulevards(true); this.updateRoadNetwork(); this.emit('trees'); }
     return { placed, spent, failed };
   }
 
@@ -1281,11 +1288,36 @@ export class World {
     if (!L) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
-    this.money += roadRefund(L, 0, this.terrain.isWater(x, z)) + dressRefund(this.dress[this.idx(x, z)]);
+    this.money += roadRefund(L, 0, this.terrain.isWater(x, z)) + dressRefundAll(this.dress[this.idx(x, z)]);
     this.buried[this.idx(x, z)] = 0;
     this.dress[this.idx(x, z)] = 0;
+    this._boulevards(true);
     this.updateRoadNetwork();
     return true;
+  }
+
+  // Boulevards come from the road layout (see boulevard.js): worked out
+  // again whenever the roads or the track change, and never saved or sent.
+  // A look that no longer suits its tile goes: a boulevard's where its
+  // second road was taken up or a street now crosses, a planted median
+  // where a second road was laid alongside. pay: a quarter of its price
+  // back (when the player changed the roads; loads and guests just tidy up).
+  _boulevards(pay = false) {
+    this.blvd = findBoulevards(this, this.roads, this.blvd);
+    let back = 0, gone = false;
+    for (let i = 0; i < this.dress.length; i++) {
+      const v = this.dress[i];
+      if (!v) continue;
+      let s = streetPart(v), l = lookPart(v);
+      if (s && !dressFits(this, i, s)) { back += dressRefund(s); s = 0; }
+      if (l && !dressFits(this, i, l)) { back += dressRefund(l); l = 0; }
+      if (packDress(s, l) === v) continue;
+      this.dress[i] = packDress(s, l);
+      gone = true;
+    }
+    if (pay) this.money += back;
+    if (gone) this.emit('dress');
+    return back;
   }
 
   // ---------------------------------------------------- buried power lines
@@ -1318,6 +1350,7 @@ export class World {
 
   updateRoadNetwork() {
     const N = this.N;
+    this._boulevards();
     this.connected.fill(0);
     const q = [];
     const e = this.idx(this.entry.x, this.entry.z);

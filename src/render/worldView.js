@@ -375,6 +375,8 @@ export class WorldView {
     this.seasonW = q;
     this.terrain.setSeason(s, q);
     this.nature.setSeason(s, q);
+    // fountains on boulevards freeze over for the winter
+    if (this.roads.setSeason(s, q)) this.dirty.roads = true;
     for (const it of [...this.items.values()]) if (it.b.type === 'farm') { this.removeBuilding(it.b, true); this.addBuilding(it.b, false); }
     // parks follow the season in fewer steps, and are redrawn a few at a
     // time over the next frames (see update)

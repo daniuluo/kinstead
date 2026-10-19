@@ -7,36 +7,47 @@
 // up) who would be cut off. applyRoadEdit() makes the change; it runs as the
 // 'roadedit' command, so multiplayer guests use it the same way.
 
-import { roadRefund, DRESSINGS, dressRefund } from '../config.js';
-import { fw, fd } from './world.js';
+import { roadRefund, DRESSINGS, dressRefund, streetPart, lookPart, packDress } from '../config.js';
+import { fw, fd, sideBit } from './world.js';
+import { findBoulevards, boulevardTiles, dressFits } from './boulevard.js';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 export const ROAD_OPS = ['up', 'down', 'remove'];
 
+// whether the road on (x, z) runs on towards (dx, dz): not across a
+// boulevard's median, where the lanes keep apart
+const runsOn = (w, x, z, dx, dz) => !!w.roadAt(x + dx, z + dz) && !(w.blvd[w.idx(x, z)] & sideBit(dx, dz));
+
 function degree(w, x, z) {
   let n = 0;
-  for (const [dx, dz] of DIRS) if (w.roadAt(x + dx, z + dz)) n++;
+  for (const [dx, dz] of DIRS) if (runsOn(w, x, z, dx, dz)) n++;
   return n;
 }
 
 // The stretch of road through tile (x, z): it follows the road round bends
 // and stops short of junctions (where three or four roads meet) and at dead
-// ends. A junction tile on its own is its own stretch.
+// ends. A junction tile on its own is its own stretch. On a boulevard it is
+// the whole boulevard between its junctions, every lane of it, and the
+// turning loops at its ends.
 export function roadRun(w, x, z) {
   if (!w.roadAt(x, z)) return [];
-  if (degree(w, x, z) >= 3) return [[x, z]];
-  const N = w.N, seen = new Set([z * N + x]), out = [[x, z]], q = [[x, z]];
+  const lanes = boulevardTiles(w, x, z);
+  if (!lanes.length && degree(w, x, z) >= 3) return [[x, z]];
+  const N = w.N, start = lanes.length ? lanes : [[x, z]];
+  const seen = new Set(start.map(([a, b]) => b * N + a)), out = start.slice(), q = start.slice();
   while (q.length) {
     const [cx, cz] = q.pop();
     for (const [dx, dz] of DIRS) {
       const nx = cx + dx, nz = cz + dz;
-      if (!w.roadAt(nx, nz) || seen.has(nz * N + nx) || degree(w, nx, nz) >= 3) continue;
+      if (!runsOn(w, cx, cz, dx, dz) || seen.has(nz * N + nx) || degree(w, nx, nz) >= 3) continue;
       seen.add(nz * N + nx);
       out.push([nx, nz]);
       q.push([nx, nz]);
     }
   }
-  return out;
+  // a turning loop at a boulevard's end leads into the boulevard
+  const lane = !lanes.length && out.find(([a, b]) => w.blvd[w.idx(a, b)]);
+  return lane ? roadRun(w, ...lane) : out;
 }
 
 // Road tiles inside the box between two tiles (corners included).
@@ -93,14 +104,37 @@ export function planRoadEdit(w, list, op, { paths = null } = {}) {
       else { t.to = L - 1; t.refund = roadRefund(L, L - 1, water); }
     } else if (x === w.entry.x && z === w.entry.z) block(t, 'The road to the outside world must stay');
     else { t.to = 0; t.refund = roadRefund(L, 0, water); }
-    // a street's dressing goes with it, or when the road is too narrow for it
-    const D = w.dress && DRESSINGS[w.dress[i]];
-    if (!t.reason && D && (t.to === 0 || (D.minLevel && t.to < D.minLevel))) { t.undress = true; t.refund += dressRefund(w.dress[i]); undressed++; }
+    // a street's dressing (and a boulevard's look) goes with it, or when the
+    // road is too narrow for it
+    const v = w.dress ? w.dress[i] : 0;
+    if (!t.reason && v) {
+      const goes = (k) => { const D = DRESSINGS[k]; return !!D && (t.to === 0 || (!!D.minLevel && t.to < D.minLevel)); };
+      let s = streetPart(v), l = lookPart(v);
+      if (goes(s)) { t.refund += dressRefund(s); s = 0; }
+      if (goes(l)) { t.refund += dressRefund(l); l = 0; }
+      if (packDress(s, l) !== v) { t.undress = true; t.dressTo = packDress(s, l); undressed++; }
+    }
     if (!t.reason) { n++; cost += t.cost; refund += t.refund; if (water) bridges++; }
   }
-  const plan = { op, tiles, n, cost, refund, bridges, undressed, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
+  const plan = { op, tiles, n, cost, refund, bridges, undressed, unlooked: 0, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
   if (op === 'up' && n && cost > w.money) plan.short = 'Not enough money';
-  if (op === 'remove') Object.assign(plan, removalEffects(w, tiles.filter(t => !t.reason), paths));
+  if (op === 'remove') {
+    Object.assign(plan, removalEffects(w, tiles.filter(t => !t.reason), paths));
+    // a boulevard whose other lane goes is a plain street again, and its
+    // look goes with it (a quarter of its price back)
+    if (n && w.dress.some(v => lookPart(v) || (DRESSINGS[streetPart(v)] || {}).key === 'median')) {
+      const roads = w.roads.slice();
+      for (const t of tiles) if (!t.reason) roads[w.idx(t.x, t.z)] = 0;
+      const after = { blvd: findBoulevards(w, roads) };
+      for (let i = 0; i < roads.length; i++) {
+        const v = w.dress[i];
+        if (!v || !roads[i]) continue;
+        let lost = false;
+        for (const k of [streetPart(v), lookPart(v)]) if (k && !dressFits(after, i, k)) { plan.refund += dressRefund(k); lost = true; }
+        if (lost) plan.unlooked++;
+      }
+    }
+  }
   return plan;
 }
 
@@ -183,7 +217,7 @@ export function applyRoadEdit(w, list, op) {
     w.roads[i] = t.to;
     // anything laid along a road that is taken up goes with it
     if (!t.to && w.buried) w.buried[i] = 0;
-    if (t.undress) w.dress[i] = 0;
+    if (t.undress) w.dress[i] = t.dressTo;
   }
   w.money += plan.refund - plan.cost;
   w.updateRoadNetwork();

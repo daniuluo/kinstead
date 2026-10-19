@@ -3,7 +3,7 @@
 import { World } from '../world/world.js';
 import { Terrain } from '../world/terrain.js';
 import { BUILDINGS, TECHS } from '../defs.js';
-import { titleFor, DRESSINGS } from '../config.js';
+import { titleFor, dressValid } from '../config.js';
 import { cleanText, cleanColor, hasKey, newTownId, isTownId } from '../util/text.js';
 
 export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
@@ -67,7 +67,7 @@ export function deserialize(data) {
   w.roads.set(fromB64(data.roads).subarray(0, N * N));
   if (data.rails) w.rails.set(fromB64(data.rails).subarray(0, N * N));
   if (typeof data.buried === 'string') w.buried.set(fromB64(data.buried).subarray(0, N * N).map(v => (v ? 1 : 0)));
-  if (typeof data.dress === 'string') w.dress.set(fromB64(data.dress).subarray(0, N * N).map((v, i) => (v < DRESSINGS.length && w.roads[i] ? v : 0)));
+  if (typeof data.dress === 'string') w.dress.set(fromB64(data.dress).subarray(0, N * N).map((v, i) => (dressValid(v) && w.roads[i] ? v : 0)));
   const tr = data.trees || [];
   for (let i = 0; i + 4 < tr.length; i += 5) w.addTree(tr[i] / 100, tr[i + 1] / 100, tr[i + 2], tr[i + 3] / 100, tr[i + 4] / 100);
   for (let [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, spare] of data.buildings) {

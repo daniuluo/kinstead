@@ -1527,9 +1527,183 @@ const placePair = (tw, ta, tb) => {
   const back = deserialize(JSON.parse(JSON.stringify(serialize(tw))));
   ok(back.dress.every((v, i) => v === tw.dress[i]) && back.dress.some(Boolean), 'saves keep the dressed streets');
   const g2 = { world: tw, demo: false, emit() {} };
-  ok(!runCommand(g2, { t: 'dress', kind: 9, tiles: cob }).ok && runCommand(g2, { t: 'dress', kind: 0, tiles: [P(4, 6)] }).ok && !tw.dress[tw.idx(...P(4, 6))], 'the dress command refuses unknown kinds and can take a dressing away');
+  ok(!runCommand(g2, { t: 'dress', kind: DRESSINGS.length, tiles: cob }).ok && runCommand(g2, { t: 'dress', kind: 0, tiles: [P(4, 6)] }).ok && !tw.dress[tw.idx(...P(4, 6))], 'the dress command refuses unknown kinds and can take a dressing away');
   const m2 = tw.money, lampTile = P(4, 4);
   ok(tw.removeRoad(...lampTile) === true && !tw.dress[tw.idx(...lampTile)] && tw.money === m2 + roadRefund(2, 0, false) + dressRefund(3), 'taking a lamp-lit tile up takes its lamp too (a quarter of both back)');
+}
+
+// 3i. boulevards: roads laid side by side become a boulevard (a lane each
+// way, a median between) worked out from the roads alone; junctions, ends,
+// corners, crossings and bridges; looks priced, unlocked and researched like
+// dressings, liked by the neighbours, gone with the boulevard; traffic keeps
+// to its side; buildings still come forward; it all draws
+{
+  const { findBoulevards, boulevardTiles, medianSegs, boulevardSpots } = await import('../src/world/boulevard.js');
+  const { roadTile, surfaceAt, linked } = await import('../src/world/roadShape.js');
+  const { planDress, applyDress, dressSpots, plainLamp } = await import('../src/world/roadDress.js');
+  const { roadRun, planRoadEdit, applyRoadEdit } = await import('../src/world/roadEdit.js');
+  const { RoadsView } = await import('../src/render/roadsView.js');
+  const { NatureView } = await import('../src/render/natureView.js');
+  const { DRESSINGS, dressRefund, dressRefundAll, roadRefund, streetPart, lookPart, BOULEVARD } = await import('../src/config.js');
+  const { runCommand } = await import('../src/commands.js');
+  const tw = World.createNew({ N: 64, seed: 31, name: 'Boulevard Town' });
+  tw.money = 1e6;
+  // a free patch, levelled
+  let o = null;
+  for (let z = 1; z < tw.N - 24 && !o; z++) for (let x = 1; x < tw.N - 20 && !o; x++) {
+    let free = true;
+    for (let dz = -1; dz < 23 && free; dz++) for (let dx = -1; dx < 19 && free; dx++) {
+      const X = x + dx, Z = z + dz;
+      if (tw.terrain.isWater(X, Z) || tw.roadAt(X, Z) || tw.railAt(X, Z) || tw.buildingOn(X, Z)) free = false;
+    }
+    if (free) o = { x, z };
+  }
+  ok(!!o, 'found a free patch for the boulevard checks');
+  const P = (x, z) => [o.x + x, o.z + z];
+  for (let z = -1; z <= 23; z++) for (let x = -1; x <= 19; x++) tw.terrain.setCh(o.x + x, o.z + z, 0.5);
+  // a stretch of river under one boulevard (x 4..6 of rows 18, 19)
+  for (let z = 17; z <= 21; z++) for (let x = 4; x <= 7; x++) tw.terrain.setCh(o.x + x, o.z + z, -0.3);
+  for (let z = -1; z <= 23; z++) for (let x = -1; x <= 19; x++) tw._clearTrees(o.x + x, o.z + z);
+  const line = (x0, z0, x1, z1) => { const out = []; for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) out.push(P(x, z)); return out; };
+  tw.setSandbox({ unlockAll: true });
+  // A: paved, rows 2-3 from x 0 to 12, a cobbled street across at x 6,
+  // turning the corner at x 11-12 down to row 12
+  tw.placeRoads(line(0, 2, 12, 3), 3);
+  tw.placeRoads(line(6, 0, 6, 6), 2);
+  tw.placeRoads(line(11, 4, 12, 12), 3);
+  // a 2 × 2 block, three dirt roads side by side, a river under a fourth
+  tw.placeRoads(line(15, 0, 16, 1), 2);
+  tw.placeRoads(line(0, 13, 6, 15), 1);
+  tw.placeRoads(line(0, 18, 10, 19), 3);
+  tw.setSandbox({ unlockAll: false });
+  const bit = (x, z) => tw.blvd[tw.idx(...P(x, z))];
+  ok((bit(3, 2) & 4) && (bit(3, 3) & 1) && !(bit(3, 2) & 11), 'two roads side by side are a boulevard: a median between the lanes, and nothing across the other sides');
+  ok(!bit(6, 2) && !bit(6, 3) && (bit(5, 2) & 4) && (bit(7, 3) & 1), 'where a street crosses, the lanes join (no median across the junction)');
+  ok(!bit(0, 2) && roadTile(tw, ...P(0, 2)).bend >= 0 && roadTile(tw, ...P(0, 3)).bend >= 0, 'at the dead end the lanes join in a turning loop round the median');
+  ok((bit(11, 2) & 4) && (bit(11, 3) & 3) === 3 && (bit(12, 3) & 8) && !bit(12, 2) && roadTile(tw, ...P(12, 2)).bend >= 0, `the boulevard turns the corner with its median (corner bits ${bit(11, 2)}, ${bit(11, 3)}, ${bit(12, 3)})`);
+  ok((bit(11, 7) & 2) && (bit(12, 7) & 8) && !bit(11, 12) && roadTile(tw, ...P(12, 12)).bend >= 0, 'and runs on north-south to its own turning loop');
+  ok(![[15, 0], [16, 0], [15, 1], [16, 1]].some(([x, z]) => bit(x, z)), 'a 2 × 2 block of road stays a square');
+  ok((bit(3, 13) & 4) && (bit(3, 14) & 5) === 5 && (bit(3, 15) & 1), 'three roads side by side: two medians, the middle lane between them');
+  ok(tw.terrain.isWater(...P(5, 18)) && (bit(5, 18) & 4) && !linked(tw, ...P(5, 18), 2) && linked(tw, ...P(5, 18), 1), 'over water the lanes cross on bridges of their own');
+  const ls = roadTile(tw, ...P(3, 2));
+  ok(ls.arms[2] === 0 && ls.arms[1] > 0 && ls.arms[3] > 0 && !ls.fillets.length && ls.bend < 0, 'a lane is laid as a straight street, with no arm across the median');
+  ok(surfaceAt(tw, o.x + 3.5, o.z + 3.0) === 0 && surfaceAt(tw, o.x + 3.5, o.z + 2.5) > 0, 'the median between the lanes is not road');
+  const lamps = [];
+  for (const [x, z] of line(1, 2, 10, 3)) { const l = plainLamp(tw, x, z); if (l) lamps.push([z, l.z]); }
+  ok(lamps.length && lamps.every(([z, lz]) => (z === o.z + 2 ? lz < z + 0.5 : lz > z + 0.5)), `the lanes' street lamps (${lamps.length}) stand on their outer verges`);
+  // track across a boulevard
+  tw.setSandbox({ unlockAll: true });
+  tw.placeRails(line(9, 0, 9, 5));
+  tw.setSandbox({ unlockAll: false });
+  ok(!bit(9, 2) && !bit(9, 3) && (bit(8, 2) & 4) && (bit(10, 2) & 4), 'a level crossing breaks the median for the track');
+  // derived, never saved: a load works it out again
+  const saved = JSON.stringify(serialize(tw));
+  const back = deserialize(JSON.parse(saved));
+  ok(!/blvd/.test(saved) && back.blvd.every((v, i) => v === tw.blvd[i]), 'boulevards are never saved, and a loaded town works them out again');
+  ok(findBoulevards(tw).every((v, i) => v === tw.blvd[i]), 'and finding them again gives the same');
+  // picking: a click picks every lane of it, its loops included
+  const A = boulevardTiles(tw, ...P(3, 2));
+  const key = (l) => l.map(([x, z]) => `${x - o.x},${z - o.z}`).sort().join(' ');
+  ok(A.length === 10 && A.some(([x, z]) => x === o.x + 1 && z === o.z + 3), `a boulevard between its junctions is both its lanes (${A.length} tiles)`);
+  ok(key(roadRun(tw, ...P(3, 3))).includes('0,2') && roadRun(tw, ...P(3, 3)).length === 12, 'a click picks both lanes and the turning loop');
+  // looks: priced, unlocked, researched; only on boulevards
+  const pop = (n) => Object.defineProperty(tw, 'unlockPop', { value: n, configurable: true });
+  const TREES = DRESSINGS.findIndex(d => d && d.key === 'btrees'), FLOWERS = DRESSINGS.findIndex(d => d && d.key === 'bflowers');
+  const TRAM = DRESSINGS.findIndex(d => d && d.key === 'btram'), PROM = DRESSINGS.findIndex(d => d && d.key === 'bprom'), HEDGE = DRESSINGS.findIndex(d => d && d.key === 'bhedge');
+  ok([TREES, FLOWERS, TRAM, PROM, HEDGE].every(k => k > 0 && DRESSINGS[k].blvd), 'five boulevard looks');
+  pop(0);
+  ok(!planDress(tw, A, TREES).n && /Unlocks at 25/.test(planDress(tw, A, TREES).blocked[0].reason) && planDress(tw, A, HEDGE).n === A.length, 'a tree-lined median waits for a village; a hedge can go in from the start');
+  pop(500);
+  ok(/Research Gardening first/.test(planDress(tw, A, FLOWERS).blocked[0].reason) && /Research Fountains first/.test(planDress(tw, A, PROM).blocked[0].reason), 'flower beds need Gardening, a promenade Fountains');
+  tw.research.done.push('gardening', 'fountains', 'railways');
+  const street = line(13, 0, 14, 0);
+  tw.setSandbox({ unlockAll: true }); tw.placeRoads(street, 3); tw.setSandbox({ unlockAll: false }); pop(500);
+  ok(/Only on boulevards/.test(planDress(tw, [P(6, 2), ...street], TREES).blocked[0].reason), 'a look only goes on a boulevard (not its junctions or a plain street)');
+  const dirt = boulevardTiles(tw, ...P(3, 14));
+  ok(/Only on paved/.test(planDress(tw, dirt, TRAM).blocked[0].reason) && /Not on dirt/.test(planDress(tw, dirt, PROM).blocked[0].reason) && planDress(tw, dirt, FLOWERS).n === dirt.length, 'a tram needs paving, a promenade cobbles at least; flowers grow anywhere');
+  ok(/median of its own/.test(planDress(tw, A, 4).blocked[0].reason), "a planted median can't go down a boulevard's lane");
+  // a house fronting the boulevard comes forward, and stays forward
+  tw.setSandbox({ unlockAll: true });
+  const H = tw.placeBuilding('house', ...P(3, 1), { instant: true }).building;
+  const shop = tw.placeBuilding('grocer', ...P(5, 1), { instant: true }).building;
+  tw.setSandbox({ unlockAll: false }); pop(500);
+  ok(H.front > 0 && H.access && H.access.z === o.z + 2, 'a house beside a boulevard comes forward to the verge, as on a street');
+  ok(shop.rot === 0 && shop.corner === 2, `a shop on the corner of the boulevard and the cross street turns its shopfront round the corner (corner ${shop.corner})`);
+  // what the neighbours think
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  sim.recompute();
+  const hi = tw.idx(H.x, H.z), with0 = sim.appeal[hi];
+  const keep = tw.blvd.slice(); tw.blvd.fill(0); sim.recompute(); const none = sim.appeal[hi]; tw.blvd.set(keep);
+  ok(with0 > none + BOULEVARD.appeal, `a boulevard is a little nicer to live by than a plain street (appeal ${none.toFixed(1)} → ${with0.toFixed(1)})`);
+  sim._budget();
+  const up0 = sim.budget.expense.roads, m0 = tw.money, plan = planDress(tw, A, TREES);
+  ok(plan.n === A.length && plan.cost === A.length * DRESSINGS[TREES].cost, `a tree-lined median costs $${DRESSINGS[TREES].cost} a lane tile ($${plan.cost})`);
+  const g2 = { world: tw, demo: false, emit() {} };
+  ok(runCommand(g2, { t: 'dress', kind: TREES, tiles: A }).ok && tw.money === m0 - plan.cost && A.every(([x, z]) => lookPart(tw.dress[tw.idx(x, z)]) === TREES), 'the look goes in through the dress command, and is paid for');
+  sim.recompute(); sim._budget();
+  ok(sim.appeal[hi] > with0 + 1 && Math.abs(sim.budget.expense.roads - up0 - A.length * DRESSINGS[TREES].upkeep) < 1e-6, `the neighbours like its trees (appeal ${with0.toFixed(1)} → ${sim.appeal[hi].toFixed(1)}), and they have their upkeep`);
+  ok(H.front > 0, "trees down the median don't send the house back from the verge");
+  let sp = boulevardSpots(tw);
+  ok(sp.trees.length === medianSegs(tw).filter(s => s.look === 'btrees').length && sp.lamps.length > 0, `a tree on every tile of the median (${sp.trees.length}) and lamps between (${sp.lamps.length})`);
+  ok(sp.trees.every(t => Math.abs(t.z - (o.z + 3)) < 0.05), 'standing down the middle of the median');
+  // a street dressing beside the look: hedges on the outer verges, trees down the middle
+  const both = applyDress(tw, A, 2);
+  sim.recompute(); sim._budget();
+  ok(both.ok && !both.refund && A.every(([x, z]) => lookPart(tw.dress[tw.idx(x, z)]) === TREES && streetPart(tw.dress[tw.idx(x, z)]) === 2), 'a boulevard can have a street dressing on its verges and a look down its median, both');
+  ok(Math.abs(sim.budget.expense.roads - up0 - A.length * (DRESSINGS[TREES].upkeep + DRESSINGS[2].upkeep)) < 1e-6 && dressSpots(tw).hedges.filter(p => p.z > o.z + 2 && p.z < o.z + 4).every(p => p.z < o.z + 2.5 || p.z > o.z + 3.5), 'with the upkeep of both, the hedges on the outer verges');
+  ok(runCommand(g2, { t: 'dress', kind: 0, tiles: A }).ok && A.every(([x, z]) => lookPart(tw.dress[tw.idx(x, z)]) === TREES && !streetPart(tw.dress[tw.idx(x, z)])) && !runCommand(g2, { t: 'dress', kind: 0, tiles: A, look: 'yes' }).ok, 'taking the dressing away leaves the look (the command takes look: true or false only)');
+  // street trees on the lanes keep to the outer verges
+  applyDress(tw, line(0, 18, 10, 19).filter(([x, z]) => !tw.terrain.isWater(x, z)), 1);
+  const st = dressSpots(tw).trees.filter(t => t.z > o.z + 17 && t.z < o.z + 21);
+  ok(st.length > 4 && st.every(t => t.z < o.z + 18.5 || t.z > o.z + 19.5), `an avenue's trees on a boulevard stand on its outer verges, not in the median (${st.length})`);
+  ok(!medianSegs(tw).some(s => s.alongX && s.z0 === o.z + 19 && s.x0 >= o.x + 4 && s.x0 <= o.x + 6), 'no median between the twin bridges');
+  // every look draws, in every season
+  const NS = boulevardTiles(tw, ...P(11, 7));
+  applyDress(tw, NS, PROM);
+  applyDress(tw, dirt, FLOWERS);
+  const view = new RoadsView(tw, scene);
+  const fin = (g) => [...g.attributes.position.array].every(Number.isFinite);
+  ok(fin(view.surface.geometry) && fin(view.props.geometry) && view.segs.length > 10 && view.fountains > 0, `boulevards draw cleanly: medians (${view.segs.length} pieces), lamps, fountains (${view.fountains}), statues and benches`);
+  const plain = view.surface.geometry.attributes.position.count;
+  applyDress(tw, A, TRAM);
+  view.rebuild();
+  ok(view.surface.geometry.attributes.position.count > plain && fin(view.props.geometry), 'a tram reservation paves its median and lays its rails');
+  ok(view.setSeason(3, 0) === true && view.setSeason(3, 0.2) === false, 'the fountains freeze over when winter comes');
+  view.dispose();
+  const nv = new NatureView(tw, scene);
+  const counts = [0, 1, 2, 3].map(s => { nv.setSeason(s, 0); return nv.meshes.bloom.count; });
+  ok(counts[1] > counts[3], `the flower beds bloom in summer and lie bare in winter (${counts.join(', ')} flowers)`);
+  nv.dispose();
+  // traffic keeps to its side: east on the south lane, west on the north
+  const { PathFinder } = await import('../src/sim/path.js');
+  const pf = new PathFinder(tw);
+  const east = pf.road(...P(1, 3), ...P(5, 3)), west = pf.road(...P(5, 2), ...P(1, 2));
+  ok(east.every(([, z]) => z === o.z + 3) && west.every(([, z]) => z === o.z + 2), 'traffic keeps to its side of the boulevard');
+  const wrong = pf.road(...P(1, 2), ...P(5, 2));
+  ok(wrong && wrong.some(([, z]) => z === o.z + 3), 'and crosses to the other lane rather than go the wrong way along one');
+  // the boulevard goes, and its look with it (a quarter back)
+  const south = line(1, 3, 5, 3), north = line(1, 2, 5, 2);
+  applyDress(tw, north, 3);   // lamps on the north lane's verge, which stay
+  const rm = planRoadEdit(tw, south, 'remove');
+  const want = south.reduce((s, [x, z]) => s + roadRefund(3, 0, false) + dressRefundAll(tw.dress[tw.idx(x, z)]), 0) + north.reduce((s, [x, z]) => s + dressRefund(lookPart(tw.dress[tw.idx(x, z)])), 0);
+  ok(rm.unlooked === 5 && rm.refund === want, `taking up one lane would leave the other a plain street, its look gone (${rm.unlooked} tiles, $${rm.refund} back)`);
+  const m1 = tw.money, r1 = applyRoadEdit(tw, south, 'remove');
+  ok(r1.ok && tw.money === m1 + rm.refund && north.every(([x, z]) => !tw.blvd[tw.idx(x, z)] && tw.dress[tw.idx(x, z)] === 3), 'and does, paying back what the plan said, the street lamps staying');
+  // a street laid across a boulevard takes the look off its junction
+  const before = NS.filter(([x, z]) => lookPart(tw.dress[tw.idx(x, z)]) === PROM).length, m2 = tw.money;
+  tw.setSandbox({ unlockAll: true });
+  const cross = tw.placeRoads(line(10, 8, 13, 8), 3);
+  tw.setSandbox({ unlockAll: false });
+  ok(!tw.blvd[tw.idx(...P(11, 8))] && !tw.dress[tw.idx(...P(11, 8))] && !tw.dress[tw.idx(...P(12, 8))] && tw.money === m2 - cross.spent + 2 * dressRefund(PROM), `a street laid across makes a junction there, and its look comes off (a quarter back; ${before} tiles had it)`);
+  ok(lookPart(tw.dress[tw.idx(...P(11, 7))]) === PROM && lookPart(tw.dress[tw.idx(...P(11, 9))]) === PROM, 'the rest of the boulevard keeps its look');
+  applyDress(tw, NS, 2);
+  const data2 = JSON.parse(JSON.stringify(serialize(tw))), saved2 = deserialize(data2);
+  ok(tw.dress.some(v => lookPart(v) && streetPart(v)) && saved2.dress.every((v, i) => v === tw.dress[i]), "saves keep each lane's look and its street dressing");
+  const raw = Buffer.from(data2.dress, 'base64'), at = tw.idx(...P(11, 7));
+  raw[at] = TREES;   // a look where a street's dressing goes: not something the game writes
+  data2.dress = raw.toString('base64');
+  ok(!deserialize(data2).dress[at], 'a load drops a dressing it does not know');
 }
 
 // 3z. every method the UI, game and input code call on themselves exists

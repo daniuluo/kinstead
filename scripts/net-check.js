@@ -300,6 +300,29 @@ let ended = null;
   ok(dr.ok && dr.n === street.length && street.every(([x, z]) => gw().dress[gw().idx(x, z)] === 2 && hw.dress[hw.idx(x, z)] === 2), 'a guest plants hedges along a street, and everyone sees them');
   const re = await ask(guest, { t: 'roadedit', op: 'up', tiles: street });
   ok(re.ok && street.every(([x, z]) => gw().roadAt(x, z) === hw.roadAt(x, z) && hw.roadAt(x, z) >= 2), 'a guest upgrades that stretch of road in one go');
+  // two roads side by side: a guest lays a boulevard and gives it a look,
+  // and everyone works out the same boulevard and sees the same look
+  {
+    const { DRESSINGS, lookPart } = await import('../src/config.js');
+    const { boulevardTiles } = await import('../src/world/boulevard.js');
+    const free = (x, z) => hw.inBounds(x, z) && !hw.roadAt(x, z) && !hw.buildingOn(x, z) && hw.checkRoad(x, z, 2).ok && !hw.terrain.isWater(x, z);
+    let pair = null;
+    for (let z = 2; z < hw.N - 3 && !pair; z++) for (let x = 2; x < hw.N - 8 && !pair; x++) {
+      const a = [0, 1, 2, 3, 4, 5].map(k => [x + k, z]), b = a.map(([ax, az]) => [ax, az + 1]);
+      if ([...a, ...b].every(([ax, az]) => free(ax, az)) && (hw.roadAt(x - 1, z) || hw.roadAt(x - 1, z + 1))) pair = [a, b];
+    }
+    if (pair) {
+      const lr = await ask(guest, { t: 'roads', tiles: [...pair[0], ...pair[1]], level: 2 });
+      const lanes = boulevardTiles(hw, ...pair[0][2]), look = DRESSINGS.findIndex(d => d && d.key === 'bhedge');
+      const lk = await ask(guest, { t: 'dress', kind: look, tiles: lanes });
+      await until(() => lanes.every(([x, z]) => lookPart(gw().dress[gw().idx(x, z)]) === look));
+      ok(lr.placed > 0 && lanes.length >= 4 && lk.ok && gw().blvd.every((v, i) => v === hw.blvd[i]) && lanes.every(([x, z]) => lookPart(gw().dress[gw().idx(x, z)]) === look),
+        `a guest lays two roads side by side and gives the boulevard a hedge; everyone has the same boulevard (${lanes.length} lane tiles) and sees its look`);
+      const rm = await ask(guest, { t: 'roadedit', op: 'remove', tiles: pair[1] });
+      await until(() => pair[1].every(([x, z]) => !gw().roadAt(x, z)));
+      ok(rm.ok && gw().blvd.every((v, i) => v === hw.blvd[i]) && pair[0].every(([x, z]) => !lookPart(gw().dress[gw().idx(x, z)]) && !gw().blvd[gw().idx(x, z)]), 'taking one road up again ends the boulevard and its look for everyone');
+    } else ok(false, 'no room for a boulevard');
+  }
   // a coach line between two stops
   const stops = [];
   for (let z = 1; z < hw.N - 1 && stops.length < 2; z++) for (let x = 1; x < hw.N - 1 && stops.length < 2; x++) {

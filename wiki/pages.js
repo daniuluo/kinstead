@@ -13,7 +13,7 @@ import {
   PRODUCE, FRUIT, TRADES, CORNER_SHOPS, NEEDS, RESEARCH_SOURCES, STYLE_TECH, BURY_COST, CAPABILITIES, servicesOf, unlockOf, techForLevel,
 } from '../src/defs.js';
 import {
-  CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, ROAD_SALVAGE, DRESSINGS, TITLES, SEASONS,
+  CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, ROAD_SALVAGE, DRESSINGS, BOULEVARD, TITLES, SEASONS,
   PERF_DEFAULTS, BATTERY_SAVER, TILT_SHIFT, TILT_BAND, SHADOW_SIZE,
 } from '../src/config.js';
 import { fact } from './facts.js';
@@ -32,6 +32,11 @@ const name0 = (t) => BUILDINGS[t].levels[0].name;
 const or = (arr) => (arr.length < 2 ? arr.join('') : `${arr.slice(0, -1).join(', ')} or ${arr[arr.length - 1]}`);
 const and = (arr) => (arr.length < 2 ? arr.join('') : `${arr.slice(0, -1).join(', ')} and ${arr[arr.length - 1]}`);
 const providers = (s) => types().filter(t => servicesOf(BUILDINGS[t]).includes(s));
+// street dressings or boulevard looks: price, upkeep, scenery and what each needs
+const dressTable = (list, what) => table([what, '#Cost a tile', '#Upkeep', '#Scenery', 'Needs'], list.map(d => [
+  `<b>${esc(d.name)}</b><br><span class="muted">${esc(d.desc)}</span>`, money(d.cost), money(d.upkeep), `+${fmt(d.appeal)}`,
+  [d.unlock ? `${d.unlock} villagers` : '', d.minLevel ? esc(ROAD_LEVELS[d.minLevel].name) : '', d.tech ? tl(d.tech) : ''].filter(Boolean).join(', ') || '—',
+]));
 
 // ---------------------------------------------------------- keyboard keys
 // Every key the game answers to (scripts/site-check.js compares this with
@@ -218,7 +223,7 @@ export const PAGES = [
       { id: 'spending', title: 'Where it goes', html: `
         ${list([
           '<b>Upkeep</b> of buildings: most services, utilities and transit stops cost coins every day (each building page lists its upkeep).',
-          `<b>Roads</b>: ${and(ROAD_LEVELS.filter(Boolean).map(r => `${esc(r.name.toLowerCase())} ${money(r.upkeep)}`))} a tile a day, plus any ${pl('roads/dress', 'street dressing')}, and railway track.`,
+          `<b>Roads</b>: ${and(ROAD_LEVELS.filter(Boolean).map(r => `${esc(r.name.toLowerCase())} ${money(r.upkeep)}`))} a tile a day, plus any ${pl('roads/dress', 'street dressing')} or ${pl('roads/boulevards', 'boulevard look')}, and railway track.`,
           `<b>Transit</b>: every coach or train on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train).`,
           '<b>Building work</b>: building, upgrading, joining, moving and restyling are paid for when you order them.',
         ])}` },
@@ -298,7 +303,7 @@ export const PAGES = [
           ['Safety', `+${fact('happySafety')}`, 'A watch post or fire station in reach'],
           ['Culture', `+${fact('happyCulture')}`, 'A chapel, hall or theatre in reach'],
           ['Electricity', `+${fact('happyPower')}`, 'The home is powered'],
-          ['Scenery', `up to +${fact('happyAppeal', 0)}`, 'Trees, water, gardens and parks, grand homes, dressed streets and buried power lines nearby'],
+          ['Scenery', `up to +${fact('happyAppeal', 0)}`, 'Trees, water, gardens and parks, grand homes, dressed streets, boulevards and buried power lines nearby'],
           ['Shops nearby', `+${fact('happyShops', 1)}`, `A shop, café or tavern within ${fact('happyShops', 0)} tiles`],
           ['Play', `+${fact('happyPlay')}`, 'For homes with children: a play area or playing field whose reach takes the home in'],
           ['Allotment', `+${fact('happyPotter')}`, 'For homes with elders: allotments whose reach takes the home in (the elders go and dig there in the mornings)'],
@@ -394,7 +399,7 @@ export const PAGES = [
   },
   {
     id: 'roads', title: 'Roads and streets', icon: 'add_road', group: 'town',
-    summary: 'Paths, cobbles and paved streets; bridges; picking whole stretches; and dressing a street with trees, hedges or lamps.',
+    summary: 'Paths, cobbles and paved streets; bridges; picking whole stretches; dressing a street with trees, hedges or lamps; and boulevards, roads laid side by side, with their looks.',
     sections: () => [
       { id: 'kinds', title: 'Kinds of road', html: table(['Road', '#Cost a tile', '#Upkeep a day', '#Unlocks at'], ROAD_LEVELS.filter(Boolean).map(r => [esc(r.name), money(r.cost), money(r.upkeep), r.unlock ? `${r.unlock} villagers` : 'from the start'])) +
         `<p>Drag with the road tool (${k('R')}) to lay a line; laying a better road over an old one upgrades it. Over water a road becomes a wooden bridge (${BRIDGE_MULT}× the price) with sloped approaches. Every building needs a road along its front, and the road out of the valley can't be taken up.</p>
@@ -403,8 +408,20 @@ export const PAGES = [
         <p><b>Select roads</b> in the Roads menu (or <b>Select stretch</b> in a road's panel) picks the run of road between two junctions with a click, more runs with Shift-click, or every road in a dragged box (${k('Tab')} switches). The panel shows what upgrading every tile one level, downgrading it or taking it all up costs or pays back, what can't change and why, and who would be cut off: buildings left without a road, coach lines without a route, buildings that step back from the street. Anything cut off takes a second click. ${k('Backspace')} steps back through your picks; right-click clears them.</p>` },
       { id: 'dress', title: 'Dressing a street', html: `
         <p>A picked stretch can be dressed. Each has a price per tile and a little upkeep, and makes the homes and shops beside it nicer to live by (scenery):</p>
-        ${table(['Dressing', '#Cost a tile', '#Upkeep', '#Scenery', 'Needs'], DRESSINGS.filter(Boolean).map(d => [`<b>${esc(d.name)}</b><br><span class="muted">${esc(d.desc)}</span>`, money(d.cost), money(d.upkeep), `+${fmt(d.appeal)}`, [d.unlock ? `${d.unlock} villagers` : '', d.minLevel ? esc(ROAD_LEVELS[d.minLevel].name) : ''].filter(Boolean).join(', ') || '—']))}
+        ${dressTable(DRESSINGS.filter(d => d && !d.blvd), 'Dressing')}
         <p>Trees and hedges stand on the verges: they leave gaps at junctions, bends, driveways, lamps and poles, and buildings that stood forward into the street step back behind them. Lamps are lit at night only as far as the town has power. Swapping or removing a dressing, or taking up its road, pays back ${pct(ROAD_SALVAGE)} of its price.</p>` },
+      { id: 'boulevards', title: 'Boulevards', html: `
+        <p>Roads laid directly side by side make a <b>boulevard</b>, not a wide slab of road: a lane each way with a grass median between them, kerbed on both sides, and on cobbled and paved lanes a band of setts along the median. It comes from the way the roads lie, so it changes as roads are laid or taken up, and loaded, shared and merged towns work it out for themselves.</p>
+        ${list([
+          '<b>Junctions</b>: where a street crosses or meets it, the lanes join and the median stops in a rounded nose.',
+          '<b>Ends</b>: where both roads stop, the lanes join in a turning loop round the nose; where one road carries on, the other merges into it.',
+          '<b>Corners</b>: a two-lane boulevard turns a corner with its median.',
+          '<b>Wider</b>: three or more roads side by side get a median between each.',
+          '<b>Track and water</b>: a level crossing breaks the median for the track, and over water the lanes cross on twin bridges.',
+        ])}
+        <p>A boulevard is a little nicer to live by than a plain street (+${fmt(BOULEVARD.appeal)} scenery a lane tile). Pick it with <b>Select roads</b> (a click picks every lane of it between its junctions) and choose a <b>Boulevard look</b> in the panel, or use the look buttons in a lane's own panel, which dress the whole boulevard. Without one it is a grass median.</p>
+        ${dressTable(DRESSINGS.filter(d => d && d.blvd), 'Look')}
+        <p>Flower beds follow the seasons: bulbs in spring, summer bedding, autumn colours, and bare soil under the snow in winter; a promenade's fountains freeze over. A street dressing on a boulevard goes alongside its look and keeps to the lanes' outer verges (avenue trees along the verges and a promenade down the middle, say), as do their street lamps and power poles, and buildings fronting a boulevard come forward to the verge as on any street. A look goes again, with ${pct(ROAD_SALVAGE)} of its price back, when its tile stops being a boulevard: when the other road is taken up (the panel warns first) or a street is laid across it. Villagers and coaches keep to their side: each lane runs one way, everyone keeps right, and they cross the median only where that saves going round.</p>` },
       { id: 'land', title: 'Shaping the land', html: `
         <p>The Terrain menu (${k('8')}) raises, lowers and levels the ground (${money(TERRAFORM_COST)} a tile) and plants trees (${money(TREE_COST)} each). Building over trees clears them for ${money(CLEAR_COST)} a tree. On a slope a building is let into the hill, with a stone lower floor where the ground falls away, so its door stays at street level.</p>` },
     ],

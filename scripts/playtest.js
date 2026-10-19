@@ -22,6 +22,10 @@ import { serialize, deserialize } from '../src/save/saves.js';
 import { computeIssues } from '../src/ui/issues.js';
 import { RNG } from '../src/util/rng.js';
 import { growDemoTown } from '../src/world/demo.js';
+import { roadRun, applyRoadEdit } from '../src/world/roadEdit.js';
+import { applyDress } from '../src/world/roadDress.js';
+import { boulevardTiles } from '../src/world/boulevard.js';
+import { DRESSINGS } from '../src/config.js';
 import { makeAudit } from './audit.js';
 
 const DAYS = Number(process.argv[2] || 60), N = Number(process.argv[3] || 48), SEED = Number(process.argv[4] || 2024);
@@ -222,6 +226,60 @@ function botDay() {
     const b = cands.length && rng.pick(cands);
     if (b && w.demolishBuilding(b.id).ok) counts.demolish++;
   }
+  // the busy modes make boulevards: a second road laid beside a straight
+  // stretch, given a look, and now and then a lane tile taken up again
+  if (MODE !== 'economy' && rng.chance(0.4)) boulevard();
+}
+
+function boulevard() {
+  // every straight stretch of four tiles or more, in a random order
+  const runs = [], seen = new Set();
+  for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) {
+    if (!w.roadAt(x, z) || w.blvd[w.idx(x, z)] || seen.has(w.idx(x, z))) continue;
+    const run = roadRun(w, x, z);
+    for (const [rx, rz] of run) seen.add(w.idx(rx, rz));
+    const row = run.every(([, rz]) => rz === run[0][1]), col = run.every(([rx]) => rx === run[0][0]);
+    if (run.length >= 4 && (row || col)) runs.push({ run, row });
+  }
+  runs.sort(() => rng.next() - 0.5);
+  // or a new one, two roads wide, heading out of town off a street
+  if (!runs.length || rng.chance(0.5)) {
+    const free = (x, z) => w.inBounds(x, z) && !w.roadAt(x, z) && !w.buildingOn(x, z) && w.checkRoad(x, z, 1).ok;
+    for (let t = 0; t < 80; t++) {
+      const x = rng.int(1, N - 2), z = rng.int(1, N - 2), [dx, dz] = rng.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+      if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)]) continue;
+      const a = [], b = [];
+      for (let k = 1; k <= 7; k++) {
+        const ax = x + dx * k, az = z + dz * k;
+        if (!free(ax, az) || !free(ax + dz, az + dx)) break;
+        a.push([ax, az]); b.push([ax + dz, az + dx]);
+      }
+      if (a.length < 4) continue;
+      const L = rng.pick([1, 2, 3]);
+      if (!w.placeRoads([...a, ...b], L).placed) continue;
+      counts.boulevards = (counts.boulevards || 0) + 1;
+      const lanes = boulevardTiles(w, ...a[2]), looks = DRESSINGS.map((D, k) => (D && D.blvd ? k : 0)).filter(Boolean);
+      if (lanes.length && applyDress(w, lanes, rng.pick(looks)).ok) counts.looks = (counts.looks || 0) + 1;
+      return;
+    }
+  }
+  for (const { run, row } of runs) {
+    for (const s of [-1, 1]) {
+      const side = run.map(([x, z]) => (row ? [x, z + s] : [x + s, z]));
+      if (!side.every(([x, z]) => w.inBounds(x, z) && !w.roadAt(x, z) && !w.buildingOn(x, z) && w.checkRoad(x, z, 1).ok)) continue;
+      const r = w.placeRoads(side, w.roadAt(...run[0]));
+      if (!r.placed) continue;
+      counts.boulevards = (counts.boulevards || 0) + 1;
+      const lanes = boulevardTiles(w, ...side[1]);
+      const looks = DRESSINGS.map((D, k) => (D && D.blvd ? k : 0)).filter(Boolean);
+      if (lanes.length && rng.chance(0.7) && applyDress(w, lanes, rng.pick(looks)).ok) counts.looks = (counts.looks || 0) + 1;
+      return;
+    }
+  }
+  // a lane tile taken up (the boulevard's look goes from the other lane)
+  const lanes = [];
+  for (let i = 0; i < w.blvd.length; i++) if (w.blvd[i] && w.roads[i]) lanes.push([i % N, (i / N) | 0]);
+  if (lanes.length && rng.chance(0.3)) { const t = rng.pick(lanes); if (applyRoadEdit(w, [t], 'remove').ok) counts.laneGone = (counts.laneGone || 0) + 1; }
 }
 
 // ------------------------------------------------------------ invariants

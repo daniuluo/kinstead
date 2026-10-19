@@ -1,6 +1,6 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
-import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
+import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST, streetPart, lookPart } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
@@ -38,8 +38,9 @@ import { showPathMap } from './pathMap.js';
 import { RNG, randomSeed } from '../util/rng.js';
 import { townName as genTownName } from '../util/names.js';
 import { starterPickerHTML, mountStarterPicker, EMPTY } from './starterPicker.js';
-import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel } from './roadSelect.js';
+import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel, dressAct, boulevardHTML } from './roadSelect.js';
 import { roadRun } from '../world/roadEdit.js';
+import { boulevardTiles } from '../world/boulevard.js';
 import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
 
 const $ = (id) => document.getElementById(id);
@@ -720,7 +721,10 @@ export class UI {
     if (L) {
       const d = ROAD_LEVELS[L];
       h += `<div class="head"><div class="big">${['', '🟫', '🪨', '⬛'][L]}</div><div><h3>${d.name}</h3><div class="sub">${w.terrain.isWater(x, z) ? 'Bridge' : 'Road'} · upkeep ${d.upkeep}/day</div></div></div>`;
-      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${DRESSINGS[w.dress[w.idx(x, z)]] ? `<span class="chip"><span class="ms">${DRESSINGS[w.dress[w.idx(x, z)]].icon}</span> ${DRESSINGS[w.dress[w.idx(x, z)]].name}</span>` : ''}</div>`;
+      const lane = !!w.blvd[w.idx(x, z)], dv = w.dress[w.idx(x, z)];
+      const chip = (D) => (D ? `<span class="chip"><span class="ms">${D.icon}</span> ${D.name}</span>` : '');
+      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${lane ? '<span class="chip"><span class="ms">add_road</span> Boulevard</span>' : ''}${chip(DRESSINGS[lookPart(dv)])}${chip(DRESSINGS[streetPart(dv)])}</div>`;
+      if (lane) h += boulevardHTML(this.game, x, z);
       h += buryHTML(this.game, x, z);
       if (L < 3) {
         const c = w.checkRoad(x, z, L + 1);
@@ -852,6 +856,12 @@ export class UI {
       case 'raildel': g.cmd({ t: 'unrail', x: sel.x, z: sel.z }); this.inspect(null); break;
       case 'roadrun': g.input.setTool(roadSelTool(roadRun(w, sel.x, sel.z), w.N)); break;
       case 'rsel': roadSelAct(this, data); break;
+      // a look for the whole boulevard (0: back to a grass median)
+      case 'blvdlook': {
+        const kind = Number(data.kind);
+        dressAct(this, kind, boulevardTiles(w, sel.x, sel.z), true, () => { if (this.selection === sel) this.renderInspector(true); });
+        break;
+      }
       case 'bury': {
         const tiles = data.scope === 'town' ? townRoadTiles(w) : w.streetTiles(sel.x, sel.z);
         g.cmd({ t: 'bury', tiles }, (r) => {

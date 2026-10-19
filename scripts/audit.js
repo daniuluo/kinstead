@@ -6,6 +6,8 @@
 
 import { fw, fd, isOpen, capOf, spareRect } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
+import { findBoulevards, dressFits } from '../src/world/boulevard.js';
+import { streetPart, lookPart } from '../src/config.js';
 
 const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 
@@ -61,6 +63,14 @@ export function auditTown(w, problem) {
       if ((b.fields || 0) !== n) problem(`${b.type} #${b.id} thinks it has ${b.fields || 0} fields, but has ${n}`);
       if (n > w.fieldMax(b)) problem(`${b.type} #${b.id} works ${n} fields, more than its ${w.fieldMax(b)}`);
     }
+  }
+  // boulevards are what the roads make them now, and every look and
+  // dressing suits its tile
+  if (w.blvd) {
+    const now = findBoulevards(w);
+    if (now.some((v, i) => v !== w.blvd[i])) problem('the boulevards are out of date with the roads');
+    const bad = w.dress.findIndex((v, i) => v && (!w.roads[i] || [streetPart(v), lookPart(v)].some(k => k && !dressFits(w, i, k))));
+    if (bad >= 0) problem(`a street dressing or boulevard look at tile ${bad} doesn't suit it`);
   }
   // nobody is over capacity
   for (const b of w.buildings.values()) {
