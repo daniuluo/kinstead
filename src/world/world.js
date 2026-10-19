@@ -57,19 +57,24 @@ const baseAreaOf = (type) => (BUILDINGS[type].merged ? 2 : BUILDINGS[type].size 
 const baseArea = (b) => baseAreaOf(b.type);
 export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 // How high a building's floor sits on a plot whose ground runs from minH to
-// maxH. On a slope it is let into the hillside rather than raised on a
-// platform to the highest corner: up to a quarter of a storey below the top,
-// but never below the ground at its front door (so the door stays at street
-// level) or the lowest corner. What is left showing on the low side is drawn
+// maxH. On a slope it stands on the highest ground under its walls (a little
+// in from the plot's edges, where they stand), so no wall is buried in the
+// hillside, and never below the ground at its front door (so the door stays
+// at street level). Where the hill falls away, what is left showing is drawn
 // as a stone lower floor (see footing in render/buildings.js). Buildings that
 // must meet track or water exactly, and parks, keep to the top.
-const SINK = 0.22;
+const WALL_IN = 0.05;
 export function floorHeight(terrain, type, x, z, w, d, rot, minH, maxH) {
   const def = BUILDINGS[type];
   if (!def || def.needsRail || def.needsWater || def.park || !(maxH > minH)) return maxH;
   const [dx, dz] = DIRS[rot] || [0, 1];
   const front = terrain.heightAt(x + w / 2 + (dx * w) / 2, z + d / 2 + (dz * d) / 2);
-  return Math.min(maxH, Math.max(minH, front - 0.02, maxH - Math.min(SINK, (maxH - minH) * 0.6)));
+  let walls = -Infinity;
+  const us = [WALL_IN, w / 2, w - WALL_IN], vs = [WALL_IN, d / 2, d - WALL_IN];
+  for (let i = 1; i < w; i++) us.push(i);
+  for (let i = 1; i < d; i++) vs.push(i);
+  for (const u of us) for (const v of vs) walls = Math.max(walls, terrain.heightAt(x + u, z + v));
+  return Math.min(maxH, Math.max(minH, front - 0.02, walls - 0.005));
 }
 // each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
@@ -472,6 +477,25 @@ export class World {
     return m;
   }
 
+  // Which of a building's other sides have a road along them (b.sides: 1 its
+  // left, 2 its right, 4 its back, as seen from the street in front), so its
+  // walls there get windows and a door rather than a blank face.
+  _sidesOf(b) {
+    if (!b.access) return 0;
+    const [fx, fz] = DIRS[b.rot], [rx, rz] = DIRS[(b.rot + 1) % 4];
+    let m = 0;
+    for (const [bit, ax, az] of [[1, -rx, -rz], [2, rx, rz], [4, -fx, -fz]]) {
+      // the plot's tiles along that side, and the road beyond them
+      let best = -Infinity;
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) best = Math.max(best, (b.x + dx) * ax + (b.z + dz) * az);
+      for (let dz = 0; dz < fd(b) && !(m & bit); dz++) for (let dx = 0; dx < fw(b); dx++) {
+        const x = b.x + dx, z = b.z + dz;
+        if (x * ax + z * az === best && this.roadAt(x + ax, z + az)) { m |= bit; break; }
+      }
+    }
+    return m;
+  }
+
   // Re-decide every building's street front (after building, demolishing or
   // re-laying roads). The new building itself, if any, is not refitted.
   // The plot comes forward only where the street runs the whole width of it
@@ -483,8 +507,9 @@ export class World {
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b);
-      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0)) {
+      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b), sd = this._sidesOf(b);
+      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0)) {
+        if (sd) b.sides = sd; else delete b.sides;
         b.front = f;
         if (own === undefined) delete b.ownFront; else b.ownFront = own;
         if (cn) b.corner = cn; else delete b.corner;

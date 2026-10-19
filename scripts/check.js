@@ -159,14 +159,44 @@ ok(true, `all building models build (${verts} verts total)`);
     tw.placeRoads(sideRoad, 1);
     // facing -z (rot 2), the side street at x + 1 is on its left
     ok(shop.corner === 1 && refits.includes(shop.id), `a side street turning the corner makes it a corner shop, rebuilt (corner ${shop.corner})`);
+    ok(shop.sides === 1, `and the world knows its left side is on a street, for its walls there (sides ${shop.sides})`);
     const saved = JSON.stringify(serialize(tw));
     ok(!saved.includes('corner'), 'the corner is never saved');
     const tw2 = deserialize(JSON.parse(saved));
-    ok(tw2.buildings.get(shop.id).corner === 1, 'a loaded town works the corner out again');
+    ok(tw2.buildings.get(shop.id).corner === 1 && tw2.buildings.get(shop.id).sides === 1, 'a loaded town works the corner and the street sides out again');
     refits.length = 0;
     for (const [x, z] of sideRoad) tw.removeRoad(x, z);
-    ok(!shop.corner && refits.includes(shop.id), 'taking the side street up makes it an ordinary shop again');
+    ok(!shop.corner && !shop.sides && refits.includes(shop.id), 'taking the side street up makes it an ordinary shop again');
   }
+}
+
+// 1d. a building with a street along its side or back has windows on that
+// wall (b.sides), whatever its looks; yards, farms, towers and open stalls,
+// whose street side is a yard or has no walls, aside
+{
+  const YARDS = new Set(['windgen', 'well', 'farm', 'homestead', 'orchard', 'builder', 'contractor', 'joinery']);
+  const DIRS = { left: [-1, 0], right: [1, 0], back: [0, -1] };
+  const blank = [];
+  let n = 0;
+  for (const [type, d] of Object.entries(BUILDINGS)) {
+    if (d.park || d.stop || YARDS.has(type)) continue;
+    const W = d.merged ? 2 : d.size, D = d.merged ? 1 : d.size;
+    for (let level = 0; level < d.levels.length; level++) for (const variant of [777, 4242, 31337]) {
+      if (type === 'market' && level === 0) continue;
+      const g = buildModel({ type, level, variant, size: d.size, w: W, d: D, baseY: 0, minY: 0, rot: 0, rail: d.needsRail ? { x: 0, z: 0, dir: 2 } : null, sides: 7 }, { flat: true }).geo;
+      const P = g.attributes.position.array, Nn = g.attributes.normal.array, C = g.attributes.color.array, E = g.attributes.emit.array;
+      const cnt = { left: 0, right: 0, back: 0 };
+      for (let i = 0; i < P.length / 3; i++) {
+        const r = C[i * 3], gg = C[i * 3 + 1], bl = C[i * 3 + 2];
+        if (!(E[i * 4 + 3] > 0 || (bl > r * 1.25 && bl < 0.12 && gg < 0.09))) continue;
+        for (const [k, [dx, dz]] of Object.entries(DIRS)) if (Nn[i * 3] * dx + Nn[i * 3 + 2] * dz > 0.9 && P[i * 3] * dx + P[i * 3 + 2] * dz > -0.1) cnt[k]++;
+      }
+      n++;
+      const none = Object.keys(cnt).filter(k => !cnt[k]);
+      if (none.length) blank.push(`${type} L${level} (${variant}): ${none.join(', ')}`);
+    }
+  }
+  ok(!blank.length, `a building with streets at its sides and back has windows on every wall facing them (${n} models)${blank.length ? ': ' + blank.slice(0, 8).join('; ') : ''}`);
 }
 
 // 2. terrain generation over many seeds
@@ -1936,6 +1966,26 @@ ok(same, 'save round-trip heights');
     jump = Math.max(jump, Math.abs(b - a));
   }
   ok(seasonBlend(1, 12) === 0 && seasonBlend(D / 2, 0) === 0 && seasonBlend(D, 23.9) > 0.97 && jump < 0.03, `seasons hold for half their days, then turn gradually (largest step in a quarter hour ${jump.toFixed(3)})`);
+}
+
+// ---- on a slope no building is buried in the hill (world.js floorHeight)
+{
+  const { floorHeight } = await import('../src/world/world.js');
+  const w = World.createNew({ N: 48, seed: 174231, name: 'Hillby' }), t = w.terrain;
+  let worst = 0, door = 0, n = 0;
+  for (const [type, W, D] of [['house', 1, 1], ['terrace', 2, 1], ['quadrangle', 2, 2]]) {
+    for (let z = 2; z < 44; z += 2) for (let x = 2; x < 44; x += 2) for (let rot = 0; rot < 4; rot++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let dz = 0; dz < D; dz++) for (let dx = 0; dx < W; dx++) { lo = Math.min(lo, t.tileMin(x + dx, z + dz)); hi = Math.max(hi, t.tileMax(x + dx, z + dz)); }
+      if (!(hi > lo) || hi - lo > 1.1 || [0, 1].some(i => t.isWater(x + i, z))) continue;
+      const f = floorHeight(t, type, x, z, W, D, rot, lo, hi);
+      n++;
+      for (const [u, v] of [[0.08, 0.08], [W - 0.08, 0.08], [0.08, D - 0.08], [W - 0.08, D - 0.08], [W / 2, D / 2]]) worst = Math.max(worst, t.heightAt(x + u, z + v) - f);
+      const [ddx, ddz] = [[0, 1], [1, 0], [0, -1], [-1, 0]][rot];
+      door = Math.max(door, t.heightAt(x + W / 2 + (ddx * W) / 2, z + D / 2 + (ddz * D) / 2) - f);
+    }
+  }
+  ok(n > 500 && worst < 0.012 && door < 0.025, `on sloping ground no building's walls are buried (${n} plots and facings: the ground stands at most ${worst.toFixed(3)} above the floor, ${door.toFixed(3)} at the door)`);
 }
 
 // ---- saves in the browser are packed (src/save/pack.js)
