@@ -62,7 +62,7 @@ const KIND = {
   farm: 'farmer', homestead: 'farmer', orchard: 'farmer',
   builder: 'builder', contractor: 'builder',
   fishery: 'fisher', fishmarket: 'fisher',
-  bank: 'clerk', offices: 'clerk', exchange: 'clerk', townhall: 'clerk', postoffice: 'clerk', station: 'clerk',
+  bank: 'clerk', offices: 'clerk', exchange: 'clerk', townhall: 'clerk', capitol: 'clerk', parliament: 'clerk', lawcourts: 'clerk', museum: 'teacher', postoffice: 'clerk', station: 'clerk',
   library: 'teacher', musichall: 'shop',
   watch: 'watch', watchhouse: 'watch', firestation: 'watch',
 };

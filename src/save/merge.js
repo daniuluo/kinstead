@@ -243,19 +243,23 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
     for (let dz = 0; dz < r.d; dz++) for (let dx = 0; dx < r.w; dx++) occ[(r.z + dz) * N + r.x + dx] = r.idx;
     kept.push(r);
   }
-  // one of each unique building: a second town hall becomes a plaza
-  const uniq = {};
+  // one of each unique building (and one seat of government, whatever it
+  // has grown into): a second town hall becomes a plaza, a second Capitol a
+  // grand park and a second Parliament a city park, on the same ground
+  const uniq = {}, keyOf = (r) => (BUILDINGS[r.type].seat ? 'seat' : r.type);
   for (const r of kept.slice().sort((a, b) => b.value - a.value || a.s.tag - b.s.tag)) {
     if (!BUILDINGS[r.type].unique) continue;
-    if (!uniq[r.type]) { uniq[r.type] = r; continue; }
-    const before = nameOf(r), value = r.value;
-    if (r.type === 'townhall' && BUILDINGS.plaza) {
-      r.type = 'plaza'; r.level = Math.min(r.level, BUILDINGS.plaza.levels.length - 1);
+    if (!uniq[keyOf(r)]) { uniq[keyOf(r)] = r; continue; }
+    const before = nameOf(r), value = r.value, area = r.w * r.d;
+    const to = !BUILDINGS[r.type].seat ? null : area >= 16 && !r.spare ? 'citypark' : area >= 9 && !r.spare ? 'grandpark' : 'plaza';
+    if (to && BUILDINGS[to]) {
+      const why = `${uniq[keyOf(r)].s.label}'s ${nameOf(uniq[keyOf(r)]).toLowerCase()} is kept`;
+      r.type = to; r.level = Math.min(r.level, BUILDINGS[to].levels.length - 1);
       r.con = null; r.leases = []; r.look = null; r.flavor = null; r.converted = true;
       let pv = 0;
-      for (let l = 0; l <= r.level; l++) pv += BUILDINGS.plaza.levels[l].cost;
+      for (let l = 0; l <= r.level; l++) pv += BUILDINGS[to].levels[l].cost;
       const back = Math.max(0, value - pv);
-      rep.converted.push({ name: before, to: nameOf(r), from: r.s.label, refund: back, why: `${uniq.townhall.s.label}'s town hall is kept` });
+      rep.converted.push({ name: before, to: nameOf(r), from: r.s.label, refund: back, why });
       rep.refundTotal += back;
       r.value = pv;
     } else {
@@ -264,7 +268,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
       losers.push({ r, why: `only one ${BUILDINGS[r.type].name} is allowed`, dup: true });
     }
   }
-  for (const l of losers) if (BUILDINGS[l.r.type].unique && uniq[l.r.type]) l.dup = true;
+  for (const l of losers) if (BUILDINGS[l.r.type].unique && uniq[keyOf(l.r)]) l.dup = true;
 
   // ---- roads and track (the other town's buildings win over them)
   const roads = new Uint8Array(N * N), rails = new Uint8Array(N * N);
@@ -818,7 +822,7 @@ function pickEntry(w, cands, rep) {
   for (const [x, z] of cands) if (w.inBounds(x, z) && w.roads[w.idx(x, z)] && edge(x, z)) { w.entry = { x, z }; return; }
   // any street that already reaches the edge, nearest the town hall
   let hall = null;
-  for (const b of w.buildings.values()) if (b.type === 'townhall') hall = b;
+  for (const b of w.buildings.values()) if (BUILDINGS[b.type].seat) hall = b;
   const fx = hall ? hall.x : N / 2, fz = hall ? hall.z : N / 2;
   let best = null, bd = Infinity;
   for (let k = 0; k < N; k++) for (const [x, z] of [[k, 0], [k, N - 1], [0, k], [N - 1, k]]) {

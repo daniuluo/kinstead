@@ -3,7 +3,7 @@
 import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS, BOULEVARD, streetPart, lookPart } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, servicesOf, needsOf, hasFields, produceOf, researchOf, visitOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
-import { fw, fd, isOpen, capOf, sizeK, householdCap } from '../world/world.js';
+import { fw, fd, isOpen, capOf, sizeK, householdCap, seatOf, civicQuarter } from '../world/world.js';
 import { firstName, lastName } from '../util/names.js';
 import { settleDay, startingWealth, yearsOf, eduOf, arrivingEdu, YEAR_DAYS, stageForAge, hasTrait, familyOf, householdsIn } from './people.js';
 
@@ -673,8 +673,9 @@ export class Sim {
     const w = this.world;
     const inc = { taxes: 0, commerce: 0, industry: 0 };
     const exp = { services: 0, buildings: 0, roads: 0, transit: 0 };
-    let bonus = 0;
-    for (const b of w.buildings.values()) if (b.type === 'townhall') bonus = BUILDINGS.townhall.levels[b.level].taxBonus || 0;
+    // the seat's own bonus, and its civic quarter's
+    const seat = seatOf(w), quarter = civicQuarter(w, seat);
+    const bonus = (seat ? BUILDINGS[seat.type].levels[seat.level].taxBonus || 0 : 0) + quarter.tax;
     const tk = (w.taxRate / 10) * (1 + bonus);
     for (const r of w.residents.values()) {
       const home = r.home != null ? w.buildings.get(r.home) : null;

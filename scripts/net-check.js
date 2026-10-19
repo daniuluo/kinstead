@@ -290,6 +290,39 @@ let ended = null;
     ok(pr.ok && kr && kr.ok && ga && ga.flavor === 'topiary' && gm && gm.flavor === 'clock', `a guest builds a topiary planting and has a monument reworked as a clock tower, and sees both (${ga && ga.flavor}, ${gm && gm.flavor})`);
     ok(!(await ask(guest, { t: 'kind', id: mr.building.id, kind: 'nonsense' })).ok, 'an unknown kind is refused');
   }
+  // a guest has the town hall rebuilt in the Gothic style and made a Civic
+  // Palace, moves it to open ground, grows it onto the land round it and
+  // rebuilds it as the Civic Centre: the guest's copy follows
+  {
+    const th = [...hw.buildings.values()].find(b => b.type === 'townhall');
+    const kr = await ask(guest, { t: 'kind', id: th.id, kind: 'gothic' });
+    for (let k = 0; k < 4; k++) await ask(guest, { t: 'upgrade', id: th.id });
+    await until(() => { const g1 = gw().buildings.get(th.id); return g1 && g1.flavor === 'gothic' && g1.level === 4; });
+    const g1 = gw().buildings.get(th.id);
+    ok(kr.ok && th.flavor === 'gothic' && th.level === 4 && g1 && g1.flavor === 'gothic' && g1.level === 4, 'a guest has the town hall rebuilt in the Gothic style and made a Civic Palace, and sees it');
+    // somewhere it could grow: open land round one of its corners
+    const open = (x, z) => hw.inBounds(x, z) && !hw.buildingOn(x, z) && !hw.roadAt(x, z) && !hw.railAt(x, z) && !hw.terrain.isWater(x, z) && hw.fields[hw.idx(x, z)] < 0;
+    const to = find(hw, (x, z) => {
+      const c = hw.moveCheck(th, x, z);
+      if (!c.ok || !c.access.some(a => a.conn)) return null;
+      for (const [cx, cz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const x0 = cx < 0 ? x - 1 : x, z0 = cz < 0 ? z - 1 : z;
+        let free = true;
+        for (let tz = z0; tz <= z0 + 2; tz++) for (let tx = x0; tx <= x0 + 2; tx++) if ((tx < x || tx > x + 1 || tz < z || tz > z + 1) && !open(tx, tz)) free = false;
+        if (free) return { x, z };
+      }
+      return null;
+    });
+    const mv = to && await ask(guest, { t: 'move', id: th.id, x: to.x, z: to.z });
+    const seat = mv && mv.ok ? mv.building : th;
+    const o = hw.expandOptions(seat).find(e => e.kind === 'grand');
+    const er = o && await ask(guest, { t: 'expand', id: seat.id, dir: o.dir, kind: 'grand' });
+    const ur = o && await ask(guest, { t: 'upgrade', id: seat.id, to: 'capitol' });
+    await until(() => { const g2 = gw().buildings.get(seat.id); return g2 && g2.type === 'capitol'; });
+    const g2 = gw().buildings.get(seat.id);
+    ok(o && er.ok && ur.ok && seat.type === 'capitol' && g2 && g2.type === 'capitol' && fw(g2) === 3 && fd(g2) === 3 && g2.flavor === 'gothic',
+      `a guest grows the Civic Palace onto the land round it and rebuilds it as the Civic Centre, and sees it (${o ? o.where : 'no land to grow onto'})`);
+  }
   // move a building
   const mover = [...hw.buildings.values()].find(b => b.type === 'house' && !b.con && fw(b) === 1 && fd(b) === 1);
   spot = freeSpot(hw);

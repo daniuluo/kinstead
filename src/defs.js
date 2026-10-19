@@ -33,7 +33,12 @@
 // each visitor, like a shop;
 // merged types occupy a 2×1 plot made from two neighbouring buildings;
 // estate types a 2×2 plot grown from a double plot (see ESTATE), and grand
-// types the 3×3 and 4×4 grounds a 2×2 park grows into (see GRAND).
+// types the 3×3 and 4×4 grounds a 2×2 park or the town hall grows into (see
+// GRAND); seat: the seat of government (one to a town, see SEAT_STYLES);
+// civic: one of the buildings of a civic quarter round it (CIVIC_QUARTER).
+//
+// Level fields for the seat: taxBonus (added to every tax), culture (how far
+// it brings culture, as a grand monument does).
 
 export const CATEGORIES = [
   { id: 'residential', name: 'Homes', icon: '🏡', key: '2' },
@@ -384,7 +389,7 @@ export const BUILDINGS = {
   },
   // A stationer joined with a school or chapel: a free library and reading room.
   library: {
-    name: 'Library', cat: 'services', size: 2, merged: true, hidden: true, service: 'culture', tech: 'parish', icon: '📖', branch: 'Library', accent: '#4a3a6a', pathIcon: 'local_library',
+    name: 'Library', cat: 'services', size: 2, merged: true, hidden: true, service: 'culture', civic: true, tech: 'parish', icon: '📖', branch: 'Library', accent: '#4a3a6a', pathIcon: 'local_library',
     desc: 'A free library with a reading room: villagers come in to read and borrow, and its readers add to research every day.',
     levels: [
       { name: 'Free Library', cost: 700, upkeep: 14, jobs: 4, radius: 9, edu: 2 },
@@ -781,15 +786,64 @@ export const BUILDINGS = {
       { name: 'Minster', cost: 2200, upkeep: 20, jobs: 5, radius: 16, unlock: 200 },
     ],
   },
+  // The seat of the town's government (seat: the town hall, and the Capitol
+  // and Parliament it grows into): one to a town. Its style is one of
+  // SEAT_STYLES (b.flavor, see KINDS), and law courts, museums, opera houses
+  // and libraries near it make a civic quarter (CIVIC_QUARTER).
   townhall: {
-    name: 'Town Council', cat: 'services', size: 2, unique: true, icon: '🏛️',
-    desc: 'The heart of the town. Every upgrade raises taxes across the whole town, and its research.',
+    name: 'Town Council', cat: 'services', size: 2, unique: true, seat: true, icon: '🏛️',
+    desc: 'The heart of the town. Every upgrade raises taxes across the whole town, and its research. Built with a clock tower, a dome, in Gothic or behind a temple front.',
     levels: [
       { name: 'Town Hall', cost: 1000, upkeep: 8, jobs: 6, taxBonus: 0, edu: 2 },
       { name: 'Guild Hall', cost: 1600, upkeep: 13, jobs: 10, taxBonus: 0.1, edu: 3, unlock: 120 },
       { name: 'Grand Hall', tech: 'civic', cost: 3200, upkeep: 22, jobs: 14, taxBonus: 0.2, edu: 3, unlock: 200, req: { power: true } },
       { name: 'City Hall', tech: 'municipal', cost: 5200, upkeep: 32, jobs: 18, taxBonus: 0.3, edu: 3, appeal: 6, radius: 4, unlock: 350, req: { power: true, happiness: 62 } },
       { name: 'Civic Palace', tech: 'metropolis', cost: 8800, upkeep: 47, jobs: 22, taxBonus: 0.4, edu: 4, appeal: 10, radius: 5, unlock: 600, req: { power: true, happiness: 68, culture: true } },
+    ],
+  },
+  // The Civic Palace grown onto the land round it (Capital City): 3×3
+  // grounds, then 4×4, rebuilt across them. culture: the streets it brings
+  // culture to (as a grand monument does).
+  capitol: {
+    name: 'Capitol', cat: 'services', size: 3, hidden: true, grand: true, unique: true, seat: true, ground: 'stone', tech: 'capital', icon: '🏛️', branch: 'Capitol', accent: '#5a4a2a', pathIcon: 'account_balance',
+    desc: 'The seat of government on 3×3 grounds: the hall behind a forecourt between two long wings, railed and lit, with a fountain, lawns, statues and flags.',
+    levels: [
+      { name: 'Civic Centre', cost: 12000, upkeep: 62, jobs: 28, taxBonus: 0.48, edu: 3, appeal: 14, radius: 6, culture: 8, unlock: 900, req: { power: true, happiness: 68, culture: true } },
+      { name: 'Capitol', tech: 'capital', cost: 17000, upkeep: 78, jobs: 34, taxBonus: 0.55, edu: 3, appeal: 18, radius: 7, culture: 10, unlock: 1400, req: { power: true, happiness: 70, culture: true } },
+    ],
+  },
+  parliament: {
+    name: 'Parliament', cat: 'services', size: 4, hidden: true, grand: true, unique: true, seat: true, ground: 'stone', tech: 'capital', icon: '🏛️', branch: 'Parliament', accent: '#3a2a4a', pathIcon: 'gavel',
+    desc: 'The seat of government on 4×4 grounds: two chambers and their towers along a great square, with a processional way, statues and fountains: the town as the capital of the land.',
+    levels: [
+      { name: 'Parliament House', cost: 26000, upkeep: 98, jobs: 42, taxBonus: 0.63, edu: 3, appeal: 24, radius: 9, culture: 12, unlock: 2200, req: { power: true, happiness: 72, culture: true } },
+      { name: 'Houses of Parliament', tech: 'capital', cost: 36000, upkeep: 120, jobs: 52, taxBonus: 0.7, edu: 3, appeal: 30, radius: 10, culture: 14, unlock: 3200, req: { power: true, happiness: 74, culture: true } },
+    ],
+  },
+  // Civic buildings (civic): near the seat they make a civic quarter, which
+  // raises the town's taxes (CIVIC_QUARTER).
+  lawcourts: {
+    name: 'Law Courts', cat: 'services', size: 2, service: 'safety', civic: true, unlock: 200, tech: 'civicpride', icon: '⚖️',
+    desc: 'Judges, barristers and juries under one great roof: justice keeps a wide area safe, and near the town hall the courts make part of a civic quarter.',
+    levels: [
+      { name: 'Assize Courts', cost: 2600, upkeep: 26, jobs: 8, radius: 14, edu: 3 },
+      { name: 'Royal Courts of Justice', tech: 'municipal', cost: 5200, upkeep: 38, jobs: 13, radius: 18, edu: 4, unlock: 350, req: { power: true } },
+    ],
+  },
+  museum: {
+    name: 'Museum', cat: 'services', size: 2, service: 'culture', civic: true, unlock: 200, tech: 'civicpride', icon: '🏺',
+    desc: 'Fossils, antiquities and pictures behind a columned front: culture for the streets round it, research from its curators, and near the town hall part of a civic quarter.',
+    levels: [
+      { name: 'Museum', cost: 2200, upkeep: 24, jobs: 8, radius: 12, edu: 3 },
+      { name: 'Museum & Art Gallery', tech: 'universities', cost: 4400, upkeep: 36, jobs: 14, radius: 16, edu: 4, unlock: 350, req: { power: true } },
+    ],
+  },
+  operahouse: {
+    name: 'Assembly & Opera', cat: 'commercial', size: 2, leisure: true, service: 'culture', civic: true, unlock: 200, tech: 'civicpride', icon: '🎭',
+    desc: 'Balls, concerts and then grand opera: the town comes out for the evening, every visit pays, it brings culture to the streets round it, and near the town hall it makes part of a civic quarter.',
+    levels: [
+      { name: 'Assembly Rooms', cost: 2800, jobs: 12, income: 7, visit: 12, radius: 10 },
+      { name: 'Opera House', tech: 'theatre', cost: 5600, jobs: 20, income: 8, visit: 18, radius: 14, unlock: 350, req: { power: true } },
     ],
   },
 
@@ -965,7 +1019,8 @@ export const TECHS = {
   masonry: { name: 'Masonry', cost: 60, tier: 0, branch: 'stone', needs: [], desc: "Mortar and stone: churches, guardhouses, the masons' lodge, and a chapel joined with the cottage next door as its vicarage." },
   stonework: { name: 'Dressed Stone', cost: 115, tier: 1, branch: 'stone', needs: ['masonry'], desc: 'Stone-fronted buildings and monuments.' },
   architecture: { name: 'Architecture', cost: 270, tier: 2, branch: 'stone', needs: ['stonework'], desc: 'Villas, manor houses and cobbled squares.' },
-  grandarch: { name: 'Grand Architecture', cost: 675, tier: 3, branch: 'stone', needs: ['architecture', 'paints'], desc: 'Grand manors, country mansions and stately homes.' },
+  grandarch: { name: 'Grand Architecture', cost: 675, tier: 3, branch: 'stone', needs: ['architecture', 'paints'], desc: 'Grand manors, country mansions and stately homes, and a domed town hall.' },
+  civicpride: { name: 'Civic Pride', cost: 1150, tier: 4, branch: 'stone', needs: ['grandarch', 'services3'], desc: "Law courts, museums and assembly rooms: near the town hall they make a civic quarter, and every kind there raises the town's taxes." },
   brickmaking: { name: 'Brickmaking', cost: 60, tier: 0, branch: 'brick', needs: [], desc: 'Kilns and brick walls.' },
   urban: { name: 'Terraces', cost: 160, tier: 1, branch: 'brick', needs: ['brickmaking', 'joining'], desc: 'Join neighbouring homes into terraces.' },
   pigments: { name: 'Limewash', cost: 30, tier: 0, branch: 'colour', needs: [], desc: 'Limewashed walls.' },
@@ -999,7 +1054,8 @@ export const TECHS = {
   hospitals: { name: 'Hospitals', cost: 525, tier: 3, branch: 'public', needs: ['medicine', 'stonework'], desc: 'Hospitals, infirmaries and dispensing chemists.' },
   services3: { name: 'Civic Services', cost: 720, tier: 4, branch: 'public', needs: ['services2', 'architecture'], desc: 'Third-level and higher public buildings.' },
   municipal: { name: 'Municipal Government', cost: 1800, tier: 5, branch: 'public', needs: ['civic', 'services3'], desc: 'The City Hall: council, courts and records under one clock tower, for more tax and research.' },
-  metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for the most tax and research.' },
+  metropolis: { name: 'Metropolitan Government', cost: 2700, tier: 6, branch: 'public', needs: ['municipal', 'electricity'], desc: 'The Civic Palace: a domed seat of government for a city, for more tax and research.' },
+  capital: { name: 'Capital City', cost: 3600, tier: 7, branch: 'public', needs: ['metropolis', 'bigplots'], desc: 'Grow the Civic Palace onto the land round it into 3×3 grounds for a Civic Centre and then a Capitol, and those into 4×4 for a Parliament: the most tax and research of all.' },
   schooling: { name: 'Schooling', cost: 75, tier: 0, branch: 'learn', needs: [], desc: 'Elementary schools, middle schools, stationers to sell paper and books, and board schools joined from two schoolhouses.' },
   parish: { name: 'Parish Schools', cost: 160, tier: 1, branch: 'learn', needs: ['schooling', 'joining'], desc: 'Join a chapel and a school, or a stationer and a school or chapel into a free library.' },
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
@@ -1023,7 +1079,7 @@ export function techForLevel(type, level) {
   return t ? t[Math.min(level, 2) - 1] : null;
 }
 // Abilities that research unlocks (not buildings).
-export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots into 2×2 estates', publicparks: 'Grow 2×2 parks into 3×3 and 4×4 grounds', cables: 'Bury the power lines under the streets' };
+export const CAPABILITIES = { joining: 'Join neighbouring buildings', surveying: 'Expand onto the plot next door; buy garden strips', relocation: 'Move buildings', bigplots: 'Grow double plots into 2×2 estates', publicparks: 'Grow 2×2 parks into 3×3 and 4×4 grounds', capital: 'Grow the Civic Palace into 3×3 and 4×4 grounds', cables: 'Bury the power lines under the streets' };
 
 // Burying the power lines under a street, per road tile.
 export const BURY_COST = 12;
@@ -1068,8 +1124,18 @@ export const MONUMENTS = {
   clock: { name: 'Clock tower', icon: 'schedule', tech: 'civic', desc: 'A clock tower with four faces, lit at night, for the whole town to set its watches by.' },
   arch: { name: 'Triumphal arch', icon: 'account_balance', tech: 'grandarch', desc: 'A great stone arch carved with reliefs, a chariot on the top at last.' },
 };
-export const KINDS = { flowers: PLANTINGS, statue: MONUMENTS };
-// reworking a planting or a monument as another kind costs this much of what it is worth
+// The style the seat of government is built in (its b.flavor), from the
+// little Town Hall to the Houses of Parliament: what crowns it and how its
+// front is dressed. One with no style chosen has a clock tower, and a dome
+// once it is a Civic Palace or grander (seatStyle).
+export const SEAT_STYLES = {
+  tower: { name: 'Clock tower', icon: 'schedule', desc: 'A tall clock tower over the doors, its four faces lit at night, and a spire or cupola on top as it grows.' },
+  gothic: { name: 'Gothic', icon: 'church', tech: 'stonework', desc: 'Steep roofs, pointed windows and pinnacles, and a spired tower: a town hall like a cathedral of the town.' },
+  classical: { name: 'Temple front', icon: 'account_balance', tech: 'architecture', desc: 'A colonnade and pediment across the whole front like a Greek temple, with statues along the skyline.' },
+  dome: { name: 'Dome', icon: 'mosque', tech: 'grandarch', desc: 'A dome on a ring of windows, a lantern on top, over a columned portico.' },
+};
+export const KINDS = { flowers: PLANTINGS, statue: MONUMENTS, townhall: SEAT_STYLES, capitol: SEAT_STYLES, parliament: SEAT_STYLES };
+// reworking a planting or a monument (or restyling the seat) as another kind costs this much of what it is worth
 export const REKIND = 0.4;
 export const kindsOf = (type) => KINDS[type] || null;
 // The kind a planting or monument is (b.flavor, or one by its seed), or null.
@@ -1077,9 +1143,36 @@ export function kindOf(b) {
   const K = KINDS[b && b.type];
   if (!K) return null;
   if (typeof b.flavor === 'string' && Object.hasOwn(K, b.flavor)) return b.flavor;
+  if (BUILDINGS[b.type].seat) return seatStyle(b);
   const free = Object.keys(K).filter(k => !K[k].tech);
   return free[(((b.variant || 0) >>> 5) % free.length + free.length) % free.length];
 }
+// The seat's style when none was chosen: the clock tower, and the dome from
+// the Civic Palace up.
+export function seatStyle(b) {
+  if (typeof b.flavor === 'string' && Object.hasOwn(SEAT_STYLES, b.flavor)) return b.flavor;
+  return b.type !== 'townhall' || b.level >= 4 ? 'dome' : 'tower';
+}
+export const isSeat = (b) => !!(b && BUILDINGS[b.type] && BUILDINGS[b.type].seat);
+// The seat as it grows (GRAND), and what rebuilding it in another style
+// costs: this share of all it has cost, from the first Town Hall up.
+export const SEAT_CHAIN = ['townhall', 'capitol', 'parliament'];
+export const SEAT_RESTYLE = 0.2;
+export function seatWorth(b) {
+  let v = 0;
+  for (const t of SEAT_CHAIN) {
+    const L = BUILDINGS[t].levels;
+    for (let l = 0; l < L.length && (t !== b.type || l <= b.level); l++) v += L[l].cost;
+    if (t === b.type) break;
+  }
+  return v;
+}
+
+// Civic buildings (def.civic) whose middle is within `reach` tiles of the
+// seat's make a civic quarter: each kind there adds `tax` to the town's
+// taxes, on top of the seat's own tax bonus (see civicQuarter in world.js).
+export const CIVIC_QUARTER = { reach: 10, tax: 0.03 };
+export const CIVIC_TYPES = Object.keys(BUILDINGS).filter(t => BUILDINGS[t].civic);
 
 // What a farm grows or raises (kept in b.flavor; none: mixed farming), and
 // what that means: the hands its plot and fields take (× its jobs), what each
@@ -1152,11 +1245,15 @@ export const ESTATE = {
 export const ESTATE_TYPES = [...new Set(Object.values(ESTATE).flat())];
 // ...and what a 2×2 park can be laid out as once it has grown onto the land
 // round it (Public Parks): 3×3 grounds, and those again into 4×4.
+// The Civic Palace (the town hall at its top level) grows the same way
+// (Capital City) into a Capitol, and a Capitol at its top level into a
+// Parliament.
 export const GRAND = {
   landscapepark: ['grandpark'], maze: ['grandpark'], palmhouse: ['grandpark'], lido: ['grandpark'], sportsground: ['grandpark'], zoo: ['grandpark'],
   grandpark: ['citypark'],
+  townhall: ['capitol'], capitol: ['parliament'],
 };
-// The 3×3 and 4×4 parks.
+// The 3×3 and 4×4 parks and seats.
 export const GRAND_TYPES = [...new Set(Object.values(GRAND).flat())];
 // A plot may only grow when the bigger plot opens up a bigger building to
 // upgrade into: these are the options for a plot growing to `area` tiles.
@@ -1179,7 +1276,7 @@ export function parkOrigin(flavor) {
 // level }. The grounds keep its uses: its research, its charge at the gate.
 export function parkCore(b) {
   let type = b.type, level = b.level, flavor = b.flavor;
-  for (let k = 0; k < 4 && BUILDINGS[type] && BUILDINGS[type].grand; k++) {
+  for (let k = 0; k < 4 && BUILDINGS[type] && BUILDINGS[type].grand && BUILDINGS[type].park; k++) {
     const o = parkOrigin(flavor);
     if (!o) break;
     type = o.type; level = Math.min(o.level ?? level, BUILDINGS[type].levels.length - 1); flavor = o.inner;
@@ -1269,6 +1366,11 @@ export const NEEDS = {
   zoo: { water: { from: 0, without: 0.5, what: "the animals' pools and troughs" } },
   lido: { water: { from: 0, without: 0.2, what: 'filling the pool' } },
   townhall: { staff: false },
+  capitol: { staff: false },
+  parliament: { staff: false },
+  lawcourts: { power: { from: 1, use: 'machines', without: 0.85, what: 'the lamps in its courtrooms' } },
+  museum: { power: { from: 1, use: 'machines', without: 0.85, what: 'the lamps in its galleries' } },
+  operahouse: { power: { from: 0, use: 'lights', without: 0.75, what: 'the stage lights and the chandeliers' } },
   station: { staff: false },
 };
 
@@ -1281,7 +1383,7 @@ export function needsOf(type, level) {
 export const STYLE_TECH = { timber: 'carpentry', clapboard: 'woodwork', plaster: 'pigments', painted: 'paints', stone: 'stonework', brick: 'brickmaking' };
 
 // Daily research points: town hall, schools, chapels, plus a little per villager.
-export const RESEARCH_SOURCES = { physic: [1, 2], botanic: [3, 4], palmhouse: [5, 8], papermill: [2, 3], stationer: [1, 2], library: [3, 5], townhall: [3, 5, 8, 11, 14], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
+export const RESEARCH_SOURCES = { physic: [1, 2], botanic: [3, 4], palmhouse: [5, 8], papermill: [2, 3], stationer: [1, 2], library: [3, 5], townhall: [3, 5, 8, 11, 14], capitol: [17, 20], parliament: [24, 28], museum: [4, 7], school: [1, 2], middleschool: [2, 3], highschool: [3, 4], college: [5, 7], university: [12], chapel: [1, 2, 3], parishschool: [3, 6], boardschool: [2, 3], vicarage: [1, 2], cathedralclose: [6, 11], collegequad: [9, 14] };
 
 export const BUILDING_ORDER = Object.keys(BUILDINGS);
 

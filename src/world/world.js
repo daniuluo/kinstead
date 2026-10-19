@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, dressRefundAll, streetPart, lookPart, packDress, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, KINDS, REKIND, kindOf, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, KINDS, REKIND, kindOf, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS, CIVIC_QUARTER, seatWorth, SEAT_RESTYLE } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { findBoulevards, dressFits } from './boulevard.js';
@@ -337,7 +337,8 @@ export class World {
     let reason = null;
     if (!opts.ignoreUnlock && this.unlockPop < unlockOf(type, 0)) reason = `Unlocks at ${unlockOf(type, 0)} villagers`;
     if (!reason && !opts.ignoreUnlock && !this.hasTech(def.tech)) reason = `Research ${this.techName(def.tech)} first`;
-    if (def.unique && !opts.ignoreUnique) for (const b of this.buildings.values()) if (b.type === type) { reason = 'Only one allowed'; break; }
+    // (one seat of government, whichever it has grown into)
+    if (def.unique && !opts.ignoreUnique) for (const b of this.buildings.values()) if (b.type === type || (def.seat && BUILDINGS[b.type].seat)) { reason = 'Only one allowed'; break; }
     let minH = Infinity, maxH = -Infinity, trees = 0;
     for (let dz = 0; dz < D && !reason; dz++) {
       for (let dx = 0; dx < W; dx++) {
@@ -678,9 +679,11 @@ export class World {
     const def = BUILDINGS[b.type];
     if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
     // a 2×2 park, or a 3×3 one, can grow onto the land round one of its
-    // corners into grounds a size bigger (Public Parks)
+    // corners into grounds a size bigger (Public Parks); so can the seat of
+    // government at its top level (Capital City)
     const n = fw(b);
-    if (!b.con && !b.spare && def.park && n >= 2 && fd(b) === n && n * n === baseArea(b) && this.hasTech('publicparks') && growsInto(b.type, (n + 1) ** 2).length) {
+    const grows = def.park ? this.hasTech('publicparks') : def.seat && b.level === def.levels.length - 1 && this.hasTech('capital');
+    if (!b.con && !b.spare && grows && n >= 2 && fd(b) === n && n * n === baseArea(b) && growsInto(b.type, (n + 1) ** 2).length) {
       const [fx, fz] = DIRS[b.rot];
       for (const cz of [-1, 1]) for (const cx of [-1, 1]) {
         const x0 = cx < 0 ? b.x - 1 : b.x, z0 = cz < 0 ? b.z - 1 : b.z, tiles = [];
@@ -750,16 +753,17 @@ export class World {
   }
 
   // Land a building can grow onto: every tile in bounds, clear of roads,
-  // track, water and fields and with no building on it (though a park may
-  // take in the little parks there), and the ground over the old plot and
-  // the new no rougher than `rough`. { cost, absorb, warn }, or null.
+  // track, water and fields and with no building on it (though a park, or
+  // the seat's grounds, may take in the little parks there), and the ground
+  // over the old plot and the new no rougher than `rough`. { cost, absorb,
+  // warn }, or null.
   _growLand(b, tiles, rough, absorb = true) {
     const def = BUILDINGS[b.type], taken = [];
     for (const [x, z] of tiles) {
       if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return null;
       const o = this.buildingOn(x, z);
       if (!o) continue;
-      if (!(absorb && def.park && isSmallPark(o) && !(o.leases || []).length)) return null;
+      if (!(absorb && (def.park || def.seat) && isSmallPark(o) && !(o.leases || []).length)) return null;
       if (!taken.includes(o)) taken.push(o);
     }
     let lo = Infinity, hi = -Infinity;
@@ -771,7 +775,7 @@ export class World {
     const trees = empty.reduce((s, [x, z]) => s + this.treeCount[this.idx(x, z)], 0) * CLEAR_COST;
     const names = [...new Set(taken.map(o => BUILDINGS[o.type].levels[o.level].name.toLowerCase()))];
     const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
-    return { cost: empty.length * CONFIG.PLOT_PRICE + trees, absorb: taken, warn: taken.length ? `The ${list} there ${taken.length > 1 ? 'become' : 'becomes'} part of the park` : undefined };
+    return { cost: empty.length * CONFIG.PLOT_PRICE + trees, absorb: taken, warn: taken.length ? `The ${list} there ${taken.length > 1 ? 'become' : 'becomes'} part of the ${def.park ? 'park' : 'grounds'}` : undefined };
   }
 
   // Homes need running water to grow (see Sim._working), unless the sandbox
@@ -1035,13 +1039,15 @@ export class World {
       for (const type of ESTATE[b.type]) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), estate: true });
     }
     // ...and a 2×2 park grown into 3×3 grounds (or a 3×3 one into 4×4) laid
-    // out afresh across them, round what it was
+    // out afresh across them, round what it was; the seat rebuilt across
+    // them as the first level of the grander seat
     if (b.spare && fw(b) * fd(b) >= 9 && GRAND[b.type]) {
-      for (const type of GRAND[b.type]) if (baseAreaOf(type) === fw(b) * fd(b)) out.push({ type, level: Math.min(b.level, BUILDINGS[type].levels.length - 1), grand: true });
+      for (const type of GRAND[b.type]) if (baseAreaOf(type) === fw(b) * fd(b)) out.push({ type, level: def.seat ? 0 : Math.min(b.level, BUILDINGS[type].levels.length - 1), grand: true });
     }
     // ...or the building as it is can be built out across the land it took
-    // (not a park: a bigger lawn holds no more scenery)
-    if (b.spare && !def.park) out.push({ type: b.type, level: b.level, extend: true });
+    // (not a park: a bigger lawn holds no more scenery; nor the seat, which
+    // is rebuilt grander or not at all)
+    if (b.spare && !def.park && !def.seat) out.push({ type: b.type, level: b.level, extend: true });
     return out;
   }
 
@@ -1086,7 +1092,7 @@ export class World {
     if (fw(b) * fd(b) < baseAreaOf(target.type)) {
       const grounds = plotName(baseAreaOf(target.type));
       reqs.unshift(BUILDINGS[target.type].grand
-        ? { label: `${grounds[0].toUpperCase()}${grounds.slice(1)} — grow the park onto the land round it first`, met: false, space: true }
+        ? { label: `${grounds[0].toUpperCase()}${grounds.slice(1)} — grow the ${BUILDINGS[target.type].seat ? 'seat' : 'park'} onto the land round it first`, met: false, space: true }
         : BUILDINGS[target.type].estate
           ? { label: 'A 2×2 estate — grow the double plot onto the two plots beside it first', met: false, space: true }
           : { label: 'A double plot — expand onto a neighbouring plot first', met: false, space: true });
@@ -1120,10 +1126,10 @@ export class World {
   kindCheck(b, key) {
     const K = b && KINDS[b.type];
     if (!K) return { ok: false, reason: 'It only comes in one kind' };
-    const cost = Math.max(20, Math.round(this.buildValue(b) * REKIND));
+    const cost = BUILDINGS[b.type].seat ? Math.round(seatWorth(b) * SEAT_RESTYLE) : Math.max(20, Math.round(this.buildValue(b) * REKIND));
     if (typeof key !== 'string' || !Object.hasOwn(K, key)) return { ok: false, reason: 'There is no such kind', cost };
     if (b.con) return { ok: false, reason: 'Construction under way', cost };
-    if (kindOf(b) === key) return { ok: false, reason: `It is ${K[key].name.toLowerCase()} already`, cost };
+    if (kindOf(b) === key) return { ok: false, reason: BUILDINGS[b.type].seat ? 'It is in that style already' : `It is ${K[key].name.toLowerCase()} already`, cost };
     if (!this.hasTech(K[key].tech)) return { ok: false, reason: `Research ${this.techName(K[key].tech)} first`, cost };
     if (this.money < cost) return { ok: false, reason: 'Not enough money', cost };
     return { ok: true, cost };
@@ -1788,4 +1794,29 @@ export function doorPoint(b) {
 
 export function buildingCenter(b) {
   return { x: b.x + fw(b) / 2, z: b.z + fd(b) / 2 };
+}
+
+// The seat of government (the town hall, or the Capitol or Parliament it
+// grew into), or null.
+export function seatOf(w) {
+  for (const b of w.buildings.values()) if (BUILDINGS[b.type].seat) return b;
+  return null;
+}
+// The civic quarter round the seat: the civic buildings (def.civic) open and
+// on the roads with their middle within CIVIC_QUARTER.reach of the seat's,
+// nearest first, the kinds of them there, and what they add to the town's
+// taxes (CIVIC_QUARTER.tax a kind). { seat, members: [{ b, d }], kinds, tax }
+export function civicQuarter(w, seat = seatOf(w)) {
+  const out = { seat, members: [], kinds: [], tax: 0 };
+  if (!seat || !isOpen(seat)) return out;
+  const s = buildingCenter(seat);
+  for (const b of w.buildings.values()) {
+    if (!BUILDINGS[b.type].civic || !isOpen(b) || !b.connected) continue;
+    const c = buildingCenter(b), d = Math.hypot(c.x - s.x, c.z - s.z);
+    if (d <= CIVIC_QUARTER.reach) out.members.push({ b, d });
+  }
+  out.members.sort((p, q) => p.d - q.d || p.b.id - q.b.id);
+  out.kinds = [...new Set(out.members.map(m => m.b.type))];
+  out.tax = out.kinds.length * CIVIC_QUARTER.tax;
+  return out;
 }

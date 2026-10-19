@@ -4,8 +4,8 @@
 // (src/ui/guide.js), so the wiki says what the game's guide says.
 
 import {
-  BUILDINGS, CATEGORIES, SERVICES, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, FARM_JOIN, NEEDS, RESEARCH_SOURCES, CORNER_SHOPS,
-  STYLE_TECH, CAPABILITIES, kindsOf, unlockOf, techForLevel, workNeeded, choosesProduce,
+  BUILDINGS, CATEGORIES, SERVICES, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, GRAND, FARM_JOIN, NEEDS, RESEARCH_SOURCES, CORNER_SHOPS,
+  STYLE_TECH, CAPABILITIES, CIVIC_QUARTER, kindsOf, unlockOf, techForLevel, workNeeded, choosesProduce,
 } from '../src/defs.js';
 import { CONFIG } from '../src/config.js';
 import { stats, placement } from '../src/ui/guide.js';
@@ -23,6 +23,7 @@ const top = (t) => BUILDINGS[t].levels.length - 1;
 export function kindOf(type) {
   const d = BUILDINGS[type];
   if (!d.hidden) return 'menu';
+  if (d.grand) return 'grounds';
   if (d.estate) return 'estate';
   if (d.merged) return 'double';
   return 'path';
@@ -32,8 +33,11 @@ const KINDS = {
   path: ['Upgrade paths', 'Reached by upgrading another building: a branch at its top level, or a turn from one of its levels.'],
   double: ['On a double plot', 'Joined from two neighbours, or rebuilt from a building whose plot has grown.'],
   estate: ['2×2 estates', 'A double-plot building grown onto the two plots beside it (Great Plots) and rebuilt.'],
+  grounds: ['Bigger grounds', 'A 2×2 park, or the town hall at its top level, grown onto the land round one of its corners (3×3, then 4×4) and rebuilt across it.'],
 };
-const TAG = { menu: '', path: 'tag-branch', double: 'tag-merge', estate: 'tag-estate' };
+const TAG = { menu: '', path: 'tag-branch', double: 'tag-merge', estate: 'tag-estate', grounds: 'tag-estate' };
+// what the bigger grounds need, and where they are told of
+const grownBy = (t) => (BUILDINGS[t].seat ? [tl('capital'), pl('civic', 'The seat of government')] : [tl('publicparks'), pl('parks', 'Parks')]);
 
 // How a building is had: every way in.
 export function originsOf(type) {
@@ -49,6 +53,10 @@ export function originsOf(type) {
     if ((o.stageNext || []).includes(type)) out.push(`${an(o.name)} ${bl(t, 'type')} can move on to this stage of schooling.`);
     if ((LARGE[t] || []).includes(type)) out.push(`${an(lname(t))} ${bl(t)} on a grown double plot can be rebuilt as one (${pl('plots', 'Plots')}).`);
     if ((ESTATE[t] || []).includes(type)) out.push(`${an(lname(t))} ${bl(t)} grown into a 2×2 estate can be rebuilt as one (${pl('estates', 'Estates')}, ${tl('bigplots')}).`);
+    if ((GRAND[t] || []).includes(type)) {
+      const [tech, page] = grownBy(type), S = BUILDINGS[type].size;
+      out.push(o.seat ? `The ${bl(t, top(t))} grown onto the land round it, ${S}×${S} grounds, can be rebuilt as one (${tech}, ${page}).` : `${an(lname(t))} ${bl(t)} grown onto the land round it, ${S}×${S} grounds, can be laid out as one (${tech}, ${page}).`);
+    }
   }
   for (const m of MERGES) if (m.to === type) out.push(`Join ${an(lname(m.a[0]))} ${or(m.a.map(t => bl(t)))} with ${an(lname(m.b[0]))} ${or(m.b.map(t => bl(t)))} next door (${pl('joins', 'Joins')}).`);
   if (FARM_JOIN.to === type) out.push(`Join ${an(lname(FARM_JOIN.from[0]))} ${or(FARM_JOIN.from.map(t => bl(t)))} with ${an(lname(FARM_JOIN.with[0]))} ${or(FARM_JOIN.with.map(t => bl(t)))} beside it.`);
@@ -63,6 +71,10 @@ export function pathsOf(type) {
   for (const b of d.stageNext || []) out.push(`It can move on to the next stage: ${an(lname(b))} ${bl(b)}${BUILDINGS[b].merged || BUILDINGS[b].estate ? ' (on a bigger plot)' : ''}.`);
   for (const b of LARGE[type] || []) out.push(`On a double plot it can be rebuilt as ${an(lname(b))} ${bl(b)}.`);
   for (const b of ESTATE[type] || []) out.push(`Grown into a 2×2 estate it can be rebuilt as ${an(lname(b))} ${bl(b)}.`);
+  for (const b of GRAND[type] || []) {
+    const S = BUILDINGS[b].size;
+    out.push(d.seat ? `At its top level, grown onto the land round it (${S}×${S} grounds, ${grownBy(b)[0]}), it can be rebuilt as the ${bl(b)}.` : `Grown onto the land round it (${S}×${S} grounds, ${grownBy(b)[0]}), it can be laid out as ${an(lname(b))} ${bl(b)}.`);
+  }
   for (const m of MERGES) {
     const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;
     if (other) out.push(`Joined with a neighbouring ${or(other.map(o => bl(o, 0, lname(o).toLowerCase())))}: ${an(lname(m.to))} ${bl(m.to)}.`);
@@ -118,7 +130,10 @@ function notes(type) {
   if (d.nearTrees) out.push('Earns more with trees around it.');
   if (d.play) out.push('Somewhere to play: children head here after school, and homes with children in its reach are happier.');
   if (d.potter) out.push('Allotments to dig: elders go there in the mornings, and homes with elders in its reach are happier.');
-  if (kindsOf(type)) out.push(`Comes in ${Object.keys(kindsOf(type)).length} kinds (${Object.values(kindsOf(type)).map(x => esc(x.name.toLowerCase())).join(', ')}), chosen when it is built or reworked later (${pl('kinds', 'Plantings and monuments')}).`);
+  if (kindsOf(type) && d.seat) out.push(`Built in one of ${Object.keys(kindsOf(type)).length} styles (${Object.values(kindsOf(type)).map(x => esc(x.name.toLowerCase())).join(', ')}), and rebuilt in another from its panel (${pl('civic/styles', 'Its style')}).`);
+  else if (kindsOf(type)) out.push(`Comes in ${Object.keys(kindsOf(type)).length} kinds (${Object.values(kindsOf(type)).map(x => esc(x.name.toLowerCase())).join(', ')}), chosen when it is built or reworked later (${pl('kinds', 'Plantings and monuments')}).`);
+  if (d.seat) out.push(`The seat of government: its level raises every tax in town (${pl('civic', 'The seat of government')}).`);
+  if (d.civic) out.push(`With its middle within ${CIVIC_QUARTER.reach} tiles of the town hall's, it makes part of a civic quarter: each kind there adds ${pct(CIVIC_QUARTER.tax)} to the town's taxes (${pl('civic/quarter', 'The civic quarter')}).`);
   d.levels.forEach((L, i) => { if (L.culture) out.push(`The ${bl(type, i)} brings culture to the streets within ${L.culture} tiles.`); });
   if (d.generator) out.push(`Makes electricity (${pl('power-water/power', 'Power')}).`);
   if (d.builders) out.push(`Its workers are builders (${pl('construction/builders', 'Builders')}).`);
@@ -157,7 +172,7 @@ function buildingSection(type, page) {
 export function buildingPage(page) {
   const cat = Object.keys(CAT_PAGE).find(c => CAT_PAGE[c] === page);
   const list = types.filter(t => BUILDINGS[t].cat === cat);
-  const order = ['menu', 'path', 'double', 'estate'];
+  const order = ['menu', 'path', 'double', 'estate', 'grounds'];
   const groups = order.map(kd => [kd, list.filter(t => kindOf(t) === kd)]).filter(([, l]) => l.length);
   const overview = table(['Building', 'Levels', '#From', 'Unlocks at', 'Research', 'How'], list.map(t => {
     const d = BUILDINGS[t];
@@ -236,7 +251,7 @@ export async function startersPage() {
       <p>The biggest starter isn't grown from a script but laid out whole, through the same rules as the rest, with every research project behind it:</p>
       <ul>
         <li><b>Streets</b>: a grid round the town hall, paved avenues and cobbled side streets, so every lot fronts a street.</li>
-        <li><b>Core</b>: the ${bl('townhall', BUILDINGS.townhall.levels.length - 1)}, a market hall, a cathedral close, the exchange, a department store, banks, offices, a library and a theatre.</li>
+        <li><b>Core</b>: the town hall grown across a civic block into the domed ${bl('capitol', BUILDINGS.capitol.levels.length - 1)}, with ${bl('lawcourts', 0, 'law courts')}, a ${bl('museum', 0, 'museum')} and ${bl('operahouse', 0, 'assembly rooms')} beside it (a ${pl('civic/quarter', 'civic quarter')}), monuments and flower beds, a market hall, a cathedral close, the exchange, a department store, banks, offices, a library and a theatre.</li>
         <li><b>High street and homes</b>: every trade round the middle; then every lot gets a home or a place of work, homes running from flats and shophouses in the centre to terraces, family houses and villas at the edge, with gardens, courts and play areas between.</li>
         <li><b>Works</b>: on the side the road leaves by, with a wind farm past them, and no home within reach of their smoke.</li>
         <li><b>Services</b>: wherever a home would go without health, safety, culture, schooling, shops, a stop or somewhere to play; then school places for every child, coach lines through the stops, and power and water with some to spare.</li>
@@ -245,7 +260,7 @@ export async function startersPage() {
     { id: 'metropolis', title: 'The Metropolis', html: `
       <p>The most people a valley can hold. It's laid out by the same code as the Cathedral city, pushed as far as it goes:</p>
       <ul>
-        <li><b>The whole valley</b>: the largest map, every plot of it, with the cross streets further apart to leave more room for building.</li>
+        <li><b>The whole valley</b>: the largest map, every plot of it, with the cross streets further apart to leave more room for building, round the Gothic ${bl('parliament', BUILDINGS.parliament.levels.length - 1)} and its civic quarter.</li>
         <li><b>The densest homes</b>: ${bl('flats', BUILDINGS.flats.levels.length - 1, 'mansion blocks')}, ${bl('apartments', BUILDINGS.apartments.levels.length - 1, 'grand apartments')} and ${bl('quadrangle', BUILDINGS.quadrangle.levels.length - 1, 'mansion courts')}, some 36 people to a plot, every one full.</li>
         <li><b>Just enough work</b>: offices, banks and exchanges for the schooled, market halls, department stores and shops for the rest, so about four in five grown-ups have a job (no one leaves a town for want of work, but the town lives on their taxes).</li>
         <li><b>Power and water</b>: a strip along the edge the road comes in by, with steam power stations at the far side (they give the most power to a plot), waterworks, and the works.</li>

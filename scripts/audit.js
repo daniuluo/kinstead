@@ -2,7 +2,7 @@
 // merge-test.js): plots never overlap (land deals and street fronts
 // included) and the tile map agrees with them, villagers, transit lines and
 // land deals point at real buildings, capacities hold, building sites keep
-// moving, nothing turns into NaN.
+// moving, nothing turns into NaN; there is one seat of government.
 
 import { fw, fd, isOpen, capOf, spareRect } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
@@ -31,6 +31,10 @@ export function auditTown(w, problem) {
     if (a[4] !== c[4] && a[0] < c[2] - 1e-6 && c[0] < a[2] - 1e-6 && a[1] < c[3] - 1e-6 && c[1] < a[3] - 1e-6) problem(`plots overlap: ${a[4].type} #${a[4].id} and ${c[4].type} #${c[4].id}`);
   }
   for (const i in w.buildingAt) if (w.buildingAt[i] >= 0 && !w.buildings.has(w.buildingAt[i])) { problem(`tile ${i} points at a missing building`); break; }
+  // one seat of government, on grounds of its own size once rebuilt
+  const seats = [...w.buildings.values()].filter(b => BUILDINGS[b.type].seat);
+  if (seats.length > 1) problem(`${seats.length} seats of government: ${seats.map(b => `${b.type} #${b.id}`).join(', ')}`);
+  for (const b of seats) if (!b.spare && fw(b) * fd(b) !== BUILDINGS[b.type].size ** 2) problem(`${b.type} #${b.id} stands on ${fw(b)}×${fd(b)} grounds`);
   // people, lines and land deals point at real places
   for (const r of w.residents.values()) {
     if (r.home != null && !w.buildings.has(r.home)) problem(`${r.first} ${r.last} lives in a missing building`);

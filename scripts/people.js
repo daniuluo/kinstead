@@ -14,16 +14,17 @@ import { BUILDINGS } from '../src/defs.js';
 // The use classes, and how many people each takes per tile of floor against
 // a home's (HOME: the median home). Offices pack clerks in tighter than
 // families live; a shop's upper floors are mostly stores and a hospitality
-// building's mostly patrons' rooms; a hall (town hall, chapel, library) is
-// mostly one big room. Farms, industry and utilities work out in yards and
+// building's mostly patrons' rooms; a hall (the town hall and what it grows
+// into, a chapel, the library, the museum, the law courts) is mostly one
+// big room. Farms, industry and utilities work out in yards and
 // around machinery the floor doesn't show, a school's staff go by its seats,
 // and a home over a shop or workshop by both: these have no floor target.
 export const HOME = 10.64;
 export const TARGET = { home: 1, office: 1.6, shop: 0.75, hospitality: 0.45, service: 0.75, hall: 0.3 };
 const CLASS = {
   office: ['offices', 'exchange', 'bank'],
-  hospitality: ['tavern', 'inn', 'coachinginn', 'coffeehouse', 'musichall', 'teagarden'],
-  hall: ['townhall', 'chapel', 'library'],
+  hospitality: ['tavern', 'inn', 'coachinginn', 'coffeehouse', 'musichall', 'teagarden', 'operahouse'],
+  hall: ['townhall', 'capitol', 'parliament', 'chapel', 'library', 'museum', 'lawcourts'],
   industry: ['brewhouse'],
 };
 // Levels whose trade isn't under a roof or whose staff go by something

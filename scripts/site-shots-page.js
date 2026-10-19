@@ -12,12 +12,13 @@ import { fw, fd } from '../src/world/world.js';
 
 // name, the town, the canvas size (pixel art at 2× makes the picture half
 // that), what to look at, the zoom, the time of day and the season
-// (0 spring … 3 winter).
+// (0 spring … 3 winter), and a quarter turn of the view (view).
 const SHOTS = [
   { name: 'hero', town: 'city', W: 1920, H: 960, focus: 'townhall', zoom: 0.8, hours: 10.5, season: 1 },
   { name: 'og', town: 'city', W: 1200, H: 630, focus: 'townhall', zoom: 0.95, hours: 10.5, season: 1, sky: true, scale: 2 },
   { name: 'highstreet', town: 'city', W: 960, H: 600, focus: 'arcade', zoom: 4, hours: 11, season: 1 },
   { name: 'estates', town: 'city', W: 960, H: 600, focus: 'cathedralclose', zoom: 4.6, hours: 14.5, season: 1 },
+  { name: 'civic', town: 'city', W: 960, H: 600, focus: 'townhall', zoom: 3.4, hours: 14.5, season: 1 },
   { name: 'villagers', town: 'market', W: 960, H: 600, focus: 'bakery', lineup: true, zoom: 15, gap: 0.1, hours: 11, season: 1 },
   { name: 'night', town: 'city', W: 960, H: 600, focus: 'townhall', zoom: 2.1, hours: 21.6, season: 1 },
   { name: 'starters', town: 'market', W: 960, H: 600, focus: 'townhall', zoom: 2.5, hours: 10, season: 1 },
@@ -127,12 +128,13 @@ function centre(w) {
 }
 function focusOn(w, type) {
   const c = centre(w);
-  const th = [...w.buildings.values()].find(b => b.type === 'townhall');
+  // (the town hall: the seat, whatever it has grown into)
+  const th = [...w.buildings.values()].find(b => BUILDINGS[b.type].seat);
   const at = th ? { x: th.x + 0.5, z: th.z + 0.5 } : c;
   if (!type) return c;
   let best = null, bd = Infinity;
   for (const b of w.buildings.values()) {
-    if (b.type !== type) continue;
+    if (b.type !== type && !(type === 'townhall' && BUILDINGS[b.type].seat)) continue;
     const d = Math.hypot(b.x - at.x, b.z - at.z);
     if (d < bd) { bd = d; best = b; }
   }
@@ -159,10 +161,12 @@ function crowd() {
   const [bx, bz] = best[0].split(',').map(Number);
   return { x: bx * 2 + 1, z: bz * 2 + 1 };
 }
-function aim(p, zoom) {
+function aim(p, zoom, view = null) {
   const R = G().renderer, rig = R.rig;
   R.lookAt(p.x, p.z, true);
   rig.zoom = rig.zoomT = zoom;
+  // (view: a quarter turn round, to see a building from its front)
+  if (view != null) { rig.view = view; rig.turnT = (view * Math.PI) / 2; }
   rig.turn = rig.turnT; rig.base = rig.baseT; rig.elev = rig.elevT;
 }
 
@@ -187,7 +191,7 @@ async function render(spec, p) {
   const g = G(), w = g.world;
   let zoom = spec.zoom;
   if (spec.fit) ({ zoom, p } = fitZoom(w, spec.W, spec.H, spec.zoom));
-  aim(p, zoom);
+  aim(p, zoom, spec.view ?? 0);
   // let the villagers get about for a few minutes, then hold still
   w.hours = spec.hours - 0.4;
   g.setSpeed(4);
@@ -195,7 +199,7 @@ async function render(spec, p) {
   g.setSpeed(0);
   if (spec.crowd) p = crowd() || p;
   sizeTo(spec.W, spec.H);
-  aim(p, zoom);
+  aim(p, zoom, spec.view ?? 0);
   step(3, true);
   g.clock = performance.now() - 16;
   g.frame(true);

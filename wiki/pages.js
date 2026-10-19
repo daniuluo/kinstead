@@ -11,6 +11,7 @@
 import {
   BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, FARM_JOIN,
   PRODUCE, FRUIT, TRADES, CORNER_SHOPS, NEEDS, RESEARCH_SOURCES, STYLE_TECH, BURY_COST, CAPABILITIES, servicesOf, unlockOf, techForLevel, PLANTINGS, MONUMENTS, REKIND,
+  SEAT_STYLES, SEAT_CHAIN, SEAT_RESTYLE, CIVIC_QUARTER, CIVIC_TYPES,
 } from '../src/defs.js';
 import {
   CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, ROAD_SALVAGE, DRESSINGS, BOULEVARD, TITLES, SEASONS,
@@ -261,7 +262,6 @@ export const PAGES = [
         if (d.cat !== 'residential' && !d.levels.some(L => L.housing)) continue;
         d.levels.forEach((L, i) => { if (L.housing) homeRows.push([bl(t, i), d.cat === 'residential' ? esc(d.name) : `${esc(d.name)} (with homes)`, `× ${fmt(L.tax ?? 1 + 0.25 * i)}`]); });
       }
-      const th = BUILDINGS.townhall.levels;
       const effect = (rate) => (rate > fact('happyTax', 0) ? -(rate - fact('happyTax', 0)) * fact('happyTax', 1) : (fact('happyTax', 0) - rate) * fact('happyTax', 2));
       return [
         { id: 'rate', title: 'The tax rate', html: `
@@ -278,9 +278,9 @@ export const PAGES = [
           <p>All of it scales with the rate (at 20% twice as much) and with the town hall's bonus. So a town of grand homes full of working families pays far more than one of crowded flats.</p>` },
         { id: 'homes', title: 'Tax factors of homes', html: table(['Home', 'Kind', '#Tax factor'], homeRows) },
         { id: 'townhall', title: 'The town hall', html: `
-          <p>Each level of the ${bl('townhall', 0, 'town hall')} raises taxes across the whole town:</p>
-          ${table(['Level', '#Town tax', '#Research a day'], th.map((L, i) => [bl('townhall', i), L.taxBonus ? `+${pct(L.taxBonus)}` : '—', `${RESEARCH_SOURCES.townhall[Math.min(i, RESEARCH_SOURCES.townhall.length - 1)]}`]))}
-          <p>There is only one town hall in a town.</p>` },
+          <p>Each level of the ${bl('townhall', 0, 'town hall')}, and of the Capitol and the Parliament it can grow into, raises taxes across the whole town:</p>
+          ${table(['Level', '#Town tax', '#Research a day'], SEAT_CHAIN.flatMap(t => BUILDINGS[t].levels.map((L, i) => [bl(t, i), L.taxBonus ? `+${pct(L.taxBonus)}` : '—', `${RESEARCH_SOURCES[t][Math.min(i, RESEARCH_SOURCES[t].length - 1)]}`])))}
+          <p>There is only one in a town. Law courts, a museum, an opera house and a library near it make a civic quarter, which adds ${pct(CIVIC_QUARTER.tax)} more for each kind (${pl('civic', 'The seat of government')}).</p>` },
       ];
     },
     see: ['economy', 'happiness'],
@@ -535,6 +535,34 @@ export const PAGES = [
         `<p>${ESTATE_TYPES.length} estates in all. The building pages show each one's levels, and the research tree lists them under ${tl('bigplots')}.</p>` },
     ],
     see: ['plots', 'joins'],
+  },
+  {
+    id: 'civic', title: 'The seat of government', icon: 'location_city', group: 'grow',
+    summary: 'The town hall in its styles, grown into a Capitol and a Parliament, and the civic quarter of law courts, museum, opera house and library round it.',
+    sections: () => {
+      const levels = SEAT_CHAIN.flatMap(t => BUILDINGS[t].levels.map((L, i) => [bl(t, i), `${BUILDINGS[t].size}×${BUILDINGS[t].size}`, L.taxBonus ? `+${pct(L.taxBonus)}` : '—',
+        `${RESEARCH_SOURCES[t][Math.min(i, RESEARCH_SOURCES[t].length - 1)]}`, L.culture ? `${L.culture} tiles` : '—', unlockOf(t, i) ? fmt(unlockOf(t, i)) : '—', techForLevel(t, i) ? tl(techForLevel(t, i)) : '—']));
+      const civic = CIVIC_TYPES.map(t => [bl(t, 'type'), BUILDINGS[t].levels.map((L, i) => bl(t, i)).join(' › '), and(servicesOf(BUILDINGS[t]).map(s => `${SERVICES[s].icon} ${esc(SERVICES[s].name)}`)),
+        BUILDINGS[t].merged ? `joined from ${or(MERGES.filter(m => m.to === t).flatMap(m => [...m.a, ...m.b]).filter((x, i, a) => a.indexOf(x) === i).map(x => bl(x)))}` : techForLevel(t, 0) ? tl(techForLevel(t, 0)) : '—']);
+      return [
+        { id: 'levels', title: 'From Town Hall to Parliament', html: `
+          <p>Every town has one seat of government. It starts as the ${bl('townhall', 0, 'Town Hall')} and each level raises every tax in town, gives more research and, from the City Hall, lifts the streets round it. The Capitol and the Parliament also bring culture to the streets within their reach:</p>
+          ${table(['Level', 'Grounds', '#Town tax', '#Research a day', '#Culture reach', '#Villagers', 'Research'], levels)}
+          <p>A town never has a second: two merged towns keep the grander seat, and the other becomes a park on the same ground (${pl('merging', 'Merging villages')}).</p>` },
+        { id: 'styles', title: 'Its style', html: `
+          <p>The seat is built in one of ${Object.keys(SEAT_STYLES).length} styles. The style decides what crowns it and how its front is dressed, at every level from the little Town Hall to the Houses of Parliament. Until one is chosen it has a clock tower, and a dome from the Civic Palace up. Its panel's <b>Its style</b> section lists them all, and builders rebuild it in another style for ${pct(SEAT_RESTYLE)} of everything the seat has cost so far, keeping its level:</p>
+          <div class="style-grid">${Object.entries(SEAT_STYLES).map(([id, x]) => `<figure>${pic('townhall', 3, { variant: 4242, flavor: id, alt: `A City Hall with ${x.name.toLowerCase()}` })}<figcaption><b>${esc(x.name)}</b>${esc(x.desc)} <span class="muted">Research: ${x.tech ? tl(x.tech) : '—'}</span></figcaption></figure>`).join('')}</div>` },
+        { id: 'grow', title: 'Growing the seat', html: `
+          <p>With ${tl('capital')} researched, the ${bl('townhall', BUILDINGS.townhall.levels.length - 1)} can take the land round one of its corners, five plots in an L (${money(5 * CONFIG.PLOT_PRICE)} of land), for 3×3 grounds. Little parks in the way (a flower bed, a monument) become part of the grounds; buildings and roads block that corner. The palace stays where it stood, its new land a garden, until it is rebuilt across the grounds as the ${bl('capitol', 0)}: the hall raised behind a forecourt between two long wings, with a fountain, lawns, flags, lamp standards and railings along the street. Then it can be upgraded to the ${bl('capitol', 1)}.</p>
+          <p>The Capitol in turn takes seven more plots for 4×4 grounds, and is rebuilt as the ${bl('parliament', 0)}: a long range with a chamber at each end and a great square before it, then the ${bl('parliament', 1)} with a tower at each end. Each grows only from its top level and is never simply extended; each is its style's grandest building, a dome on a colonnaded drum, a spired Gothic tower or a temple front with a chariot on it.</p>
+          <div class="style-grid">${['capitol', 'parliament'].map(t => `<figure>${pic(t, 1, { variant: 4242, flavor: t === 'capitol' ? 'dome' : 'gothic', alt: BUILDINGS[t].levels[1].name })}<figcaption><b>${esc(BUILDINGS[t].levels[1].name)}</b>${esc(BUILDINGS[t].desc)}</figcaption></figure>`).join('')}</div>` },
+        { id: 'quarter', title: 'The civic quarter', html: `
+          <p>Law courts, a museum, assembly rooms (later an opera house) and a library standing near the seat make a civic quarter. Each kind with its middle within ${CIVIC_QUARTER.reach} tiles of the seat's adds ${pct(CIVIC_QUARTER.tax)} to the town's taxes, on top of the seat's own bonus: ${pct(CIVIC_TYPES.length * CIVIC_QUARTER.tax)} with all ${CIVIC_TYPES.length}. A second building of the same kind adds nothing more. The seat's panel lists each kind and the one that counts for it, and a civic building's panel says whether it is part of the quarter.</p>
+          ${table(['Building', 'Levels', 'Gives', 'Needs'], civic)}
+          <p>${tl('civicpride')} unlocks the law courts, the museum and the assembly rooms; the library is joined from a stationer and a school or chapel.</p>` },
+      ];
+    },
+    see: ['taxes', 'plots', 'styles', 'kinds'],
   },
   {
     id: 'styles', title: 'Styles and restyling', icon: 'palette', group: 'grow',

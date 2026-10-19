@@ -9,7 +9,7 @@
 //   ready-grown town, to measure how the simulation copes) · chaos (like
 //   stress, with instant construction, so far more upgrades / joins / moves)
 
-import { World, fw, fd, isOpen, capOf } from '../src/world/world.js';
+import { World, fw, fd, isOpen, capOf, seatOf, civicQuarter } from '../src/world/world.js';
 import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
 import { Agents, visitorCap } from '../src/sim/agents.js';
@@ -60,7 +60,7 @@ game.on('graduated', () => { counts.grads++; });
 w.on('research:done', () => { counts.research++; });
 
 // ------------------------------------------------------------ bot helpers
-const center = (() => { const th = [...w.buildings.values()].find(b => b.type === 'townhall'); return { x: th.x + 1, z: th.z + 1 }; })();
+const center = (() => { const th = [...w.buildings.values()].find(b => BUILDINGS[b.type].seat); return { x: th.x + th.size / 2, z: th.z + th.size / 2 }; })();
 // the tile just beyond the end of a street: kept free so the street can grow
 const streetEnd = (x, z) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.roadAt(x - dx, z - dz) && w.roadAt(x - 2 * dx, z - 2 * dz) && !w.roadAt(x - dx + dz, z - dz + dx) && !w.roadAt(x - dx - dz, z - dz - dx));
 function spots(type, near = center, max = 14) {
@@ -123,7 +123,9 @@ function botDay() {
   if (w.money < 150) return;
   // (the busy modes try every kind of little park too)
   const parks = MODE !== 'economy' ? ['pond', 'rosegarden', 'bandstand', 'allotment', 'physic', 'flowers', 'statue'] : [];
-  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well', ...parks]); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
+  // (and the civic buildings, near the town hall)
+  const civic = MODE !== 'economy' ? ['lawcourts', 'museum', 'operahouse'] : [];
+  for (let k = 1; k < busy; k++) { const t = rng.pick(['house', 'house', 'shop', 'bakery', 'tavern', 'workshop', 'chapel', 'school', 'clinic', 'garden', 'playground', 'well', ...parks, ...civic]); if (!placeUseful(t === 'shop' ? anyShop() : t)) growRoads(); }
   // and now and then has a planting or a monument reworked as another kind
   if (MODE !== 'economy' && rng.chance(0.3)) {
     const cands = [...w.buildings.values()].filter(b => KINDS[b.type] && !b.con);
@@ -225,13 +227,13 @@ function botDay() {
     if (o && w.expandBuilding(b.id, o.dir, o.kind).ok) { counts.expands++; if (o.kind === 'estate') counts.estates++; if (o.kind === 'grand') counts.grounds++; }
   }
   if (rng.chance(MODE !== 'economy' ? 0.5 : 0.06)) {
-    const cands = [...w.buildings.values()].filter(b => !b.con && BUILDINGS[b.type].size === 1 && b.type !== 'townhall');
+    const cands = [...w.buildings.values()].filter(b => !b.con && BUILDINGS[b.type].size === 1 && !BUILDINGS[b.type].seat);
     const b = cands.length && rng.pick(cands);
     const s = b && spots(b.type, { x: b.x, z: b.z }, 8)[0];
     if (s && w.moveBuilding(b.id, s.x, s.z).ok) counts.moves++;
   }
   if (rng.chance(MODE !== 'economy' ? 0.3 : 0.04)) {
-    const cands = [...w.buildings.values()].filter(b => !b.con && b.type !== 'townhall' && b.type !== 'builder');
+    const cands = [...w.buildings.values()].filter(b => !b.con && !BUILDINGS[b.type].seat && b.type !== 'builder');
     const b = cands.length && rng.pick(cands);
     if (b && w.demolishBuilding(b.id).ok) counts.demolish++;
   }
@@ -368,13 +370,16 @@ console.log('buildings:', Object.entries(types).sort((a, b) => b[1] - a[1]).map(
   const on = [...w.buildings.values()].filter(b => fw(b) * fd(b) === 4 && BUILDINGS[b.type].merged).length;
   console.log(`2×2 estates: ${counts.estates} grown, ${counts.estateBuilt} rebuilt as estate buildings · standing: ${est.map(b => `${BUILDINGS[b.type].levels[b.level].name}${b.con ? ' (building)' : ''}`).join(', ') || 'none'} · ${on} double-plot buildings on grown estates`);
   // 2×2 parks grown into bigger grounds, and the grand parks standing on them
-  const big = [...w.buildings.values()].filter(b => BUILDINGS[b.type].grand);
+  const big = [...w.buildings.values()].filter(b => BUILDINGS[b.type].grand && BUILDINGS[b.type].park);
   const parkTypes = new Set([...w.buildings.values()].filter(b => BUILDINGS[b.type].park).map(b => b.type));
   console.log(`park grounds: ${counts.grounds} grown, ${counts.groundsBuilt} laid out · standing: ${big.map(b => `${BUILDINGS[b.type].levels[b.level].name} ${fw(b)}×${fd(b)}`).join(', ') || 'none'} · ${parkTypes.size} kinds of park in town`);
   // plantings and monuments by kind and level, and how many were reworked
   const kinds = {};
-  for (const b of w.buildings.values()) if (KINDS[b.type]) { const k = `${KINDS[b.type][kindOf(b)].name} L${b.level}`; kinds[k] = (kinds[k] || 0) + 1; }
+  for (const b of w.buildings.values()) if (KINDS[b.type] && !BUILDINGS[b.type].seat) { const k = `${KINDS[b.type][kindOf(b)].name} L${b.level}`; kinds[k] = (kinds[k] || 0) + 1; }
   console.log(`plantings and monuments: ${Object.entries(kinds).sort().map(([k, v]) => `${k} ×${v}`).join(', ') || 'none'} · ${counts.rekinds} reworked`);
+  // the seat of government, and the civic quarter round it
+  const seat = seatOf(w), q = civicQuarter(w), civic = [...w.buildings.values()].filter(b => BUILDINGS[b.type].civic);
+  console.log(`seat: ${seat ? `${BUILDINGS[seat.type].levels[seat.level].name} on ${fw(seat)}×${fd(seat)} (${KINDS[seat.type][kindOf(seat)].name.toLowerCase()})` : 'none'} · civic buildings: ${civic.map(b => BUILDINGS[b.type].levels[b.level].name).join(', ') || 'none'} · quarter: ${q.kinds.length} kinds, +${Math.round(q.tax * 100)}% tax`);
 }
 console.log('issues now:', computeIssues(game).map(i => i.text).join(' | ') || 'none');
 {

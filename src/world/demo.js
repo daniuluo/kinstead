@@ -10,7 +10,7 @@ export function growDemoTown(world, seed, size = 1) {
   world.research.done = Object.keys(TECHS);
   const N = world.N, t = world.terrain;
   let start = null;
-  for (const b of world.buildings.values()) if (b.type === 'townhall') start = { x: b.x + 1, z: b.z + 1 };
+  for (const b of world.buildings.values()) if (BUILDINGS[b.type].seat) start = { x: b.x + b.size / 2, z: b.z + b.size / 2 };
   start ||= { x: N >> 1, z: N >> 1 };
   const R = 9 + 4 * size;
 

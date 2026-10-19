@@ -42,7 +42,7 @@ export function townPicture(w) {
     px[i * 4] = col[0]; px[i * 4 + 1] = col[1]; px[i * 4 + 2] = col[2]; px[i * 4 + 3] = 255;
   }
   for (const b of w.buildings.values()) {
-    const col = b.type === 'townhall' ? [250, 244, 228] : CAT_COLOR[BUILDINGS[b.type].cat] || [200, 200, 200];
+    const col = BUILDINGS[b.type].seat ? [250, 244, 228] : CAT_COLOR[BUILDINGS[b.type].cat] || [200, 200, 200];
     for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) {
       const i = (b.z + dz) * N + b.x + dx;
       const k = b.con ? 0.6 : 1;

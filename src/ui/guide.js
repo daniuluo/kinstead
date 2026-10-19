@@ -59,11 +59,11 @@ function needs(world, type, level) {
 
 export function placement(def) {
   const out = [];
-  out.push(def.grand ? `Takes ${def.size}×${def.size} grounds, grown from a ${def.size - 1}×${def.size - 1} park` : def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
+  out.push(def.grand ? `Takes ${def.size}×${def.size} grounds, grown from ${def.seat ? `the ${def.size - 1}×${def.size - 1} seat of government` : `a ${def.size - 1}×${def.size - 1} park`}` : def.estate ? 'Takes a 2×2 estate, grown from a double plot' : def.merged ? 'Takes a double plot' : def.size > 1 ? `Takes a ${def.size}×${def.size} plot` : 'Takes one plot');
   if (!def.park) out.push('needs a road alongside');
   if (def.needsWater) out.push('must be beside water');
   if (def.needsRail) out.push('needs railway track alongside');
-  if (def.unique) out.push('only one per town');
+  if (def.unique) out.push(def.seat ? 'one seat of government per town' : 'only one per town');
   return out.join(', ');
 }
 
@@ -120,7 +120,9 @@ export function showBuildingGuide(ui, type) {
   });
   // the kinds it comes in
   if (KINDS[type]) {
-    h += `<div class="guide-more"><h5>${Object.keys(KINDS[type]).length} kinds</h5><div class="note">Choose one in the bar above the build menu, or let its seed choose; builders can rework it as another later, from its panel.</div>`;
+    h += def.seat
+      ? `<div class="guide-more"><h5>${Object.keys(KINDS[type]).length} styles</h5><div class="note">Builders can rebuild it in another style at any level, from its panel. Until one is chosen it has a clock tower, and a dome from the Civic Palace up.</div>`
+      : `<div class="guide-more"><h5>${Object.keys(KINDS[type]).length} kinds</h5><div class="note">Choose one in the bar above the build menu, or let its seed choose; builders can rework it as another later, from its panel.</div>`;
     for (const x of Object.values(KINDS[type])) h += `<div><span class="ms">${x.icon}</span> <b>${esc(x.name)}</b>${x.tech ? ` <span class="${world.hasTech(x.tech) ? 'ok' : 'no'}">(${esc(TECHS[x.tech].name)})</span>` : ''}: ${esc(x.desc)}</div>`;
     h += '</div>';
   }
@@ -130,7 +132,9 @@ export function showBuildingGuide(ui, type) {
   for (const [lv, list] of Object.entries(def.paths || {})) for (const b of list) more.push(`From the ${esc(def.levels[lv].name)} it can turn into a <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const b of def.stageNext || []) more.push(`It can move on to the next stage: <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const b of LARGE[type] || []) more.push(`On a double plot it can be rebuilt as <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
-  for (const b of GRAND[type] || []) more.push(`Grown onto the land round it (${BUILDINGS[b].size}×${BUILDINGS[b].size} grounds, Public Parks) it can be laid out as <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
+  for (const b of GRAND[type] || []) more.push(def.seat
+    ? `At the top level, grown onto the land round it (${BUILDINGS[b].size}×${BUILDINGS[b].size} grounds, Capital City), it can be rebuilt as the <b>${esc(BUILDINGS[b].levels[0].name)}</b>`
+    : `Grown onto the land round it (${BUILDINGS[b].size}×${BUILDINGS[b].size} grounds, Public Parks) it can be laid out as <b>${esc(BUILDINGS[b].levels[0].name)}</b>`);
   for (const m of MERGES) {
     const other = m.a.includes(type) ? m.b : m.b.includes(type) ? m.a : null;
     if (other) more.push(`Joined with a neighbouring ${other.map(o => esc(BUILDINGS[o].levels[0].name.toLowerCase())).join(' or ')}: <b>${esc(BUILDINGS[m.to].levels[0].name)}</b>`);

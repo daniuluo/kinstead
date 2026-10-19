@@ -7,9 +7,11 @@
 // rebuilt from, grown to 2×2 (which holds, earns and costs half as much again),
 // and each 2×2 park against the grounds it can grow into. A park's other uses
 // show beside its scenery: research, a charge per visit, culture, somewhere
-// to play (play) or dig (potter).
+// to play (play) or dig (potter). The seat of government's levels show what
+// each adds to the town's taxes and how soon that pays, and the civic
+// buildings what their civic quarter's share of the taxes is worth.
 // Usage: node scripts/economy.js
-import { BUILDINGS, RESEARCH_SOURCES, ESTATE, GRAND, servicesOf } from '../src/defs.js';
+import { BUILDINGS, RESEARCH_SOURCES, ESTATE, GRAND, SEAT_CHAIN, CIVIC_TYPES, CIVIC_QUARTER, servicesOf, unlockOf } from '../src/defs.js';
 const rows = [];
 for (const [type, d] of Object.entries(BUILDINGS)) {
   d.levels.forEach((L, i) => {
@@ -64,8 +66,31 @@ for (const [src, list] of Object.entries(ESTATE)) for (const to of list) {
 console.log('\n== park grounds (2×2 park → 3×3 grounds → 4×4)');
 const per = (L) => L.cost / (L.appeal * Math.PI * L.radius ** 2);
 for (const [src, list] of Object.entries(GRAND)) for (const to of list) {
+  if (BUILDINGS[src].seat) continue;
   BUILDINGS[src].levels.forEach((S, i) => {
     const j = Math.min(i, BUILDINGS[to].levels.length - 1), E = BUILDINGS[to].levels[j];
     console.log(`${(src + '.' + i).padEnd(16)} appeal ${String(S.appeal).padStart(2)} r${String(S.radius).padEnd(2)} $/a·t ${f(per(S), 2)} → ${(to + '.' + j).padEnd(13)} ${E.name.padEnd(17)} appeal ${E.appeal} r${E.radius} $/a·t ${f(per(E), 2)}  up ${S.upkeep || 0} → ${E.upkeep}  $${E.cost}  ${parkUses(to, j)}`);
   });
 }
+
+// The seat of government, level by level (the town hall, then the Capitol
+// and the Parliament it grows into): what each step adds to the town's taxes
+// (a resident pays about $3.75 a day at the usual rate: see the homes
+// above), and how soon that pays for the step in a town of the size that
+// unlocks it, and in one twice that size. Then the civic quarter: each kind
+// of civic building near the seat adds CIVIC_QUARTER.tax.
+console.log('\n== the seat of government (tax per resident ≈ $3.75/day before the bonus)');
+const PER = 0.55 * 6 + 0.45;
+let prev = null;
+for (const t of SEAT_CHAIN) BUILDINGS[t].levels.forEach((L, i) => {
+  const pop = Math.max(25, unlockOf(t, i)), gain = prev ? (L.taxBonus - prev.taxBonus) * PER : 0, res = RESEARCH_SOURCES[t][Math.min(i, RESEARCH_SOURCES[t].length - 1)];
+  const pays = gain > 0 ? `+${Math.round((L.taxBonus - prev.taxBonus) * 100)}% tax: pays back in ${f(L.cost / (gain * pop - (L.upkeep - prev.upkeep)))}d at ${pop} villagers, ${f(L.cost / (gain * pop * 2 - (L.upkeep - prev.upkeep)))}d at ${pop * 2}` : '';
+  console.log(`${(t + '.' + i).padEnd(14)} ${L.name.padEnd(21)} $${String(L.cost).padStart(5)} up ${String(L.upkeep).padStart(3)} area ${BUILDINGS[t].size ** 2} tax +${Math.round((L.taxBonus || 0) * 100)}% research ${res}${L.culture ? ` culture r${L.culture}` : ''}${L.appeal ? ` appeal ${L.appeal} r${L.radius}` : ''}  ${pays}`);
+  prev = L;
+});
+console.log(`civic quarter: each of ${CIVIC_TYPES.length} kinds within ${CIVIC_QUARTER.reach} tiles adds ${Math.round(CIVIC_QUARTER.tax * 100)}% tax, $${f(CIVIC_QUARTER.tax * PER * 1000)}/day per 1,000 villagers (at most +${Math.round(CIVIC_TYPES.length * CIVIC_QUARTER.tax * 100)}%)`);
+const days = (cost, net) => (net > 0 ? `in ${f(cost / net)}d` : 'never');
+for (const t of CIVIC_TYPES) BUILDINGS[t].levels.forEach((L, i) => {
+  const pop = Math.max(25, unlockOf(t, i)), q = CIVIC_QUARTER.tax * PER;
+  console.log(`  ${(t + '.' + i).padEnd(13)} ${L.name.padEnd(24)} $${String(L.cost).padStart(5)} up ${String(L.upkeep || 0).padStart(3)}  the quarter's share of the taxes alone pays for it ${days(L.cost, q * pop - (L.upkeep || 0))} at ${pop} villagers, ${days(L.cost, q * pop * 4 - (L.upkeep || 0))} at ${pop * 4}`);
+});

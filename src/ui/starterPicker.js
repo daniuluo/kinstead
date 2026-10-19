@@ -148,7 +148,7 @@ export function drawTownMap(canvas, w) {
   // buildings: a coloured roof with a darker rim
   for (const b of w.buildings.values()) {
     const def = BUILDINGS[b.type];
-    const col = b.type === 'townhall' ? '#7d4cb0' : def.outdoorWork ? '#d9c467' : CAT[def.cat] || '#999';
+    const col = def.seat ? '#7d4cb0' : def.outdoorWork ? '#d9c467' : CAT[def.cat] || '#999';
     const W = fw(b), D = fd(b);
     g.fillStyle = 'rgba(40,30,20,0.55)';
     g.fillRect(b.x + 0.08, b.z + 0.08, W - 0.16, D - 0.16);

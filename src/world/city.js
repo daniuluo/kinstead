@@ -1,7 +1,9 @@
 // The City starter: a town decades along, laid out whole rather than grown
 // from a short build script like the villages. A grid of streets round the
 // town hall (paved avenues, cobbled side streets); a civic core with the
-// Civic Palace, a market hall, the exchange, a department store and a
+// seat (the Civic Palace, or grown into a Capitol or a Parliament across a
+// civic block: def.seat) and the law courts, museum and opera house of its
+// civic quarter, a market hall, the exchange, a department store and a
 // cathedral close; a high street ring with every trade; homes beyond, dense
 // in the middle (flats, apartments, shophouses) and thinning out to
 // terraces, family houses and villas; works, power and water on the side the
@@ -24,7 +26,7 @@
 // cross streets), workforce, skilled, parks, fill, stopGap.
 
 import { World, capOf, householdCap, isOpen, fw, fd } from './world.js';
-import { BUILDINGS, TECHS, servicesOf } from '../defs.js';
+import { BUILDINGS, TECHS, GRAND, servicesOf } from '../defs.js';
 import { stageForAge } from '../sim/people.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { headlessGame } from './starters.js';
@@ -77,6 +79,11 @@ export function growCity(def, { onDay } = {}) {
   const works = dense ? (x, z) => edgeD(x, z) < BAND : (x, z) => dist(x, z) >= R * 0.55 && away(x, z) < 0.62;
 
   // ---- streets: along x every third row, across every ninth column (or xEvery)
+  // A city with a grander seat (def.seat) leaves out the street between the
+  // town hall's block and the next for eight plots, a civic block the seat
+  // grows across, with the civic buildings beside it
+  const CB = def.seat ? { x0: th.x, x1: th.x + 7, z0: th.z, z1: th.z + 4 } : null;
+  const civicBlock = (x, z) => !!CB && x >= CB.x0 && x <= CB.x1 && z >= CB.z0 && z <= CB.z1;
   const XE = def.xEvery || 9;
   const zStreet = (z) => (((z - (th.z - 1)) % 3) + 3) % 3 === 0;
   const xStreet = (x) => (((x - (th.x - 1)) % XE) + XE) % XE === 0;
@@ -84,7 +91,7 @@ export function growCity(def, { onDay } = {}) {
   const paved = [], cobbled = [];
   for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
     const beyond = x >= 3 && z >= 3 && x < N - 3 && z < N - 3 && dist(x, z) <= R + OUT && away(x, z) < 0.75;
-    if (!(inside(x, z) || beyond) || !(zStreet(z) || xStreet(x)) || w.terrain.isWater(x, z)) continue;
+    if (!(inside(x, z) || beyond) || !(zStreet(z) || xStreet(x)) || w.terrain.isWater(x, z) || civicBlock(x, z)) continue;
     (avenue(x, z) ? paved : cobbled).push([x, z]);
   }
   w.placeRoads(paved, 3);
@@ -93,8 +100,24 @@ export function growCity(def, { onDay } = {}) {
   const entryRoad = [];
   for (let i = 0; i < N * N; i++) if (w.roads[i] === 1 && dist(i % N, (i / N) | 0) <= R + 2) entryRoad.push([i % N, (i / N) | 0]);
   w.placeRoads(entryRoad, 3);
+  // (the founders' lanes are taken up from the civic block)
+  if (CB) for (let z = CB.z0; z <= CB.z1; z++) for (let x = CB.x0; x <= CB.x1; x++) if (w.roadAt(x, z)) w.removeRoad(x, z);
   // streets cut off from the rest (by water or a steep bank) are taken up again
   for (let i = 0; i < N * N; i++) if (w.roads[i] && !w.connected[i]) w.removeRoad(i % N, (i / N) | 0);
+
+  // ---- the seat grows across the civic block, a size at a time, into the
+  // Capitol or the Parliament (def.seat), in its style (def.seatStyle)
+  if (def.seat) {
+    const keep = { ...w.sandbox };
+    Object.assign(w.sandbox, { freeUpgrades: true, instantBuild: true });
+    for (let k = 0; k < 8 && !(th.type === def.seat && th.level === TOP(def.seat)); k++) {
+      if (th.level < TOP(th.type)) { w.upgradeBuilding(th.id); continue; }
+      const o = w.expandOptions(th).filter(e => e.kind === 'grand').sort((a, b) => b.dir - a.dir)[0];
+      if (!o || !w.expandBuilding(th.id, o.dir, 'grand').ok || !w.upgradeBuilding(th.id, GRAND[th.type][0]).ok) { log.push(`the town hall could not grow into the ${def.seat}`); break; }
+    }
+    Object.assign(w.sandbox, keep);
+    th.flavor = def.seatStyle || null;
+  }
 
   // ---- placing buildings
   const variant = () => (rng.next() * 1e9) | 0;
@@ -147,7 +170,19 @@ export function growCity(def, { onDay } = {}) {
 
   // ---- the civic core
   const core = (n, type, o) => { for (let i = 0; i < n; i++) putBest(type, ring(0, 8.5), o); };
-  core(1, 'plaza');
+  // (a civic quarter round the seat first, in the civic block if there is one)
+  if (def.seat) for (const type of ['museum', 'lawcourts', 'operahouse']) putBest(type, (x, z) => (civicBlock(x, z) ? dist(x, z) : null)) || core(1, type);
+  else for (const type of ['museum', 'lawcourts', 'operahouse']) core(1, type);
+  // ...and the rest of the civic block: a square on the street, then
+  // monuments and flower beds
+  let square = null;
+  if (CB) for (let z = CB.z0; z < CB.z1 && !square; z++) for (let x = CB.x0; x < CB.x1 && !square; x++) square = place('plaza', x, z);
+  if (CB) for (let z = CB.z0; z <= CB.z1; z++) for (let x = CB.x0; x <= CB.x1; x++) {
+    if (w.buildingOn(x, z) || w.roadAt(x, z)) continue;
+    const mon = hash2(x, z, seed + 3) < 0.4;
+    place(mon ? 'statue' : 'flowers', x, z, { flavor: mon ? rng.pick(['column', 'rider', 'obelisk', 'founder', 'fountain']) : rng.pick(['bedding', 'topiary', 'planters', 'tree']) });
+  }
+  if (!square) core(1, 'plaza');
   core(1, 'markethall');
   core(1, 'cathedralclose', { look: 'stone' });
   core(1, 'deptstore');

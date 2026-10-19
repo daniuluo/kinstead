@@ -380,12 +380,13 @@ export class WorldView {
     // fountains on boulevards freeze over for the winter
     if (this.roads.setSeason(s, q)) this.dirty.roads = true;
     for (const it of [...this.items.values()]) if (it.b.type === 'farm') { this.removeBuilding(it.b, true); this.addBuilding(it.b, false); }
-    // parks follow the season in fewer steps, and are redrawn a few at a
-    // time over the next frames (see update)
+    // parks (and the seat of government, with its gardens) follow the
+    // season in fewer steps, and are redrawn a few at a time over the next
+    // frames (see update)
     const pk = s * PARK_SEASON_STEPS + Math.floor(q * PARK_SEASON_STEPS + 1e-6);
     if (pk !== this._parkSeason) {
       this._parkSeason = pk;
-      for (const it of this.items.values()) if (BUILDINGS[it.b.type].park && !it.site) this._reseason.add(it.b.id);
+      for (const it of this.items.values()) if ((BUILDINGS[it.b.type].park || BUILDINGS[it.b.type].seat) && !it.site) this._reseason.add(it.b.id);
     }
   }
 

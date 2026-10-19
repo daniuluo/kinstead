@@ -37,7 +37,7 @@ function gameFor(w) {
 
 // A lived-in town: grown streets and buildings, founders, a coach line, a
 // house being moved and a building site, so ids and references get exercised.
-function makeTown(N, seed, name, { day = 1, research = null, bigParks = false } = {}) {
+function makeTown(N, seed, name, { day = 1, research = null, bigParks = false, seat = null } = {}) {
   const w = World.createNew({ N, seed, name });
   growDemoTown(w, seed, 1);
   const g = gameFor(w);
@@ -71,6 +71,16 @@ function makeTown(N, seed, name, { day = 1, research = null, bigParks = false } 
     let done = false;
     for (let z = 2; z < N - S - 1 && !done; z++) for (let x = 2; x < N - S - 1 && !done; x++) {
       if (w.checkBuild(type, x, z, { ignoreMoney: true, ignoreUnlock: true }).ok) done = w.placeBuilding(type, x, z, { instant: true, ignoreUnlock: true, ignoreMoney: true, free: true, flavor }).ok;
+    }
+  }
+  // the town hall grown into a Capitol (or a Parliament), in its own style
+  if (seat) {
+    const th = [...w.buildings.values()].find(b => b.type === 'townhall'), S = BUILDINGS[seat].size;
+    w.removeBuilding(th.id, 0);
+    let done = false;
+    for (let z = 2; z < N - S - 1 && !done; z++) for (let x = 2; x < N - S - 1 && !done; x++) {
+      const c = w.checkBuild(seat, x, z, { ignoreMoney: true, ignoreUnlock: true });
+      if (c.ok && c.access.some(a => a.conn)) done = w.placeBuilding(seat, x, z, { instant: true, ignoreUnlock: true, ignoreMoney: true, free: true, level: 1, flavor: 'gothic' }).ok;
     }
   }
   w.day = day;
@@ -248,6 +258,20 @@ for (const [label, a, b, arr, days] of runs) {
     if (!r) continue;
     const after = big(r.data);
     ok(before.length === 2 && JSON.stringify(after) === JSON.stringify(before), `${label}: the City Park and the Grand Park come through whole (${after.join(', ')})`);
+  }
+}
+// one seat of government: a Capitol merged with a town hall is kept (it is
+// worth more) and the town hall becomes a plaza; two Capitols, and the
+// second becomes a grand park on its 3×3 grounds, the money back
+{
+  const K = makeTown(48, 101, 'Kingsmead', { seat: 'capitol' });
+  const seats = (d) => d.buildings.filter(r => BUILDINGS[r[1]].seat).map(r => `${r[1]}:${r[8]}×${r[9]}:${r[10]}`);
+  ok(seats(K).length === 1 && /^capitol:3×3:gothic/.test(seats(K)[0]), `a town whose seat is a Gothic Capitol (${seats(K).join(', ')})`);
+  for (const [label, A, B, arr, to] of [['a Capitol beside a town hall', T.b, K, { ...besideOffset(48, 48, 'right'), rot: 0 }, 'plaza'], ['a Capitol beside itself, turned', K, K, { ...besideOffset(48, 48, 'below'), rot: 1 }, 'grandpark']]) {
+    const r = checkMerge(label, A, B, arr);
+    if (!r) continue;
+    const s = seats(r.data), conv = r.rep.converted.find(c => c.to === BUILDINGS[to].levels[0].name || c.to === BUILDINGS[to].levels[BUILDINGS[to].levels.length - 1].name);
+    ok(s.length === 1 && /^capitol:3×3:gothic/.test(s[0]) && conv && conv.refund > 0, `${label}: one seat of government, the Capitol, kept; the other becomes a ${conv ? conv.to : '?'} (${conv ? '$' + conv.refund + ' back: ' + conv.why : 'not converted'})`);
   }
 }
 // rivers that reach the join a few tiles apart flow on into the other valley

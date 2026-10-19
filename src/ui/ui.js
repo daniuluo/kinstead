@@ -1,8 +1,8 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST, streetPart, lookPart } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, KINDS, kindOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
-import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, KINDS, kindOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce, CIVIC_QUARTER, CIVIC_TYPES } from '../defs.js';
+import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap, civicQuarter, buildingCenter } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
@@ -491,7 +491,7 @@ export class UI {
       ['housing', 'Homes for', (v) => v], ['jobs', 'Jobs', (v) => v], ['seats', 'Student places', (v) => v], ['teaches', 'Teaches', (v) => EDU[v]], ['income', 'Earnings / worker', (v) => `$${v}`],
       ['tax', 'Tax / worker', (v) => `${v}×`], ['visit', 'Per visit', (v) => `$${v}`], ['radius', 'Reach', (v) => `${v} tiles`],
       ['appeal', 'Scenery', (v) => `+${v}`], ['supply', 'Water for', (v) => `${v}`], ['kw', 'Power', (v) => `${v} kW`],
-      ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax', (v) => `+${Math.round(v * 100)}%`],
+      ['rate', 'Builder speed', (v) => `${v}×`], ['taxBonus', 'Town tax', (v) => `+${Math.round(v * 100)}%`], ['culture', 'Culture reach', (v) => `${v} tiles`],
       ['pollution', 'Smoke', (v) => `${v} tiles`, true], ['upkeep', 'Upkeep / day', (v) => `$${v}`, true],
     ];
     const tiles = [];
@@ -522,7 +522,7 @@ export class UI {
     const title = con.kind === 'demolish' ? 'Being demolished' : con.kind === 'dismantle' ? 'Being taken down for a move'
       : con.wait === 'dismantle' ? 'Waiting for the old building to come down'
         : con.wait === 'haul' ? 'Materials on their way by cart'
-          : con.kind === 'upgrade' && KINDS[b.type] && typeof con.flavor === 'string' && Object.hasOwn(KINDS[b.type], con.flavor) ? `Being reworked · ${KINDS[b.type][con.flavor].name}`
+          : con.kind === 'upgrade' && KINDS[b.type] && typeof con.flavor === 'string' && Object.hasOwn(KINDS[b.type], con.flavor) ? `Being ${BUILDINGS[b.type].seat ? 'restyled' : 'reworked'} · ${KINDS[b.type][con.flavor].name}`
           : con.kind === 'upgrade' ? `Upgrading to ${target}`
             : con.kind === 'merge' ? `Joining into ${target}`
               : con.moved ? 'Going back up on its new plot' : 'Under construction';
@@ -606,7 +606,7 @@ export class UI {
       const o = parkOrigin(b.flavor);
       if (o) rows.push(['Laid out round', `the ${BUILDINGS[o.type].levels[Math.min(o.level ?? 0, BUILDINGS[o.type].levels.length - 1)].name.toLowerCase()}`]);
     }
-    else if (b.flavor) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
+    else if (b.flavor && !KINDS[b.type]) rows.push(['Shop', BUILDINGS[b.flavor] ? BUILDINGS[b.flavor].levels[0].name : b.flavor]);
       if (def.shop) rows.push(['Sells', esc(sellsText(b))]);
     for (const l of b.leases || []) {
       const o = w.buildings.get(l.with);
@@ -641,13 +641,18 @@ export class UI {
       }).join('')}${b.workers.length > 16 ? `<span class="chip">+${b.workers.length - 16}</span>` : ''}</div></div>`;
     }
     // a planting or monument: another of its kinds, reworked by the builders
+    // (the seat of government: rebuilt in another style)
     if (!b.con && KINDS[b.type]) {
       const K = KINDS[b.type], cur = kindOf(b), cost = w.kindCheck(b, '__probe__').cost || 0;
-      h += `<div class="sec kinds"><h5>${def.icon} ${b.type === 'statue' ? 'What it is' : 'What is planted'}</h5><div class="note">${esc(K[cur].desc)}</div><div class="note">Builders can rework it as another kind, keeping its level, for $${fmt(cost)}.</div><div class="produce">${Object.entries(K).map(([k, x]) => {
+      const head = def.seat ? 'Its style' : b.type === 'statue' ? 'What it is' : 'What is planted';
+      const how = def.seat ? `Builders can rebuild it in another style, keeping its level, for $${fmt(cost)}.` : `Builders can rework it as another kind, keeping its level, for $${fmt(cost)}.`;
+      h += `<div class="sec kinds"><h5>${def.icon} ${head}</h5><div class="note">${esc(K[cur].desc)}</div><div class="note">${how}</div><div class="produce">${Object.entries(K).map(([k, x]) => {
         const unlocked = w.hasTech(x.tech), on = k === cur;
         return `<button class="btn small ${on ? 'on' : ''}" data-act="kind" data-kind="${k}" ${!on && unlocked && w.money >= cost ? '' : 'disabled'} title="${esc(unlocked ? x.desc : `Research ${TECHS[x.tech].name}`)}">${unlocked ? '' : '🔒'}<span class="ms">${x.icon}</span> ${esc(x.name)}</button>`;
       }).join('')}</div></div>`;
     }
+    // the seat and the civic buildings round it
+    if (open && (def.seat || def.civic)) h += this._quarterHTML(b);
     // a farm: what it grows or raises, and its fields beyond the plot
     if (!b.con && def.fields) {
       const P = produceOf(b), cur = b.flavor || 'mixed', max = w.fieldMax(b), n = b.fields || 0;
@@ -674,11 +679,11 @@ export class UI {
       if (grow.length) {
         const kind = grow[0].kind, estate = kind === 'estate' || kind === 'grand';
         const area = kind === 'grand' ? ((b.w ?? b.size) + 1) ** 2 : (b.w ?? b.size) * (b.d ?? b.size) * 2, plot = plotName(area);
-        const into = growsInto(b.type, area).map(t => BUILDINGS[t].levels[estate ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
+        const into = growsInto(b.type, area).map(t => BUILDINGS[t].levels[estate && !def.seat ? Math.min(b.level, BUILDINGS[t].levels.length - 1) : 0].name);
         const who = L.housing ? 'households' : L.seats ? 'students' : def.park ? 'visitors' : 'workers';
         // (a park isn't offered extended as it is: more lawn holds no more scenery)
-        const asIs = def.park ? '' : `${into.length ? ', or ' : ''}the ${esc(L.name.toLowerCase())} extended to hold 50% more ${who}`;
-        const absorbs = def.park && kind !== 'land' ? ' Little parks in the way become part of it.' : '';
+        const asIs = def.park || def.seat ? '' : `${into.length ? ', or ' : ''}the ${esc(L.name.toLowerCase())} extended to hold 50% more ${who}`;
+        const absorbs = (def.park || def.seat) && kind !== 'land' ? ' Little parks in the way become part of it.' : '';
         h += `<div class="sec"><h5>⇲ ${kind === 'grand' ? `Take land for ${plot}` : estate ? 'Take land for a 2×2 estate' : 'Take a neighbouring plot'}</h5><div class="note">Buy the land first: the ${esc(L.name.toLowerCase())} stays as it is and the new land becomes its ${def.park ? 'lawn' : 'garden'}. Then choose what to build across the ${plot} under Upgrade: ${into.length ? `the ${esc(into.join(' or the '))}` : ''}${asIs}.${absorbs}</div><div class="actions col">`;
         for (const o of grow) {
           const key = `${b.id}:${o.dir}:${o.kind}`, confirm = this.confirmExpand === key;
@@ -704,9 +709,34 @@ export class UI {
     if (!b.con) h += w.hasTech('relocation')
       ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
       : '<button class="btn" disabled title="Research House Moving to move buildings">↔ Move 🔒</button>';
-    if ((b.type !== 'townhall' || b.con) && !(b.con && b.con.kind === 'demolish')) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
+    if ((!def.seat || b.con) && !(b.con && b.con.kind === 'demolish')) h += `<button class="btn danger" data-act="demolish">${b.con && b.con.kind === 'build' && !b.con.moved ? 'Cancel' : 'Demolish'}</button>`;
     h += `</div>`;
     return h;
+  }
+
+  // The civic quarter: on the seat, each kind of civic building and the one
+  // that counts for it; on a civic building, whether it is part of it.
+  _quarterHTML(b) {
+    const w = this.world, def = BUILDINGS[b.type], q = civicQuarter(w), R = CIVIC_QUARTER.reach, pc = Math.round(CIVIC_QUARTER.tax * 100);
+    let h = '<div class="sec quarter"><h5>🏛️ Civic quarter</h5>';
+    if (def.seat) {
+      h += `<div class="note">Each of these with its middle within ${R} tiles of this one's makes part of a civic quarter, and each kind there adds ${pc}% to the town's taxes.</div>`;
+      for (const t of CIVIC_TYPES) {
+        const m = q.members.find(e => e.b.type === t);
+        h += `<div class="row"><span>${BUILDINGS[t].icon} ${esc(BUILDINGS[t].name)}</span><b>${m ? `<span class="chip link ok" data-act="building" data-id="${m.b.id}">${esc(BUILDINGS[t].levels[m.b.level].name)} · ${Math.round(m.d)} tiles</span>` : '<span class="muted">none near</span>'}</b></div>`;
+      }
+      h += `<div class="row"><span>Town tax from the quarter</span><b>${q.tax ? `+${Math.round(q.tax * 100)}%` : '—'}</b></div>`;
+      return h + '</div>';
+    }
+    const seat = q.seat;
+    if (!seat) return h + '<div class="note">There is no town hall for it to stand by.</div></div>';
+    const sn = BUILDINGS[seat.type].levels[seat.level].name, s = buildingCenter(seat), c = buildingCenter(b), d = Math.round(Math.hypot(c.x - s.x, c.z - s.z));
+    const me = q.members.find(e => e.b === b), first = q.members.find(e => e.b.type === b.type);
+    if (me && first === me) h += `<div class="note ok">Part of the civic quarter, ${d} tiles from the ${esc(sn)}: +${pc}% to the town's taxes.</div>`;
+    else if (me) h += `<div class="note">In the civic quarter, ${d} tiles from the ${esc(sn)}, but the ${esc(BUILDINGS[first.b.type].levels[first.b.level].name)} there already counts for its kind.</div>`;
+    else if (!b.connected) h += `<div class="note no">Not on the roads, so not part of the civic quarter round the ${esc(sn)}.</div>`;
+    else h += `<div class="note">${d} tiles from the ${esc(sn)}: built within ${R} tiles of it, it would make part of a civic quarter, +${pc}% to the town's taxes.</div>`;
+    return h + '</div>';
   }
 
   _residentHTML(r) {
@@ -827,7 +857,8 @@ export class UI {
       case 'kind': {
         const kb = w.buildings.get(sel.id), K = kb && KINDS[kb.type];
         g.cmd({ t: 'kind', id: sel.id, kind: data.kind }, (r) => {
-          if (r.ok) { g.sfx('build'); this.toast(r.instant ? `Reworked · ${K[data.kind].name}` : `Builders will rework it · ${K[data.kind].name}`, 'good', '🏗️'); } else if (r.reason) this.toast(r.reason, 'bad');
+          const verb = kb && BUILDINGS[kb.type].seat ? ['Restyled', 'rebuild it'] : ['Reworked', 'rework it'];
+          if (r.ok) { g.sfx('build'); this.toast(r.instant ? `${verb[0]} · ${K[data.kind].name}` : `Builders will ${verb[1]} · ${K[data.kind].name}`, 'good', '🏗️'); } else if (r.reason) this.toast(r.reason, 'bad');
           if (this.selection) this.renderInspector(true);
         });
         break;

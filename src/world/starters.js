@@ -166,17 +166,17 @@ export const STARTERS = [
   {
     // spring of the eleventh year · laid out whole by src/world/city.js, not
     // grown from a script: radius is how far out the streets go
-    id: 'city', name: 'Cathedral city', town: 'Kingsbridge', N: 80, seed: 315838, radius: 20, city: true, day: 241, settle: 4, money: 60000,
-    desc: 'A whole city decades along: a domed civic palace, a cathedral, high streets of every trade, works and a wind farm, and some 3,000 people at work.',
+    id: 'city', name: 'Cathedral city', town: 'Kingsbridge', N: 80, seed: 315838, radius: 20, city: true, day: 241, settle: 4, money: 60000, seat: 'capitol',
+    desc: 'A whole city decades along: a domed Capitol with law courts, a museum and an opera house round it, a cathedral, high streets of every trade, works and a wind farm, and some 3,000 people at work.',
   },
   {
     // the most people a valley can hold: every plot of the largest valley built
     // up with the densest homes there are, and just enough work, services,
     // schools, power and water for them (src/world/city.js, def.dense). It
     // takes a few seconds to lay out, so it's grown only when it's picked (heavy).
-    id: 'metropolis', name: 'Metropolis', town: 'Greatwick', N: 80, seed: 943464, city: true, dense: true, heavy: true, radius: null,
+    id: 'metropolis', name: 'Metropolis', town: 'Greatwick', N: 80, seed: 943464, city: true, dense: true, heavy: true, radius: null, seat: 'parliament', seatStyle: 'gothic',
     xEvery: 13, workforce: 0.58, skilled: 0.3, parks: 0.015, fill: 1, stopGap: [12, 10], day: 481, settle: 4, money: 100000,
-    desc: 'The most people a valley can hold: some 48,000 villagers in mansion blocks from edge to edge, with offices and market halls, power stations and waterworks along the road in.',
+    desc: 'The most people a valley can hold: some 48,000 villagers in mansion blocks from edge to edge round the Gothic Houses of Parliament, with offices and market halls, power stations and waterworks along the road in.',
   },
 ];
 
@@ -238,7 +238,7 @@ export function growStarter(def, { onDay } = {}) {
   sim.seedFounders();
 
   let centre = { x: start.x, z: start.z };
-  for (const b of w.buildings.values()) if (b.type === 'townhall') centre = { x: b.x + 1, z: b.z + 1 };
+  for (const b of w.buildings.values()) if (BUILDINGS[b.type].seat) centre = { x: b.x + b.size / 2, z: b.z + b.size / 2 };
 
   // ---- where to put things
   const treesNear = (x, z, r) => {

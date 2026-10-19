@@ -341,7 +341,7 @@ export class TerrainView {
       const kind = b.con && b.con.kind !== 'upgrade' ? 'packed' : def.ground ? def.ground : def.fields && !def.fruit ? 'farm' : b.type === 'plaza' ? 'plaza'
         : (b.type === 'lumber' || b.type === 'workshop') ? 'packed'
           : (def.park && b.type !== 'plaza') ? 'lawn'
-            : (b.type === 'station' || b.type === 'coachstop' || b.type === 'townhall') ? 'stone' : 'yard';
+            : (b.type === 'station' || b.type === 'coachstop' || def.seat) ? 'stone' : 'yard';
       const M = 0.14;
       this._range(b.x - M, b.z - M, b.x + fw(b) + M, b.z + fd(b) + M, (vi, x, z, i, j) => {
         const dx = x - cx, dz = z - cz;

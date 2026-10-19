@@ -29,10 +29,10 @@ let failures = 0;
 
 // The town as text: buildings by letter (capital once upgraded), : dirt,
 // = cobbles, | bridge, ~ water, T trees, ^ steep.
-const LETTER = { townhall: 'H', house: 'h', market: 'm', bakery: 'b', tavern: 'p', well: 'w', builder: 'B', farm: 'F', lumber: 'L', fishery: 'f', workshop: 'W',
+const LETTER = { townhall: 'H', capitol: 'H', parliament: 'H', house: 'h', market: 'm', bakery: 'b', tavern: 'p', well: 'w', builder: 'B', farm: 'F', lumber: 'L', fishery: 'f', workshop: 'W',
   school: 'S', chapel: 'C', clinic: '+', watch: 'G', garden: 'g', flowers: '*', coachstop: 'c', watermill: 'M', windgen: 'X', pump: 'u' };
 function asciiMap(w, R = 14) {
-  const th = [...w.buildings.values()].find(b => b.type === 'townhall'), cx = th.x + 1, cz = th.z + 1, rows = [];
+  const th = [...w.buildings.values()].find(b => BUILDINGS[b.type].seat), cx = th.x + 1, cz = th.z + 1, rows = [];
   for (let z = Math.max(0, cz - R); z <= Math.min(w.N - 1, cz + R); z++) {
     let row = '';
     for (let x = Math.max(0, cx - R); x <= Math.min(w.N - 1, cx + R); x++) {

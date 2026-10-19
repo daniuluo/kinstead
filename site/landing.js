@@ -21,7 +21,7 @@ function continueButton() {
 }
 
 async function fromDefs() {
-  const [{ BUILDINGS, TECHS, BRANCHES, MERGES, ESTATE_TYPES, TRADES }, { BATTERY_SAVER }] = await Promise.all([import('../src/defs.js'), import('../src/config.js')]);
+  const [{ BUILDINGS, TECHS, BRANCHES, MERGES, ESTATE_TYPES, TRADES, SEAT_STYLES, SEAT_CHAIN, CIVIC_QUARTER }, { BATTERY_SAVER }] = await Promise.all([import('../src/defs.js'), import('../src/config.js')]);
   const types = Object.keys(BUILDINGS), levels = types.reduce((n, t) => n + BUILDINGS[t].levels.length, 0);
   const techs = Object.values(TECHS);
   $('facts').innerHTML = `<b>${types.length}</b> kinds of building in <b>${levels}</b> levels · <b>${techs.length}</b> research projects<br>Free · no download, no sign-up · saves in your browser`;
@@ -30,10 +30,12 @@ async function fromDefs() {
     const n = techs.filter(t => t.branch === id).length;
     return `<div class="r"><b>${esc(name)}</b><span>${'<i></i>'.repeat(n)}</span></div>`;
   }).join('');
-  $('treeText').textContent = `${techs.length} projects in ${BRANCHES.length} branches, from building works to transport, unlock buildings, upgrade paths, building styles and new abilities: joining neighbours, buying land, moving houses, 2×2 estates and burying the power lines.`;
+  $('treeText').textContent = `${techs.length} projects in ${BRANCHES.length} branches, from building works to transport, unlock buildings, upgrade paths, building styles and new abilities: joining neighbours, buying land, moving houses, 2×2 estates, grand parks, a Capitol and a Parliament, and burying the power lines.`;
   const shops = types.filter(t => BUILDINGS[t].shop && !BUILDINGS[t].hidden).length;
   $('shopText').textContent = `${shops} kinds of shop selling ${Object.keys(TRADES).length} trades, from the greengrocer to the bank. Shopfronts turn the corner, the backs show the trade, and shoppers go to the nearer shops that sell what they're after.`;
   $('joinText').textContent = `Knock two neighbours into one, in ${MERGES.length} ways: two cottages make a terrace, a home and a shop a shophouse, a tavern and a workshop a brewhouse. Grow a double plot onto the two beside it and rebuild it as one of ${ESTATE_TYPES.length} estates, from a manor estate to a cathedral close.`;
+  const last = BUILDINGS[SEAT_CHAIN[SEAT_CHAIN.length - 1]].levels, pct = (v) => `${Math.round(v * 100)}%`;
+  $('civicText').textContent = `Build the town hall in one of ${Object.keys(SEAT_STYLES).length} styles, from a clock tower to a temple front, then grow it across bigger grounds into a Capitol and the ${last[last.length - 1].name}, up to +${pct(last[last.length - 1].taxBonus)} on every tax. Law courts, a museum, an opera house and a library beside it make a civic quarter: +${pct(CIVIC_QUARTER.tax)} more for each kind.`;
   const b = BATTERY_SAVER, shadows = { high: 'High', medium: 'Medium', low: 'Low' };
   const fx = { full: 'Full', reduced: 'Fewer', off: 'Off' }, people = { all: 'All', some: 'About half', near: 'Near the view' };
   $('saver').innerHTML = [

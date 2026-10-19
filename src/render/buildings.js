@@ -11,6 +11,7 @@ import { BUILDINGS, produceOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { CONFIG } from '../config.js';
 import { PARK_MODELS, parkTree, blooms, spot } from './parks.js';
+import { CIVIC_MODELS } from './civic.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
 
@@ -195,7 +196,7 @@ function solidRoof(c, x, y, z, w, d, h, ridge, rz, color, alongZ, oh = 0.05) {
 
 // ---------------------------------------------------------------- helpers
 
-function win(c, x, y, z, w, h, face, lit = 0.75) {
+export function win(c, x, y, z, w, h, face, lit = 0.75) {
   const { gb, rng } = c;
   const t = 0.018, o = 0.007;
   const fr = c.frame || '#5a4330';
@@ -236,7 +237,7 @@ function entrance(c, x, z) {
   c.doorAt = { x: p.x, y: p.y, z: p.z, dx: (q.x - p.x) / len, dz: (q.z - p.z) / len };
 }
 
-function door(c, x, z, w, h, color) {
+export function door(c, x, z, w, h, color) {
   const { gb } = c;
   // remember the main (first) door so villagers can walk in and out of it
   if (!c.doorAt) {
@@ -2871,101 +2872,7 @@ function minster(c) {
   lamp(c, 0.36, 0.44, 0.3); lamp(c, -0.36, 0.44, 0.3);
 }
 
-MODELS.townhall = (c, L) => {
-  const { gb, pal } = c;
-  // the City Hall and the Civic Palace are built in stone, a storey taller
-  const wall = L >= 3 ? pal.stoneWall : pal.wall;
-  const floors = L >= 3 ? 3 : 2;
-  const H = L >= 3 ? 0.96 + (L - 3) * 0.08 : 0.66 + L * 0.06;
-  const W = 1.2 + (L >= 2 ? 0.2 : 0), D = 0.8;
-  c.shutters = '#3f5466';
-  house(c, {
-    z: -0.3, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: 'hip', rh: L >= 3 ? 0.4 : 0.34, plinth: STONE, doorX: 0,
-    doorW: 0.15, lit: 0.85, nFront: L >= 3 ? 7 : 6, chimney: L < 4, timber: L < 3 && pal.timber,
-  });
-  if (L >= 1) {
-    for (const sx of [-1, 1]) {
-      house(c, {
-        x: sx * 0.76, z: -0.22, w: 0.36, d: 0.66, h: H * 0.75, floors: L >= 3 ? 3 : 2, wall, roof: pal.slate, roofType: 'hip', rh: 0.22,
-        plinth: STONE, noDoor: true, lit: 0.85,
-      });
-    }
-  }
-  const tz = -0.3;
-  if (L >= 4) {
-    // a dome on a windowed drum over the middle of the palace, a lantern on top
-    gb.cyl(0, H - 0.04, tz, 0.3, 0.3, 0.24, 18, wall);
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
-      gb.box(Math.sin(a) * 0.302, H + 0.04, tz + Math.cos(a) * 0.302, 0.05, 0.1, 0.012, GLASS, a);
-      gb.noGlow();
-    }
-    gb.cyl(0, H + 0.2, tz, 0.33, 0.33, 0.035, 18, STONE);
-    gb.sphere(0, H + 0.23, tz, 0.31, '#5f8f7e', 1, 0.82);
-    gb.cyl(0, H + 0.48, tz, 0.06, 0.06, 0.12, 10, '#e9e2d4');
-    gb.cone(0, H + 0.6, tz, 0.08, 0.08, 10, '#5f8f7e');
-    gb.sphere(0, H + 0.7, tz, 0.035, '#c9a640', 1, 1);
-    gb.box(0, H + 0.73, tz, 0.012, 0.16, 0.012, '#cfcfcf');
-    gb.box(0.06, H + 0.82, tz, 0.11, 0.07, 0.004, '#a8473a');
-  } else {
-    // the clock tower: a pyramid roof, then a gilded cupola, then a tall spire
-    const th = H + 0.55 + Math.min(L, 2) * 0.12 + (L >= 3 ? 0.1 : 0);
-    gb.cbox(0, H, tz, 0.3, th - H, 0.3, wall, 0, 0.016);
-    gb.cbox(0, th, tz, 0.35, 0.035, 0.35, STONE, 0, 0.01);
-    for (const [fx, fz, ry] of [[0, 0.155, 0], [0.155, 0, Math.PI / 2]]) {
-      gb.glow(1.2, 1.1, 0.8, 1.02);
-      gb.cyl(fx, th - 0.17, tz + fz, 0.08, 0.08, 0.012, 14, '#efe8da', ry, Math.PI / 2);
-      gb.noGlow();
-    }
-    if (L >= 3) {
-      gb.cbox(0, th + 0.035, tz, 0.24, 0.12, 0.24, wall, 0, 0.01);
-      gb.cone(0, th + 0.155, tz, 0.19, 0.42, 4, pal.slate, Math.PI / 4);
-      gb.box(0, th + 0.57, tz, 0.012, 0.12, 0.012, '#c9a640');
-    } else if (L >= 2) {
-      gb.cyl(0, th + 0.035, tz, 0.16, 0.16, 0.065, 12, wall);
-      gb.sphere(0, th + 0.1, tz, 0.16, '#b8963a', 1, 0.9);
-      gb.box(0, th + 0.24, tz, 0.013, 0.13, 0.013, '#b8963a');
-    } else gb.roof(0, th + 0.035, tz, 0.35, 0.35, 0.36, 0, pal.slate);
-  }
-  if (L >= 2) {
-    // a columned portico over the door (wider on the palace)
-    const n = L >= 4 ? 8 : 6, span = L >= 4 ? 0.98 : 0.64, ph = Math.min(H * 0.6, 0.56);
-    for (let i = 0; i < n; i++) gb.cyl(-span / 2 + (i * span) / (n - 1), 0.07, 0.15, 0.024, 0.028, ph, 8, '#e9e2d4');
-    gb.cbox(0, 0.07 + ph, 0.15, span + 0.16, 0.045, 0.13, '#e9e2d4', 0, 0.01);
-    gb.gable(0, 0.115 + ph, 0.13, span + 0.16, 0.19, 0.11, '#e9e2d4', pal.slate, 0.02);
-    gb.cbox(0, 0, 0.2, span + 0.2, 0.07, 0.16, STONE, 0, 0.01);
-  }
-  for (const sx of [-1, 1]) {
-    const fx = sx * 0.64, fz = 0.56, fy = c.gy(fx, fz);
-    gb.box(fx, fy, fz, 0.013, 0.6, 0.013, '#cfcfcf');
-    gb.box(fx + 0.065, fy + 0.5, fz, 0.13, 0.085, 0.004, sx > 0 ? '#a8473a' : '#3f6a8f');
-    lamp(c, sx * 0.32, 0.62, 0.32);
-    bench(c, sx * 0.42, 0.84, Math.PI);
-    bush(c, sx * 0.86, 0.86, 1.2);
-  }
-  if (L >= 3) {
-    // a fountain in the forecourt
-    const y = c.gy(0, 0.66);
-    gb.cyl(0, y - 0.02, 0.66, 0.17, 0.18, 0.06, 16, STONE);
-    gb.cyl(0, y + 0.03, 0.66, 0.15, 0.15, 0.01, 16, '#3f7f9f');
-    gb.cyl(0, y + 0.03, 0.66, 0.03, 0.04, 0.16, 8, STONE);
-    gb.cyl(0, y + 0.17, 0.66, 0.07, 0.05, 0.025, 10, STONE);
-    c.fountain = [0, y + 0.24, 0.66];
-  } else {
-    flowers(c, -0.16, 0.86, 7, 0.09);
-    flowers(c, 0.16, 0.86, 7, 0.09);
-  }
-  if (L >= 4) {
-    // statues on plinths either side of the steps
-    for (const sx of [-1, 1]) {
-      const x = sx * 0.52, z = 0.42, y = c.gy(x, z);
-      gb.cbox(x, y - 0.01, z, 0.1, 0.12, 0.1, '#e3dccb', 0, 0.01);
-      gb.cyl(x, y + 0.11, z, 0.026, 0.03, 0.1, 8, '#6f6250');
-      gb.sphere(x, y + 0.23, z, 0.028, '#6f6250', 1, 1);
-    }
-  }
-};
+// (the town hall, the Capitol and the Parliament: see civic.js)
 
 
 
@@ -4769,7 +4676,7 @@ function plainDoor(c, x, z, w, h, color, face = 'f') {
 
 // A tall window of coloured glass, glowing at night (ry turns one on a
 // front or back face, to follow a curved wall).
-function stainedGlass(c, x, y, z, w, h, k, face, ry = 0) {
+export function stainedGlass(c, x, y, z, w, h, k, face, ry = 0) {
   const s = [[1.4, 0.5, 0.5], [0.5, 0.7, 1.6], [1.4, 1.1, 0.4]][k % 3];
   c.gb.glow(s[0], s[1], s[2], 1.05 + c.rng.float(0, 0.2));
   if (face === 'r' || face === 'l') c.gb.box(x, y, z, 0.016, h, w, '#3f4a6e');
@@ -4778,7 +4685,7 @@ function stainedGlass(c, x, y, z, w, h, k, face, ry = 0) {
 }
 
 // A round window (rose or wheel) in a wall facing +z (dir 0) or ±x (dir ±1).
-function roseWindow(c, x, y, z, r, dir = 0) {
+export function roseWindow(c, x, y, z, r, dir = 0) {
   const { gb } = c;
   const rx = dir ? 0 : Math.PI / 2, rz = dir > 0 ? -Math.PI / 2 : dir < 0 ? Math.PI / 2 : 0;
   gb.cyl(x, y, z, r + 0.018, r + 0.018, 0.01, 14, STONE_D, 0, rx, rz);
@@ -4926,7 +4833,7 @@ const stackColor = (c) => (c.pal.style === 'brick' ? c.pal.brick : STONE);
 
 // A standing horse, the size of the ones that pull the coaches (Transit):
 // facing +z, its head at z ≈ 0.17.
-function horse(c, x, z, ry, color = '#7a5232') {
+export function horse(c, x, z, ry, color = '#7a5232') {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   gb.box(0, 0.075, 0, 0.07, 0.07, 0.17, color);
@@ -4940,7 +4847,7 @@ function horse(c, x, z, ry, color = '#7a5232') {
 
 // A stage coach the size of the ones on the coach lines, facing +z; with its
 // horse in the shafts if asked for.
-function coach(c, x, z, ry, body = '#3f5466', withHorse = false) {
+export function coach(c, x, z, ry, body = '#3f5466', withHorse = false) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   gb.box(0, 0.06, -0.02, 0.2, 0.17, 0.34, body);
@@ -5886,7 +5793,7 @@ export function buildModel(b, opts = {}) {
   // as a whole has none), so taking land doesn't shift it
   const own = annex && b.spare && (def.merged ? 2 : def.size ** 2) === 1 && !opts.flat ? jitterOf({ type: b.type, variant: b.variant, size: 1 }) : null;
   const fit = own || jit;
-  (MODELS[b.type] || PARK_MODELS[b.type])(c, b.level);
+  (MODELS[b.type] || PARK_MODELS[b.type] || CIVIC_MODELS[b.type])(c, b.level);
   let geo = gb.build();
   if (geo) { weather(geo); tint(geo, pal.tint); }
   // Never poke into the neighbours: shrink the model sideways if, after its

@@ -41,7 +41,8 @@ function nextOf(type) {
   for (const t of def.stageNext || []) out.push({ kind: 'stage', at: 0, any: true, label: 'next stage', type: t });
   for (const t of LARGE[type] || []) out.push({ kind: 'plot', at: 0, any: true, label: 'double plot', type: t });
   for (const t of ESTATE[type] || []) out.push({ kind: 'estate', at: 0, any: true, label: '2×2 estate', type: t });
-  for (const t of GRAND[type] || []) out.push({ kind: 'grand', at: 0, any: true, label: `${BUILDINGS[t].size}×${BUILDINGS[t].size} grounds`, type: t });
+  // (the seat grows only from its top level)
+  for (const t of GRAND[type] || []) out.push(def.seat ? { kind: 'grand', at: top, label: `${BUILDINGS[t].size}×${BUILDINGS[t].size} grounds, from the ${def.levels[top].name}`, type: t } : { kind: 'grand', at: 0, any: true, label: `${BUILDINGS[t].size}×${BUILDINGS[t].size} grounds`, type: t });
   if (FARM_JOIN.from.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.with)}`, type: FARM_JOIN.to });
   if (FARM_JOIN.with.includes(type)) out.push({ kind: 'join', at: 0, any: true, label: `+ ${list(FARM_JOIN.from)}`, type: FARM_JOIN.to });
   if (joinable(type)) {

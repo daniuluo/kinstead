@@ -184,7 +184,7 @@ export class Game {
     this.transit.planCarts();
     this.renderer.setBounds(world.N);
     let focus = { x: world.N / 2, z: world.N / 2 };
-    for (const b of world.buildings.values()) if (b.type === 'townhall') focus = { x: b.x + 1, z: b.z + 1 };
+    for (const b of world.buildings.values()) if (BUILDINGS[b.type].seat) focus = { x: b.x + fw(b) / 2, z: b.z + fd(b) / 2 };
     this.renderer.lookAt(focus.x, focus.z, true);
     this._demoFocus = focus;
     this.renderer.rig.zoom = this.renderer.rig.zoomT = demo ? 1.25 : 1.7;
@@ -388,8 +388,8 @@ export class Game {
     if (unlocked.length) setTimeout(() => this.ui.toast(`Unlocked: ${unlocked.slice(0, 6).join(', ')}${unlocked.length > 6 ? '…' : ''}`, 'good', '🔓'), 900);
     this.sfx('fanfare');
     let at = null;
-    for (const b of this.world.buildings.values()) if (b.type === 'townhall') at = b;
-    const x = at ? at.x + 1 : this.renderer.rig.target.x, z = at ? at.z + 1 : this.renderer.rig.target.z;
+    for (const b of this.world.buildings.values()) if (BUILDINGS[b.type].seat) at = b;
+    const x = at ? at.x + fw(at) / 2 : this.renderer.rig.target.x, z = at ? at.z + fd(at) / 2 : this.renderer.rig.target.z;
     this.view.fireworks(x, at ? at.baseY : 1, z);
   }
 

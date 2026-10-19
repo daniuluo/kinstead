@@ -1106,7 +1106,7 @@ const placePair = (tw, ta, tb) => {
     const h = (geo) => { let s = 0; const a = geo.attributes.position.array; for (let i = 0; i < a.length; i += 11) s = (Math.imul(s, 31) + Math.round(a[i] * 1000)) | 0; return s; };
     ok(back && back.type === 'citypark' && fw(back) === 4 && fd(back) === 4 && back.flavor === park.flavor && h(buildModel(back).geo) === h(m0.geo), 'a save keeps the City Park, its grounds and what it grew from, drawn the same');
   }
-  ok(Object.values(GRAND).flat().every(t => BUILDINGS[t].grand && BUILDINGS[t].levels.every((_, i) => techForLevel(t, i) === 'publicparks')), 'every level of the grand parks takes Public Parks');
+  ok(Object.values(GRAND).flat().filter(t => BUILDINGS[t].park).every(t => BUILDINGS[t].grand && BUILDINGS[t].levels.every((_, i) => techForLevel(t, i) === 'publicparks')), 'every level of the grand parks takes Public Parks');
 }
 
 // 3d1f. what the new parks do: a bandstand brings culture to the streets
@@ -1223,6 +1223,119 @@ const placePair = (tw, ta, tb) => {
   mon.level = 2;
   const after = count();
   ok(after > before && BUILDINGS.statue.levels[2].culture > 0, `a grand monument brings culture to the streets within ${BUILDINGS.statue.levels[2].culture} tiles (a civic one doesn't)`);
+}
+
+// 3d1h. the seat of government: the town hall comes in styles, rebuilt in
+// another for a share of all the seat has cost; at its top level, with
+// Capital City, it grows onto the land round a corner (taking in the little
+// parks there, never a building) into 3×3 grounds rebuilt as a Civic Centre
+// and then a Capitol, and on into 4×4 for a Parliament, never extended as
+// it is; there is only one seat; its tax bonus goes with it; the civic
+// buildings near it make a civic quarter, each kind adding to the taxes
+// once; every seat and civic model fits its plot; and a save keeps it all
+{
+  const { SEAT_RESTYLE, seatWorth, CIVIC_QUARTER, CIVIC_TYPES, kindOf, SEAT_STYLES } = await import('../src/defs.js');
+  const { civicQuarter, seatOf } = await import('../src/world/world.js');
+  const { runCommand } = await import('../src/commands.js');
+  const tw = World.createNew({ N: 64, seed: 47, name: 'Capitalton' });
+  tw.setSandbox({ infiniteMoney: true, instantBuild: true, freeUpgrades: true });
+  const G = { world: tw, demo: false };
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  // the founders' town hall, its styles
+  let th = seatOf(tw);
+  ok(th && th.type === 'townhall' && kindOf(th) === 'tower' && kindOf({ ...th, level: 4 }) === 'dome' && kindOf({ ...th, flavor: 'gothic' }) === 'gothic',
+    'a town hall with no style chosen has a clock tower, and a dome once it is a Civic Palace');
+  const locked = tw.kindCheck(th, 'classical');
+  tw.research.done.push('stonework', 'architecture');
+  const cost = tw.kindCheck(th, 'classical').cost, m0 = tw.money;
+  const rs = runCommand(G, { t: 'kind', id: th.id, kind: 'classical' });
+  ok(!locked.ok && /Architecture/.test(locked.reason) && rs.ok && th.flavor === 'classical' && th.level === 0 && cost === Math.round(seatWorth(th) * SEAT_RESTYLE),
+    `the temple front waits for Architecture; then builders rebuild it in that style for $${cost} (${Math.round(SEAT_RESTYLE * 100)}% of all the seat has cost)`);
+  ok(seatWorth({ type: 'capitol', level: 0 }) > seatWorth({ type: 'townhall', level: 4 }) && seatWorth({ type: 'parliament', level: 1 }) > seatWorth({ type: 'parliament', level: 0 }),
+    'restyling only gets dearer as the seat grows');
+  // a fresh seat on an open block, a street along its front
+  tw.removeBuilding(th.id, 0);
+  let at = null;
+  for (let z = 4; z < tw.N - 10 && !at; z++) for (let x = 4; x < tw.N - 10 && !at; x++) {
+    let open = true;
+    for (let dz = 0; dz < 6 && open; dz++) for (let dx = 0; dx < 7; dx++) {
+      const tx = x + dx, tz = z + dz;
+      if (tw.buildingOn(tx, tz) || tw.roadAt(tx, tz) || tw.terrain.isWater(tx, tz) || tw.fields[tw.idx(tx, tz)] >= 0 || tw.terrain.tileMax(tx, tz) - tw.terrain.tileMin(x, z) > 0.5) open = false;
+    }
+    if (open && [0, 1, 2, 3, 4, 5, 6].every(dx => tw.checkRoad(x + dx, z + 6, 1).ok)) at = { x, z };
+  }
+  const { x, z } = at;
+  tw.placeRoads([0, 1, 2, 3, 4, 5, 6].map(dx => [x + dx, z + 6]), 1);
+  th = tw.placeBuilding('townhall', x + 2, z + 4, { instant: true, ignoreUnlock: true, flavor: 'dome' }).building;
+  ok(th && th.rot === 0, 'a new town hall faces the street');
+  ok(!tw.placeBuilding('townhall', x, z, { instant: true, ignoreUnlock: true }).ok, 'there is only one town hall');
+  tw.research.done.push('surveying', 'bigplots', 'grandarch', 'civic', 'municipal', 'metropolis');
+  ok(!tw.expandOptions(th).length, 'the town hall does not grow its grounds below its top level');
+  th.level = 4;
+  ok(!tw.expandOptions(th).length, '...nor a Civic Palace before Capital City is researched');
+  tw.research.done.push('capital');
+  // a monument on one corner of the land it could take, a house on another
+  const stat = tw.placeBuilding('statue', x + 4, z + 3, { instant: true, ignoreUnlock: true }).building;
+  const hut = tw.placeBuilding('house', x + 1, z + 5, { instant: true, ignoreUnlock: true }).building;
+  const grow = tw.expandOptions(th).filter(o => o.kind === 'grand');
+  const g3 = grow.find(o => o.absorb.includes(stat));
+  ok(grow.length >= 1 && grow.every(o => o.tiles.length === 5 && !o.tiles.some(([tx, tz]) => tx === hut.x && tz === hut.z)) && g3 && /part of the grounds/.test(g3.warn || ''),
+    `the Civic Palace can take the land round a corner (${grow.length} ways), taking in the monument there but never the house`);
+  ok(runCommand(G, { t: 'expand', id: th.id, dir: g3.dir, kind: 'grand' }).ok && fw(th) === 3 && th.spare && !tw.buildings.has(stat.id), `it stands on 3×3 grounds, in its corner (${JSON.stringify(th.spare)})`);
+  const up3 = tw.upgradeOptions(th);
+  ok(up3.length === 1 && up3[0].type === 'capitol' && up3[0].level === 0 && up3[0].grand, `it is offered the Civic Centre (the first level), never extended as it is (${up3.map(o => `${o.type}.${o.level}`).join(', ')})`);
+  ok(runCommand(G, { t: 'upgrade', id: th.id, to: 'capitol' }).ok && th.type === 'capitol' && th.level === 0 && th.flavor === 'dome' && !th.spare, 'rebuilt as the Civic Centre, in its style');
+  ok(/Only one/.test(tw.checkBuild('townhall', x, z, { ignoreUnlock: true }).reason || ''), 'and still no second town hall beside the Civic Centre');
+  ok(!tw.expandOptions(th).length, 'a Civic Centre grows no more until it is the Capitol');
+  runCommand(G, { t: 'upgrade', id: th.id });
+  const g4 = tw.expandOptions(th).filter(o => o.kind === 'grand');
+  ok(th.type === 'capitol' && th.level === 1 && g4.length && g4.every(o => o.tiles.length === 7), `the Capitol can take 7 more plots for 4×4 grounds (${g4.length} ways)`);
+  tw.expandBuilding(th.id, g4[0].dir, 'grand');
+  ok(tw.upgradeBuilding(th.id, 'parliament').ok && th.type === 'parliament' && fw(th) === 4 && fd(th) === 4 && !tw.expandOptions(th).length, 'and be rebuilt as the Parliament House, which grows no further');
+  // its tax bonus, and the civic quarter round it
+  const old = { id: tw.newId(), first: 'Ada', last: 'Ledger', age: 'elder', years: 70, edu: 1, home: null, job: null, look: 1, mood: 60 };
+  tw.residents.set(old.id, old);
+  const taxes = () => { sim.recompute(); return sim.budget.income.taxes; };
+  const t0 = taxes(), bonus = BUILDINGS.parliament.levels[0].taxBonus;
+  ok(Math.abs(t0 - 1.5 * (tw.taxRate / 10) * (1 + bonus)) < 1e-9, `the Parliament House raises every tax by ${Math.round(bonus * 100)}%`);
+  const conn = (type, o = 3) => { for (let r = 1; r < 14; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; const px = th.x + 1 + dx, pz = th.z + 1 + dz, c = tw.checkBuild(type, px, pz, { ignoreUnlock: true }); if (c.ok && c.access.length) { const b = tw.placeBuilding(type, px, pz, { instant: true, ignoreUnlock: true }).building; tw.updateRoadNetwork(); return b; } } return null; };
+  // (the street runs on either way)
+  const more = [];
+  for (let dx = -6; dx <= 12; dx++) if (tw.checkRoad(x + dx, z + 6, 1).ok) more.push([x + dx, z + 6]);
+  tw.placeRoads(more, 1);
+  tw.updateRoadNetwork();
+  const law = conn('lawcourts'), mus = conn('museum'), mus2 = conn('museum');
+  for (const b of [law, mus, mus2]) if (b) b.connected = true;
+  const q = civicQuarter(tw);
+  ok(law && mus && mus2 && q.kinds.length === 2 && Math.abs(q.tax - 2 * CIVIC_QUARTER.tax) < 1e-9 && q.members.length === 3,
+    `law courts and two museums near it make a civic quarter of ${q.kinds.length} kinds: +${Math.round(q.tax * 100)}% tax (a second museum adds nothing)`);
+  const t1 = taxes();
+  ok(Math.abs(t1 / t0 - (1 + bonus + q.tax) / (1 + bonus)) < 1e-9, `...on top of the seat's own bonus (taxes ×${(t1 / t0).toFixed(3)})`);
+  const lx = law.x;
+  law.x = th.x + 2 + CIVIC_QUARTER.reach;
+  const q2 = civicQuarter(tw);
+  law.x = lx;
+  ok(!q2.members.some(m => m.b === law) && q2.kinds.length === 1, `law courts more than ${CIVIC_QUARTER.reach} tiles away are no part of it`);
+  ok(CIVIC_TYPES.length === 4 && CIVIC_TYPES.includes('library'), `the civic buildings: ${CIVIC_TYPES.join(', ')}`);
+  const { techForLevel } = await import('../src/defs.js');
+  ok(['capitol', 'parliament'].every(t => BUILDINGS[t].levels.every((_, i) => techForLevel(t, i) === 'capital')), 'every level of the Capitol and the Parliament takes Capital City');
+  // every seat style and civic building fits its plot, and builds in every season
+  const shrunk = [];
+  for (const type of ['townhall', 'capitol', 'parliament', 'lawcourts', 'museum', 'operahouse']) {
+    const d = BUILDINGS[type];
+    d.levels.forEach((_, level) => {
+      for (const flavor of d.seat ? Object.keys(SEAT_STYLES) : [null]) for (const season of [0, 3]) {
+        const fit = {}, m = buildModel({ type, level, variant: 77 + level, flavor, size: d.size, w: d.size, d: d.size, baseY: 0.5, minY: 0.2, rot: level % 4 }, { fit, season });
+        if (!m.geo || !m.door || fit.k < (type === 'townhall' ? 0.97 : 0.99)) shrunk.push(`${type}.${level} ${flavor || ''} ${fit.k && fit.k.toFixed(3)}`);
+      }
+    });
+  }
+  ok(!shrunk.length, `every style of the seat at every level, and every civic building, fits its plot with a door${shrunk.length ? ': not ' + shrunk.join(', ') : ''}`);
+  // a save keeps the Parliament, its grounds and its style
+  tw.kindCheck(th, 'gothic').ok && tw.setKind(th.id, 'gothic');
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(tw)))).buildings.get(th.id);
+  ok(back && back.type === 'parliament' && fw(back) === 4 && back.flavor === 'gothic' && back.level === th.level, 'a save keeps the Parliament on its 4×4 grounds, in its Gothic style');
 }
 
 // 3d2. demolition takes a crew and some time
