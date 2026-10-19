@@ -38,6 +38,18 @@ export function visitorCap(b) {
 
 const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sp = new THREE.Sphere(), _v = new THREE.Vector3();
 
+// Where a door's path meets the edge of its plot, straight out from the door
+// (a little past it, on the pavement); null when the door is at the front.
+function gateOf(B, d) {
+  const x0 = B.x, z0 = B.z, x1 = B.x + fw(B), z1 = B.z + fd(B);
+  let t = Infinity;
+  if (d.dx > 1e-3) t = Math.min(t, (x1 - d.x) / d.dx); else if (d.dx < -1e-3) t = Math.min(t, (x0 - d.x) / d.dx);
+  if (d.dz > 1e-3) t = Math.min(t, (z1 - d.z) / d.dz); else if (d.dz < -1e-3) t = Math.min(t, (z0 - d.z) / d.dz);
+  if (!Number.isFinite(t) || t < 0.2) return null;
+  t += 0.05;
+  return [d.x + d.dx * t, d.z + d.dz * t];
+}
+
 export class Agents {
   constructor(game) {
     this.game = game;
@@ -252,14 +264,20 @@ export class Agents {
   }
 
   // Front door of a building as a short path: a step inside (hidden by the
-  // walls), the doorway, and the doorstep. Null for open-air places.
+  // walls), the doorway, the doorstep, and the gate: the edge of the plot
+  // straight out from the door, so a door set back behind a forecourt, a
+  // portico or a garden is walked up to square on rather than across the
+  // corner of a wall. Null for open-air places.
   _doorway(B, r, arriving) {
     const d = B && B.door;
-    if (!d) return null;
+    if (!d || B.open) return null;
     const def = BUILDINGS[B.type];
     if (def.stop || def.outdoor || (def.outdoorWork && r && r.job === B.id) || (B.con && r && r.site === B.id) || !isOpen(B)) return null;
     const inside = [d.x - d.dx * 0.09, d.z - d.dz * 0.09], door = [d.x, d.z], step = [d.x + d.dx * 0.08, d.z + d.dz * 0.08];
-    return arriving ? [step, door, inside] : [inside, door, step];
+    const way = [step, door, inside];
+    const gate = gateOf(B, d);
+    if (gate) way.unshift(gate);
+    return arriving ? way : way.reverse();
   }
 
   _walk(r, A, B, tiles, startPos, onArrive) {
@@ -324,7 +342,7 @@ export class Agents {
     }
     r.at = destId;
     const site = !!(B.con && r.site === B.id);
-    const outdoor = def.outdoor || (def.outdoorWork && r.job === B.id) || site;
+    const outdoor = def.outdoor || B.open || (def.outdoorWork && r.job === B.id) || site;
     if (outdoor && r.walk) {
       const wk = r.walk;
       wk.mode = 'wander';
