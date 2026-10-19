@@ -58,10 +58,11 @@ export const COMMANDS = {
     check: (w, c) => ROAD_OPS.includes(c.op) && tiles(w, c.tiles, w.N * w.N),
     run: (g, c) => applyRoadEdit(g.world, c.tiles, c.op),
   },
-  // dress a selection of road tiles (trees, hedges, lamps, a median; 0: plain)
+  // dress a selection of road tiles (trees, hedges, lamps, a median; 0: plain),
+  // or give a boulevard a look (look: true with 0 takes the look away)
   dress: {
-    check: (w, c) => int(c.kind, 0, DRESSINGS.length - 1) && tiles(w, c.tiles, w.N * w.N),
-    run: (g, c) => applyDress(g.world, c.tiles, c.kind),
+    check: (w, c) => int(c.kind, 0, DRESSINGS.length - 1) && tiles(w, c.tiles, w.N * w.N) && (c.look == null || typeof c.look === 'boolean'),
+    run: (g, c) => applyDress(g.world, c.tiles, c.kind, !!c.look),
   },
   unrail: {
     check: tile,

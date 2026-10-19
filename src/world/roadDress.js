@@ -1,43 +1,70 @@
 // Dressing a street: a tree-lined avenue, a hedged lane, a lamp-lit street
-// or a planted boulevard (DRESSINGS in config.js), laid along a stretch of
+// or a planted median (DRESSINGS in config.js), laid along a stretch of
 // road picked in the road selection panel. Each road tile holds at most one
 // (world.dress). It is priced per tile, costs a little upkeep and makes the
 // homes and shops beside it a little nicer to live by (Sim adds its appeal);
 // it goes when the road is taken up, and a planted median goes when its
-// street is downgraded below paving.
+// street is downgraded below paving. A boulevard's look (trees, flower
+// beds, a tram reservation, a promenade or a hedge down its median; see
+// boulevard.js) is chosen the same way, one per lane tile; on a boulevard
+// the street dressings keep to the lanes' outer verges.
 //
 // dressSpots() says where each tree, hedge plant, lamp and stretch of median
 // stands. They keep to straight runs and dead ends, so junctions and bends
 // stay open, and they leave gaps at driveways, street lamps and power poles,
 // and where a building stands forward into the verge.
 
-import { CONFIG, DRESSINGS, dressRefund } from '../config.js';
-import { HALF, SIDES, roadTile } from './roadShape.js';
+import { CONFIG, DRESSINGS, dressRefund, streetPart, lookPart, withDress } from '../config.js';
+import { HALF, SIDES, roadTile, linked } from './roadShape.js';
 import { doorPoint } from './world.js';
 import { hash2 } from '../util/rng.js';
 
-export const keyOf = (kind) => (DRESSINGS[kind] ? DRESSINGS[kind].key : null);
+// the key of a tile's street dressing (from its dress byte), or null
+export const keyOf = (v) => (DRESSINGS[streetPart(v)] ? DRESSINGS[streetPart(v)].key : null);
+
+// The sides of a boulevard lane with the median across them, as -1 / +1
+// across a street running north-south (ns) or east-west: { lo, hi } (west or
+// north, east or south). A plain street has neither.
+function medianSides(w, x, z, ns) {
+  const m = w.blvd ? w.blvd[w.idx(x, z)] : 0;
+  return { lo: !!(ns ? m & 8 : m & 1), hi: !!(ns ? m & 2 : m & 4) };
+}
+
+// Which corner of a road tile its power pole stands by, as signs [sx, sz]:
+// the south-east, unless that is a boulevard's median (then the corner on
+// the lane's outer verge).
+export function poleCorner(w, x, z) {
+  const m = w.blvd ? w.blvd[w.idx(x, z)] : 0;
+  return [(m & 2) && !(m & 8) ? -1 : 1, (m & 4) && !(m & 1) ? -1 : 1];
+}
 
 // The street lamp a plain cobbled or paved street has on some straight
 // tiles (the road view draws it; dressings keep clear of it). A lamp-lit
-// street has its own lamps instead.
+// street has its own lamps instead; a boulevard's lane has it on its outer
+// verge.
 export function plainLamp(w, x, z) {
   const L = w.roadAt(x, z);
   if (L < 2 || w.railAt(x, z) || w.terrain.isWater(x, z)) return null;
   if (w.dress && keyOf(w.dress[w.idx(x, z)]) === 'lamps') return null;
-  const n = !!w.roadAt(x, z - 1), s = !!w.roadAt(x, z + 1), wv = !!w.roadAt(x - 1, z), e = !!w.roadAt(x + 1, z);
+  const n = linked(w, x, z, 0), e = linked(w, x, z, 1), s = linked(w, x, z, 2), wv = linked(w, x, z, 3);
   const ns = n && s && !e && !wv, ew = e && wv && !n && !s;
   if (!(ns || ew) || hash2(x, z, 91) >= 0.4) return null;
-  const side = hash2(x, z, 92) < 0.5 ? -1 : 1;
+  const m = medianSides(w, x, z, ns);
+  if (m.lo && m.hi) return null;
+  const side = m.lo ? 1 : m.hi ? -1 : hash2(x, z, 92) < 0.5 ? -1 : 1;
   return { x: x + 0.5 + (ns ? side * 0.31 : 0), z: z + 0.5 + (ew ? side * 0.31 : 0) };
 }
 
 // What dressing these road tiles with `kind` would do (0 takes dressings
-// away). Returns { kind, tiles: [{ x, z, from, cost, refund, reason }], n
-// (tiles that change), cost, refund, blocked: [{ reason, n }], short }.
-// Replacing or taking away a dressing pays back a quarter of its price.
-export function planDress(w, list, kind) {
+// away). A street's dressing and a boulevard's look are kept apart (see
+// packDress in config.js): a look (or look: true, with 0) changes only the
+// look, anything else only the dressing. Returns { kind, look, tiles: [{ x,
+// z, from, cost, refund, reason }], n (tiles that change), cost, refund,
+// blocked: [{ reason, n }], short }. Replacing or taking away a dressing pays
+// back a quarter of its price.
+export function planDress(w, list, kind, look = false) {
   const D = DRESSINGS[kind] || null, seen = new Set(), tiles = [], blocked = new Map();
+  if (D) look = !!D.blvd;
   let n = 0, cost = 0, refund = 0;
   const block = (t, reason) => { t.reason = reason; blocked.set(reason, (blocked.get(reason) || 0) + 1); };
   for (const [x, z] of list) {
@@ -45,7 +72,7 @@ export function planDress(w, list, kind) {
     const i = w.idx(x, z), L = w.roads[i];
     if (!L || seen.has(i)) continue;
     seen.add(i);
-    const from = w.dress[i], t = { x, z, from, cost: 0, refund: 0, reason: null };
+    const from = look ? lookPart(w.dress[i]) : streetPart(w.dress[i]), t = { x, z, from, cost: 0, refund: 0, reason: null };
     tiles.push(t);
     const s = roadTile(w, x, z);
     if (!s) block(t, 'Bridges stay plain');
@@ -53,8 +80,11 @@ export function planDress(w, list, kind) {
     else if (w.rails[i]) block(t, 'Not across a level crossing');
     else if (!D) { if (!from) block(t, 'Nothing to take away'); }
     else if (from === kind) block(t, `Already a ${D.name.toLowerCase()}`);
-    else if (D.minLevel && L < D.minLevel) block(t, 'Only on paved streets');
+    else if (D.blvd && !w.blvd[i]) block(t, 'Only on boulevards (two roads side by side)');
+    else if (D.key === 'median' && w.blvd[i]) block(t, 'A boulevard has a median of its own');
+    else if (D.minLevel && L < D.minLevel) block(t, D.minLevel >= 3 ? 'Only on paved streets' : 'Not on dirt paths');
     else if (w.unlockPop < D.unlock) block(t, `Unlocks at ${D.unlock} villagers`);
+    else if (D.tech && !w.hasTech(D.tech)) block(t, `Research ${w.techName(D.tech)} first`);
     if (t.reason) continue;
     t.cost = D ? D.cost : 0;
     t.refund = dressRefund(from);
@@ -66,17 +96,17 @@ export function planDress(w, list, kind) {
     const on = new Set(tiles.filter(t => !t.reason).map(t => w.idx(t.x, t.z)));
     for (const b of w.buildings.values()) if (b.front > 0 && w._frontTiles(b).some(([x, z]) => w.inBounds(x, z) && on.has(w.idx(x, z)))) back.push(b.id);
   }
-  const plan = { kind, tiles, n, cost, refund, back, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
+  const plan = { kind, look, tiles, n, cost, refund, back, blocked: [...blocked].map(([reason, k]) => ({ reason, n: k })), short: null };
   if (n && cost - refund > w.money) plan.short = 'Not enough money';
   return plan;
 }
 
-export function applyDress(w, list, kind) {
+export function applyDress(w, list, kind, look = false) {
   if (!Number.isInteger(kind) || kind < 0 || kind >= DRESSINGS.length) return { ok: false, reason: "That action isn't valid" };
-  const plan = planDress(w, list, kind);
+  const plan = planDress(w, list, kind, !!look);
   if (!plan.n) return { ok: false, reason: plan.blocked.length ? plan.blocked[0].reason : 'No road there' };
   if (plan.short) return { ok: false, reason: plan.short };
-  for (const t of plan.tiles) if (!t.reason) w.dress[w.idx(t.x, t.z)] = kind;
+  for (const t of plan.tiles) if (!t.reason) { const i = w.idx(t.x, t.z); w.dress[i] = withDress(w.dress[i], kind, plan.look); }
   w.money += plan.refund - plan.cost;
   w._updateFronts();   // trees and hedges send buildings standing forward back
   w.emit('dress');
@@ -126,10 +156,16 @@ export function dressSpots(w) {
     const busy = { [-1]: [], 1: [] };
     const lamp = plainLamp(w, x, z);
     if (lamp) busy[(lamp.x - cx) * px + (lamp.z - cz) * pz < 0 ? -1 : 1].push(0);
-    if (((x + z) & 1) === 0 && !(w.buried && w.buried[i])) busy[1].push(0.31);   // a power pole's spot, by the south-east corner
+    if (((x + z) & 1) === 0 && !(w.buried && w.buried[i])) {
+      // a power pole's spot, by the south-east corner (or the outer verge's)
+      const [sx, sz] = poleCorner(w, x, z);
+      if (ns) busy[sx].push(sz * 0.31); else busy[sz].push(sx * 0.31);
+    }
     for (const [dx, dz] of doors.get(i) || []) busy[(dx - cx) * px + (dz - cz) * pz < 0 ? -1 : 1].push((dx - cx) * ax + (dz - cz) * az);
     const clear = (side, along, gap) => busy[side].every(b => Math.abs(b - along) >= gap);
-    const open = (side) => !fronts.has(i * 4 + (ns ? (side > 0 ? 1 : 3) : (side > 0 ? 2 : 0)));
+    // a boulevard's lane keeps its median side for the boulevard's own look
+    const med = medianSides(w, x, z, ns);
+    const open = (side) => !(side < 0 ? med.lo : med.hi) && !fronts.has(i * 4 + (ns ? (side > 0 ? 1 : 3) : (side > 0 ? 2 : 0)));
     if (key === 'trees') {
       for (const side of [-1, 1]) {
         if (!open(side)) continue;
@@ -149,14 +185,14 @@ export function dressSpots(w) {
         }
       }
     } else if (key === 'lamps') {
-      // every other tile, on alternate sides
-      if (((x + z) & 1) !== 0) continue;
-      const side = ((x + z) >> 1) & 1 ? 1 : -1;
+      // every other tile, on alternate sides (a boulevard lane's outer side)
+      if (((x + z) & 1) !== 0 || (med.lo && med.hi)) continue;
+      const side = med.lo ? 1 : med.hi ? -1 : ((x + z) >> 1) & 1 ? 1 : -1;
       const along = [0, -0.27, 0.27].find(a => clear(side, a, 0.14));
       if (along === undefined) continue;
       const [lx, lz] = at(along, side, Math.max(0.31, hw + 0.04));
       out.lamps.push({ x: lx, z: lz });
-    } else if (key === 'median' && s.L >= 3 && (ns ? s.arms[0] && s.arms[2] : s.arms[1] && s.arms[3])) {
+    } else if (key === 'median' && !w.blvd[i] && s.L >= 3 && (ns ? s.arms[0] && s.arms[2] : s.arms[1] && s.arms[3])) {
       // through the middle of a paved street, rounded off short of anything
       // that isn't more of the same boulevard
       const more = (dx, dz) => {

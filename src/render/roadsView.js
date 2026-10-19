@@ -1,22 +1,33 @@
 // Road surfaces and road furniture: crisp road surfaces with edging stones,
-// door paths, bridges, ramps, street lamps, power lines and railway track.
+// door paths, bridges, ramps, street lamps, power lines and railway track,
+// and the medians of boulevards with what stands on them.
 // (A soft shoulder under each road is painted into the terrain.)
 
 import * as THREE from 'three';
 import { MAT } from './materials.js';
 import { GeoBuilder } from './geo.js';
-import { hash2 } from '../util/rng.js';
+import { hash2, RNG } from '../util/rng.js';
 
 // Road surface colours per road level, with a band of kerb / edging stones
-// on cobbled and paved streets (widths and shapes are in roadShape.js).
+// on cobbled and paved streets (widths and shapes are in roadShape.js), and
+// on a boulevard's lanes a band of setts inside the kerb along the median.
 const SURF = [null, new THREE.Color('#a3835a'), new THREE.Color('#9a9488'), new THREE.Color('#5f5d5a')];
 const KERB = [null, null, new THREE.Color('#bbb3a2'), new THREE.Color('#cfc9bc')];
+const SETT = [null, null, new THREE.Color('#857e72'), new THREE.Color('#7b7873')];
+const SETT_W = 0.04;
 const CELL = 0.125, ARC = 8;
-import { HALF, BAND, SIDES, roadTile, cornerFrame, shapeAt } from '../world/roadShape.js';
+// a boulevard median laid with stone for its look: tram reservations with
+// flags, promenades with cobbles (the others are grass)
+const FILL = { btram: ['#9d978b', '#938d81', '#a49e92'], bprom: ['#a49a88', '#978d7c', '#aba291', '#8e8574'] };
+const STATUES = ['figure', 'rider', 'column', 'obelisk', 'urn', 'angel'];
+import { HALF, BAND, SIDES, roadTile, cornerFrame, shapeAt, linked } from '../world/roadShape.js';
 import { bridgeDeckY, RAMP, isOpen } from '../world/world.js';
-import { plainLamp, dressSpots } from '../world/roadDress.js';
+import { plainLamp, dressSpots, poleCorner } from '../world/roadDress.js';
+import { medianSegs, medianPoints, boulevardSpots } from '../world/boulevard.js';
+import { bench } from './buildings.js';
+import { fountain, monument } from './parks.js';
 import { BUILDINGS } from '../defs.js';
-import { CONFIG } from '../config.js';
+import { CONFIG, DRESSINGS, streetPart, lookPart } from '../config.js';
 
 export class RoadsView {
   constructor(world, scene) {
@@ -37,6 +48,9 @@ export class RoadsView {
     this.lamps = [];
     // street lamps are electric: lit(x, z) says whether one has power
     this.lit = () => false;
+    // the season, for the fountains on boulevards (frozen in winter)
+    this.season = 1;
+    this.seasonW = 0;
     this.rebuild();
   }
 
@@ -50,10 +64,12 @@ export class RoadsView {
       for (let x = 0; x < N; x++) {
         const L = w.roads[w.idx(x, z)];
         if (!L) continue;
-        const n = { N: !!w.roadAt(x, z - 1), S: !!w.roadAt(x, z + 1), W: !!w.roadAt(x - 1, z), E: !!w.roadAt(x + 1, z) };
+        // (a boulevard's lanes keep apart across the median: twin bridges, and
+        // no ramp sideways onto the other lane's)
+        const n = { N: linked(w, x, z, 0), S: linked(w, x, z, 2), W: linked(w, x, z, 3), E: linked(w, x, z, 1) };
         if (t.isWater(x, z)) { this._bridge(gb, x, z, n, L); continue; }
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          if (w.roadAt(x + dx, z + dz) && w.inBounds(x + dx, z + dz) && t.isWater(x + dx, z + dz)) this._ramp(gb, x, z, dx, dz, L);
+        for (const [dx, dz, on] of [[1, 0, n.E], [-1, 0, n.W], [0, 1, n.S], [0, -1, n.N]]) {
+          if (on && w.inBounds(x + dx, z + dz) && t.isWater(x + dx, z + dz)) this._ramp(gb, x, z, dx, dz, L);
         }
         const lamp = plainLamp(w, x, z);
         if (lamp) this._lamp(gb, lamp.x, t.heightAt(lamp.x, lamp.z), lamp.z);
@@ -64,6 +80,11 @@ export class RoadsView {
     const dressed = dressSpots(w);
     for (const l of dressed.lamps) this._lamp(gb, l.x, t.heightAt(l.x, l.z), l.z);
     for (const m of dressed.medians) this._median(gb, m);
+    // boulevards: what stands on their medians (the trees, hedges and
+    // flowers grow in NatureView)
+    this.segs = medianSegs(w);
+    this.fountains = 0;
+    if (this.segs.length) this._boulevards(gb, boulevardSpots(w, this.segs));
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (w.rails[w.idx(x, z)]) this._rail(gb, x, z);
     this.wired = this._wired();
     if (this.wired) this._powerLines(gb);
@@ -79,11 +100,22 @@ export class RoadsView {
   _wired() { return [...this.world.buildings.values()].some(b => BUILDINGS[b.type].generator && isOpen(b)); }
 
   // After a building has come, gone or changed: does more than its door path
-  // need redrawing? Dressed streets leave gaps at doors, and the first (or
-  // last) working generator puts up (or takes down) the power lines.
+  // need redrawing? Dressed streets leave gaps at doors (a boulevard's
+  // median doesn't), and the first (or last) working generator puts up (or
+  // takes down) the power lines.
   needsRebuild() {
     const d = this.world.dress;
-    return !!(d && d.some(Boolean)) || this._wired() !== this.wired;
+    return !!(d && d.some(v => streetPart(v))) || this._wired() !== this.wired;
+  }
+
+  // The season (and how far it has turned): the fountains on boulevards
+  // freeze over for the winter. Says whether the roads need drawing again.
+  setSeason(s, sw = 0) {
+    const frozen = (q, k) => ((k >= 0.5 ? (q + 1) % 4 : q) === 3);
+    const was = frozen(this.season, this.seasonW);
+    this.season = s;
+    this.seasonW = sw;
+    return this.fountains > 0 && was !== frozen(s, sw);
   }
 
   rebuildDoors() {
@@ -111,43 +143,55 @@ export class RoadsView {
       if (w.rampHeight(x, z) != null) return null;
       return t.heightAt(x, z) + 0.018;
     };
-    // one four-sided cell (corners in order round it) in one colour
+    // one four-sided cell (corners in order round it) in one colour (kerb:
+    // 1 for edging stones, 2 for the setts along a boulevard's median)
     const cell = (p, L, kerb) => {
       const h = p.map(([x, z]) => height(x, z));
       if (h.some(v => v == null)) return;
       const mx = (p[0][0] + p[1][0] + p[2][0] + p[3][0]) / 4, mz = (p[0][1] + p[1][1] + p[2][1] + p[3][1]) / 4;
-      c.copy(kerb ? KERB[L] : SURF[L]);
-      c.multiplyScalar(1 + (hash2(Math.floor(mx * 16), Math.floor(mz * 16), 3) - 0.5) * (L === 2 ? 0.16 : 0.08));
+      c.copy(kerb === 2 ? SETT[L] : kerb ? KERB[L] : SURF[L]);
+      c.multiplyScalar(1 + (hash2(Math.floor(mx * 16), Math.floor(mz * 16), 3) - 0.5) * (L === 2 || kerb === 2 ? 0.16 : 0.08));
       // keep the faces pointing up whichever way round the corners run
       let area = 0;
       for (let i = 0; i < 4; i++) { const a = p[i], b = p[(i + 1) & 3]; area += a[0] * b[1] - b[0] * a[1]; }
       for (const k of area < 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]) { pos.push(p[k][0], h[k], p[k][1]); col.push(c.r, c.g, c.b); }
     };
     // split lines across a piece: a grid shared by every tile, plus the kerb
-    // band on edged sides
-    const lines = (a, b, e0, e1, kb) => {
+    // band on edged sides (and the setts inside it along a median: m0, m1)
+    const lines = (a, b, e0, e1, kb, m0, m1) => {
       const lo = a + (e0 ? kb : 0), hi = b - (e1 ? kb : 0), v = [a, b];
       if (e0 && kb) v.push(lo);
       if (e1 && kb) v.push(hi);
+      if (m0 && kb && lo + SETT_W < hi) v.push(lo + SETT_W);
+      if (m1 && kb && hi - SETT_W > lo) v.push(hi - SETT_W);
       for (let g = Math.ceil((lo + 0.03) / CELL); g * CELL < hi - 0.03; g++) v.push(g * CELL);
       return v.sort((p, q) => p - q);
     };
     const rect = (x0, z0, x1, z1, L, e) => {
       if (x1 - x0 < 1e-4 || z1 - z0 < 1e-4) return;
-      const kb = KERB[L] ? BAND : 0;
-      const X = lines(x0, x1, e.x0, e.x1, kb), Z = lines(z0, z1, e.z0, e.z1, kb);
+      const kb = KERB[L] ? BAND : 0, sb = kb + SETT_W;
+      const X = lines(x0, x1, e.x0, e.x1, kb, e.mx0, e.mx1), Z = lines(z0, z1, e.z0, e.z1, kb, e.mz0, e.mz1);
       for (let i = 0; i + 1 < X.length; i++) for (let j = 0; j + 1 < Z.length; j++) {
         const ax = X[i], bx = X[i + 1], az = Z[j], bz = Z[j + 1];
         if (bx - ax < 1e-4 || bz - az < 1e-4) continue;
         const mx = (ax + bx) / 2, mz = (az + bz) / 2;
         const kerb = kb && ((e.x0 && mx < x0 + kb) || (e.x1 && mx > x1 - kb) || (e.z0 && mz < z0 + kb) || (e.z1 && mz > z1 - kb));
-        cell([[ax, az], [ax, bz], [bx, bz], [bx, az]], L, kerb);
+        const sett = kb && !kerb && ((e.mx0 && mx < x0 + sb) || (e.mx1 && mx > x1 - sb) || (e.mz0 && mz < z0 + sb) || (e.mz1 && mz > z1 - sb));
+        cell([[ax, az], [ax, bz], [bx, bz], [bx, az]], L, kerb ? 1 : sett ? 2 : 0);
       }
     };
-    // an axis-aligned piece between two points, edged on the given sides
+    // an axis-aligned piece between two points, edged on the given sides (an
+    // edge towards a side of the tile with a median across it gets setts)
+    let med = 0;
     const box = (L, px, pz, qx, qz, edged) => {
-      const e = { x0: false, x1: false, z0: false, z1: false };
-      for (const [dx, dz] of edged) { if (dx < 0) e.x0 = true; if (dx > 0) e.x1 = true; if (dz < 0) e.z0 = true; if (dz > 0) e.z1 = true; }
+      const e = { x0: false, x1: false, z0: false, z1: false, mx0: false, mx1: false, mz0: false, mz1: false };
+      for (const [dx, dz] of edged) {
+        const m = !!(med & (dz < 0 ? 1 : dx > 0 ? 2 : dz > 0 ? 4 : 8));
+        if (dx < 0) { e.x0 = true; e.mx0 = m; }
+        if (dx > 0) { e.x1 = true; e.mx1 = m; }
+        if (dz < 0) { e.z0 = true; e.mz0 = m; }
+        if (dz > 0) { e.z1 = true; e.mz1 = m; }
+      }
       rect(Math.min(px, qx), Math.min(pz, qz), Math.max(px, qx), Math.max(pz, qz), L, e);
     };
     // the quarter of a tile round corner k with no fillet: a quarter of the
@@ -214,9 +258,11 @@ export class RoadsView {
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const s = roadTile(w, x, z);
       if (!s) continue;
+      med = w.blvd ? w.blvd[z * N + x] : 0;
       if (s.bend >= 0) { bend(s); continue; }
       for (let k = 0; k < 4; k++) if (s.fillets.includes(k)) fillet(s, k); else quarter(s, k);
     }
+    this._medianFill(pos, col);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -233,17 +279,18 @@ export class RoadsView {
     const w = this.world, t = w.terrain, N = w.N;
     const up = (x, z) => !(w.buried && w.buried[w.idx(x, z)]);
     const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0 && up(x, z);
-    // a pole stands in the verge by the tile's south-east corner, tucked
-    // further into the corner where the road curves round it
+    // a pole stands in the verge by the tile's south-east corner (on a
+    // boulevard, by the lane's outer verge), tucked further into the corner
+    // where the road curves round it
     const H = 0.5, spots = new Map();
     const at = (x, z) => {
       const key = z * N + x;
       if (spots.has(key)) return spots.get(key);
-      const s = roadTile(w, x, z);
-      const on = (px, pz) => s && (shapeAt(s, px, pz, 0) || shapeAt(s, px - 0.035, pz) || shapeAt(s, px, pz - 0.035) || shapeAt(s, px - 0.025, pz - 0.025));
+      const s = roadTile(w, x, z), [sx, sz] = poleCorner(w, x, z);
+      const on = (px, pz) => s && (shapeAt(s, px, pz, 0) || shapeAt(s, px - sx * 0.035, pz) || shapeAt(s, px, pz - sz * 0.035) || shapeAt(s, px - sx * 0.025, pz - sz * 0.025));
       let k = 0.31;
-      while (k < 0.45 && on(x + 0.5 + k, z + 0.5 + k)) k += 0.02;
-      const p = [x + 0.5 + k, t.heightAt(x + 0.5 + k, z + 0.5 + k) + H - 0.05, z + 0.5 + k];
+      while (k < 0.45 && on(x + 0.5 + sx * k, z + 0.5 + sz * k)) k += 0.02;
+      const p = [x + 0.5 + sx * k, t.heightAt(x + 0.5 + sx * k, z + 0.5 + sz * k) + H - 0.05, z + 0.5 + sz * k];
       spots.set(key, p);
       return p;
     };
@@ -255,7 +302,7 @@ export class RoadsView {
       this.poles++;
       gb.box(px, g + H - 0.06, pz, 0.15, 0.013, 0.015, '#5e4630', Math.PI / 4);
       for (const [dx, dz] of [[2, 0], [0, 2]]) {
-        if (!has(x + dx, z + dz) || !w.roadAt(x + dx / 2, z + dz / 2) || !up(x + dx / 2, z + dz / 2)) continue;
+        if (!has(x + dx, z + dz) || !linked(w, x, z, dx ? 1 : 2) || !linked(w, x + dx / 2, z + dz / 2, dx ? 1 : 2) || !up(x + dx / 2, z + dz / 2)) continue;
         const [qx, qy, qz] = at(x + dx, z + dz);
         const len = Math.hypot(qx - px, qy - py, qz - pz), mx = (px + qx) / 2, my = (py + qy) / 2 - 0.02, mz = (pz + qz) / 2;
         for (const s of [-0.045, 0.045]) {
@@ -287,6 +334,136 @@ export class RoadsView {
       const [gx, gz] = P((k + 0.5) / n + (i0 - i1) / 2), inner = seg - (i0 + i1) * len;
       gb.box(gx, y, gz, alongX ? inner : wide - 0.03, 0.036, alongX ? wide - 0.03 : inner, k % 2 ? '#6c8744' : '#66803f');
     }
+  }
+
+  // A boulevard's median paved with flags (a tram reservation) or cobbled
+  // (a promenade): small cells over the ground between the lanes, and into
+  // the curved corners of the road round a point where the median ends in a
+  // nose or turns a corner. They lie a little under the road surface and
+  // reach in under its edge, so the road's own crisp edge and kerb stones
+  // bound them. (Grass medians are the ground itself.)
+  _medianFill(pos, col) {
+    const w = this.world, t = w.terrain, N = w.N, M = N + 1;
+    const segs = this.segs || medianSegs(w);
+    if (!segs.some(s => FILL[s.look])) return;
+    const pts = medianPoints(w, segs);
+    const todo = new Set();
+    for (const s of segs) if (FILL[s.look]) { todo.add(s.a); todo.add(s.b); }
+    for (const [k, look] of pts) {
+      if (!FILL[look]) continue;
+      const px = k % M, pz = (k / M) | 0;
+      for (const [dx, dz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (w.roadAt(px + dx, pz + dz)) todo.add((pz + dz) * N + px + dx);
+    }
+    // corner k of a tile (as in cornerFrame) as a lattice point offset
+    const CK = [[1, 0], [1, 1], [0, 1], [0, 0]];
+    const ell = (u, v, ru, rv) => (u / ru) * (u / ru) + (v / rv) * (v / rv);
+    const G = 16, step = 1 / G, c = new THREE.Color();
+    for (const i of todo) {
+      const x = i % N, z = (i / N) | 0, s = roadTile(w, x, z);
+      if (!s) continue;
+      const m = w.blvd[i], D = DRESSINGS[lookPart(w.dress[i])];
+      const own = m && D && D.blvd ? D.key : null;
+      // the strips along this lane's median sides (not towards a bridge)
+      let strips = 0;
+      for (let k = 0; k < 4; k++) if (m & (1 << k)) { const [dx, dz] = SIDES[k]; if (!t.isWater(x + dx, z + dz)) strips |= 1 << k; }
+      const corner = CK.map(([cx, cz]) => pts.get((z + cz) * M + x + cx) ?? null);
+      // the look of the median at a point of this tile, or null (road or verge)
+      const at = (px, pz) => {
+        if (shapeAt(s, px, pz, 0)) return null;
+        const inCorner = (k) => {
+          const f = cornerFrame(x, z, k), dx = px - f.Kx, dz = pz - f.Kz;
+          const u = dx * f.ux + dz * f.uz, v = dx * f.vx + dz * f.vz;
+          return u >= 0 && v >= 0 && u <= 0.5 && v <= 0.5 && ell(u, v, 0.5 - s.arms[k], 0.5 - s.arms[(k + 1) & 3]) < 1;
+        };
+        if (s.bend >= 0) return inCorner(s.bend) ? corner[s.bend] : strips ? own : null;
+        for (const k of s.fillets) if (inCorner(k)) return corner[k];
+        const lx = px - x - 0.5, lz = pz - z - 0.5, hw = s.hw;
+        return ((strips & 1) && lz < -hw) || ((strips & 4) && lz > hw) || ((strips & 2) && lx > hw) || ((strips & 8) && lx < -hw) ? own : null;
+      };
+      for (let a = 0; a < G; a++) for (let b = 0; b < G; b++) {
+        const x0 = x + a * step, z0 = z + b * step, x1 = x0 + step, z1 = z0 + step;
+        // any part of the cell on the median (the rest lies under the road)
+        let look = at(x0 + step / 2, z0 + step / 2);
+        if (!look) for (const [px, pz] of [[x0 + 0.003, z0 + 0.003], [x1 - 0.003, z0 + 0.003], [x0 + 0.003, z1 - 0.003], [x1 - 0.003, z1 - 0.003]]) if ((look = at(px, pz))) break;
+        const pal = FILL[look];
+        if (!pal) continue;
+        const gx = x * G + a, gz = z * G + b;
+        // flags two cells square in courses for the tram's paving; cobbles cell by cell
+        const hh = look === 'btram' ? hash2(gx >> 1, (gz >> 1) + (((gx >> 1) & 1) ? 7 : 0), 31) : hash2(gx, gz, 33);
+        c.set(pal[Math.floor(hh * pal.length)]).multiplyScalar(0.95 + hash2(gx, gz, 35) * 0.1);
+        const p = [[x0, z0], [x0, z1], [x1, z1], [x1, z0]];
+        const h = p.map(([px, pz]) => t.heightAt(px, pz) + 0.012);
+        for (const k of [0, 1, 2, 0, 2, 3]) { pos.push(p[k][0], h[k], p[k][1]); col.push(c.r, c.g, c.b); }
+      }
+    }
+  }
+
+  // What stands on boulevards' medians (positions from boulevard.js):
+  // lamps, benches, fountains (frozen over in winter) and statues on
+  // promenades, tram rails with their wires, poles and shelters, and the
+  // beds the flowers grow in.
+  _boulevards(gb, sp) {
+    const t = this.world.terrain, gy = (x, z) => t.heightAt(x, z);
+    const c = { gb, gy, rng: new RNG(1), season: this.season, seasonW: this.seasonW, addGlow() {} };
+    // a park piece built round its own spot, its ground level at 0
+    const at = (x, z, ry, fn) => {
+      const y = gy(x, z);
+      gb.push(x, y, z, ry);
+      fn({ ...c, gy: (lx, lz) => { const co = Math.cos(ry), si = Math.sin(ry); return gy(x + lx * co + lz * si, z - lx * si + lz * co) - y; }, rng: new RNG(Math.floor(x * 131 + z * 977)), variant: Math.floor(x * 31 + z * 17) });
+      gb.pop();
+    };
+    for (const l of sp.lamps) this._lamp(gb, l.x, gy(l.x, l.z), l.z);
+    for (const b of sp.benches) bench(c, b.x, b.z, b.ry);
+    for (const f of sp.fountains) {
+      at(f.x, f.z, 0, (cc) => fountain(cc, 0, 0, f.r, f.h < 0.5 ? 'tiers' : 'figure'));
+      this.fountains++;
+    }
+    for (const s of sp.statues) at(s.x, s.z, s.ry, (cc) => monument(cc, 0, 0, STATUES[Math.floor(s.h * STATUES.length)], 0.55));
+    // flower beds: soil within a low stone edge (the flowers are NatureView's)
+    for (const b of sp.beds) {
+      const y = gy(b.x, b.z), lx = b.alongX ? b.len : b.wid, lz = b.alongX ? b.wid : b.len;
+      gb.cbox(b.x, y - 0.02, b.z, lx + 0.03, 0.04, lz + 0.03, '#b8b0a2', 0, 0.012);
+      gb.cbox(b.x, y - 0.02, b.z, lx, 0.047, lz, b.h < 0.5 ? '#5e4430' : '#56402c', 0, 0.01);
+    }
+    // tram rails let into the paving, and the wire above them
+    const along = (s, n, fn) => {
+      for (let k = 0; k < n; k++) {
+        const a = k / n, e = (k + 1) / n;
+        const ax = s.x0 + (s.x1 - s.x0) * a, az = s.z0 + (s.z1 - s.z0) * a, bx = s.x0 + (s.x1 - s.x0) * e, bz = s.z0 + (s.z1 - s.z0) * e;
+        fn((ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az), Math.atan2(bx - ax, bz - az), gy(bx, bz) - gy(ax, az));
+      }
+    };
+    for (const r of sp.rails) along(r, 4, (mx, mz, len, ry, dh) => gb.boxC(mx, gy(mx, mz) + 0.017, mz, 0.014, 0.009, Math.hypot(len, dh) + 0.004, '#55595f', -Math.atan2(dh, len), ry));
+    for (const r of sp.wires) along(r, 2, (mx, mz, len, ry, dh) => gb.boxC(mx, gy(mx, mz) + 0.445, mz, 0.004, 0.004, Math.hypot(len, dh) + 0.01, '#2a2622', -Math.atan2(dh, len), ry));
+    // the poles carrying the wire, an arm out over the rails and a lantern
+    // hung from it
+    for (const p of sp.poles) {
+      const y = gy(p.x, p.z), reach = 0.2;
+      gb.cyl(p.x, y - 0.02, p.z, 0.011, 0.016, 0.49, 6, '#3a4440');
+      gb.boxC(p.x + p.ax * reach / 2, y + 0.45, p.z + p.az * reach / 2, p.az ? 0.012 : reach, 0.012, p.ax ? 0.012 : reach, '#3a4440');
+      this._lantern(gb, p.x + p.ax * reach * 0.35, y + 0.4, p.z + p.az * reach * 0.35, y);
+    }
+    // a tram shelter: a canopy on two posts, a glazed back and a bench
+    for (const s of sp.shelters) {
+      gb.push(s.x, gy(s.x, s.z), s.z, s.ry);
+      for (const ox of [-0.1, 0.1]) gb.box(ox, -0.01, -0.035, 0.014, 0.23, 0.014, '#2f4a3a');
+      gb.box(0, 0.01, -0.04, 0.2, 0.17, 0.006, '#a8c0c6');
+      gb.box(0, 0.215, -0.005, 0.25, 0.016, 0.1, '#3a4a44');
+      gb.box(0, 0.035, -0.015, 0.16, 0.012, 0.04, '#7a5636');
+      for (const ox of [-0.065, 0.065]) gb.box(ox, 0, -0.015, 0.01, 0.035, 0.035, '#3f342c');
+      gb.pop();
+    }
+  }
+
+  // A lantern hung from a pole's arm: lit at night when the town has power.
+  _lantern(gb, x, y, z, ground) {
+    const on = this.lit(x, z);
+    gb.box(x, y + 0.035, z, 0.004, 0.012, 0.004, '#2f2c2a');
+    if (on) gb.glow(2.2, 1.6, 0.8, 3.0);
+    gb.box(x, y - 0.005, z, 0.03, 0.04, 0.03, on ? '#ffe2a0' : '#9a958a');
+    gb.noGlow();
+    gb.cone(x, y + 0.035, z, 0.026, 0.02, 4, '#2f2c2a', Math.PI / 4);
+    if (on) this.lamps.push({ x, y: y + 0.015, z, ground }); else this.darkLamps++;
   }
 
   _lamp(gb, x, y, z) {

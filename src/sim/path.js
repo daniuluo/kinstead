@@ -1,6 +1,12 @@
 // Breadth-first pathfinding over the road and rail grids, with a small cache.
+// In a town with boulevards (world.blvd), roads are searched by cost
+// instead, so traffic keeps to its side: a lane runs one way, with the
+// median on its left (everyone keeps right), and going the wrong way along
+// it, or across the median, costs more than going round.
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+// the world.blvd bit for each of DIRS, and for the side to the left of it
+const BIT = [2, 8, 4, 1], LEFT = [1, 4, 2, 8], RIGHT = [4, 1, 8, 2];
 const TURN = 6;   // segments in a walker's quarter-circle turn
 
 export class PathFinder {
@@ -11,7 +17,8 @@ export class PathFinder {
     this.seen = new Uint32Array(n);
     this.stamp = 0;
     this.cache = new Map();
-    const clear = () => this.cache.clear();
+    this.lanes = null;   // whether the town has boulevards (worked out when needed)
+    const clear = () => { this.cache.clear(); this.lanes = null; };
     world.on('roads', clear);
     world.on('rails', clear);
   }
@@ -27,6 +34,10 @@ export class PathFinder {
     const key = tag + s + ':' + g;
     const hit = this.cache.get(key);
     if (hit !== undefined) return hit;
+    if (tag === 'r') {
+      if (this.lanes === null) this.lanes = !!(w.blvd && w.blvd.some(Boolean));
+      if (this.lanes) return this._keep(this._lanes(grid, s, g), key);
+    }
     const stamp = ++this.stamp;
     const prev = this.prev, seen = this.seen;
     const q = [s];
@@ -44,15 +55,55 @@ export class PathFinder {
         seen[ni] = stamp; prev[ni] = i; q.push(ni);
       }
     }
-    let path = null;
-    if (found) {
-      path = [];
-      for (let i = g; i !== -1; i = prev[i]) path.push([i % N, (i / N) | 0]);
-      path.reverse();
-    }
+    return this._keep(found ? this._trace(g) : null, key);
+  }
+
+  _trace(g) {
+    const N = this.world.N, path = [];
+    for (let i = g; i !== -1; i = this.prev[i]) path.push([i % N, (i / N) | 0]);
+    return path.reverse();
+  }
+
+  _keep(path, key) {
     if (this.cache.size > 4000) this.cache.clear();
     this.cache.set(key, path);
     return path;
+  }
+
+  // The cheapest way along the roads from tile s to tile g when there are
+  // boulevards: a step costs 1, 2 across a median, 3 the wrong way along a
+  // lane (with its median on the right). Dial's algorithm: a ring of four
+  // buckets by cost, as no step costs more than 3.
+  _lanes(grid, s, g) {
+    const w = this.world, N = w.N, B = w.blvd, prev = this.prev, seen = this.seen;
+    if (!this.dist || this.dist.length !== N * N) { this.dist = new Int32Array(N * N); this.done = new Uint32Array(N * N); }
+    const dist = this.dist, done = this.done, stamp = ++this.stamp;
+    const bk = [[s], [], [], []];
+    seen[s] = stamp; dist[s] = 0; prev[s] = -1;
+    let left = 1;
+    for (let d = 0; left > 0; d++) {
+      const b = bk[d & 3];
+      while (b.length) {
+        const i = b.pop();
+        left--;
+        if (dist[i] !== d || done[i] === stamp) continue;
+        done[i] = stamp;
+        if (i === g) return this._trace(g);
+        const x = i % N, z = (i / N) | 0, m = B[i];
+        for (let k = 0; k < 4; k++) {
+          const nx = x + DIRS[k][0], nz = z + DIRS[k][1];
+          if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+          const ni = nz * N + nx;
+          if (!grid[ni] || done[ni] === stamp) continue;
+          const nd = d + (m & BIT[k] ? 2 : (m & RIGHT[k]) && !(m & LEFT[k]) ? 3 : 1);
+          if (seen[ni] === stamp && dist[ni] <= nd) continue;
+          seen[ni] = stamp; dist[ni] = nd; prev[ni] = i;
+          bk[nd & 3].push(ni);
+          left++;
+        }
+      }
+    }
+    return null;
   }
 }
 

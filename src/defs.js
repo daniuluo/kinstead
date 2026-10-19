@@ -975,7 +975,7 @@ export const TECHS = {
   arcades: { name: 'Arcades', cost: 270, tier: 2, branch: 'trade', needs: ['trade2', 'masonry'], desc: 'Covered shopping arcades.' },
   trade3: { name: 'Grand Shops', cost: 450, tier: 3, branch: 'trade', needs: ['arcades'], desc: 'Third-level and higher shop upgrades, savings banks, department stores joined from a draper and the shop next door, and exchanges joined from two offices.' },
   civic: { name: 'Civic Planning', cost: 810, tier: 4, branch: 'trade', needs: ['trade3', 'architecture'], desc: 'Market halls, town banks, grand department stores, stock exchanges, the Grand Hall, grand squares and covered markets.' },
-  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Rose gardens and bowling greens; gardens joined (or grown onto the plot next door) into town parks, ponds into lake gardens, and recreation grounds joined from play areas and games lawns.' },
+  gardening: { name: 'Gardening', cost: 45, tier: 0, branch: 'leisure', needs: [], desc: 'Rose gardens and bowling greens; gardens joined (or grown onto the plot next door) into town parks, ponds into lake gardens, and recreation grounds joined from play areas and games lawns; flower beds down the median of a boulevard.' },
   hospitality: { name: 'Hospitality', cost: 135, tier: 1, branch: 'leisure', needs: ['commerce'], desc: 'Taverns, inns and coffee houses, brewhouses joined from a tavern and a workshop, and tea gardens joined from a coffee house and a green.' },
   parks2: { name: 'Landscaping', cost: 180, tier: 2, branch: 'leisure', needs: ['gardening'], desc: 'Bigger and better gardens, squares, parks and playgrounds, playing fields, and bandstands that bring culture to the streets round them.' },
   publicparks: { name: 'Public Parks', cost: 1100, tier: 4, branch: 'leisure', needs: ['parks2', 'bigplots'], desc: 'Grow a 2×2 park onto the land round it into a 3×3 Grand Park, and that into a 4×4 City Park, taking in the little parks in the way.' },
@@ -989,7 +989,7 @@ export const TECHS = {
   botany: { name: 'Botany', cost: 210, tier: 2, branch: 'farm', needs: ['horticulture', 'schooling'], desc: 'Herb and physic gardens whose gardeners add to research, and botanic gardens joined from two herb gardens or a herb garden and a garden or pond.' },
   zoology: { name: 'Zoology', cost: 480, tier: 3, branch: 'farm', needs: ['botany', 'hospitality'], desc: 'Zoos: animals from far away on a 2×2 plot, with a charge at the gate.' },
   hydraulics: { name: 'Hydraulics', cost: 75, tier: 0, branch: 'water', needs: [], desc: 'River pumps and water towers.' },
-  fountains: { name: 'Fountains', cost: 135, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water.' },
+  fountains: { name: 'Fountains', cost: 135, tier: 1, branch: 'water', needs: ['hydraulics', 'joining'], desc: 'Fountain gardens that also supply water, and cobbled promenades with fountains and statues down a boulevard.' },
   electricity: { name: 'Electricity', cost: 360, tier: 2, branch: 'power', needs: ['hydraulics'], desc: 'Water wheels and wind generators, with wires along the streets, and the telegraph at the General Post Office.' },
   steam: { name: 'Steam Power', cost: 750, tier: 3, branch: 'power', needs: ['electricity', 'brickmaking'], desc: 'Coal power stations, pumping stations, manufactories and waterworks.' },
   cables: { name: 'Underground Cables', cost: 800, tier: 4, branch: 'power', needs: ['steam'], desc: 'Bury the power lines under the streets, street by street or the whole town: no more poles and wires, and prettier streets.' },
@@ -1005,7 +1005,7 @@ export const TECHS = {
   academies: { name: 'High Schools', cost: 420, tier: 2, branch: 'learn', needs: ['parish'], desc: 'High schools (on a double plot, or joined from a middle school and a school next door) and cathedral schools.' },
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
-  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains, and football grounds with a stand for the crowds the trains bring.' },
+  railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains, football grounds with a stand for the crowds the trains bring, and tram reservations down a paved boulevard.' },
 };
 
 // Upgrade levels unlock by research too. Unless a level names its own

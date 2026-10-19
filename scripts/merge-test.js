@@ -292,6 +292,33 @@ for (const [label, a, b, arr, days] of runs) {
     ok(kept > 20 && !wrong && !stray, `buried lines and dressings go with their streets (${kept} kept, ${wrong} changed, ${stray} off-street)`);
   }
 }
+// a boulevard and its look come through a merge, beside and turned (the
+// boulevard worked out again from the merged roads; the audit checks every
+// look still suits its tile)
+{
+  const { applyDress } = await import('../src/world/roadDress.js');
+  const { DRESSINGS, lookPart } = await import('../src/config.js');
+  const wA = deserialize(T.a), N = wA.N, HEDGE = DRESSINGS.findIndex(d => d && d.key === 'bhedge');
+  const free = (x, z) => wA.inBounds(x, z) && !wA.roadAt(x, z) && !wA.buildingOn(x, z) && wA.checkRoad(x, z, 1).ok && !wA.terrain.isWater(x, z);
+  let pair = null;
+  for (let z = 2; z < N - 3 && !pair; z++) for (let x = 2; x < N - 8 && !pair; x++) {
+    const a = [0, 1, 2, 3, 4, 5].map(k => [x + k, z]), b = a.map(([ax, az]) => [ax, az + 1]);
+    // (touching the town's roads, or the merge would take it up as unjoined)
+    const touch = [[x - 1, z], [x - 1, z + 1], [x + 6, z], [x + 6, z + 1], ...a.map(([ax]) => [ax, z - 1]), ...a.map(([ax]) => [ax, z + 2])];
+    if ([...a, ...b].every(([ax, az]) => free(ax, az)) && touch.some(([tx, tz]) => wA.inBounds(tx, tz) && wA.connected[wA.idx(tx, tz)])) pair = [...a, ...b];
+  }
+  wA.money = 1e5;
+  const laid = pair && wA.placeRoads(pair, 1).placed === 12;
+  const look = laid && applyDress(wA, pair, HEDGE);
+  const looked = (w) => { let n = 0; for (let i = 0; i < w.N * w.N; i++) if (w.blvd[i] && lookPart(w.dress[i]) === HEDGE) n++; return n; };
+  const n0 = looked(wA);
+  ok(laid && look && look.ok && n0 >= 8, `a town with a boulevard with a hedge down it (${n0} lane tiles)`);
+  const dA = JSON.parse(JSON.stringify(serialize(wA)));
+  for (const [label, arr] of [['a boulevard beside', { ...besideOffset(48, 48, 'right'), rot: 0 }], ['a boulevard turned 90°', { ...besideOffset(48, 48, 'left'), rot: 1 }]]) {
+    const r = checkMerge(label, dA, T.b, arr);
+    if (r) ok(looked(r.w) >= n0, `${label}: the boulevard and its look come through (${looked(r.w)} of ${n0} lane tiles)`);
+  }
+}
 // something must actually have been settled across all those arrangements
 ok(moved > 0 && refunded >= 0, `overlapping plots were moved (${moved}) or refunded (${refunded})`);
 ok(runs.some(([l]) => l.startsWith('beside')), 'every side was tried');

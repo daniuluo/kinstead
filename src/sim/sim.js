@@ -1,6 +1,6 @@
 // Town simulation: time, economy, services, happiness, jobs and migration.
 
-import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS } from '../config.js';
+import { CONFIG, ROAD_LEVELS, TITLES, titleFor, seasonOf, DRESSINGS, BOULEVARD, streetPart, lookPart } from '../config.js';
 import { BUILDINGS, SERVICES, TRANSIT, servicesOf, needsOf, hasFields, produceOf, researchOf, visitOf } from '../defs.js';
 import { RNG, hash2 } from '../util/rng.js';
 import { fw, fd, isOpen, capOf, sizeK, householdCap } from '../world/world.js';
@@ -226,12 +226,13 @@ export class Sim {
       }
     }
     // dressed streets cheer the homes and shops beside them (lamps only
-    // as much as the town can light them)
-    const dress = w.dress;
+    // as much as the town can light them), and a boulevard a little before
+    // it has any look of its own
+    const dress = w.dress, blvd = w.blvd;
     if (dress) for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      const D = DRESSINGS[dress[z * N + x]];
-      if (!D || !w.roads[z * N + x]) continue;
-      const a = D.appeal * (D.key === 'lamps' ? 0.4 + 0.6 * (this.lampShare ?? 0) : 1);
+      const v = dress[z * N + x], D = DRESSINGS[streetPart(v)], E = DRESSINGS[lookPart(v)], lane = blvd && blvd[z * N + x] && w.roads[z * N + x];
+      if ((!D && !E && !lane) || !w.roads[z * N + x]) continue;
+      const a = (D ? D.appeal * (D.key === 'lamps' ? 0.4 + 0.6 * (this.lampShare ?? 0) : 1) : 0) + (E ? E.appeal : 0) + (lane ? BOULEVARD.appeal : 0);
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx, nz = z + dz;
         if (nx >= 0 && nz >= 0 && nx < N && nz < N) this.appeal[nz * N + nx] += a;
@@ -692,7 +693,7 @@ export class Sim {
       }
     }
     for (let i = 0; i < w.roads.length; i++) {
-      if (w.roads[i]) exp.roads += ROAD_LEVELS[w.roads[i]].upkeep + (w.dress && w.dress[i] ? DRESSINGS[w.dress[i]].upkeep : 0);
+      if (w.roads[i]) exp.roads += ROAD_LEVELS[w.roads[i]].upkeep + (w.dress && w.dress[i] ? (DRESSINGS[streetPart(w.dress[i])]?.upkeep || 0) + (DRESSINGS[lookPart(w.dress[i])]?.upkeep || 0) : 0);
       if (w.rails[i]) exp.roads += 0.25;
     }
     for (const line of w.lines) exp.transit += TRANSIT[line.mode].upkeep * line.vehicles;
