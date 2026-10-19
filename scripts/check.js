@@ -1166,6 +1166,65 @@ const placePair = (tw, ta, tb) => {
     `grounds grown from a zoo keep its gate ($${visitOf(gz)}), and from the royal botanic gardens their research (${researchOf(gp)} a day)`);
 }
 
+// 3d1g. plantings and monuments come in kinds: each kind builds at every
+// level and looks like no other, one without a kind takes one by its seed
+// (from those that need no research), a kind can be chosen when it is
+// built (if researched) and reworked later by the builders for a share of
+// its worth, and a grand monument brings culture
+{
+  const { KINDS, REKIND, kindOf } = await import('../src/defs.js');
+  const { runCommand } = await import('../src/commands.js');
+  const hashOf = (geo) => { let h = 0; const a = geo.attributes.position.array, c = geo.attributes.color.array; for (let i = 0; i < a.length; i += 5) h = (Math.imul(h, 31) + Math.round(a[i] * 1000) + Math.round(c[i] * 255)) | 0; return h; };
+  const bad = [], looks = new Map();
+  for (const [type, K] of Object.entries(KINDS)) for (const kind of Object.keys(K)) BUILDINGS[type].levels.forEach((_, level) => {
+    const b = { type, level, variant: 4242, flavor: kind, size: 1, w: 1, d: 1, baseY: 0.5, minY: 0.2, rot: 0 };
+    let h = null;
+    for (const season of [0, 1, 2, 3]) {
+      const m = buildModel(b, { flat: true, season });
+      if (!m.geo || !m.geo.attributes.position.count || [...m.geo.attributes.position.array].some(v => !Number.isFinite(v))) bad.push(`${type} ${kind} L${level}`);
+      else if (season === 1) h = hashOf(m.geo);
+    }
+    const key = `${type}:${level}`;
+    if (!looks.has(key)) looks.set(key, new Set());
+    looks.get(key).add(h);
+  });
+  ok(!bad.length, `every kind of planting (${Object.keys(KINDS.flowers).length}) and monument (${Object.keys(KINDS.statue).length}) builds at every level and season${bad.length ? ': not ' + bad.join(', ') : ''}`);
+  ok([...looks].every(([k, s]) => s.size === Object.keys(KINDS[k.split(':')[0]]).length), `...and at each level each kind looks like no other (${[...looks].map(([k, s]) => `${k} ${s.size}`).join(', ')})`);
+  const seeds = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(v => kindOf({ type: 'statue', variant: v * 977 })));
+  ok(seeds.size >= 3 && [...seeds].every(k => !KINDS.statue[k].tech) && kindOf({ type: 'statue', variant: 5, flavor: 'clock' }) === 'clock' && kindOf({ type: 'house', variant: 5 }) === null,
+    `one without a kind takes one by its seed, of those needing no research (${[...seeds].join(', ')})`);
+  // choosing one when it is built, and reworking it later
+  const tw = World.createNew({ N: 48, seed: 43, name: 'Kindleton' });
+  tw.money = 1e6;
+  const G = { world: tw, demo: false };
+  const spot = (type) => { for (let z = 2; z < tw.N - 2; z++) for (let x = 2; x < tw.N - 2; x++) if (tw.checkBuild(type, x, z, { ignoreUnlock: true }).ok) return { x, z }; return null; };
+  const s1 = spot('flowers');
+  const locked = runCommand(G, { t: 'place', type: 'flowers', x: s1.x, z: s1.z, flavor: 'knot' });
+  tw.research.done.push('gardening', 'botany', 'stonework');
+  const knot = runCommand(G, { t: 'place', type: 'flowers', x: s1.x, z: s1.z, flavor: 'knot' });
+  ok(!locked.ok && /Botany/.test(locked.reason || '') && knot.ok && knot.building.flavor === 'knot' && kindOf(knot.building) === 'knot', `a planting can be built as a herb knot once Botany is researched (${locked.reason})`);
+  ok(!runCommand(G, { t: 'place', type: 'flowers', x: s1.x + 1, z: s1.z, flavor: 'clock' }).ok && !runCommand(G, { t: 'place', type: 'house', x: s1.x + 1, z: s1.z, flavor: 'rockery' }).ok, 'a kind of one is refused for the other, and for anything else');
+  const plot = knot.building;
+  plot.con = null;
+  const m0 = tw.money, ck = tw.kindCheck(plot, 'rockery');
+  const rk = runCommand(G, { t: 'kind', id: plot.id, kind: 'rockery' });
+  ok(ck.ok && rk.ok && plot.con && plot.con.kind === 'upgrade' && plot.con.flavor === 'rockery' && tw.money === m0 - ck.cost && ck.cost === Math.max(20, Math.round(tw.buildValue(plot) * REKIND)) && plot.flavor === 'knot',
+    `builders rework the knot as a rockery for $${ck.cost} (${Math.round(REKIND * 100)}% of its worth)`);
+  tw.finishConstruction(plot);
+  ok(plot.flavor === 'rockery' && plot.level === 0 && !plot.con, 'when they are done it is a rockery, at its level');
+  ok(!tw.kindCheck(plot, 'rockery').ok && !tw.kindCheck(plot, 'arch').ok && !tw.kindCheck(plot, 'tree').ok, 'not as the kind it is, a kind it has not, or one not yet researched');
+  // a grand monument brings culture
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  let mon = null;
+  for (let z = 1; z < tw.N - 1 && !mon; z++) for (let x = 1; x < tw.N - 1 && !mon; x++) { const c = tw.checkBuild('statue', x, z, { ignoreUnlock: true }); if (c.ok && c.access.some(a => a.conn)) mon = tw.placeBuilding('statue', x, z, { instant: true, ignoreUnlock: true, level: 1, flavor: 'founder' }).building; }
+  const count = () => { sim.recompute(); let n = 0; for (const v of sim.coverage.culture) n += v ? 1 : 0; return n; };
+  const before = count();
+  mon.level = 2;
+  const after = count();
+  ok(after > before && BUILDINGS.statue.levels[2].culture > 0, `a grand monument brings culture to the streets within ${BUILDINGS.statue.levels[2].culture} tiles (a civic one doesn't)`);
+}
+
 // 3d2. demolition takes a crew and some time
 {
   const target = [...w.buildings.values()].find(b => b.type === 'house' && !b.con && b.residents.length);

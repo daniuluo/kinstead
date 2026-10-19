@@ -1,7 +1,7 @@
 // HUD, toolbar, inspector, notifications and dialogs.
 
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST } from '../config.js';
-import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
+import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, KINDS, kindOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap } from '../world/world.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
@@ -186,9 +186,38 @@ export class UI {
     else if (this.category) active = this.category;
     for (const b of $('toolbar').querySelectorAll('.tool')) b.classList.toggle('on', b.dataset.tool === active);
     for (const c of $('flyout').querySelectorAll('.card')) c.classList.toggle('on', c.dataset.key === toolKey(t));
+    this.renderKindBar();
     $('btnView').textContent = this.game.renderer.rig.topDown ? 'ISO' : '2D';
     $('btnView').classList.toggle('on', this.game.renderer.rig.topDown);
     this.updateHint();
+  }
+
+  // While building a planting or a monument, a bar above the build menu
+  // picks its kind ("By its seed": one of those that need no research,
+  // different from one to the next). The choice is kept for the next one.
+  renderKindBar() {
+    const bar = $('kindBar'), t = this.game.input.tool, K = t.kind === 'build' && KINDS[t.type];
+    if (!bar) return;
+    const hint = $('toolHint');
+    if (!K || this.uiHidden) { bar.classList.add('hidden'); bar.dataset.key = ''; if (hint) hint.style.bottom = ''; return; }
+    const cur = t.flavor || '';
+    const key = `${t.type}|${cur}|${Object.keys(K).map(k => +this.world.hasTech(K[k].tech)).join('')}`;
+    bar.classList.remove('hidden');
+    if (bar.dataset.key !== key) this._fillKindBar(bar, t, K, cur, key);
+    // just above the build menu (as tall as the screen makes it), the hint above that
+    const box = bar.offsetParent ? bar.offsetParent.getBoundingClientRect().bottom : innerHeight, fly = $('flyout');
+    if (fly && !fly.classList.contains('hidden')) bar.style.bottom = `${Math.round(box - fly.getBoundingClientRect().top + 4)}px`;
+    if (hint) hint.style.bottom = `${Math.round(box - bar.getBoundingClientRect().top + 4)}px`;
+  }
+  _fillKindBar(bar, t, K, cur, key) {
+    bar.dataset.key = key;
+    const btn = (k, icon, name, title, ok) => `<button class="btn small ${cur === k ? 'on' : ''}" data-kind="${k}" ${ok ? '' : 'disabled'} title="${esc(title)}">${ok ? '' : '🔒'}<span class="ms">${icon}</span> ${esc(name)}</button>`;
+    bar.innerHTML = `<span class="kb-label">${esc(BUILDINGS[t.type].name)}:</span>${btn('', 'casino', 'By its seed', 'A different one each time, from the kinds that need no research', true)}${Object.entries(K).map(([k, x]) => btn(k, x.icon, x.name, this.world.hasTech(x.tech) ? x.desc : `Research ${TECHS[x.tech].name}`, this.world.hasTech(x.tech))).join('')}`;
+    for (const el of bar.querySelectorAll('button[data-kind]')) el.onclick = () => {
+      const k = el.dataset.kind || null;
+      (this.kindChoice ||= {})[t.type] = k;
+      this.game.input.setTool({ kind: 'build', type: t.type, flavor: k });
+    };
   }
 
   // ------------------------------------------------------------- flyouts
@@ -214,7 +243,7 @@ export class UI {
         if (def.cat !== cat || def.hidden) continue;
         const u = unlockOf(type, 0);
         const lock = pop < u ? u : !this.world.hasTech(def.tech) ? `🔬 ${TECHS[def.tech].name}` : 0;
-        cards.push({ ...card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type }), def.desc), type });
+        cards.push({ ...card(`build:${type}`, thumb(type, 0), def.name, `${def.levels[0].cost}`, lock, () => this.game.input.setTool({ kind: 'build', type, flavor: (this.kindChoice || {})[type] || null }), def.desc), type });
       }
       if (cat === 'parks') cards.push(card('trees', '🌲', 'Plant trees', `${TREE_COST}`, 0, () => this.game.input.setTool({ kind: 'trees' })));
       if (cat === 'transit') {
@@ -279,7 +308,7 @@ export class UI {
       case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
       case 'roadsel': msg = `Click a road to pick its stretch · Shift-click adds · drag to pick a ${t.box ? 'box' : 'line'} (Tab: ${t.box ? 'line' : 'box'}) · Backspace undoes · right-click clears`; break;
-      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
+      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name}${KINDS[t.type] ? ` (${t.flavor ? KINDS[t.type][t.flavor].name.toLowerCase() : 'its kind by its seed'}: choose above)` : ''} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
       case 'move': {
         const b = this.world.buildings.get(t.id);
         msg = b ? `Click a new plot for the ${BUILDINGS[b.type].levels[b.level].name} · it is taken down, carted over and rebuilt · Tab flips the entrance · right-click to cancel` : '';
@@ -492,6 +521,7 @@ export class UI {
     const title = con.kind === 'demolish' ? 'Being demolished' : con.kind === 'dismantle' ? 'Being taken down for a move'
       : con.wait === 'dismantle' ? 'Waiting for the old building to come down'
         : con.wait === 'haul' ? 'Materials on their way by cart'
+          : con.kind === 'upgrade' && KINDS[b.type] && typeof con.flavor === 'string' && Object.hasOwn(KINDS[b.type], con.flavor) ? `Being reworked · ${KINDS[b.type][con.flavor].name}`
           : con.kind === 'upgrade' ? `Upgrading to ${target}`
             : con.kind === 'merge' ? `Joining into ${target}`
               : con.moved ? 'Going back up on its new plot' : 'Under construction';
@@ -521,7 +551,8 @@ export class UI {
     const def = BUILDINGS[b.type], L = def.levels[b.level], S = scaledLevel(L, sizeK(b));
     const open = isOpen(b);
     const stars = def.levels.length > 1 ? `<span class="stars">${'★'.repeat(b.level + 1)}${'☆'.repeat(def.levels.length - b.level - 1)}</span>` : '';
-    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(def.name)} ${stars}<button class="btn small pm-open" data-act="paths" title="Every upgrade, rebuild and join it can lead to"><span class="ms">account_tree</span> Paths</button></div></div></div>`;
+    const kind = KINDS[b.type] ? KINDS[b.type][kindOf(b)] : null;
+    let h = `<div class="head"><img src="${thumb(b.type, b.level, b.variant, b.flavor)}" alt=""><div><h3>${esc(L.name)}</h3><div class="sub">${esc(kind ? `${def.name} · ${kind.name}` : def.name)} ${stars}<button class="btn small pm-open" data-act="paths" title="Every upgrade, rebuild and join it can lead to"><span class="ms">account_tree</span> Paths</button></div></div></div>`;
     if (b.con) h += this._siteHTML(b);
     const chips = [];
     if (!def.park || b.access) chips.push(b.connected ? '<span class="chip ok">Road connected</span>' : '<span class="chip no">Not connected to the town entrance</span>');
@@ -552,6 +583,7 @@ export class UI {
     if (visitOf(b)) rows.push(['Per visit', `$${visitOf(b)}`]);
     if (L.upkeep) rows.push(['Upkeep', `$${S.upkeep} / day`]);
     for (const s of servicesOf(def)) rows.push(s === 'water' ? [`${SERVICES[s].icon} Water`, 'Into the mains along the roads'] : [`${SERVICES[s].icon} ${SERVICES[s].name} reach`, `${L.radius} tiles`]);
+    if (L.culture) rows.push([`${SERVICES.culture.icon} Culture reach`, `${L.culture} tiles`]);
     if (def.park) rows.push(['Scenery', `+${L.appeal} within ${L.radius} tiles`]);
     if (L.pollution) rows.push(['Pollution', `${L.pollution} tile radius`]);
     if (L.taxBonus) rows.push(['Tax bonus', `+${Math.round(L.taxBonus * 100)}%`]);
@@ -606,6 +638,14 @@ export class UI {
         const r = w.residents.get(id);
         return r ? `<span class="chip link" data-act="resident" data-id="${id}">${esc(r.first)} ${esc(r.last[0])}.</span>` : '';
       }).join('')}${b.workers.length > 16 ? `<span class="chip">+${b.workers.length - 16}</span>` : ''}</div></div>`;
+    }
+    // a planting or monument: another of its kinds, reworked by the builders
+    if (!b.con && KINDS[b.type]) {
+      const K = KINDS[b.type], cur = kindOf(b), cost = w.kindCheck(b, '__probe__').cost || 0;
+      h += `<div class="sec kinds"><h5>${def.icon} ${b.type === 'statue' ? 'What it is' : 'What is planted'}</h5><div class="note">${esc(K[cur].desc)}</div><div class="note">Builders can rework it as another kind, keeping its level, for $${fmt(cost)}.</div><div class="produce">${Object.entries(K).map(([k, x]) => {
+        const unlocked = w.hasTech(x.tech), on = k === cur;
+        return `<button class="btn small ${on ? 'on' : ''}" data-act="kind" data-kind="${k}" ${!on && unlocked && w.money >= cost ? '' : 'disabled'} title="${esc(unlocked ? x.desc : `Research ${TECHS[x.tech].name}`)}">${unlocked ? '' : '🔒'}<span class="ms">${x.icon}</span> ${esc(x.name)}</button>`;
+      }).join('')}</div></div>`;
     }
     // a farm: what it grows or raises, and its fields beyond the plot
     if (!b.con && def.fields) {
@@ -780,6 +820,14 @@ export class UI {
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
       case 'paths': { const pb = w.buildings.get(sel.id); if (pb) showPathMap(this, pb); break; }
+      case 'kind': {
+        const kb = w.buildings.get(sel.id), K = kb && KINDS[kb.type];
+        g.cmd({ t: 'kind', id: sel.id, kind: data.kind }, (r) => {
+          if (r.ok) { g.sfx('build'); this.toast(r.instant ? `Reworked · ${K[data.kind].name}` : `Builders will rework it · ${K[data.kind].name}`, 'good', '🏗️'); } else if (r.reason) this.toast(r.reason, 'bad');
+          if (this.selection) this.renderInspector(true);
+        });
+        break;
+      }
       case 'produce':
         g.cmd({ t: 'produce', id: sel.id, produce: data.produce }, (r) => {
           if (r.ok) { g.sfx('click'); this.toast(`Now ${PRODUCE[data.produce].name.toLowerCase()}`, 'good', PRODUCE[data.produce].icon); } else if (r.reason) this.toast(r.reason, 'bad');

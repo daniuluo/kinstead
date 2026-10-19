@@ -215,7 +215,7 @@ function setLeases(w, b, leases) {
 }
 
 // The parts of a building site that change its look (not its progress).
-const conLook = (c) => (c ? JSON.stringify([c.kind, c.to, c.toType, c.look, c.wait, c.moved, c.expand, c.extend]) : '');
+const conLook = (c) => (c ? JSON.stringify([c.kind, c.to, c.toType, c.look, c.flavor, c.wait, c.moved, c.expand, c.extend]) : '');
 
 // Apply one delta (or keyframe) from the host. Returns what changed that the
 // UI may want to refresh for.

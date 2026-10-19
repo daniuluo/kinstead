@@ -226,7 +226,7 @@ export class Input {
     const t = this.tool;
     const def = BUILDINGS[t.type];
     const o = this._origin(tile, def.size);
-    this.game.cmd({ t: 'place', type: t.type, x: o.x, z: o.z, variant: this.variant, accessIndex: this.accessIndex }, (r) => {
+    this.game.cmd({ t: 'place', type: t.type, x: o.x, z: o.z, variant: this.variant, accessIndex: this.accessIndex, ...(t.flavor ? { flavor: t.flavor } : {}) }, (r) => {
       if (r.ok) {
         this.game.sfx('build');
         this.variant = (Math.random() * 1e9) | 0;
@@ -456,7 +456,7 @@ export class Input {
       }
       tip = `<b>${def.levels[0].name}</b> <span class="muted">${def.name}</span> · $${fmt(c.cost)}` + (c.ok ? (c.access.length > 1 ? '<br>Tab: flip entrance' : '') : `<br><span class="bad">${c.reason}</span>`);
       if (c.trees) tip += `<br>Clears ${c.trees} tree${c.trees > 1 ? 's' : ''}`;
-      ghost = { type: t.type, x: o.x, z: o.z, ok: c.ok, chk: c };
+      ghost = { type: t.type, x: o.x, z: o.z, ok: c.ok, chk: c, flavor: t.flavor || null };
     } else if (t.kind === 'move' && h) {
       const b = w.buildings.get(t.id);
       if (b) {
@@ -503,7 +503,7 @@ export class Input {
     const minH = isFinite(c.minH) ? c.minH : w.terrain.tileMin(gh.x, gh.z);
     const maxH = isFinite(c.maxH) ? c.maxH : w.terrain.tileMax(gh.x, gh.z);
     const W = gh.w ?? def.size, D = gh.d ?? def.size, variant = gh.variant ?? this.variant;
-    const key = `${gh.type}|${gh.level || 0}|${gh.x}|${gh.z}|${W}|${D}|${rot}|${gh.ok}|${variant}`;
+    const key = `${gh.type}|${gh.level || 0}|${gh.x}|${gh.z}|${W}|${D}|${rot}|${gh.ok}|${variant}|${gh.flavor || ''}`;
     if (key === this.ghostKey) return;
     this.ghostKey = key;
     if (this.ghost) { scene.remove(this.ghost); this.ghost.geometry.dispose(); }

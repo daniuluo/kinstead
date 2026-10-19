@@ -2,7 +2,7 @@
 // Rendering and simulation listen to the events emitted here.
 
 import { CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, roadRefund, dressRefund, DRESSINGS } from '../config.js';
-import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
+import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, LARGE, ESTATE, GRAND, KINDS, REKIND, kindOf, techForLevel, growsInto, plotName, isSmallPark, BURY_COST, FARM_JOIN, PRODUCE, produceOf, hasFields, choosesProduce, CORNER_SHOPS } from '../defs.js';
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { newTownId } from '../util/text.js';
@@ -376,6 +376,12 @@ export class World {
   // New buildings start as a building site (see Construction) unless placed
   // with opts.instant (world generation) or the instant-build sandbox switch.
   placeBuilding(type, x, z, opts = {}) {
+    // a planting or a monument of a kind the town can make
+    if (opts.flavor && KINDS[type]) {
+      const K = KINDS[type][opts.flavor];
+      if (!K) return { ok: false, reason: 'There is no such kind' };
+      if (!opts.ignoreUnlock && !this.hasTech(K.tech)) return { ok: false, reason: `Research ${this.techName(K.tech)} first` };
+    }
     const chk = this.checkBuild(type, x, z, opts);
     if (!chk.ok) return { ok: false, reason: chk.reason };
     const def = BUILDINGS[type];
@@ -1101,6 +1107,35 @@ export class World {
     if (look && !this.hasTech(STYLE_TECH_OF(look))) return { ok: false, reason: 'Research that style first', cost };
     if (this.money < cost) return { ok: false, reason: 'Not enough money', cost };
     return { ok: true, cost };
+  }
+
+  // A planting replanted, or a monument reworked, as another of its kinds
+  // (KINDS, kept in b.flavor): builders do it, for a share of what it is
+  // worth (REKIND), keeping its level.
+  kindCheck(b, key) {
+    const K = b && KINDS[b.type];
+    if (!K) return { ok: false, reason: 'It only comes in one kind' };
+    const cost = Math.max(20, Math.round(this.buildValue(b) * REKIND));
+    if (typeof key !== 'string' || !Object.hasOwn(K, key)) return { ok: false, reason: 'There is no such kind', cost };
+    if (b.con) return { ok: false, reason: 'Construction under way', cost };
+    if (kindOf(b) === key) return { ok: false, reason: `It is ${K[key].name.toLowerCase()} already`, cost };
+    if (!this.hasTech(K[key].tech)) return { ok: false, reason: `Research ${this.techName(K[key].tech)} first`, cost };
+    if (this.money < cost) return { ok: false, reason: 'Not enough money', cost };
+    return { ok: true, cost };
+  }
+
+  setKind(id, key) {
+    const b = this.buildings.get(id), chk = this.kindCheck(b, key);
+    if (!chk.ok) return chk;
+    this.money -= chk.cost;
+    if (this.sandbox.instantBuild) {
+      b.flavor = key;
+      this.emit('building:change', b);
+      return { ok: true, building: b, cost: chk.cost, instant: true };
+    }
+    b.con = { kind: 'upgrade', to: b.level, toType: b.type, flavor: key, restyle: true, work: workNeeded(chk.cost, 'upgrade'), done: 0 };
+    this.emit('building:change', b);
+    return { ok: true, building: b, cost: chk.cost };
   }
 
   restyleBuilding(id, look) {

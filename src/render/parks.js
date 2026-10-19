@@ -15,10 +15,10 @@
 import * as THREE from 'three';
 import { shade, mix } from './geo.js';
 import { RNG, hash2 } from '../util/rng.js';
-import { BUILDINGS, parkOrigin } from '../defs.js';
+import { BUILDINGS, parkOrigin, kindOf } from '../defs.js';
 import {
   house, bench, lamp, bush, hedge, fence, footing, pavilion, shelter, swings, slide, seesaw, roundabout, sandpit, fort,
-  stripes, goal, frontage, rowFrame, gravel, gatePiers, glassRoof, wallClock, cafeTable, tubPlant, sign, ownPick,
+  stripes, goal, frontage, rowFrame, gravel, gatePiers, glassRoof, wallClock, cafeTable, tubPlant, sign, logs, ownPick,
 } from './buildings.js';
 
 // How many steps a season's turn is drawn in, for parks (the world view
@@ -55,6 +55,15 @@ const BLOOMS = [
   ['#7a5ab0', '#f2ede0', '#e8d050'],   // winter pansies and snowdrops
 ];
 const ROSES = ['#c8203a', '#e05a7a', '#f2c0c8', '#f2ede0', '#e8a040', '#a01830'];
+
+// A plain stone plinth under a garden structure (a bandstand, a fountain, a
+// glasshouse, a monument) where the ground falls away below its floor (y = 0).
+export function plinth(c, x, z, w, d, color = STONE) {
+  let lo = 0;
+  for (const [px, pz] of [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]]) lo = Math.min(lo, c.gy(px, pz));
+  if (lo > -0.015) return;
+  c.gb.cbox(x, lo - 0.04, z, w + 0.02, -lo + 0.045, d + 0.02, color, 0, 0.012);
+}
 
 // ---------------------------------------------------------- the seed
 // A stable random sequence for this park (the same at every level): salt
@@ -179,13 +188,13 @@ export function topiaryShape(c, x, z, s = 1, kind = 'cone') {
 // Flowers of the season: bulbs in spring, bedding in summer, chrysanthemums
 // in autumn, a few pansies and snowdrops in winter. pal: their own colours
 // (roses, lavender) when in flower.
-export function blooms(c, x, z, n = 5, spread = 0.08, pal = null, at = null) {
+export function blooms(c, x, z, n = 5, spread = 0.08, pal = null, at = null, spreadZ = spread) {
   const { gb, rng } = c;
   const q = seasonAt(c, spotHash(c, x, z, 3));
   const count = Math.round(n * [0.85, 1, 0.7, 0.25][q]);
   const cols = pal && q <= 1 ? pal : BLOOMS[q];
   for (let i = 0; i < count; i++) {
-    const fx = x + rng.float(-spread, spread), fz = z + rng.float(-spread, spread), y = at ?? c.gy(fx, fz);
+    const fx = x + rng.float(-spread, spread), fz = z + rng.float(-spreadZ, spreadZ), y = at ?? c.gy(fx, fz);
     gb.box(fx, y, fz, 0.008, q === 3 ? 0.016 : 0.032, 0.008, q === 2 ? '#5a6a32' : '#4f7a3a');
     gb.sphere(fx, y + (q === 3 ? 0.02 : 0.036), fz, q === 3 ? 0.011 : 0.015, cols[rng.int(0, cols.length - 1)]);
   }
@@ -366,7 +375,7 @@ export function footbridge(c, x, z, len, ry = 0, y = null, col = '#ece6da') {
 export function bandstand(c, x, z, r = 0.16, o = {}) {
   const { gb } = c;
   const y = c.gy(x, z), iron = o.iron || IRON_G, roof = o.roof || '#3f5a46', h = r * 1.15;
-  footing(c, x, z, r * 2, r * 2);
+  plinth(c, x, z, r * 2, r * 2);
   gb.cyl(x, Math.min(0, y) - 0.02, z, r + 0.02, r + 0.03, 0.07 - Math.min(0, y), 8, o.base || STONE_L, Math.PI / 8);
   gb.cyl(x, 0.05, z, r + 0.01, r + 0.01, 0.012, 8, '#8a6a48', Math.PI / 8);
   // steps up at the front
@@ -462,7 +471,7 @@ export function kiosk(c, x, z, w, d, wall, roof, o = {}) {
 export function greenhouse(c, x, z, w, d, o = {}) {
   const { gb } = c;
   const brick = o.brick || '#9a5640', frame = o.frame || '#ece6da', h = o.h || 0.13;
-  footing(c, x, z, w, d);
+  plinth(c, x, z, w, d);
   gb.cbox(x, 0, z, w, 0.04, d, brick, 0, 0.006);
   gb.glow(1.2, 1.25, 0.95, 1.3);
   gb.box(x, 0.04, z, w - 0.01, h - 0.04, d - 0.01, '#a9c4c8');
@@ -530,7 +539,7 @@ export function monument(c, x, z, kind, s = 1, mat = BRONZE) {
   const { gb } = c;
   const y = c.gy(x, z);
   gb.push(x, Math.min(0, y), z, 0, s);
-  footing(c, 0, 0, 0.3, 0.3);
+  plinth(c, 0, 0, 0.3, 0.3);
   gb.cbox(0, -0.02, 0, 0.28, 0.07 - Math.min(0, y) / s, 0.28, STONE, 0, 0.012);
   if (kind === 'obelisk') {
     gb.cbox(0, 0.05, 0, 0.16, 0.06, 0.16, STONE_L, 0, 0.008);
@@ -592,7 +601,7 @@ export function monument(c, x, z, kind, s = 1, mat = BRONZE) {
 export function fountain(c, x, z, r, kind = 'tiers', stone = STONE_L) {
   const { gb } = c;
   const y = c.gy(x, z), ice = frozen(c);
-  footing(c, x, z, r * 2, r * 2);
+  plinth(c, x, z, r * 2, r * 2);
   const base = Math.min(0, y) - 0.02;
   if (kind === 'quatre') for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     gb.cyl(x + ox * r * 0.45, base, z + oz * r * 0.45, r * 0.6, r * 0.62, 0.08 - base, 14, stone);
@@ -839,68 +848,6 @@ M.garden = (c, L) => {
   if (ownPick(c, [0, 1], 11)) lamp(c, -0.4, ax > 0 ? -0.05 : 0.05, 0.28);
   bench(c, -cx * 0.3, 0.38, Math.PI);
   spot(c, 0, 0.28); spot(c, -cx * 0.3, 0.26);
-};
-
-// Flower Bed: one of a round tiered bed, rows of beds, carpet bedding in
-// bands, a raised planter with a palm, a cart of flowers, or four urns round
-// a bed; whatever the season has in flower.
-M.flowers = (c) => {
-  const { gb } = c;
-  const kind = ownPick(c, ['round', 'rows', 'carpet', 'planter', 'cart', 'urns'], 1);
-  if (kind === 'round') {
-    const y = c.gy(0, 0);
-    gb.cyl(0, y - 0.02, 0, 0.33, 0.35, 0.07, 14, STONE);
-    gb.cyl(0, y - 0.01, 0, 0.3, 0.3, 0.07, 14, SOIL_D);
-    gb.cyl(0, y + 0.02, 0, 0.18, 0.2, 0.06, 12, SOIL);
-    bed(c, 0, 0, 0.58, 0.58, { round: true, bands: true, rings: true });
-    topiaryShape(c, 0, 0, 0.9, ownPick(c, ['cone', 'ball', 'tiers'], 2));
-  } else if (kind === 'rows') {
-    const n = ownPick(c, [2, 3], 3);
-    for (let b = 0; b < n; b++) {
-      const z = -0.3 + (b + 0.5) * (0.6 / n) * 1.2 - 0.06;
-      bed(c, 0, z, 0.72, 0.15, { edge: 'brick', bands: true });
-    }
-  } else if (kind === 'carpet') {
-    // carpet bedding: an oval of bands round a stone marker
-    bed(c, 0, 0, 0.7, 0.5, { round: true, edge: 'stone', bands: true, rings: true });
-    gb.cbox(0, c.gy(0, 0) + 0.02, 0, 0.05, 0.02, 0.05, STONE_W, 0, 0.004);
-  } else if (kind === 'planter') {
-    const y = c.gy(0, 0);
-    gb.cbox(0, y - 0.01, 0, 0.36, 0.1, 0.36, STONE_L, Math.PI / 4, 0.012);
-    gb.box(0, y + 0.08, 0, 0.32, 0.02, 0.32, SOIL, Math.PI / 4);
-    bed(c, 0, 0, 0.3, 0.3, { round: true, y: y + 0.09 });
-    gb.cyl(0, y + 0.08, 0, 0.012, 0.016, 0.14, 5, '#6e5034');
-    for (let k = 0; k < 6; k++) gb.boxC(Math.cos(k * 1.05) * 0.04, y + 0.24, Math.sin(k * 1.05) * 0.04, 0.09, 0.006, 0.02, '#4f7a3a', 0, -k * 1.05, -0.5);
-    for (const [x, z] of [[-0.36, 0.36], [0.36, 0.36]]) bed(c, x, z, 0.14, 0.14, {});
-  } else if (kind === 'cart') {
-    // an old farm cart full of flowers among low beds
-    const y = c.gy(0.05, -0.05);
-    gb.push(0.05, y, -0.05, ownPick(c, [0.3, -0.4, 0.9], 4));
-    gb.cbox(0, 0.06, 0, 0.26, 0.07, 0.16, '#86663f', 0, 0.008);
-    for (const s of [-1, 1]) gb.cyl(s * 0.07, 0.06, 0.085, 0.06, 0.06, 0.012, 10, '#5e432c', 0, Math.PI / 2);
-    gb.boxC(-0.2, 0.06, 0, 0.16, 0.012, 0.012, '#5e432c', 0, 0, -0.35);
-    gb.pop();
-    blooms(c, 0.05, -0.05, 14, 0.09, null, y + 0.12);
-    bed(c, -0.24, 0.26, 0.3, 0.12, {}); bed(c, 0.26, 0.22, 0.12, 0.26, {});
-  } else {
-    bed(c, 0, 0, 0.36, 0.36, { edge: 'box' });
-    for (const [x, z] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) urn(c, x, z);
-  }
-  if (kind !== 'urns') { bush(c, 0.4, 0.4, 0.85); bush(c, -0.4, -0.4, 0.85); }
-};
-
-// Monument: a figure, a rider, an obelisk, a column, a memorial cross, an
-// angel or an urn, set among lamps, clipped yews, railings or flowers.
-M.statue = (c) => {
-  const kind = ownPick(c, ['figure', 'rider', 'obelisk', 'column', 'cross', 'angel', 'urn'], 1);
-  const mat = ownPick(c, [BRONZE, BRONZE, VERDI, MARBLE], 2), set = ownPick(c, ['lamps', 'yews', 'railings', 'flowers'], 3);
-  monument(c, 0, 0, kind, 1, mat);
-  if (set === 'lamps') { lamp(c, 0.36, 0.36, 0.3); lamp(c, -0.36, -0.36, 0.3); bush(c, -0.38, 0.38, 1.1); bush(c, 0.38, -0.38, 1.1); }
-  else if (set === 'yews') for (const [x, z] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) topiaryShape(c, x, z, 1.4, 'cone');
-  else if (set === 'railings') { railings(c, -0.22, -0.22, 0.22, 0.22, null); lamp(c, 0.38, 0.38, 0.3); for (const x of [-0.36, 0.36]) bed(c, x, -0.36, 0.12, 0.12, {}); }
-  else { for (const [x, z] of [[0, -0.3], [-0.3, 0], [0.3, 0]]) bed(c, x, z, x ? 0.1 : 0.4, x ? 0.4 : 0.1, { bands: true }); lamp(c, -0.38, 0.38, 0.3); }
-  bench(c, ownPick(c, [-0.3, 0.3], 4), 0.42, Math.PI);
-  spot(c, 0.2, 0.32); spot(c, -0.2, 0.32);
 };
 
 // Pond: one round pool, a bean of two or a long one; reeds, ducks, a willow
@@ -1802,7 +1749,7 @@ M.lido = (c, L) => {
   const m = ownPick(c, [-1, 1], 1), tile = ownPick(c, ['#e8e2d4', '#dfe8e8', '#ece0c8'], 2), cabin = ownPick(c, ['#3f6a8f', '#c8423a', '#2f7a7a', '#e8b84a'], 3);
   const q = seasonAt(c, 0.5), px = -m * 0.12, pz = -0.18, pw = L ? 1.2 : 1.05, pd = L ? 0.72 : 0.62;
   // the surround and the pool
-  footing(c, px, pz, pw + 0.3, pd + 0.3);
+  plinth(c, px, pz, pw + 0.3, pd + 0.3);
   // (raised a little, so the pool can be sunk into the surround)
   const base = Math.min(0, c.gy(px, pz), c.gy(px - pw / 2, pz - pd / 2), c.gy(px + pw / 2, pz + pd / 2)) - 0.02, top = 0.09, fl = 0.02;
   for (const [sx, sz, sw, sd] of [[0, -(pd + 0.15) / 2, pw + 0.3, 0.15], [0, (pd + 0.15) / 2, pw + 0.3, 0.15], [-(pw + 0.15) / 2, 0, 0.15, pd], [(pw + 0.15) / 2, 0, 0.15, pd]]) gb.cbox(px + sx, base, pz + sz, sw, top - base, sd, tile, 0, 0.006);
@@ -1867,7 +1814,7 @@ M.lido = (c, L) => {
 function palmHouse(c, x, z, len, s = 1) {
   const { gb } = c;
   const d = 0.34 * s, h = 0.16 * s, glass = '#a9c4c8', frame = '#ece6da';
-  footing(c, x, z, len, d);
+  plinth(c, x, z, len, d);
   gb.cbox(x, 0, z, len, 0.035, d, STONE_L, 0, 0.006);
   // the wings: glass walls under barrel roofs
   for (const sd of [-1, 1]) {
@@ -1982,7 +1929,7 @@ function flamingo(c, x, y, z, ry) {
 function aviary(c, x, z, r) {
   const { gb, rng } = c;
   const y = c.gy(x, z);
-  footing(c, x, z, r * 2, r * 2);
+  plinth(c, x, z, r * 2, r * 2);
   gb.cyl(x, Math.min(0, y) - 0.01, z, r, r + 0.01, 0.04 - Math.min(0, y), 12, STONE_L);
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
@@ -2213,3 +2160,563 @@ function grounds(c, L, n) {
 }
 M.grandpark = (c, L) => grounds(c, L, 3);
 M.citypark = (c, L) => grounds(c, L, 4);
+
+// ============================================================ plantings
+// A Planting is one of the kinds in PLANTINGS (its b.flavor, or one by its
+// seed: kindOf), drawn more elaborately at each level: a Flower Bed, an
+// Ornamental Garden, a Show Garden. Each kind follows the seasons in its own
+// way (bulbs in spring, the cottage border in summer, wild flowers gone to
+// seed in autumn...). Laid out by the planting's own seed, the same at every
+// level; kept within the plot (±0.44).
+
+// A clipped box hedge from (x0, z0) to (x1, z1), at any angle.
+function hedgeLine(c, x0, z0, x1, z1, h = 0.04, t = 0.026) {
+  const len = Math.hypot(x1 - x0, z1 - z0), mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+  c.gb.cbox(mx, c.gy(mx, mz) - 0.01, mz, t, h + 0.01, len + t * 0.5, hedgeCol(c), Math.atan2(x1 - x0, z1 - z0), 0.008);
+}
+// A ring of clipped hedge of radius r.
+function hedgeRing(c, x, z, r, h = 0.04, n = 16) {
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    hedgeLine(c, x + Math.cos(a0) * r, z + Math.sin(a0) * r, x + Math.cos(a1) * r, z + Math.sin(a1) * r, h);
+  }
+}
+// Tall flower spikes (hollyhocks, foxgloves, lupins, delphiniums) for a
+// border: in flower in summer, lower and green in spring, a few dahlias
+// and asters in autumn, cut-back stems in winter.
+function spikes(c, x, z, n, spread, cols) {
+  const { gb, rng } = c;
+  const q = seasonAt(c, spotHash(c, x, z, 29));
+  for (let i = 0; i < n; i++) {
+    const fx = x + rng.float(-spread, spread), fz = z + rng.float(-spread * 0.5, spread * 0.5), y = c.gy(fx, fz);
+    const h = rng.float(0.07, 0.15) * (q === 0 ? 0.55 : q === 3 ? 0.4 : 1);
+    gb.box(fx, y, fz, 0.008, h, 0.008, q === 3 ? '#6a5a42' : q === 2 ? '#5a6a32' : '#4f7a3a');
+    if (q === 3) continue;
+    gb.sphere(fx, y + 0.02, fz, 0.022, q === 2 ? '#6a7034' : '#4f7a3a', 0, 0.8);
+    if (q === 1) for (let k = 0; k < 3; k++) gb.sphere(fx, y + h * (0.55 + k * 0.17), fz, 0.014 - k * 0.003, cols[(i + k) % cols.length]);
+    else if (q === 2 && i % 2) gb.sphere(fx, y + h * 0.8, fz, 0.017, ['#c8702a', '#8a2a3a', '#9c74c9'][i % 3]);
+  }
+}
+// Carpet bedding: dwarf plants set out like a carpet in a pattern (a star,
+// a chequer, a wheel or a crest), w × d. Spring and summer the bedding;
+// autumn the late bedding in bronze and gold; winter low silvery foliage.
+function carpet(c, x, z, w, d, pattern, y = null) {
+  const { gb } = c;
+  const q = seasonAt(c, spotHash(c, x, z, 31));
+  const cols = q === 3 ? ['#8a9a8a', '#6a7a6a', '#a8b0a0'] : q === 2 ? ['#c8702a', '#d8a030', '#8a2a3a', '#6a7a3a'] : q === 0 ? ['#f2d040', '#d9363a', '#f2ede0', '#7a6ad9'] : ['#d9363a', '#f2ede0', '#3f6a8f', '#e8b84a', '#5f8a42'];
+  const nx = Math.round(w / 0.04), nz = Math.round(d / 0.04);
+  for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
+    const u = (i + 0.5) / nx - 0.5, v = (k + 0.5) / nz - 0.5, r = Math.hypot(u, v), a = Math.atan2(v, u);
+    if (r > 0.5) continue;
+    let ci;
+    if (pattern === 'star') ci = r < 0.09 ? 0 : Math.cos(a * 5) > 0.3 - r ? 1 : r > 0.42 ? 3 : 2;
+    else if (pattern === 'chequer') ci = (Math.floor((u + 0.5) * 5) + Math.floor((v + 0.5) * 5)) % 2 ? 1 : r > 0.42 ? 3 : 2;
+    else if (pattern === 'wheel') ci = r < 0.1 ? 0 : Math.abs(Math.sin(a * 4)) < 0.25 ? 1 : r > 0.38 ? 3 : 2;
+    else ci = r < 0.16 ? (Math.abs(u) < 0.05 || Math.abs(v) < 0.05 ? 1 : 0) : r > 0.4 ? 3 : Math.abs(u) > Math.abs(v) ? 2 : 1;
+    const px = x + u * w, pz = z + v * d;
+    gb.box(px, (y ?? c.gy(px, pz)) + 0.012, pz, w / nx + 0.002, 0.016, d / nz + 0.002, cols[ci % cols.length]);
+  }
+}
+// Alpine cushions on a rockery: pink, purple, white and yellow in spring and
+// summer, green mats the rest of the year.
+function alpines(c, x, z, y, n, spread) {
+  const { gb, rng } = c;
+  const q = seasonAt(c, spotHash(c, x, z, 37));
+  for (let i = 0; i < n; i++) {
+    const ax = x + rng.float(-spread, spread), az = z + rng.float(-spread, spread);
+    gb.sphere(ax, y + rng.float(0, 0.03), az, rng.float(0.018, 0.028), q <= 1 ? ['#e88fae', '#9c74c9', '#f2ede0', '#e8d050', '#d9536b'][i % 5] : q === 3 ? '#7a8478' : '#6a8a4a', 0, 0.55);
+  }
+}
+// A rough heap of weathered stones.
+function stones(c, x, z, r, n, h = 0.06) {
+  const { gb, rng } = c;
+  const y = c.gy(x, z);
+  for (let i = 0; i < n; i++) {
+    const a = rng.float(0, 6.28), d = rng.float(0, r), s = rng.float(0.035, 0.07);
+    gb.blob(x + Math.cos(a) * d, y + h * (1 - d / r) * 0.8, z + Math.sin(a) * d, s, s * 0.7, s * 0.85, ['#a8a090', '#9a9284', '#b4ac9c', '#8f877a'][i % 4], rng.float(0, 6));
+  }
+}
+// Long grass with wild flowers: poppies, cornflowers, ox-eye daisies in
+// summer, cowslips in spring, seed heads in autumn, brown stalks in winter.
+function meadow(c, x, z, w, d, n) {
+  const { gb, rng } = c;
+  const q = seasonAt(c, spotHash(c, x, z, 41));
+  const grass = ['#8aa850', '#7a9a48', '#a8a050', '#8a7a58'][q];
+  for (let i = 0; i < Math.round(n / 7); i++) { const tx = x + rng.float(-w / 2.6, w / 2.6), tz = z + rng.float(-d / 2.6, d / 2.6); gb.sphere(tx, c.gy(tx, tz) + 0.006, tz, rng.float(0.04, 0.07), shade(grass, rng.float(0.88, 1.05)), 0, 0.42); }
+  for (let i = 0; i < n; i++) {
+    const fx = x + rng.float(-w / 2, w / 2), fz = z + rng.float(-d / 2, d / 2), y = c.gy(fx, fz), h = rng.float(0.03, 0.06);
+    gb.boxC(fx, y + h / 2, fz, 0.006, h, 0.006, grass, rng.float(-0.2, 0.2), 0, rng.float(-0.2, 0.2));
+    if (i % 3 === 0) {
+      const col = q === 1 ? ['#d9363a', '#3f6ad8', '#f2ede0', '#d9363a'][i % 4] : q === 0 ? '#e8d050' : q === 2 ? '#8a6a3a' : null;
+      if (col) gb.sphere(fx, y + h, fz, q === 2 ? 0.008 : 0.012, col);
+    }
+  }
+}
+// A box of pansies or geraniums, a trough or a tub, with the season's flowers.
+function trough(c, x, z, w, ry = 0, col = '#6b4a2f') {
+  const { gb } = c;
+  gb.push(x, c.gy(x, z), z, ry);
+  gb.cbox(0, 0, 0, w, 0.05, 0.06, col, 0, 0.006);
+  gb.box(0, 0.044, 0, w - 0.012, 0.008, 0.05, SOIL);
+  gb.pop();
+  c.gb.push(x, 0, z, ry);
+  blooms(c, 0, 0, Math.round(w / 0.03), w * 0.4, null, c.gy(x, z) + 0.05, 0.018);
+  c.gb.pop();
+}
+// A lamp post with a hanging basket either side.
+function basketPost(c, x, z) {
+  lamp(c, x, z, 0.3);
+  const y = c.gy(x, z), q = seasonAt(c, spotHash(c, x, z, 43));
+  for (const s of [-1, 1]) {
+    c.gb.box(x + s * 0.03, y + 0.22, z, 0.06, 0.004, 0.004, '#2f2c2a');
+    c.gb.sphere(x + s * 0.055, y + 0.17, z, 0.024, '#4f7a3a', 0, 0.8);
+    if (q <= 2) for (let k = 0; k < 3; k++) c.gb.sphere(x + s * 0.055 + (k - 1) * 0.015, y + 0.15 + (k % 2) * 0.02, z + 0.012, 0.01, ['#d9363a', '#e88fae', '#f2ede0', '#9c74c9'][(k + (s > 0 ? 1 : 0)) % 4]);
+  }
+}
+// A clipped bay or box ball on a clear stem, in a stone urn or a tub.
+function standard(c, x, z, s = 1, pot = STONE_L) {
+  const { gb } = c;
+  const y = c.gy(x, z);
+  gb.cyl(x, y, z, 0.032 * s, 0.024 * s, 0.05 * s, 8, pot);
+  gb.cyl(x, y + 0.05 * s, z, 0.006, 0.006, 0.09 * s, 5, BARK);
+  gb.sphere(x, y + 0.16 * s, z, 0.045 * s, hedgeCol(c), 1);
+}
+
+const PLANT = {};
+PLANT.bedding = (c, L) => {
+  const { gb } = c;
+  if (L === 0) {
+    const n = ownPick(c, [2, 3], 3);
+    for (let b = 0; b < n; b++) bed(c, 0, -0.3 + (b + 0.5) * (0.6 / n) * 1.2 - 0.06, 0.72, 0.15, { edge: 'brick', bands: true });
+    bush(c, 0.4, 0.4, 0.85); bush(c, -0.4, -0.4, 0.85);
+    return;
+  }
+  if (L === 1) {
+    // a round bed in tiers round a clipped centre, little beds in the corners
+    const y = c.gy(0, 0);
+    gb.cyl(0, y - 0.02, 0, 0.3, 0.32, 0.07, 14, STONE);
+    gb.cyl(0, y - 0.01, 0, 0.27, 0.27, 0.07, 14, SOIL_D);
+    gb.cyl(0, y + 0.02, 0, 0.16, 0.18, 0.06, 12, SOIL);
+    bed(c, 0, 0, 0.52, 0.52, { round: true, bands: true, rings: true });
+    topiaryShape(c, 0, 0, 0.9, ownPick(c, ['cone', 'ball', 'tiers'], 2));
+    for (const [x, z] of [[-0.37, -0.37], [0.37, -0.37], [-0.37, 0.37], [0.37, 0.37]]) bed(c, x, z, 0.12, 0.12, { round: true });
+    return;
+  }
+  // carpet bedding in a pattern, a stone kerb and urns at its corners
+  const pattern = ownPick(c, ['star', 'chequer', 'wheel', 'crest'], 4), y = c.gy(0, 0);
+  gb.cbox(0, y - 0.02, 0, 0.74, 0.05, 0.74, STONE_L, 0, 0.01);
+  carpet(c, 0, 0, 0.68, 0.68, pattern, y + 0.012);
+  for (const [x, z] of [[-0.38, -0.38], [0.38, -0.38], [-0.38, 0.38], [0.38, 0.38]]) urn(c, x, z, 0.9);
+  gravel(c, 0, 0.42, 0.5, 0.05);
+};
+PLANT.cottage = (c, L) => {
+  const { gb } = c;
+  const cols = [ownPick(c, ['#e88fae', '#d9536b', '#f2ede0'], 2), ownPick(c, ['#9c74c9', '#6a8ad9', '#f2d040'], 3), '#f2ede0'];
+  // a picket fence across the back, the border in front of it
+  frontage(c, -0.42, 0.42, -0.4, [], 'picket');
+  for (let i = 0; i < 7; i++) shrub(c, -0.36 + i * 0.12, -0.3 + (i % 2) * 0.05, 0.62, true);
+  spikes(c, 0, -0.24, L ? 16 : 13, 0.38, cols);
+  blooms(c, 0, -0.14, 18, 0.36, null, null, 0.1);
+  if (L === 0) { bush(c, -0.36, 0.3, 0.9); blooms(c, 0.2, 0.25, 8, 0.12); return; }
+  // a brick path to a little gate at the street, borders either side
+  gb.box(0, c.gy(0, 0.15) - 0.006, 0.15, 0.1, 0.012, 0.6, '#a8644a');
+  for (const s of [-1, 1]) { shrub(c, s * 0.3, 0.12, 0.6, true); spikes(c, s * 0.28, 0.16, 8, 0.1, cols); blooms(c, s * 0.18, 0.2, 10, 0.06); }
+  arbour(c, 0, 0.36, 0.1, 0.12, Math.PI / 2, { rose: cols[0] });
+  if (L === 2) {
+    bench(c, -0.3, -0.06, 0);
+    birdbath(c, 0.28, 0.0);
+    beehive(c, 0.38, -0.12);
+    lamp(c, 0.38, 0.4, 0.26);
+  }
+};
+PLANT.bulbs = (c, L) => {
+  const { gb } = c;
+  const q = seasonAt(c, 0.5);
+  if (L === 0) {
+    // a drift of daffodils and crocuses under a little tree
+    parkTree(c, ownPick(c, [-0.24, 0.24], 2), -0.22, 0.9, ownPick(c, ['cherry', 'birch'], 3));
+    const pal = q === 0 ? ['#f2d040', '#f2ede0', '#9c74c9', '#e8e070'] : null;
+    for (let i = 0; i < 4; i++) blooms(c, -0.25 + i * 0.17, 0.12 + (i % 2) * 0.12, 9, 0.08, pal);
+    return;
+  }
+  // tulips in blocks of colour (lilies and alliums once they are over)
+  const T = ['#d9363a', '#f2d040', '#e88fae', '#f2ede0', '#7a3a8a', '#e8823f'];
+  const rows = L === 2 ? [[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]] : [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]];
+  rows.forEach(([x, z], i) => {
+    const pal = q === 0 ? [T[(i + (c.variant & 3)) % T.length]] : q === 1 ? [i % 2 ? '#f2ede0' : '#e8823f', '#9c74c9'] : null;
+    bed(c, x, z, L === 2 ? 0.26 : 0.3, L === 2 ? 0.26 : 0.3, { edge: L === 2 ? 'stone' : 'box', pal });
+  });
+  if (L === 1) { gravel(c, 0, 0, 0.08, 0.8); gravel(c, 0, 0, 0.8, 0.08); urn(c, 0, 0, 0.9); return; }
+  // the bulb garden: the beds round a little fountain, lamps at the corners
+  fountain(c, 0, 0, 0.1, 'tiers');
+  for (const [x, z] of [[-0.42, 0.42], [0.42, -0.42]]) lamp(c, x, z, 0.28);
+  gravel(c, 0, 0.42, 0.12, 0.06);
+};
+PLANT.planters = (c, L) => {
+  const { gb } = c;
+  // along the street side: troughs and tubs, a lawn and a shrub behind
+  const tc = ownPick(c, ['#6b4a2f', '#4f6a7a', '#5e7a5a', '#8a4a3a'], 2);
+  if (L >= 2) gb.box(0, c.gy(0, 0.34) - 0.006, 0.34, 0.86, 0.012, 0.18, '#b8b0a2');
+  trough(c, -0.24, 0.36, 0.3, 0, tc); trough(c, 0.24, 0.36, 0.3, 0, tc);
+  if (L === 0) { trough(c, 0, -0.1, 0.24, 0.6, tc); shrub(c, -0.3, -0.3, 0.9); tubPlant(c, 0.3, -0.2, false); return; }
+  for (const x of [-0.36, 0.36]) basketPost(c, x, 0.3);
+  bench(c, 0, 0.26, Math.PI);
+  if (L === 1) { trough(c, -0.3, 0, 0.24, Math.PI / 2, tc); trough(c, 0.3, 0, 0.24, Math.PI / 2, tc); shrub(c, 0, -0.3, 1); return; }
+  // stone urns of clipped bays, and planters down the sides
+  for (const x of [-0.12, 0.12]) standard(c, x, 0.42, 0.9);
+  for (const z of [-0.3, 0.0]) for (const s of [-1, 1]) trough(c, s * 0.36, z, 0.22, Math.PI / 2, STONE_L);
+  bed(c, 0, -0.2, 0.4, 0.26, { edge: 'stone', bands: true });
+};
+PLANT.wild = (c, L) => {
+  const { gb } = c;
+  meadow(c, 0, 0, 0.76, 0.76, L ? 110 : 80);
+  if (L === 0) { shrub(c, ownPick(c, [-0.34, 0.34], 2), -0.34, 0.9, false); return; }
+  // a path mown through it, a seat, hives
+  const p = curve([ownPick(c, [-0.2, 0.2], 3), 0.39], [ownPick(c, [-0.2, 0.2], 4), -0.37], ownPick(c, [-0.15, 0.15], 5));
+  walk(c, p, 0.08, '#7aa04a');
+  const bs = p[4][0] > 0 ? -1 : 1;
+  bench(c, p[4][0] + bs * 0.12, p[4][1], bs > 0 ? -Math.PI / 2 : Math.PI / 2);
+  beehive(c, -0.36, -0.36); beehive(c, -0.3, -0.38);
+  spot(c, p[3][0], p[3][1]); spot(c, p[6][0], p[6][1]);
+  if (L === 2) {
+    // an old tree, a log pile for the beetles and a bird box on a post
+    parkTree(c, 0.3, -0.3, 1.1, ownPick(c, ['round', 'birch', 'lime'], 6));
+    logs(c, 0.2, 0.3, 2, 0.6);
+    const y = c.gy(-0.36, 0.2);
+    gb.box(-0.36, y, 0.2, 0.01, 0.18, 0.01, BARK);
+    gb.cbox(-0.36, y + 0.16, 0.2, 0.04, 0.05, 0.04, '#86663f', 0, 0.004);
+    gb.wedge(-0.36, y + 0.21, 0.2, 0.05, 0.05, 0.015, '#5e432c', 0);
+  }
+};
+PLANT.rockery = (c, L) => {
+  const { gb } = c;
+  const r = L === 0 ? 0.27 : 0.33, h = L === 0 ? 0.12 : 0.15, y = c.gy(0, -0.04);
+  // a low mound of earth, stones bedded in it, alpines between
+  gb.sphere(0, y - h * 0.6, -0.04, r, '#6f7a4a', 1, (h * 1.4) / r);
+  stones(c, 0, -0.04, r * 0.9, L === 0 ? 9 : 15, h);
+  alpines(c, 0, -0.04, y + h * 0.3, L === 0 ? 10 : 16, r * 0.8);
+  if (L === 0) { bush(c, 0.36, 0.34, 0.8); return; }
+  // dwarf conifers, and stepping stones up to the top
+  for (const [x, z] of [[-0.18, -0.22], [0.2, -0.16], [-0.06, 0.12]]) parkTree(c, x, z, 0.55, ownPick(c, ['yew', 'pine'], Math.round(x * 10)));
+  for (let i = 0; i < 4; i++) gb.cyl(0.24 - i * 0.07, c.gy(0.24 - i * 0.07, 0.36 - i * 0.08) - 0.004, 0.36 - i * 0.08, 0.026, 0.028, 0.01, 7, '#b4ac9c');
+  if (L === 2) {
+    // a little cascade down into a pool at its foot
+    const ly = water(c, [[-0.24, 0.26, 0.12], [-0.14, 0.32, 0.08]], {});
+    gb.boxC(-0.2, (ly + y + h) / 2, 0.08, 0.04, Math.max(0.02, y + h - ly), 0.02, frozen(c) ? ICE : '#6aa8c8', 0.5);
+    if (!frozen(c)) c.fountain = [-0.22, ly + 0.03, 0.2];
+    reeds(c, -0.32, 0.32, ly, 4); lilies(c, -0.22, 0.28, ly, 2, 0.05);
+    lamp(c, 0.38, 0.4, 0.26);
+  }
+};
+PLANT.topiary = (c, L) => {
+  const shapes = ['cone', 'ball', 'tiers', 'spiral'], r = ownRng(c, 2);
+  if (L === 0) {
+    for (const [x, z] of [[-0.24, -0.1], [0.04, -0.2], [0.26, 0.04]]) topiaryShape(c, x, z, r.float(1.1, 1.5), shapes[r.int(0, 2)]);
+    bush(c, -0.32, 0.32, 0.8);
+    return;
+  }
+  // a gravel square in a low box hedge, clipped shapes round it
+  gravel(c, 0, 0.04, 0.5, 0.5);
+  hedgeRound(c, -0.3, -0.26, 0.3, 0.34, 0, 0.12, 0.035);
+  for (const [x, z] of [[-0.36, -0.36], [0.36, -0.36], [-0.36, 0.4], [0.36, 0.4]]) topiaryShape(c, x, z, 1.3, L === 2 ? 'spiral' : shapes[r.int(0, 3)]);
+  if (L === 1) { for (const x of [-0.12, 0.12]) topiaryShape(c, x, -0.08, 1.1, 'ball'); return; }
+  // the peacock in the middle, tiers either side, a clipped yew arch at the gate
+  topiaryShape(c, 0, 0.02, 1.8, 'peacock');
+  for (const x of [-0.2, 0.2]) topiaryShape(c, x, -0.14, 1.2, 'tiers');
+  const y = c.gy(0, 0.38);
+  for (const s of [-1, 1]) c.gb.cbox(s * 0.08, y - 0.01, 0.38, 0.05, 0.16, 0.05, hedgeCol(c), 0, 0.012);
+  c.gb.cbox(0, y + 0.14, 0.38, 0.21, 0.05, 0.05, hedgeCol(c), 0, 0.012);
+  bench(c, 0, -0.26, 0);
+};
+PLANT.roses = (c, L) => {
+  const pal = [ownPick(c, ROSES, 2), ownPick(c, ROSES, 3)];
+  if (L === 0) {
+    gravel(c, 0, 0.1, 0.1, 0.6);
+    arbour(c, 0, 0.14, 0.1, 0.13, Math.PI / 2, { rose: pal[0] });
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) roseBush(c, s * 0.18, -0.12 + i * 0.16, 0.85, pal[(i + (s > 0 ? 1 : 0)) % 2]);
+    return;
+  }
+  if (L === 1) {
+    // a walk of arches, standard roses beside it
+    gravel(c, 0, 0, 0.1, 0.84);
+    arbour(c, 0, 0.02, 0.6, 0.13, Math.PI / 2, { rose: pal[0] });
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { const z = -0.3 + i * 0.3; standard(c, s * 0.26, z, 0.8, '#8a6a48'); roseBush(c, s * 0.38, z + 0.12, 0.8, pal[1]); }
+    return;
+  }
+  // a rose pergola round a seat, rose beds in the corners, lamps
+  const post = ownPick(c, ['#ece6da', '#2f4a3a', '#86663f'], 4);
+  arbour(c, 0, -0.2, 0.5, 0.12, 0, { rose: pal[0], post }); arbour(c, -0.22, 0.04, 0.4, 0.12, Math.PI / 2, { rose: pal[1], post }); arbour(c, 0.22, 0.04, 0.4, 0.12, Math.PI / 2, { rose: pal[1], post });
+  bench(c, 0, -0.08, 0);
+  sundial(c, 0, 0.12);
+  for (const [x, z] of [[-0.38, 0.36], [0.38, 0.36], [-0.38, -0.38], [0.38, -0.38]]) roseBush(c, x, z, 0.9, pal[0]);
+  for (const x of [-0.12, 0.12]) lamp(c, x, 0.42, 0.26);
+};
+PLANT.knot = (c, L) => {
+  const HERBS = ['#7a9a6a', '#9aa890', '#5f8a4a', '#8a7aa0'];
+  const q = seasonAt(c, 0.5);
+  const herb = (x, z, i) => { const y = c.gy(x, z); c.gb.sphere(x, y + 0.02, z, 0.024, q === 3 ? '#6a7466' : HERBS[i % 4], 0, 0.7); if (q === 1 && i % 3 === 0) c.gb.sphere(x, y + 0.035, z, 0.01, '#8a6ac0'); };
+  // a knot: a square of box with its diagonals and a ring woven through
+  const knot = (x, z, s) => {
+    for (const [ax, az, bx, bz] of [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1], [-1, -1, 1, 1], [1, -1, -1, 1]]) hedgeLine(c, x + ax * s, z + az * s, x + bx * s, z + bz * s, 0.035);
+    hedgeRing(c, x, z, s * 0.62, 0.035, 14);
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4; herb(x + Math.cos(a) * s * 0.4, z + Math.sin(a) * s * 0.4, i); herb(x + Math.cos(a + Math.PI / 4) * s * 0.82, z + Math.sin(a + Math.PI / 4) * s * 0.82, i + 1); }
+  };
+  if (L < 2) {
+    gravel(c, 0, 0, 0.86, 0.86, GRAVEL_D);
+    knot(0, 0, L ? 0.36 : 0.28);
+    if (L === 1) sundial(c, 0, 0); else herb(0, 0, 2);
+    if (L === 0) for (const [x, z] of [[-0.4, 0.4], [0.4, -0.4]]) bush(c, x, z, 0.7);
+    return;
+  }
+  // four knots round a sundial, clipped bays at the corners
+  gravel(c, 0, 0, 0.88, 0.88, GRAVEL_D);
+  for (const [x, z] of [[-0.21, -0.21], [0.21, -0.21], [-0.21, 0.21], [0.21, 0.21]]) knot(x, z, 0.16);
+  sundial(c, 0, 0);
+  for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) standard(c, x, z, 0.8);
+};
+PLANT.tree = (c, L) => {
+  const { gb } = c;
+  const kind = ownPick(c, ['cherry', 'cherry', 'copper', 'birch', 'lime'], 2), stone = ownPick(c, [STONE_L, '#b8a890', '#9a5640'], 3);
+  const y = c.gy(0, -0.02);
+  const r = L === 0 ? 0.2 : L === 1 ? 0.27 : 0.3, sides = L === 1 ? 4 : 8, top = Math.min(0, y) + 0.1;
+  gb.cyl(0, Math.min(0, y) - 0.02, -0.02, r, r + 0.01, top - Math.min(0, y) + 0.02, sides, stone, Math.PI / sides);
+  gb.cyl(0, top, -0.02, r - 0.025, r - 0.025, 0.012, sides, SOIL, Math.PI / sides);
+  parkTree(c, 0, -0.02, L === 0 ? 1.05 : L === 1 ? 1.25 : 1.4, kind);
+  // bulbs or bedding round the trunk
+  blooms(c, 0, -0.02, L ? 12 : 8, r * 0.6, seasonAt(c, 0.5) === 0 ? ['#f2d040', '#f2ede0', '#9c74c9'] : null, top + 0.01);
+  if (L === 0) { bench(c, 0, 0.34, Math.PI); return; }
+  // a seat round the bed (the stone ledge), and lamps at the second level
+  for (let i = 0; i < sides; i++) { const a = (i / sides) * Math.PI * 2 + Math.PI / sides; gb.boxC(Math.cos(a) * (r + 0.03), top - 0.03, -0.02 + Math.sin(a) * (r + 0.03), 0.06, 0.012, r * 0.9, '#7a5636', 0, -a); }
+  if (L === 2) {
+    for (const [x, z] of [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]]) lamp(c, x, z, 0.3);
+    for (const [x, z] of [[0, 0.42], [0, -0.44], [-0.42, 0], [0.42, 0]]) bed(c, x, z, x ? 0.06 : 0.26, x ? 0.26 : 0.06, {});
+  }
+  spot(c, 0.3, 0.3); spot(c, -0.3, 0.3);
+};
+
+// Planting: the kind (b.flavor or its seed), at its level.
+M.flowers = (c, L) => {
+  const kind = kindOf({ type: 'flowers', flavor: c.flavor, variant: c.variant });
+  PLANT[kind](c, Math.min(L, 2));
+};
+
+// ============================================================ monuments
+// A Monument is one of the kinds in MONUMENTS, at three levels: the work on
+// its plinth in a setting of lamps, yews, bushes or flowers; a Civic
+// Monument on paving with a kerb and railings, beds and lamps; a Grand
+// Monument, a bigger work on steps, floodlit at night. Its stone and its
+// bronze, marble or green-bronze by the monument's own seed.
+
+// Floodlights in the grass, lit at night, turned up at the work.
+function floodlights(c, r, n = 4) {
+  const { gb } = c;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.PI / n, x = Math.cos(a) * r, z = Math.sin(a) * r, y = c.gy(x, z);
+    gb.box(x, y, z, 0.03, 0.02, 0.03, '#2f2c2a');
+    gb.glow(2.4, 2.0, 1.4, 3.0);
+    gb.box(x, y + 0.02, z, 0.024, 0.008, 0.024, '#fff2c0');
+    gb.noGlow();
+    c.addGlow(x * 0.6, y + 0.12, z * 0.6);
+  }
+}
+// The work itself, s: its grandness (0, 1, 2), standing on y = base.
+function work(c, kind, s, mat, stone) {
+  const { gb } = c;
+  const big = 1 + s * 0.22;
+  const ped = (w, h, y = 0) => { gb.cbox(0, y, 0, w, h, w, stone, 0, 0.01); gb.cbox(0, y + h, 0, w + 0.03, 0.025, w + 0.03, shade(stone, 0.92), 0, 0.006); return y + h + 0.025; };
+  const figure = (y, sc = 1, m = mat, arm = true) => {
+    gb.push(0, y, 0, 0, sc);
+    gb.box(-0.022, 0, 0, 0.028, 0.11, 0.036, m); gb.box(0.022, 0, 0, 0.028, 0.11, 0.036, m);
+    gb.cyl(0, 0.11, 0, 0.036, 0.046, 0.13, 8, m);
+    gb.sphere(0, 0.27, 0, 0.032, m, 1);
+    if (arm) gb.box(0.046, 0.19, 0, 0.02, 0.12, 0.02, m, 0, 0, -0.5); else gb.box(0.046, 0.12, 0, 0.02, 0.11, 0.02, m, 0, 0, 0.15);
+    gb.box(-0.05, 0.13, 0, 0.02, 0.1, 0.02, m, 0, 0, 0.2);
+    gb.pop();
+  };
+  if (kind === 'founder') {
+    const top = ped(0.17 * big, 0.22 + s * 0.08, 0.04);
+    figure(top, big);
+    if (s >= 1) for (const sd of [-1, 1]) gb.box(0, 0.12, sd * 0.087 * big, 0.1, 0.07, 0.006, shade(mat, 1.1));
+    if (s === 2) for (const sd of [-1, 1]) { gb.cbox(sd * 0.17, 0.04, 0.12, 0.08, 0.06, 0.08, stone, 0, 0.006); gb.push(sd * 0.17, 0.1, 0.12, 0, 0.6); gb.cyl(0, 0, 0, 0.04, 0.05, 0.08, 8, mat); gb.sphere(0, 0.12, 0, 0.03, mat); gb.pop(); }
+  } else if (kind === 'obelisk') {
+    const top = ped(0.15 + s * 0.03, 0.06 + s * 0.04, 0.04);
+    const h = 0.38 + s * 0.14;
+    gb.cyl(0, top, 0, 0.038 + s * 0.006, 0.058 + s * 0.01, h, 4, MARBLE, Math.PI / 4);
+    gb.cone(0, top + h, 0, 0.04 + s * 0.006, 0.05, 4, GOLD, Math.PI / 4);
+    if (s >= 1) for (const sd of [-1, 1]) gb.box(0, top + 0.03, sd * (0.05 + s * 0.008), 0.05, 0.06, 0.006, BRONZE);
+    if (s === 2) for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { gb.cbox(x * 0.16, 0.04, z * 0.16, 0.06, 0.05, 0.06, stone, 0, 0.006); gb.blob(x * 0.16, 0.12, z * 0.16, 0.028, 0.03, 0.04, mat); gb.sphere(x * 0.16, 0.15, z * 0.16 + 0.03, 0.018, mat); }
+  } else if (kind === 'cross') {
+    // steps, a shaft and its head; the grandest stands under a roofed buttercross
+    for (let k = 0; k < 3 + s; k++) gb.cyl(0, 0.04 + k * 0.035, 0, 0.17 - k * 0.035, 0.17 - k * 0.035, 0.035, 8, stone, Math.PI / 8);
+    const y = 0.04 + (3 + s) * 0.035;
+    gb.cyl(0, y, 0, 0.018, 0.026, 0.26 + s * 0.06, 8, STONE_W);
+    gb.box(0, y + 0.24 + s * 0.06, 0, 0.08, 0.02, 0.02, STONE_W); gb.box(0, y + 0.21 + s * 0.06, 0, 0.02, 0.09, 0.02, STONE_W);
+    if (s === 2) {
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; gb.cyl(Math.cos(a) * 0.17, 0.04, Math.sin(a) * 0.17, 0.014, 0.018, 0.36, 6, stone); }
+      gb.cyl(0, 0.4, 0, 0.21, 0.21, 0.025, 6, shade(stone, 0.9));
+      gb.cone(0, 0.425, 0, 0.22, 0.14, 6, '#5a5f63');
+      gb.sphere(0, 0.57, 0, 0.018, GOLD);
+    } else if (s === 1) gb.sphere(0, y + 0.31, 0, 0.02, GOLD);
+  } else if (kind === 'memorial') {
+    for (let k = 0; k < 2 + s; k++) gb.cbox(0, 0.04 + k * 0.03, 0, 0.26 - k * 0.05, 0.03, 0.2 - k * 0.04, stone, 0, 0.006);
+    const y = 0.04 + (2 + s) * 0.03;
+    if (s === 0) { gb.box(0, y, 0, 0.04, 0.3, 0.04, STONE_W); gb.box(0, y + 0.21, 0, 0.14, 0.035, 0.04, STONE_W); }
+    else {
+      // a cenotaph, the names cut round it; a soldier on the top of the grandest
+      gb.cbox(0, y, 0, 0.12, 0.3 + s * 0.06, 0.08, STONE_W, 0, 0.006);
+      for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) gb.box(0, y + 0.06 + k * 0.035, sd * 0.041, 0.07, 0.006, 0.003, '#7a7468');
+      if (s === 2) figure(y + 0.42, 0.7, mat, false);
+      for (const sd of [-1, 1]) { gb.box(sd * 0.2, 0.04, -0.12, 0.008, 0.42, 0.008, '#ece6da'); gb.box(sd * 0.2 + 0.03, 0.4, -0.12, 0.06, 0.04, 0.003, sd > 0 ? '#c8203a' : '#2f3a6a'); }
+    }
+    // wreaths of poppies at its foot
+    for (const sd of [-1, 0, 1]) { const x = sd * 0.07; gb.cyl(x, 0.08, 0.11, 0.026, 0.026, 0.01, 10, '#3f6a32', 0, Math.PI / 2.4); for (let i = 0; i < 4; i++) gb.sphere(x + Math.cos(i * 1.57) * 0.022, 0.08 + Math.sin(i * 1.57) * 0.01, 0.116, 0.008, '#c8203a'); }
+  } else if (kind === 'angel') {
+    // the grandest stands on a column, a winged victory
+    let top;
+    if (s === 2) { const t0 = ped(0.17, 0.12, 0.04); gb.cyl(0, t0, 0, 0.03, 0.036, 0.26, 10, MARBLE); gb.cbox(0, t0 + 0.26, 0, 0.07, 0.02, 0.07, MARBLE, 0, 0.004); top = t0 + 0.28; }
+    else top = ped(0.16, 0.18 + s * 0.06, 0.04);
+    gb.push(0, top, 0, 0, big * 0.9);
+    gb.cyl(0, 0, 0, 0.026, 0.045, 0.16, 8, MARBLE);
+    gb.sphere(0, 0.19, 0, 0.024, MARBLE);
+    for (const sd of [-1, 1]) gb.boxC(sd * 0.045, 0.14, -0.018, 0.06, 0.13, 0.01, MARBLE, -0.2, 0, sd * 0.35);
+    gb.box(0.026, 0.16, 0.01, 0.01, 0.09, 0.01, s === 2 ? GOLD : MARBLE, 0, 0, -0.3);
+    gb.pop();
+  } else if (kind === 'urn') {
+    const top = ped(0.14, 0.2 + s * 0.04, 0.04);
+    gb.cyl(0, top, 0, 0.044, 0.028, 0.03, 10, MARBLE);
+    gb.sphere(0, top + 0.08, 0, 0.056, MARBLE, 1, 1.1);
+    gb.cyl(0, top + 0.13, 0, 0.032, 0.046, 0.03, 10, MARBLE);
+    gb.cone(0, top + 0.16, 0, 0.02, 0.05, 8, MARBLE);
+    if (s >= 1) gb.cyl(0, top + 0.06, 0, 0.059, 0.059, 0.012, 12, '#3f6a32');
+    if (s === 2) {
+      // under a little domed rotunda
+      gb.cyl(0, 0.04, 0, 0.21, 0.21, 0.025, 12, stone);
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; gb.cyl(Math.cos(a) * 0.18, 0.065, Math.sin(a) * 0.18, 0.013, 0.015, 0.42, 6, '#ece6da'); }
+      gb.cyl(0, 0.485, 0, 0.21, 0.21, 0.03, 12, '#ece6da');
+      gb.sphere(0, 0.515, 0, 0.19, '#8fa89a', 1, 0.5);
+      gb.sphere(0, 0.62, 0, 0.018, GOLD);
+    }
+  } else if (kind === 'rider') {
+    gb.cbox(0, 0.04, 0, 0.13 + s * 0.02, 0.15 + s * 0.06, 0.24 + s * 0.04, stone, 0, 0.01);
+    if (s >= 1) for (const sd of [-1, 1]) gb.box(sd * (0.066 + s * 0.01), 0.09, 0, 0.004, 0.06, 0.16, shade(mat, 1.1));
+    gb.push(0, 0.2 + s * 0.06, 0, 0, 0.85 + s * 0.12);
+    const rear = s === 2 ? -0.35 : 0;
+    gb.pushEuler(0, 0.04, 0, rear, 0, 0);
+    gb.box(0, 0.035, 0, 0.07, 0.07, 0.17, mat);
+    gb.box(0, 0.08, 0.1, 0.045, 0.07, 0.05, mat, 0, -0.5);
+    gb.box(0, 0.11, 0.14, 0.04, 0.035, 0.07, mat);
+    gb.box(0, 0.05, -0.09, 0.012, 0.05, 0.012, mat, 0, 0.6);
+    for (const [lx, lz, a] of [[-0.025, 0.06, -0.5], [0.025, 0.06, s === 2 ? -1.1 : 0], [-0.025, -0.06, 0], [0.025, -0.06, 0.2]]) gb.box(lx, -0.04, lz, 0.018, 0.08, 0.018, mat, 0, a);
+    gb.cyl(0, 0.105, -0.01, 0.018, 0.024, 0.08, 6, mat);
+    gb.sphere(0, 0.205, -0.01, 0.017, mat);
+    gb.box(0.03, 0.13, 0.02, 0.012, 0.07, 0.012, mat, 0, 0, -0.7);
+    gb.pop(); gb.pop();
+  } else if (kind === 'column') {
+    const top = ped(0.15 + s * 0.02, 0.07 + s * 0.02, 0.04), h = 0.32 + s * 0.12;
+    gb.cyl(0, top, 0, 0.03 + s * 0.004, 0.034 + s * 0.004, h, 12, MARBLE);
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; gb.box(Math.cos(a) * 0.031, top + 0.02, Math.sin(a) * 0.031, 0.004, h - 0.04, 0.004, shade(MARBLE, 0.9)); }
+    gb.cbox(0, top + h, 0, 0.08, 0.025, 0.08, MARBLE, 0, 0.004);
+    if (s === 0) { gb.cyl(0, top + h + 0.025, 0, 0.024, 0.015, 0.045, 8, mat); gb.sphere(0, top + h + 0.08, 0, 0.022, mat); }
+    else figure(top + h + 0.025, 0.55, mat);
+    if (s === 2) for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { gb.cbox(x * 0.16, 0.04, z * 0.16, 0.07, 0.04, 0.09, stone, 0, 0.006); gb.blob(x * 0.16, 0.1, z * 0.16, 0.026, 0.03, 0.045, mat); gb.sphere(x * 0.16, 0.13, z * 0.16 + 0.035, 0.02, mat); }
+  } else if (kind === 'fountain') {
+    const r = 0.2 + s * 0.04, ice = frozen(c);
+    gb.cyl(0, 0.02, 0, r, r + 0.01, 0.07, 18, stone);
+    gb.cyl(0, 0.05, 0, r - 0.02, r - 0.02, 0.036, 18, ice ? ICE : WATER);
+    gb.cyl(0, 0.05, 0, 0.05, 0.06, 0.1 + s * 0.06, 8, stone);
+    const y = 0.15 + s * 0.06;
+    if (s === 2) { gb.cyl(0, y, 0, 0.1, 0.05, 0.03, 12, stone); gb.cyl(0, y + 0.03, 0, 0.09, 0.09, 0.004, 12, ice ? ICE : '#5aa0c4'); }
+    figure(y + (s === 2 ? 0.03 : 0), 0.65, mat);
+    const n = s === 0 ? 0 : s === 1 ? 3 : 4;
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + 0.4; gb.push(Math.cos(a) * (r - 0.06), 0.06, Math.sin(a) * (r - 0.06), -a); gb.blob(0, 0.03, 0, 0.026, 0.03, 0.04, mat); gb.sphere(0, 0.07, 0.02, 0.016, mat); gb.pop(); }
+    if (!ice) c.fountain = [0, y + 0.22, 0];
+  } else if (kind === 'clock') {
+    if (s === 0) {
+      // a street clock on an iron pillar, its faces lit
+      gb.cyl(0, 0.03, 0, 0.022, 0.03, 0.34, 8, IRON_G);
+      gb.cbox(0, 0.36, 0, 0.09, 0.09, 0.09, IRON_G, 0, 0.006);
+      gb.glow(2.0, 1.8, 1.3, 3.0);
+      for (const [x, z, ry] of [[0, 0.047, 0], [0, -0.047, 0], [0.047, 0, Math.PI / 2], [-0.047, 0, Math.PI / 2]]) gb.cyl(x, 0.405, z, 0.034, 0.034, 0.006, 12, '#f8f0d8', ry, Math.PI / 2);
+      gb.noGlow();
+      gb.cone(0, 0.45, 0, 0.06, 0.06, 8, IRON_G);
+      c.addGlow(0, 0.4, 0);
+    } else {
+      // a tower of stone with four faces, lit at night, a spire on the grandest
+      const w = 0.16 + s * 0.03, h = 0.42 + s * 0.22;
+      plinth(c, 0, 0, w + 0.04, w + 0.04);
+      gb.cbox(0, 0, 0, w + 0.04, 0.06, w + 0.04, shade(stone, 0.9), 0, 0.008);
+      gb.cbox(0, 0.06, 0, w, h, w, stone, 0, 0.01);
+      gb.box(0, 0.06, w / 2 + 0.002, 0.05, 0.11, 0.008, '#4e3828');
+      // corner pilasters and a string course; on the grandest, louvred belfry openings below the faces
+      for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(px * (w / 2 - 0.008), 0.06, pz * (w / 2 - 0.008), 0.022, h, 0.022, shade(stone, 1.08));
+      gb.box(0, 0.06 + h * 0.55, 0, w + 0.016, 0.02, w + 0.016, shade(stone, 0.9));
+      if (s === 2) for (const [x, z, ry] of [[0, w / 2 + 0.003, 0], [0, -w / 2 - 0.003, 0], [w / 2 + 0.003, 0, Math.PI / 2], [-w / 2 - 0.003, 0, Math.PI / 2]]) { gb.box(x, 0.06 + h * 0.6, z, 0.06, 0.1, 0.006, '#3a3430', ry); for (let k = 0; k < 3; k++) gb.box(x, 0.06 + h * 0.6 + 0.02 + k * 0.03, z, 0.064, 0.006, 0.01, shade(stone, 0.95), ry); }
+      gb.glow(2.0, 1.8, 1.3, 3.0);
+      const fy = 0.06 + h - 0.08;
+      for (const [x, z, ry] of [[0, w / 2 + 0.004, 0], [0, -w / 2 - 0.004, 0], [w / 2 + 0.004, 0, Math.PI / 2], [-w / 2 - 0.004, 0, Math.PI / 2]]) gb.cyl(x, fy, z, w * 0.34, w * 0.34, 0.006, 14, '#f8f0d8', ry, Math.PI / 2);
+      gb.noGlow();
+      gb.box(0, fy - 0.004, w / 2 + 0.008, 0.006, w * 0.26, 0.004, IRON); gb.boxC(w * 0.08, fy, w / 2 + 0.009, w * 0.2, 0.006, 0.004, IRON);
+      gb.cbox(0, 0.06 + h, 0, w + 0.03, 0.03, w + 0.03, shade(stone, 0.9), 0, 0.006);
+      if (s === 2) { gb.roof(0, 0.09 + h, 0, w + 0.02, w + 0.02, 0.24, 0, '#5a5f63'); gb.sphere(0, 0.34 + h, 0, 0.016, GOLD); }
+      else gb.roof(0, 0.09 + h, 0, w + 0.02, w + 0.02, 0.1, 0, '#5a5f63');
+      c.addGlow(0, fy, w / 2 + 0.05);
+    }
+  } else if (kind === 'arch') {
+    // a gateway arch; then a triumphal arch; then one with three openings and a chariot on the top
+    const w = s === 0 ? 0.36 : s === 1 ? 0.5 : 0.7, d = 0.14 + s * 0.04, h = 0.34 + s * 0.12, open = s === 0 ? 0.12 : 0.16;
+    plinth(c, 0, 0, w + 0.04, d + 0.04);
+    for (const sd of [-1, 1]) gb.cbox(sd * (w / 2 - (w - open) / 4), 0, 0, (w - open) / 2, h, d, stone, 0, 0.008);
+    if (s === 2) for (const sd of [-1, 1]) gb.cbox(sd * w * 0.29, 0, 0, 0.06, h * 0.55, d + 0.004, shade(stone, 0.85), 0, 0.004);
+    gb.cbox(0, h, 0, w, 0.1 + s * 0.03, d, stone, 0, 0.008);
+    gb.arch(0, h - open / 2 - 0.004, -d / 2 - 0.001, open / 2, d + 0.002, 10, shade(stone, 0.78));
+    for (const sd of [-1, 1]) for (const fz of [-1, 1]) gb.cyl(sd * (open / 2 + 0.04), 0, fz * (d / 2 + 0.012), 0.014, 0.016, h, 8, MARBLE);
+    gb.box(0, h + 0.03, d / 2 + 0.004, w * 0.6, 0.04, 0.004, shade(mat, 1.1));
+    if (s === 2) {
+      // the chariot and its horses
+      gb.push(0, h + 0.13 + s * 0.03, 0, 0, 0.7);
+      gb.box(0, 0, -0.04, 0.12, 0.06, 0.06, mat);
+      for (const sd of [-1, 1]) gb.cyl(sd * 0.065, 0.03, -0.04, 0.03, 0.03, 0.01, 8, mat, 0, 0, Math.PI / 2);
+      for (const sx of [-0.06, 0.06]) { gb.box(sx, 0.03, 0.08, 0.04, 0.05, 0.12, mat); gb.box(sx, 0.07, 0.15, 0.03, 0.06, 0.03, mat, 0, -0.5); }
+      figure(0.04, 0.6, mat);
+      gb.pop();
+    }
+  }
+}
+
+// The setting, by level: grass and its own choice of lamps, yews, bushes or
+// flowers; then paving with a kerb, railings and beds; then steps, railings
+// with gilded tips and floodlights.
+M.statue = (c, L) => {
+  const { gb } = c;
+  const kind = kindOf({ type: 'statue', flavor: c.flavor, variant: c.variant });
+  const mat = ownPick(c, [BRONZE, BRONZE, VERDI, MARBLE], 2), stone = ownPick(c, [STONE_L, '#c8bca4', '#a8a090', '#b4ac9c'], 3);
+  const s = Math.min(L, 2), y = c.gy(0, 0);
+  plinth(c, 0, 0, 0.36, 0.36);
+  if (L >= 1) {
+    // paving under it and a kerb round
+    gb.cbox(0, Math.min(0, y) - 0.02, 0, 0.62, 0.04 - Math.min(0, y), 0.62, '#b8b0a2', 0, 0.008);
+    if (L === 2) for (let k = 0; k < 2; k++) gb.cbox(0, 0.02 + k * 0.022, 0, 0.42 - k * 0.1, 0.022, 0.42 - k * 0.1, stone, 0, 0.006);
+  }
+  gb.push(0, L === 2 ? 0.064 : L === 1 ? 0.02 : 0, 0);
+  gb.cbox(0, L ? -0.02 : Math.min(0, y) - 0.02, 0, 0.26, L ? 0.06 : 0.06 - Math.min(0, y), 0.26, STONE, 0, 0.01);
+  work(c, kind, s, mat, stone);
+  gb.pop();
+  const set = ownPick(c, ['lamps', 'yews', 'bushes', 'flowers'], 4);
+  if (L === 0) {
+    if (set === 'lamps') { lamp(c, 0.36, 0.36, 0.3); lamp(c, -0.36, -0.36, 0.3); bush(c, -0.38, 0.38, 1.1); bush(c, 0.38, -0.38, 1.1); }
+    else if (set === 'yews') for (const [x, z] of [[-0.32, -0.32], [0.32, -0.32], [-0.32, 0.32], [0.32, 0.32]]) topiaryShape(c, x, z, 1.4, 'cone');
+    else if (set === 'bushes') { for (const [x, z] of [[-0.34, -0.3], [0.36, -0.28]]) shrub(c, x, z, 1); lamp(c, 0.36, 0.38, 0.3); }
+    else { for (const [x, z] of [[0, -0.34], [-0.34, 0], [0.34, 0]]) bed(c, x, z, x ? 0.1 : 0.4, x ? 0.4 : 0.1, { bands: true }); lamp(c, -0.38, 0.38, 0.3); }
+    bench(c, ownPick(c, [-0.3, 0.3], 5), 0.42, Math.PI);
+  } else {
+    // railings round the paving (gilded tips at the grand level), beds and lamps
+    const R = L === 2 ? 0.33 : 0.28;
+    railings(c, -R, -R, R, R, 0, L === 2 ? '#2f2f33' : IRON_G);
+    if (L === 2) for (const [x, z] of [[-R, -R], [R, -R], [-R, R], [R, R]]) gb.sphere(x, c.gy(x, z) + 0.075, z, 0.012, GOLD);
+    for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42]]) set === 'yews' ? topiaryShape(c, x, z, 1.1, 'cone') : bed(c, x, z, 0.1, 0.1, { round: true });
+    for (const [x, z] of [[-0.4, 0.4], [0.4, 0.4]]) lamp(c, x, z, L === 2 ? 0.34 : 0.3);
+    if (L === 2) floodlights(c, 0.24);
+    bench(c, 0, 0.41, Math.PI);
+  }
+  spot(c, 0.2, 0.36); spot(c, -0.2, 0.36);
+};

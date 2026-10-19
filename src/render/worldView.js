@@ -165,7 +165,7 @@ export class WorldView {
     const opts = { season: this.season, seasonW: this.seasonW, ground: this.groundFn };
     const con = b.con;
     const up = con.kind === 'upgrade';
-    const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look } : b, opts);
+    const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look, flavor: con.flavor !== undefined ? con.flavor : b.flavor } : b, opts);
     const old = up ? buildModel(b, opts) : null;
     for (const m of [target, old]) if (m && m.spin) m.spin.geo.dispose();
     const jit = target.jitter;
