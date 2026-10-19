@@ -169,6 +169,15 @@ export const STARTERS = [
     id: 'city', name: 'Cathedral city', town: 'Kingsbridge', N: 80, seed: 315838, radius: 20, city: true, day: 241, settle: 4, money: 60000,
     desc: 'A whole city decades along: a domed civic palace, a cathedral, high streets of every trade, works and a wind farm, and some 3,000 people at work.',
   },
+  {
+    // the most people a valley can hold: every plot of the largest valley built
+    // up with the densest homes there are, and just enough work, services,
+    // schools, power and water for them (src/world/city.js, def.dense). It
+    // takes a few seconds to lay out, so it's grown only when it's picked (heavy).
+    id: 'metropolis', name: 'Metropolis', town: 'Greatwick', N: 80, seed: 943464, city: true, dense: true, heavy: true, radius: null,
+    xEvery: 13, workforce: 0.58, skilled: 0.3, parks: 0.015, fill: 1, stopGap: [12, 10], day: 481, settle: 4, money: 100000,
+    desc: 'The most people a valley can hold: some 48,000 villagers in mansion blocks from edge to edge, with offices and market halls, power stations and waterworks along the road in.',
+  },
 ];
 
 const FRAME = { out: [1, 0], in: [-1, 0], right: [0, 1], left: [0, -1] };
@@ -409,6 +418,9 @@ export function growStarter(def, { onDay } = {}) {
 // ------------------------------------------------------------ cached saves
 
 const cache = new Map();
+
+// Has this starter town been grown yet (this page load)?
+export const starterGrown = (id) => cache.has(id);
 
 // The starter town as save data (grown once, then kept).
 export function starterSave(id) {

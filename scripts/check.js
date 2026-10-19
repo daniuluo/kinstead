@@ -1651,5 +1651,18 @@ ok(same, 'save round-trip heights');
   ok(seasonBlend(1, 12) === 0 && seasonBlend(D / 2, 0) === 0 && seasonBlend(D, 23.9) > 0.97 && jump < 0.03, `seasons hold for half their days, then turn gradually (largest step in a quarter hour ${jump.toFixed(3)})`);
 }
 
+// ---- saves in the browser are packed (src/save/pack.js)
+{
+  const { pack, unpack, isPacked } = await import('../src/save/pack.js');
+  const rnd = (n, max, seed) => { let x = seed, s = ''; for (let i = 0; i < n; i++) { x = (x * 1103515245 + 12345) >>> 0; s += String.fromCharCode(x % max); } return s; };
+  const cases = ['', 'a', 'aaaaaaaaaaaaaaaaaaaaaaaa', 'abababababababab', 'Zoë Ñúñez — 🏰 and a lone \ud800 surrogate', rnd(6000, 65536, 1), rnd(150000, 40, 2), rnd(120000, 65536, 3), 'x'.repeat(60000) + rnd(30000, 300, 4)];
+  const plain = (p) => { for (let i = 5; i < p.length; i++) { const c = p.charCodeAt(i); if (c < 32 || c > 0x801f) return false; } return true; };
+  const bad = cases.filter(c => { const p = pack(c); return !isPacked(p) || unpack(p) !== c || !plain(p); });
+  ok(!bad.length, `packing a save round-trips any text, every packed character a plain one (${cases.length} cases${bad.length ? ', failed: ' + bad.map(c => c.length).join(', ') : ''})`);
+  const w = World.createNew({ N: 48, seed: 99, name: 'Packby' });
+  const text = JSON.stringify(serialize(w)), p = pack(text);
+  ok(unpack(p) === text && p.length < text.length * 0.6 && unpack(text) === text, `a town's save packs to ${Math.round(100 * p.length / text.length)}% and back, and an unpacked (older) save reads as it is`);
+}
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

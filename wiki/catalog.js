@@ -229,7 +229,7 @@ export function researchPage() {
 export async function startersPage() {
   const { STARTERS } = await import('../src/world/starters.js');
   const rows = STARTERS.map(s => `<figure id="starters/${s.id}"><canvas width="300" height="200" data-starter="${esc(s.id)}"></canvas>
-    <figcaption><b>${esc(s.name)}</b>${esc(s.desc)}<div class="m" data-starter-m="${esc(s.id)}">${s.N}×${s.N} · ${esc(s.town)} · growing…</div></figcaption></figure>`).join('');
+    <figcaption><b>${esc(s.name)}</b>${esc(s.desc)}<div class="m" data-starter-m="${esc(s.id)}">${s.N}×${s.N} · ${esc(s.town)} · ${s.heavy ? `<button type="button" class="btn small" data-starter-grow="${esc(s.id)}">Grow it here (a few seconds)</button>` : 'growing…'}</div></figcaption></figure>`).join('');
   return [
     { id: 'towns', title: 'The towns', html: `<p>Each map below is grown here and now by the game's own code, as it is when you pick the town, so it shows the town as it is in this version of the game.</p><div class="maps">${rows}</div>` },
     { id: 'city', title: 'The Cathedral city', html: `
@@ -242,6 +242,16 @@ export async function startersPage() {
         <li><b>Services</b>: wherever a home would go without health, safety, culture, schooling, shops, a stop or somewhere to play; then school places for every child, coach lines through the stops, and power and water with some to spare.</li>
       </ul>
       <p>Families move into every home and the town runs for a few days before it is handed to you: a city at work, its people almost all employed and happy.</p>` },
+    { id: 'metropolis', title: 'The Metropolis', html: `
+      <p>The most people a valley can hold. It's laid out by the same code as the Cathedral city, pushed as far as it goes:</p>
+      <ul>
+        <li><b>The whole valley</b>: the largest map, every plot of it, with the cross streets further apart to leave more room for building.</li>
+        <li><b>The densest homes</b>: ${bl('flats', BUILDINGS.flats.levels.length - 1, 'mansion blocks')}, ${bl('apartments', BUILDINGS.apartments.levels.length - 1, 'grand apartments')} and ${bl('quadrangle', BUILDINGS.quadrangle.levels.length - 1, 'mansion courts')}, some 36 people to a plot, every one full.</li>
+        <li><b>Just enough work</b>: offices, banks and exchanges for the schooled, market halls, department stores and shops for the rest, so about four in five grown-ups have a job (no one leaves a town for want of work, but the town lives on their taxes).</li>
+        <li><b>Power and water</b>: a strip along the edge the road comes in by, with steam power stations at the far side (they give the most power to a plot), waterworks, and the works.</li>
+        <li><b>Schools and services</b>: families move in as each home goes up and schools follow the children; clinics, fire stations, chapels, shops and play areas go wherever a home would go without.</li>
+      </ul>
+      <p>It takes a few seconds to lay out, so the new-village window builds it only when you pick it. Its save is packed to about a third so that it fits in the browser (see ${pl('start/saving', 'Saving')}).</p>` },
   ];
 }
 
@@ -249,10 +259,7 @@ export async function startersPage() {
 // draws its map.
 export async function growStarters(root) {
   const [{ STARTERS, starterSummary, loadStarter }, { drawTownMap }] = await Promise.all([import('../src/world/starters.js'), import('../src/ui/starterPicker.js')]);
-  for (const s of STARTERS) {
-    await new Promise(r => setTimeout(r, 30));
-    const cv = root.querySelector(`canvas[data-starter="${s.id}"]`), m = root.querySelector(`[data-starter-m="${s.id}"]`);
-    if (!cv || !cv.isConnected) return;
+  const grow = (s, cv, m) => {
     try {
       const x = starterSummary(s.id);
       drawTownMap(cv, loadStarter(s.id));
@@ -261,6 +268,18 @@ export async function growStarters(root) {
       console.error(e);
       m.textContent = 'Could not grow this town here';
     }
+  };
+  for (const s of STARTERS) {
+    const cv = root.querySelector(`canvas[data-starter="${s.id}"]`), m = root.querySelector(`[data-starter-m="${s.id}"]`);
+    if (!cv || !cv.isConnected) return;
+    // a heavy town (the Metropolis) only when asked for
+    if (s.heavy) {
+      const b = m.querySelector('[data-starter-grow]');
+      if (b) b.onclick = () => { m.textContent = 'Growing…'; setTimeout(() => setTimeout(() => grow(s, cv, m), 30), 0); };
+      continue;
+    }
+    await new Promise(r => setTimeout(r, 30));
+    grow(s, cv, m);
   }
 }
 

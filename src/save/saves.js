@@ -5,6 +5,7 @@ import { Terrain } from '../world/terrain.js';
 import { BUILDINGS, TECHS } from '../defs.js';
 import { titleFor, DRESSINGS } from '../config.js';
 import { cleanText, cleanColor, hasKey, newTownId, isTownId } from '../util/text.js';
+import { pack, unpack } from './pack.js';
 
 export const SAVE_FORMAT = 'hearthvale-save';   // the game's old name, kept so every save still loads
 export const SAVE_VERSION = 1;
@@ -123,9 +124,11 @@ export const LocalSaves = {
   _writeIndex(idx) { localStorage.setItem(INDEX_KEY, JSON.stringify(idx)); },
   save(id, data, thumb) {
     const idx = this.list().filter(e => e.id !== id);
+    // packed to about a third (src/save/pack.js), so big towns fit in the browser
+    const text = pack(JSON.stringify(data));
     const entry = { id, name: data.name, town: data.townId || null, day: data.meta.day, pop: data.meta.pop, money: data.meta.money, title: data.meta.title, savedAt: data.savedAt, thumb: thumb || null };
     try {
-      localStorage.setItem(SLOT_KEY(id), JSON.stringify(data));
+      localStorage.setItem(SLOT_KEY(id), text);
       idx.unshift(entry);
       this._writeIndex(idx);
     } catch (e) {
@@ -133,7 +136,7 @@ export const LocalSaves = {
       try {
         for (const x of idx) x.thumb = null;
         entry.thumb = null;
-        localStorage.setItem(SLOT_KEY(id), JSON.stringify(data));
+        localStorage.setItem(SLOT_KEY(id), text);
         idx.unshift(entry);
         this._writeIndex(idx);
       } catch {
@@ -145,7 +148,7 @@ export const LocalSaves = {
   load(id) {
     const s = localStorage.getItem(SLOT_KEY(id));
     if (!s) throw new Error('Save not found.');
-    return JSON.parse(s);
+    return JSON.parse(unpack(s));
   },
   remove(id) {
     localStorage.removeItem(SLOT_KEY(id));

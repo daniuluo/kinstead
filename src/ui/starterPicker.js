@@ -3,7 +3,7 @@
 // towns from src/world/starters.js. Every card has a little map of the
 // actual town, and picking one shows that town behind the window.
 
-import { STARTERS, loadStarter, starterSummary } from '../world/starters.js';
+import { STARTERS, loadStarter, starterSummary, starterGrown } from '../world/starters.js';
 import { World, fw, fd } from '../world/world.js';
 import { BUILDINGS } from '../defs.js';
 import { CONFIG } from '../config.js';
@@ -30,21 +30,25 @@ export function mountStarterPicker(root, game, { getMap, onPick }) {
     if (!c || !c.isConnected) return;
     drawTownMap(c.querySelector('canvas'), w);
   };
-  // the starter towns take a moment each to grow: one at a time, after the window is up
+  // the starter towns take a moment each to grow: one at a time, after the
+  // window is up (a heavy one, like the Metropolis, only when it's picked)
+  const grow = (def) => {
+    try {
+      const s = starterSummary(def.id);
+      cardOf(def.id).querySelector('.m').textContent = `${s.N}×${s.N} · ${fmt(s.pop)} villagers · $${fmt(s.money)} · day ${s.day}`;
+      show(def.id, loadStarter(def.id));
+      return true;
+    } catch (e) {
+      console.error(e);
+      cardOf(def.id).querySelector('.m').textContent = 'Could not grow this town';
+      cardOf(def.id).disabled = true;
+      return false;
+    }
+  };
   let k = 0;
   for (const def of STARTERS) {
-    setTimeout(() => {
-      if (!root.isConnected) return;
-      try {
-        const s = starterSummary(def.id);
-        cardOf(def.id).querySelector('.m').textContent = `${s.N}×${s.N} · ${fmt(s.pop)} villagers · $${fmt(s.money)} · day ${s.day}`;
-        show(def.id, loadStarter(def.id));
-      } catch (e) {
-        console.error(e);
-        cardOf(def.id).querySelector('.m').textContent = 'Could not grow this town';
-        cardOf(def.id).disabled = true;
-      }
-    }, 60 + 40 * k++);
+    if (def.heavy && !starterGrown(def.id)) { cardOf(def.id).querySelector('.m').textContent = `${def.N}×${def.N} · built when you pick it (a few seconds)`; continue; }
+    setTimeout(() => { if (root.isConnected) grow(def); }, 60 + 40 * k++);
   }
   // the empty valley follows the seed and size fields
   let emptyKey = null, timer = 0;
@@ -73,8 +77,15 @@ export function mountStarterPicker(root, game, { getMap, onPick }) {
     for (const o of cards) o.classList.toggle('on', o === c);
     state.pick = id;
     state.shown = true;
-    if (onPick) onPick(id, id === EMPTY ? null : STARTERS.find(s => s.id === id));
+    const def = STARTERS.find(s => s.id === id);
+    if (onPick) onPick(id, id === EMPTY ? null : def);
     const { seed, N } = getMap();
+    if (def && def.heavy && !starterGrown(id)) {
+      // a heavy town: say so and let the window draw before it's built
+      c.querySelector('.m').textContent = `Building the ${def.name.toLowerCase()}…`;
+      setTimeout(() => setTimeout(() => { if (root.isConnected && grow(def) && state.pick === id) preview(loadStarter(id)); }, 30), 0);
+      return;
+    }
     preview(id === EMPTY ? World.createNew({ N, seed, name: 'Preview' }) : loadStarter(id));
   };
   return state;

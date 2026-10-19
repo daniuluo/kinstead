@@ -161,7 +161,7 @@ export const PAGES = [
           `<b>Save slots.</b> ${k('Ctrl')} ${k('S')} saves at once; the 💾 button opens the Save window with every slot, each with a download button.`,
           `<b>Files.</b> <b>Download save (.json)</b> at the top of the Save window, or ${k('Ctrl')} ${k('Shift')} ${k('S')}. Drop a <code>.json</code> save onto the game to load it.`,
         ])}
-        <p>Saves are kept per website, not per page, so a town saved anywhere on this site can be continued from the home page's <b>Continue</b> button too.</p>` },
+        <p>Saves are kept per website, not per page, so a town saved anywhere on this site can be continued from the home page's <b>Continue</b> button too. What's kept in the browser is packed to about a third of its size, so even the Metropolis fits; downloaded files are plain JSON.</p>` },
     ],
     see: ['controls', 'starters', 'construction'],
   },

@@ -116,10 +116,12 @@ for (const def of STARTERS) {
   const issues = computeIssues(game).map(i => i.text);
   if (issues.some(t => /debt|Losing|not connected|short/.test(t))) problem(w.day, `starts with trouble: ${issues.join(' | ')}`);
 
-  // 4. plays on without trouble
+  // 4. plays on without trouble (a heavy town, like the Metropolis, one day
+  // unless it is named: its tens of thousands of villagers take a while)
+  const days = def.heavy && !only ? 1 : DAYS;
   const start = { day: w.day, money: w.money, pop: w.population, visits: w.stats.visitIncome };
   let day = w.day, steps = 0;
-  while (w.day < start.day + DAYS && steps < 200000) {
+  while (w.day < start.day + days && steps < 200000) {
     const g = sim.update(0.1);
     game.agents.update(0.1, g);
     game.construction.update(0.1, g);
@@ -136,10 +138,10 @@ for (const def of STARTERS) {
   if (w2.buildings.size !== w.buildings.size || w2.residents.size !== w.residents.size || w2.research.done.length !== w.research.done.length) problem(w.day, 'save round-trip lost something');
 
   const s = starterSummary(def.id);
-  const perDay = (w.stats.visitIncome - start.visits) / DAYS;
+  const perDay = (w.stats.visitIncome - start.visits) / days;
   console.log(`${problems.length ? 'FAIL' : 'ok  '} ${def.name}: grown in ${ms.toFixed(0)} ms · day ${s.day} · ${s.N}×${s.N} · ${s.pop} villagers (${kids.length} children, ${jobless} looking for work) · $${s.money} · ${s.buildings} buildings · research ${researched}${researching ? ` (now ${researching})` : ''}`);
   console.log(`     issues at the start: ${issues.join(' | ') || 'none'}`);
-  console.log(`     after ${DAYS} more days: ${w.population} villagers · $${Math.round(w.money)} · happiness ${Math.round(sim.happiness)}% · shop visits $${perDay.toFixed(0)}/day`);
+  console.log(`     after ${days} more day${days === 1 ? '' : 's'}: ${w.population} villagers · $${Math.round(w.money)} · happiness ${Math.round(sim.happiness)}% · shop visits $${perDay.toFixed(0)}/day`);
   if (MAP) {
     const miss = {};
     for (const bd of a.world.buildings.values()) if (bd.factors && BUILDINGS[bd.type].levels[bd.level].housing) for (const k of ['water', 'health', 'education', 'safety', 'culture']) if (!bd.factors[k]) miss[k] = (miss[k] || 0) + 1;
