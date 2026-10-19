@@ -38,8 +38,14 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, ...PERF_DEFAULTS };
-    try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, v: 3, ...PERF_DEFAULTS };
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}
+    Object.assign(this.settings, saved);
+    // The pixel-art look at 2× is the game's look: settings saved before
+    // version 3 start from it once (a later choice of the smooth look or
+    // another pixel size is kept)
+    if ((saved.v || 0) < 3) Object.assign(this.settings, { pixelArt: true, pixelSize: 2, v: 3 });
     this.speed = 1;
     this.prevSpeed = 1;
     this.env = { hours: 7, night: 0, season: 0, snowing: false };
