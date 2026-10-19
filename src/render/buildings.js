@@ -673,7 +673,7 @@ export function sign(c, x, y, z, w, h, color, ry = 0) {
   c.gb.box(x, y, z, w, h, 0.014, color, ry);
 }
 
-function logs(c, x, z, n = 3, ry = 0) {
+export function logs(c, x, z, n = 3, ry = 0) {
   const { gb } = c;
   gb.push(x, c.gy(x, z), z, ry);
   for (let row = 0; row < n; row++) {

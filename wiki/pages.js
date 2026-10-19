@@ -10,7 +10,7 @@
 
 import {
   BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, FARM_JOIN,
-  PRODUCE, FRUIT, TRADES, CORNER_SHOPS, NEEDS, RESEARCH_SOURCES, STYLE_TECH, BURY_COST, CAPABILITIES, servicesOf, unlockOf, techForLevel,
+  PRODUCE, FRUIT, TRADES, CORNER_SHOPS, NEEDS, RESEARCH_SOURCES, STYLE_TECH, BURY_COST, CAPABILITIES, servicesOf, unlockOf, techForLevel, PLANTINGS, MONUMENTS, REKIND,
 } from '../src/defs.js';
 import {
   CONFIG, ROAD_LEVELS, BRIDGE_MULT, TREE_COST, CLEAR_COST, TERRAFORM_COST, ROAD_SALVAGE, DRESSINGS, TITLES, SEASONS,
@@ -461,7 +461,23 @@ export const PAGES = [
       { id: 'move', title: 'Moving', html: `
         <p>With ${tl('relocation')} researched, <b>Move</b> takes any building somewhere else for ${money(fact('moveCost', 0))} plus ${pct(fact('moveCost', 1))} of its worth: builders take it down, a cart hauls the materials, and it goes back up on the new plot with its people.</p>` },
     ],
-    see: ['joins', 'plots', 'styles'],
+    see: ['joins', 'plots', 'styles', 'kinds'],
+  },
+  {
+    id: 'kinds', title: 'Plantings and monuments', icon: 'local_florist', group: 'buildings',
+    summary: 'The kinds of planting and monument to choose from, and how they grow by level.',
+    sections: () => [
+      { id: 'choose', title: 'Choosing a kind', html: `
+        <p>A ${bl('flowers')} and a ${bl('statue')} each come in kinds. While you build one, a bar above the build menu picks its kind; <b>By its seed</b> lets each one choose for itself from the kinds that need no research, so no two side by side look alike. Some kinds need research first.</p>
+        <p>Later, its panel lists every kind: builders rework it as another for ${pct(REKIND)} of what it is worth, keeping its level. Every kind follows the seasons in its own way and goes up through the same levels: ${BUILDINGS.flowers.levels.map((L, i) => bl('flowers', i)).join(' › ')}, and ${BUILDINGS.statue.levels.map((L, i) => bl('statue', i)).join(' › ')}.</p>` },
+      { id: 'plantings', title: 'Plantings', html: `
+        <p>A Flower Bed is the kind at its simplest; an Ornamental Garden lays it out more richly; a Show Garden is the grandest of its kind (carpet bedding, a rose pergola, a rock garden with a cascade, four herb knots round a sundial…).</p>
+        ${table(['Kind', 'Research', 'What it is'], Object.values(PLANTINGS).map(x => [esc(x.name), x.tech ? tl(x.tech) : '—', esc(x.desc)]))}` },
+      { id: 'monuments', title: 'Monuments', html: `
+        <p>A Monument stands on its plinth in the grass; a Civic Monument on paving inside railings, with beds and lamps; a Grand Monument is a bigger work on steps, floodlit at night, and brings culture to the streets within ${BUILDINGS.statue.levels[2].culture} tiles.</p>
+        ${table(['Kind', 'Research', 'What it is'], Object.values(MONUMENTS).map(x => [esc(x.name), x.tech ? tl(x.tech) : '—', esc(x.desc)]))}` },
+    ],
+    see: ['construction', 'research'],
   },
 
   // =================================================================== growing

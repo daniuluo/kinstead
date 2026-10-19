@@ -6,7 +6,7 @@
 // chose, never rule-bending options, and each one is checked before it runs.
 // A guest the host has made a visitor can't run any.
 
-import { BUILDINGS, TECHS, TRANSIT, PRODUCE } from './defs.js';
+import { BUILDINGS, TECHS, TRANSIT, PRODUCE, KINDS } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
 import { applyDress } from './world/roadDress.js';
@@ -37,8 +37,9 @@ export const VISITOR_REASON = "You're a visitor in this town: you can look aroun
 // t → { check(world, cmd), run(game, cmd), host: only the host may do it }
 export const COMMANDS = {
   place: {
-    check: (w, c) => hasKey(BUILDINGS, c.type) && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6),
-    run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0 }),
+    check: (w, c) => hasKey(BUILDINGS, c.type) && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6)
+      && (c.flavor == null || (hasKey(KINDS, c.type) && hasKey(KINDS[c.type], c.flavor))),
+    run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0, flavor: c.flavor ?? undefined }),
   },
   roads: {
     check: (w, c) => int(c.level, 1, 3) && tiles(w, c.tiles),
@@ -76,6 +77,11 @@ export const COMMANDS = {
     },
   },
   // what a farm grows or raises
+  // another kind of planting or monument
+  kind: {
+    check: (w, c) => int(c.id) && typeof c.kind === 'string' && Object.values(KINDS).some(K => hasKey(K, c.kind)),
+    run: (g, c) => g.world.setKind(c.id, c.kind),
+  },
   produce: {
     check: (w, c) => int(c.id) && hasKey(PRODUCE, c.produce),
     run: (g, c) => g.world.setProduce(c.id, c.produce),

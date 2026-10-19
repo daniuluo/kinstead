@@ -125,6 +125,10 @@ body.pixel #app canvas { image-rendering: pixelated; }
   border: 1px solid #000; font-size: 13px; white-space: nowrap; pointer-events: none;
 }
 .flyout:not(.hidden) ~ .hint { bottom: 214px; }
+/* the kind of planting or monument to build, above the build menu */
+.kindbar { position: absolute; left: 50%; bottom: 214px; transform: translateX(-50%); padding: 4px; display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; width: max-content; max-width: min(760px, calc(100vw - 16px)); }
+.kindbar .kb-label { font-size: 12px; font-weight: 700; align-self: center; margin: 0 4px; }
+.kindbar .btn .ms, .kinds .btn .ms { font-size: 14px; vertical-align: -2px; }
 
 /* ------------------------------------------------------------ inspector */
 .inspector { position: absolute; right: 8px; top: 96px; width: 300px; max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px); overflow-y: auto; padding: 0 10px 10px; }
