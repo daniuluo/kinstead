@@ -1333,7 +1333,8 @@ export class UI {
       ${check('stAO', s.ao, 'Soft contact shadows', 'Ambient occlusion: shade where walls meet the ground')}
       ${seg('stTilt', 'Tilt-shift', [['off', 'Off'], ['subtle', 'Subtle'], ['strong', 'Strong']], s.tiltShift || 'off')}
       ${seg('stTiltBand', 'Sharp band', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], s.tiltBand || 'normal')}
-      <p class="set-hint">Tilt-shift makes the town look like a tabletop model: a band across the middle, or what's selected, stays sharp and the view blurs above and below it.</p>`);
+      <p class="set-hint">Tilt-shift makes the town look like a tabletop model: the middle of the screen stays sharp and the view softens toward every edge.</p>
+      ${check('stDay', s.alwaysDay, 'Always daytime', "The clock and the villagers' days run on, but the light never goes down")}`);
     const sound = group('Sound', `
       ${check('stSound', s.sound, 'Sound effects')}
       ${check('stMusic', s.music !== false, 'Music')}
@@ -1371,6 +1372,7 @@ export class UI {
         s.pixelArt = val('stPix').checked;
         s.pixelSize = Number(segValue(c, 'stPixSize'));
         s.ao = val('stAO').checked;
+        s.alwaysDay = val('stDay').checked;
         s.tiltShift = segValue(c, 'stTilt');
         s.tiltBand = segValue(c, 'stTiltBand');
         s.sound = val('stSound').checked;

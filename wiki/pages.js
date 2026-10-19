@@ -81,6 +81,7 @@ export const SETTINGS = [
     ['Soft contact shadows', 'On / off', 'Ambient occlusion: a soft shade where walls meet the ground and in corners.'],
     ['Tilt-shift', 'Off · Subtle · Strong', 'The model-village look (see below).'],
     ['Sharp band', 'Narrow · Normal · Wide', 'How much of the middle stays sharp with tilt-shift on.'],
+    ['Always daytime', 'On / off', "The light never goes down: the sky keeps to the day's light (from 8:00 to 16:30, drifting gently back to morning over the night), while the clock, the villagers' days, the seasons and the weather all run on as usual. No lamps or lit windows, as it's never dark."],
   ] },
   { group: 'Performance', rows: [
     ['Presets', 'Battery saver · Best look', 'Battery saver sets every choice below to its lightest (and turns soft contact shadows and tilt-shift off); Best look puts them back as they were at first.'],

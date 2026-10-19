@@ -32,6 +32,17 @@ const _grey = new THREE.Color();
 // How wet the sky is (0 clear .. 1 pouring), the same for everyone who has
 // the town. Most days are settled; an unsettled one brings cloud in spells of
 // a few hours, and the heaviest spells rain (or snow, in winter).
+// With "Always daytime" on, the hour the sky shows for the clock's hour: the
+// real light through the day (8:00 to 16:30, when no part of the night is in
+// it), then over the evening and the night it drifts gently back to the
+// morning's light, never darker than day and never jumping.
+export const DAY_FROM = 8, DAY_TO = 16.5;
+export function daylightHour(hours) {
+  if (hours >= DAY_FROM && hours <= DAY_TO) return hours;
+  const into = (hours > DAY_TO ? hours - DAY_TO : hours + 24 - DAY_TO) / (24 - (DAY_TO - DAY_FROM));
+  return DAY_FROM + (DAY_TO - DAY_FROM) * (1 + Math.cos(Math.PI * into)) / 2;
+}
+
 export function weatherAt(seed, day, hours) {
   const unsettled = [0.3, 0.18, 0.34, 0.32];
   const spell = (d, blk) => {

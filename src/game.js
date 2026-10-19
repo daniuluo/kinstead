@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { CONFIG, SEASONS, TITLES, SHADOW_SIZE, PERF_DEFAULTS } from './config.js';
 import { BUILDINGS, SERVICES, unlockOf, TECHS } from './defs.js';
 import { Renderer } from './render/renderer.js';
-import { Sky } from './render/sky.js';
+import { Sky, daylightHour } from './render/sky.js';
 import { WorldView } from './render/worldView.js';
 import { Particles } from './render/particles.js';
 import { World, fw, fd } from './world/world.js';
@@ -38,7 +38,7 @@ export class Game {
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.drive = new Drive();
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', ...PERF_DEFAULTS };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, ...PERF_DEFAULTS };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
     this.speed = 1;
     this.prevSpeed = 1;
@@ -545,7 +545,8 @@ export class Game {
       if (!this._savedAt) this._savedAt = now;
       else if (now - this._savedAt > CONFIG.AUTOSAVE_SECONDS * 1000) { this._savedAt = now; this.autosave(); }
       const gameDt = this.sim.update(dt);
-      this.sky.update(w.day, w.hours, w.seed);
+      // (always daytime: the light stays in the day while the clock runs on)
+      this.sky.update(w.day, this.settings.alwaysDay ? daylightHour(w.hours) : w.hours, w.seed);
       const env = this.env;
       env.hours = w.hours; env.night = this.sky.night; env.season = this.sky.season;
       // the weather brings snow in winter and rain the rest of the year
