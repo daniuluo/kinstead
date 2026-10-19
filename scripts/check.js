@@ -1825,6 +1825,26 @@ ok(same, 'save round-trip heights');
   ok(seasonBlend(1, 12) === 0 && seasonBlend(D / 2, 0) === 0 && seasonBlend(D, 23.9) > 0.97 && jump < 0.03, `seasons hold for half their days, then turn gradually (largest step in a quarter hour ${jump.toFixed(3)})`);
 }
 
+// ---- on a slope no building is buried in the hill (world.js floorHeight)
+{
+  const { floorHeight } = await import('../src/world/world.js');
+  const w = World.createNew({ N: 48, seed: 174231, name: 'Hillby' }), t = w.terrain;
+  let worst = 0, door = 0, n = 0;
+  for (const [type, W, D] of [['house', 1, 1], ['terrace', 2, 1], ['quadrangle', 2, 2]]) {
+    for (let z = 2; z < 44; z += 2) for (let x = 2; x < 44; x += 2) for (let rot = 0; rot < 4; rot++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let dz = 0; dz < D; dz++) for (let dx = 0; dx < W; dx++) { lo = Math.min(lo, t.tileMin(x + dx, z + dz)); hi = Math.max(hi, t.tileMax(x + dx, z + dz)); }
+      if (!(hi > lo) || hi - lo > 1.1 || [0, 1].some(i => t.isWater(x + i, z))) continue;
+      const f = floorHeight(t, type, x, z, W, D, rot, lo, hi);
+      n++;
+      for (const [u, v] of [[0.08, 0.08], [W - 0.08, 0.08], [0.08, D - 0.08], [W - 0.08, D - 0.08], [W / 2, D / 2]]) worst = Math.max(worst, t.heightAt(x + u, z + v) - f);
+      const [ddx, ddz] = [[0, 1], [1, 0], [0, -1], [-1, 0]][rot];
+      door = Math.max(door, t.heightAt(x + W / 2 + (ddx * W) / 2, z + D / 2 + (ddz * D) / 2) - f);
+    }
+  }
+  ok(n > 500 && worst < 0.012 && door < 0.025, `on sloping ground no building's walls are buried (${n} plots and facings: the ground stands at most ${worst.toFixed(3)} above the floor, ${door.toFixed(3)} at the door)`);
+}
+
 // ---- saves in the browser are packed (src/save/pack.js)
 {
   const { pack, unpack, isPacked } = await import('../src/save/pack.js');

@@ -57,19 +57,24 @@ const baseAreaOf = (type) => (BUILDINGS[type].merged ? 2 : BUILDINGS[type].size 
 const baseArea = (b) => baseAreaOf(b.type);
 export const isExpanded = (b) => fw(b) * fd(b) > baseArea(b);
 // How high a building's floor sits on a plot whose ground runs from minH to
-// maxH. On a slope it is let into the hillside rather than raised on a
-// platform to the highest corner: up to a quarter of a storey below the top,
-// but never below the ground at its front door (so the door stays at street
-// level) or the lowest corner. What is left showing on the low side is drawn
+// maxH. On a slope it stands on the highest ground under its walls (a little
+// in from the plot's edges, where they stand), so no wall is buried in the
+// hillside, and never below the ground at its front door (so the door stays
+// at street level). Where the hill falls away, what is left showing is drawn
 // as a stone lower floor (see footing in render/buildings.js). Buildings that
 // must meet track or water exactly, and parks, keep to the top.
-const SINK = 0.22;
+const WALL_IN = 0.05;
 export function floorHeight(terrain, type, x, z, w, d, rot, minH, maxH) {
   const def = BUILDINGS[type];
   if (!def || def.needsRail || def.needsWater || def.park || !(maxH > minH)) return maxH;
   const [dx, dz] = DIRS[rot] || [0, 1];
   const front = terrain.heightAt(x + w / 2 + (dx * w) / 2, z + d / 2 + (dz * d) / 2);
-  return Math.min(maxH, Math.max(minH, front - 0.02, maxH - Math.min(SINK, (maxH - minH) * 0.6)));
+  let walls = -Infinity;
+  const us = [WALL_IN, w / 2, w - WALL_IN], vs = [WALL_IN, d / 2, d - WALL_IN];
+  for (let i = 1; i < w; i++) us.push(i);
+  for (let i = 1; i < d; i++) vs.push(i);
+  for (const u of us) for (const v of vs) walls = Math.max(walls, terrain.heightAt(x + u, z + v));
+  return Math.min(maxH, Math.max(minH, front - 0.02, walls - 0.005));
 }
 // each extra plot's worth of ground adds half as much again
 export function capOf(b, key) {
