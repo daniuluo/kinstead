@@ -14,7 +14,7 @@
 
 import { RNG } from '../util/rng.js';
 import { shade } from './geo.js';
-import { win } from './buildings.js';
+import { win, footing } from './buildings.js';
 
 const GLASS = '#2f3a44', WARM = [1.7, 1.2, 0.55], IRON = '#2f2c2a', TRIM = '#ece6da', STONE = '#8f877a', TIMBER = '#4e3a2a';
 
@@ -392,6 +392,87 @@ export function wallGable(c, kind, x, z, w, y, h, dd, wall, roof, trim, lit) {
   } else gb.gable(0, y, z - dd / 2, w, dd, h, wall, roof, 0.03, true, 0.03);
   win(c, 0, y + h * 0.18, z + (kind && kind !== 'plain' ? 0.026 : 0.002), Math.min(0.07, w * 0.35), Math.min(0.09, h * 0.4), 'f', lit);
   gb.pop();
+}
+
+// ----------------------------------------------------------------- towers
+
+// A square tower w wide at (x, z) up to h, windows up its front (louvres
+// under the top), a clock in it if asked (o.clock), crowned as `kind` says:
+// a broach spire, a low pyramid, battlements with a flagpole, an open belfry
+// under a cupola, a saddleback roof, or an octagonal lantern under a dome.
+// o.cross: a gilt cross on the top. Returns how high it reaches.
+export function tower(c, kind, x, z, w, h, wall, roof, o = {}) {
+  const { gb } = c;
+  const trim = o.trim || shade(wall, 1.15), face = z + w / 2;
+  footing(c, x, z, w, w);
+  gb.cbox(x, 0, z, w, h, w, wall, 0, 0.012);
+  for (let y = 0.14; y < h - 0.34; y += 0.3) win(c, x, y, face, Math.min(0.055, w * 0.28), 0.1, 'f', o.lit ?? 0.6);
+  gb.box(x, h - 0.17, face + 0.003, w * 0.42, 0.11, 0.008, '#2a2826');
+  for (const s of [-1, 1]) gb.box(x + s * (w / 2 + 0.003), h - 0.17, z, 0.008, 0.11, w * 0.42, '#2a2826');
+  if (o.clock) {
+    const r = Math.min(0.055, w * 0.3), y = h - 0.3;
+    gb.cyl(x, y, face + 0.002, r, r, 0.012, 12, '#3a3a3e', 0, Math.PI / 2);
+    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(x, y, face + 0.008, r * 0.8, r * 0.8, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+  }
+  let top = h;
+  if (kind === 'spire') {
+    gb.box(x, h - 0.02, z, w + 0.03, 0.025, w + 0.03, trim);
+    gb.frustum(x, h, z, w + 0.01, w + 0.01, w * 0.35, w * 0.55, w * 0.55, roof, Math.PI / 4);
+    gb.cone(x, h + w * 0.35, z, w * 0.39, w * 2.6, 8, roof, Math.PI / 8);
+    top = h + w * 2.95;
+  } else if (kind === 'battlement') {
+    gb.box(x, h - 0.02, z, w + 0.04, 0.03, w + 0.04, trim);
+    const n = 3, m = (w + 0.02) / (n * 2 - 1);
+    for (let i = 0; i < n; i++) for (const s of [-1, 1]) {
+      const u = -w / 2 - 0.01 + m / 2 + i * 2 * m;
+      gb.box(x + u, h + 0.01, z + s * (w / 2 + 0.005), m, 0.05, 0.03, wall);
+      gb.box(x + s * (w / 2 + 0.005), h + 0.01, z + u, 0.03, 0.05, m, wall);
+    }
+    gb.box(x, h, z, 0.01, 0.3, 0.01, IRON);
+    gb.box(x + 0.045, h + 0.22, z, 0.08, 0.05, 0.004, o.flag || '#a8473a');
+    top = h + 0.3;
+  } else if (kind === 'belfry') {
+    // an open stage on corner piers, a cornice, a cupola over it
+    const bh = Math.max(0.12, w * 0.7);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(x + sx * (w / 2 - 0.02), h, z + sz * (w / 2 - 0.02), 0.04, bh, 0.04, wall);
+    gb.cyl(x, h + 0.02, z, 0.02, 0.03, 0.05, 7, '#c08a3a');
+    gb.box(x, h + bh, z, w + 0.03, 0.025, w + 0.03, trim);
+    gb.cyl(x, h + bh + 0.025, z, w * 0.36, w * 0.4, 0.05, 8, trim);
+    gb.sphere(x, h + bh + 0.075, z, w * 0.36, roof, 1, 0.9);
+    top = h + bh + 0.075 + w * 0.36;
+  } else if (kind === 'saddle') {
+    gb.gable(x, h, z, w + 0.02, w + 0.02, w * 0.6, wall, roof, 0.02, !!o.along, 0.025);
+    top = h + w * 0.6;
+  } else if (kind === 'lantern') {
+    gb.box(x, h - 0.02, z, w + 0.03, 0.025, w + 0.03, trim);
+    gb.roof(x, h, z, w + 0.01, w + 0.01, w * 0.25, 0, roof);
+    gb.cyl(x, h + w * 0.2, z, w * 0.3, w * 0.34, 0.12, 8, trim);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.1); gb.cyl(x, h + w * 0.2 + 0.03, z, w * 0.31, w * 0.31, 0.06, 8, GLASS); gb.noGlow();
+    gb.sphere(x, h + w * 0.2 + 0.12, z, w * 0.32, roof, 1, 0.85);
+    top = h + w * 0.2 + 0.12 + w * 0.3;
+  } else {
+    gb.box(x, h - 0.02, z, w + 0.04, 0.025, w + 0.04, trim);
+    gb.roof(x, h, z, w + 0.05, w + 0.05, w * 0.9, 0, roof);
+    top = h + w * 0.9;
+  }
+  if (o.cross) {
+    gb.box(x, top - 0.01, z, 0.011, 0.09, 0.011, '#c9a43a');
+    gb.box(x, top + 0.035, z, 0.055, 0.011, 0.011, '#c9a43a');
+    top += 0.08;
+  } else if (kind !== 'battlement') {
+    gb.box(x, top - 0.01, z, 0.008, 0.06, 0.008, IRON);
+    top += 0.05;
+  }
+  return top;
+}
+
+// A bell-cote on a gable's apex (at x, y, z): two piers, a bell between
+// them and a little gable over.
+export function bellcote(c, x, y, z, wall, roof) {
+  const { gb } = c;
+  for (const s of [-1, 1]) gb.box(x + s * 0.035, y - 0.04, z, 0.025, 0.15, 0.04, wall);
+  gb.cyl(x, y + 0.03, z, 0.018, 0.026, 0.04, 7, '#c08a3a');
+  gb.gable(x, y + 0.11, z, 0.11, 0.06, 0.05, wall, roof, 0.012, true, 0.015);
 }
 
 // ------------------------------------------------------------- the ridge
