@@ -4088,12 +4088,17 @@ MODELS.station = (c, L) => {
 // open-sided roof, so a cable can come in from any side. transit.js draws the
 // cable (1.05 above the floor), the bullwheel it turns round at the end of a
 // line and the cabins, whose floors pass level with the deck (0.78 up).
-// Stairs climb to the deck from the street. The terminal has a brick booking
+// Stairs climb to the deck from the street, to the villagers' own scale
+// (a step a fifth of a villager high), round the outside of the deck in
+// flights with a landing at each corner. The terminal has a brick booking
 // hall under the deck, iron columns and a lantern on the roof. Where the
 // cable must run higher to clear the roofs round about, the station stands
 // that much taller (c.lift, from b.lift), on longer stilts braced in bays,
-// and from half a tile up a lift rises through the middle to the deck, in
-// place of the stairs.
+// and from half a tile up a glass lift rises to the deck in place of the
+// stairs. The way up goes on whichever side keeps it out from under the
+// cabins (c.cables: the headings the cables leave on). c.stair: the way a
+// villager walks it, from the street to the deck; c.deck: the deck's middle
+// and height (see agents.js and transit.js).
 MODELS.gondola = (c, L) => {
   const { gb, pal, rng } = c;
   const lift = c.lift || 0;
@@ -4127,15 +4132,8 @@ MODELS.gondola = (c, L) => {
     }
     if (j) for (const s of [-1, 1]) { gb.box(0, 0.03 + rise * j - 0.015, s * D, span, 0.03, 0.024, beam); gb.box(s * D, 0.03 + rise * j - 0.015, 0, 0.024, 0.03, span, beam); }
   }
-  // a tall station's lift, up through the middle of the deck to the drive
-  // (it holds the bullwheel up too); its glass lit at night
-  if (lift >= 0.5) {
-    gb.box(0, 0, 0, 0.07, DECK + 0.33, 0.07, '#4f565b');
-    gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
-    for (let y = 0.6; y < DECK - 0.15; y += 0.45) for (const s of [-1, 1]) gb.box(0, y, s * 0.036, 0.05, 0.12, 0.006, GLASS);
-    gb.noGlow();
-    gb.box(0, DECK, 0.036, 0.05, 0.13, 0.006, '#2f2c2a');
-  }
+  // on a tall station a column up through the middle holds the drive
+  if (lift >= 0.5) gb.box(0, DECK - 0.05, 0, 0.06, 0.38, 0.06, '#4f565b');
   // the deck, its edge beams and a few lengths of railing by the posts
   gb.box(0, DECK - 0.05, 0, 2 * D + 0.04, 0.05, 2 * D + 0.04, floor);
   for (const s of [-1, 1]) {
@@ -4146,19 +4144,7 @@ MODELS.gondola = (c, L) => {
     gb.box(sx * (D - 0.06), DECK + 0.085, sz * D, 0.12, 0.012, 0.012, post);
     gb.box(sx * D, DECK + 0.085, sz * (D - 0.06), 0.012, 0.012, 0.12, post);
   }
-  // the stairs up the right-hand side, from the street to a landing
-  if (lift < 0.5) {
-    const n = Math.round(DECK / 0.078), run = 0.6 / n, step = DECK / n, sx = 0.39;
-    for (let i = 0; i < n; i++) {
-      const z = 0.45 - (i + 0.5) * run, top = (i + 1) * step;
-      if (L) gb.box(sx, 0, z, 0.13, top, run + 0.002, STONE);
-      else gb.box(sx, top - 0.02, z, 0.13, 0.02, run + 0.004, '#8a6a48');
-    }
-    const sl = Math.hypot(0.6, DECK), sa = Math.atan2(DECK, 0.6);
-    if (!L) for (const o of [-0.07, 0.07]) gb.boxC(sx + o, DECK / 2 - 0.01, 0.15, 0.016, 0.03, sl, post, sa);
-    gb.boxC(sx + 0.07, DECK / 2 + 0.1, 0.15, 0.01, 0.01, sl, post, sa);
-    gb.box(sx, DECK - 0.04, -0.22, 0.15, 0.04, 0.14, floor);
-  }
+  gondolaWayUp(c, L, DECK, D, post, floor);
   // the roof: open on every side, with the drive under it
   for (const s of [-1, 1]) {
     gb.box(0, EAVE - 0.05, s * D, 2 * D + 0.04, 0.05, 0.03, beam);
@@ -4185,10 +4171,131 @@ MODELS.gondola = (c, L) => {
   gb.box(-0.05, DECK - 0.18, D + 0.018, 0.3, 0.085, 0.012, '#2f4858');
   gb.cyl(-0.15, DECK - 0.137, D + 0.026, 0.03, 0.03, 0.006, 10, '#e8e0d0', 0, Math.PI / 2);
   gb.box(0.02, DECK - 0.142, D + 0.026, 0.13, 0.012, 0.004, '#e8e0d0');
-  lamp(c, -0.4, 0.4, 0.3);
   lamp(c, -D + 0.05, D - 0.05, 0.2, DECK);
-  bench(c, -0.14, 0.4, 0);
+  c.deck = { x: 0, y: DECK, z: 0 };
 };
+
+// The way up to a gondola station's deck (DECK up, its half-width D), and
+// the way a villager walks it (c.stair: points x, y, z from the street to
+// the deck). Stairs to scale, steps of about 0.02 (a fifth of a villager)
+// on treads of 0.03, up a side strip from the street end and on round the
+// deck as far as they need, turning each corner on a landing: the
+// terminal's in stone, solid to the ground, the station's in timber on
+// stringers. On a tall station a glass lift instead, from the street up to
+// the deck. Of its ways round, the one whose top (where it meets the deck,
+// at the deck's height) is furthest from where the cables leave, as the
+// cabins pass through there at the deck's height. A street lamp at its
+// foot, a bench under the deck.
+function gondolaWayUp(c, L, DECK, D, post, floor) {
+  const { gb } = c;
+  const S = D + 0.09, W = 0.11, RISE = 0.02, TREAD = 0.03;
+  // how far a heading in this frame is from the nearest the cables leave on
+  const clear = (x, z) => {
+    if (!c.cables || !c.cables.length) return Math.PI;
+    const a = Math.atan2(x, z);
+    return Math.min(...c.cables.map(k => Math.abs(Math.atan2(Math.sin(a - k), Math.cos(a - k)))));
+  };
+  if (c.lift >= 0.5) {
+    // the lift: in the middle of the front strip, or near the front of a
+    // side strip; [x, z, and the way in to the deck from it]
+    const spots = [[0, S - 0.04, 0, -1], [S, 0.14, -1, 0], [-S, 0.14, 1, 0]];
+    const [lx, lz, ix, iz] = spots.reduce((a, b) => (clear(b[0], b[1]) > clear(a[0], a[1]) + 0.2 ? b : a));
+    const w = 0.1, h = DECK + 0.17, front = iz !== 0;
+    gb.box(lx, 0, lz, w + 0.012, h, w + 0.012, '#4f565b');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
+    for (let y = 0.1; y < h - 0.12; y += 0.24) for (const sd of [-1, 1]) {
+      if (front) gb.box(lx + sd * (w / 2 + 0.007), y, lz, 0.004, 0.18, w - 0.03, GLASS);
+      else gb.box(lx, y, lz + sd * (w / 2 + 0.007), w - 0.03, 0.18, 0.004, GLASS);
+    }
+    gb.noGlow();
+    // its doors: at the street end, and out on to the deck
+    if (front) {
+      gb.box(lx, 0.02, lz + w / 2 + 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
+      gb.box(lx, DECK, lz - w / 2 - 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
+    } else {
+      gb.box(lx, 0.02, lz + w / 2 + 0.008, 0.07, 0.15, 0.006, '#2f2c2a');
+      gb.box(lx + ix * (w / 2 + 0.008), DECK, lz, 0.006, 0.15, 0.07, '#2f2c2a');
+    }
+    c.stair = [
+      { x: lx, y: 0.02, z: 0.5 },
+      { x: lx, y: 0.02, z: lz + w / 2 + 0.05 },
+      { x: lx, y: 0.02, z: lz },
+      { x: lx, y: DECK, z: lz },
+      { x: lx + ix * 0.15, y: DECK, z: lz + iz * 0.15 },
+    ];
+    lamp(c, lx + (lx > 0 ? -0.1 : 0.1), 0.45, 0.3);
+    return;
+  }
+  // the stairs: up a side strip from the street end, on round the back (and
+  // the other side) as far as they need, up the right side or the left
+  const ways = [1, -1].map(sx => [[sx * S, 0.42], [sx * S, -S], [-sx * S, -S], [-sx * S, S]]);
+  const N = Math.ceil(DECK / RISE), rise = DECK / N;
+  // the treads along a way ([x, z, height, heading] each), the corners it
+  // turns (landings, [x, z, height]) and its top
+  const layout = (P) => {
+    const treads = [], lands = [];
+    let i = 0, d = 0;
+    for (let seg = 0; seg < P.length - 1; seg++) {
+      const [ax, az] = P[seg], [bx, bz] = P[seg + 1], len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len, uz = (bz - az) / len;
+      for (; i < N && d + TREAD <= len - 0.06 + 1e-6; i++, d += TREAD) treads.push([ax + ux * (d + TREAD / 2), az + uz * (d + TREAD / 2), (i + 1) * rise, Math.atan2(ux, uz)]);
+      if (i >= N) return { treads, lands, top: [ax + ux * (d + 0.06), az + uz * (d + 0.06)], P };
+      lands.push([bx, bz, i * rise]);
+      d = 0.06;
+    }
+    return null;
+  };
+  const opts = ways.map(layout).filter(Boolean);
+  if (!opts.length) return;
+  const best = opts.reduce((a, b) => (clear(b.top[0], b.top[1]) > clear(a.top[0], a.top[1]) + 0.2 ? b : a));
+  const { treads, lands, top } = best;
+  for (const [x, z, h, hd] of treads) {
+    gb.push(x, 0, z, hd);
+    if (L) gb.box(0, 0, 0, W, h, TREAD + 0.002, STONE);
+    else gb.box(0, h - 0.012, 0, W, 0.012, TREAD + 0.003, '#8a6a48');
+    gb.pop();
+  }
+  for (const [x, z, h] of lands) {
+    if (L) gb.box(x, 0, z, W + 0.01, h, W + 0.01, STONE);
+    else { gb.box(x, h - 0.014, z, W + 0.01, 0.014, W + 0.01, '#8a6a48'); gb.box(x, 0, z, 0.016, h - 0.014, 0.016, post); }
+  }
+  // the top landing, level with the deck and joined to it
+  gb.box(top[0], DECK - 0.04, top[1], W + 0.01, 0.04, W + 0.01, floor);
+  if (!L) gb.box(top[0], 0, top[1], 0.016, DECK - 0.04, 0.016, post);
+  // each straight flight: stringers under the timber ones, and a handrail
+  // along its outer side
+  const runs = [];
+  for (const t of treads) { const r = runs[runs.length - 1]; if (r && Math.abs(r.hd - t[3]) < 1e-6) r.b = t; else runs.push({ a: t, b: t, hd: t[3] }); }
+  for (const r of runs) {
+    const [ax, az, ah] = r.a, [bx, bz, bh] = r.b, len = Math.hypot(bx - ax, bz - az) + TREAD;
+    const up = bh - ah + rise, mx = (ax + bx) / 2, mz = (az + bz) / 2, my = (ah + bh) / 2 - rise / 2;
+    const sl = Math.hypot(len, up), sa = Math.atan2(up, len);
+    // (outward, away from the deck: the strip's own side)
+    const ox = Math.abs(mx) > Math.abs(mz) ? Math.sign(mx) : 0, oz = ox ? 0 : Math.sign(mz);
+    gb.pushEuler(mx, my, mz, -sa, r.hd, 0);
+    if (!L) for (const o of [-W / 2, W / 2]) gb.boxC(o, -0.02, 0, 0.012, 0.028, sl, post);
+    gb.pop();
+    gb.pushEuler(mx + ox * (W / 2 - 0.005), my + 0.13, mz + oz * (W / 2 - 0.005), -sa, r.hd, 0);
+    gb.boxC(0, 0, 0, 0.008, 0.008, sl, post);
+    gb.pop();
+  }
+  // the way a villager climbs it: from the street to its foot, up each
+  // flight, across each landing, over the top landing and in on to the deck
+  const [fx, fz] = best.P[0];
+  const way = [{ x: fx, y: 0.02, z: 0.5 }, { x: fx, y: 0.02, z: fz + 0.04 }];
+  for (const [k, r] of runs.entries()) {
+    const [ax, az, ah] = r.a, [bx, bz, bh] = r.b, ux = Math.sin(r.hd), uz = Math.cos(r.hd);
+    if (k) { const l = lands[k - 1]; way.push({ x: l[0], y: l[2], z: l[1] }); }
+    way.push({ x: ax - ux * TREAD / 2, y: ah - rise, z: az - uz * TREAD / 2 });
+    way.push({ x: bx + ux * TREAD / 2, y: bh, z: bz + uz * TREAD / 2 });
+  }
+  way.push({ x: top[0], y: DECK, z: top[1] });
+  // in towards the middle of the deck from the landing
+  const inx = Math.abs(top[0]) > Math.abs(top[1]) ? -Math.sign(top[0]) : 0, inz = inx ? 0 : -Math.sign(top[1]);
+  way.push({ x: top[0] + inx * 0.15, y: DECK, z: top[1] + inz * 0.15 });
+  c.stair = way;
+  lamp(c, fx - Math.sign(fx) * 0.1, 0.45, 0.3);
+  bench(c, -Math.sign(fx) * 0.2, 0.24, 0);
+}
 
 // A faint per-building colour cast, so neighbours never look copy-pasted.
 // ------------------------------------------------- the two home branches
@@ -7520,6 +7627,7 @@ export function buildModel(b, opts = {}) {
     beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
     lift: b.lift || 0,   // a gondola station standing taller (worked out by transit.js)
+    cables: b.cables ? b.cables.map(a => a - th) : null,   // the headings its cables leave on, in this frame (transit.js)
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
     gy(x, z) {
@@ -7591,6 +7699,8 @@ export function buildModel(b, opts = {}) {
       if (c.fountain) { const p = { x: c.fountain[0], z: c.fountain[2] }; sc(p); c.fountain[0] = p.x; c.fountain[2] = p.z; }
       if (c.spin) { sc(c.spin); c.spin.geo.scale(k, k, k); }
       if (c.doorAt) sc(c.doorAt);
+      if (c.stair) c.stair.forEach(sc);
+      if (c.deck) sc(c.deck);
     }
   }
   if (own && geo) {
@@ -7635,7 +7745,7 @@ export function buildModel(b, opts = {}) {
     const bb = geo.boundingBox;
     foot = [[bb.min.x, bb.min.z], [bb.max.x, bb.min.z], [bb.max.x, bb.max.z], [bb.min.x, bb.max.z]].map(([lx, lz]) => [cx + lx * co + lz * si, cz - lx * si + lz * co]);
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, open: !!c.openAir, houses: c.houses, spots: c.spots, foot };
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, open: !!c.openAir, houses: c.houses, spots: c.spots, foot, stair: c.stair || null, deck: c.deck || null };
 }
 
 // A home, shop or service built out across the land it took: the house itself

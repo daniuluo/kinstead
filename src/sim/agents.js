@@ -50,6 +50,16 @@ const STEP_UP = 0.02;
 // door (which on a slope may be well above the street), hopping on to the
 // step over the last bit of the way to it and down again on the way out.
 export function walkY(w, wk) {
+  // a way with its own heights (up a gondola station's stairs or lift, and
+  // across its deck: wk.ys, one for each point, null for the ground)
+  if (wk.ys) {
+    const ya = wk.ys[wk.seg], yb = wk.ys[wk.seg + 1];
+    if (ya != null || yb != null) {
+      const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1] || a;
+      const y0 = ya ?? w.walkHeight(a[0], a[1]), y1 = yb ?? w.walkHeight(b[0], b[1]);
+      return y0 + (y1 - y0) * wk.t;
+    }
+  }
   const g = w.walkHeight(wk.x, wk.z);
   // leaving an open plot: on its ground (which may stand above the street
   // on a slope) to its edge, then down to the street
@@ -379,6 +389,7 @@ export class Agents {
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
+      ys: null, standY: null, cabin: null, seat: 0,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
@@ -509,20 +520,46 @@ export class Agents {
     return r.at === r.home ? null : r.home;
   }
 
-  // Called by transit when a passenger alights.
-  alight(r, stop, destId) {
+  // Called by transit when a passenger alights; at a gondola station (at:
+  // where the cabin stands) out of the cabin, across the deck and down the
+  // stairs or the lift to the street. Returns how long stepping out of the
+  // cabin takes (it waits for that).
+  alight(r, stop, destId, at = null) {
     const w = this.world;
-    const B = w.buildings.get(destId);
+    const B = w.buildings.get(destId), rode = r.walk;
+    if (rode) this._drop(rode);
     r.at = stop.id;
     r.loc = 'in';
-    if (!B || !stop.access || !B.access) { r.at = r.home; return; }
+    if (!B || !stop.access || !B.access) { r.at = r.home; return 0; }
     const tiles = this.game.paths.road(stop.access.x, stop.access.z, B.access.x, B.access.z);
-    if (!tiles) { r.at = r.home; return; }
-    this._walk(r, stop, B, tiles, null, () => this._arrive(r, B.id));
+    if (!tiles) { r.at = r.home; return 0; }
+    const wk = this._walk(r, stop, B, tiles, null, () => this._arrive(r, B.id));
+    const from = rode ? [rode.x, rode.z] : at ? seatAt(at, 0) : null;
+    if (!stop.stair || !stop.deck || !from) return 0;
+    const down = stop.stair.slice().reverse();
+    wk.pts.unshift(from, ...down.map(p => [p.x, p.z]));
+    wk.ys = [stop.deck.y, ...down.map(p => p.y)];
+    while (wk.ys.length < wk.pts.length) wk.ys.push(null);
+    wk.x = from[0]; wk.z = from[1]; wk.y = stop.deck.y;
+    return 0.12 / (CONFIG.WALK_SPEED * wk.speedK);
   }
 
-  // Passenger waiting at a stop (visible, standing around).
+  // Passenger waiting at a stop (visible, standing around). At a gondola
+  // station (whose model gives its way up, stop.stair, and its deck), up the
+  // stairs or the lift first, to wait on the deck clear of the cabins'
+  // way through (transit.deckSpots); they board only once up there (onDeck).
   waitAt(r, stop) {
+    if (stop.stair && stop.deck && r.walk) {
+      const wk = r.walk, spots = this.game.transit.deckSpots(stop);
+      const spot = spots && spots.length ? spots[(Math.random() * spots.length) | 0] : [stop.deck.x, stop.deck.z];
+      Object.assign(wk, {
+        pts: [[wk.x, wk.z], ...stop.stair.map(p => [p.x, p.z]), spot], ys: [null, ...stop.stair.map(p => p.y), stop.deck.y],
+        seg: 0, t: 0, mode: 'path', delay: 0, doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, standY: null,
+        onArrive: () => { wk.mode = 'wait'; wk.standY = stop.deck.y; wk.y = stop.deck.y; },
+      });
+      r.loc = 'wait';
+      return;
+    }
     const p = doorPoint(stop);
     const cx = stop.x + 0.5, cz = stop.z + 0.5;
     const wk = r.walk || this._makeWalker(r.lk, [[p.x, p.z]], null);
@@ -535,9 +572,24 @@ export class Agents {
     r.loc = 'wait';
   }
 
-  board(r) {
-    if (r.walk) this._drop(r.walk);
+  // Is a waiting passenger ready to board (up on the deck, at a gondola station)?
+  onDeck(r) { return !r.walk || r.walk.mode === 'wait'; }
+
+  // Called by transit as a passenger boards: they're gone from sight; or on
+  // a gondola station's deck (at: where the cabin stands, its heading, the
+  // cabin v and the passenger's seat in it), across to the cabin and in, to
+  // ride in it, the first two seen through its windows. Returns how long
+  // the walk across takes (the cabin waits for it).
+  board(r, at = null) {
+    const wk = r.walk;
     r.loc = 'ride';
+    if (!wk || !at || wk.mode !== 'wait' || wk.standY == null) { if (wk) this._drop(wk); return 0; }
+    const p = seatAt(at, at.seat), y = wk.standY;
+    Object.assign(wk, {
+      pts: [[wk.x, wk.z], p], ys: [y, y], seg: 0, t: 0, mode: 'path', doorIn: 0, doorOut: 0, floorIn: null, floorOut: null,
+      onArrive: () => { wk.mode = 'ride'; wk.cabin = at.v; wk.seat = at.seat; },
+    });
+    return Math.hypot(p[0] - wk.x, p[1] - wk.z) / (CONFIG.WALK_SPEED * wk.speedK) + 0.25;
   }
 
   // New villagers walk in from the road at the map edge.
@@ -643,7 +695,8 @@ export class Agents {
         const want = rem;
         while (rem > 0 && wk.seg < wk.pts.length - 1) {
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
-          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const dy = wk.ys && wk.ys[wk.seg] != null && wk.ys[wk.seg + 1] != null ? wk.ys[wk.seg + 1] - wk.ys[wk.seg] : 0;
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1], dy);
           const left = L * (1 - wk.t);
           if (rem >= left) { rem -= left; wk.seg++; wk.t = 0; }
           else { wk.t += rem / Math.max(L, 1e-6); rem = 0; }
@@ -658,8 +711,7 @@ export class Agents {
         const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
         wk.x = a[0] + (b[0] - a[0]) * wk.t;
         wk.z = a[1] + (b[1] - a[1]) * wk.t;
-        const hd = Math.atan2(b[0] - a[0], b[1] - a[1]);
-        wk.heading += angDiff(hd, wk.heading) * Math.min(1, dt * 12);
+        if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) > 1e-4) wk.heading += angDiff(Math.atan2(b[0] - a[0], b[1] - a[1]), wk.heading) * Math.min(1, dt * 12);
         wk.y = walkY(w, wk);
         wk.phase += (want - rem) / strideLen(wk.lk.scale);
         wk.moving = speed > 0;
@@ -704,7 +756,15 @@ export class Agents {
         }
         wk.moving = speed > 0;
       } else if (wk.mode === 'wait') {
-        wk.y = w.walkHeight(wk.x, wk.z);
+        wk.y = wk.standY ?? w.walkHeight(wk.x, wk.z);
+        wk.moving = false;
+      } else if (wk.mode === 'ride') {
+        // in a gondola cabin, standing on its floor, looking out ahead
+        const m = wk.cabin && wk.cabin.meshes && wk.cabin.meshes[0];
+        if (m) {
+          const p = seatAt({ x: m.position.x, z: m.position.z, heading: m.rotation.y }, wk.seat);
+          wk.x = p[0]; wk.z = p[1]; wk.y = this.game.transit.cabinFloor(wk.cabin); wk.heading = m.rotation.y;
+        }
         wk.moving = false;
       }
       wk.lamp = night > 0.55 && wk.mode === 'path' && !wk.ghost && wk.lk.scale > 0.8 && ((wk.r?.look ?? 1) & 3) === 0;
@@ -728,6 +788,8 @@ export class Agents {
     const crowd = mode === 'crowds' ? this._crowds() : null;
     for (const wk of this.walkers) {
       let show = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
+      // (a gondola cabin has room to see two of its riders)
+      if (show && wk.mode === 'ride' && wk.seat > 1 && !(sel && wk.r === sel)) show = false;
       if (show && mode !== 'all' && !(sel && wk.r === sel)) {
         // the same half of the town every frame (the lane is each villager's own)
         if (mode === 'some') show = (wk.lk.lane * 997) % 1 < 0.5;
@@ -847,6 +909,13 @@ function plotRect(B) {
 // Where builders walk on a building site: a ring just inside the plot edge.
 export function siteArea(B) {
   return [B.x + 0.1, B.z + 0.1, B.x + fw(B) - 0.1, B.z + fd(B) - 0.1];
+}
+
+// Where a rider stands in a gondola cabin at (at.x, at.z) heading at.heading:
+// seat 0 on its left, 1 on its right, the rest between (unseen).
+function seatAt(at, seat) {
+  const sx = seat === 0 ? -0.03 : seat === 1 ? 0.03 : 0, h = at.heading || 0;
+  return [at.x + sx * Math.cos(h), at.z - sx * Math.sin(h)];
 }
 
 // A villager's own luck, from 0 to 1, the same every frame (the departing,

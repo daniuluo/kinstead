@@ -162,6 +162,9 @@ export class WorldView {
     b.door = this._doorOf(model, mesh, b);
     b.foot = model.foot;   // all it stands on, in world space (see world/pose.js)
     b.open = !!model.open;   // open-air: villagers wander in it rather than going in
+    // a gondola station's way up from the street and its deck, for its riders
+    b.stair = model.stair ? model.stair.map(p => toWorld(p)) : null;
+    b.deck = model.deck ? toWorld(model.deck) : null;
     this.items.set(b.id, item);
     if (animate) {
       mesh.scale.set(1, 0.01, 1);
@@ -202,6 +205,7 @@ export class WorldView {
     b.door = this._doorOf(old || target, mesh, b);
     b.foot = target.foot;
     b.open = !!(old || target).open;
+    b.stair = b.deck = null;
     this.items.set(b.id, item);
     this._refreshSite(item);
     if (animate) this.dust(cx, b.baseY, cz, b.size, false);

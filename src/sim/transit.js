@@ -112,18 +112,27 @@ function carriageModel(color) {
 // below the cable.
 function cabinModel(color) {
   const gb = new GeoBuilder();
-  const F = -G_HANG, H = 0.15, W = 0.12, D = 0.15;
+  // tall enough inside for a grown-up villager (0.15) to stand in, and narrow
+  // enough to pass one on the other cable (2 G_OFF over) with room between
+  const F = -G_HANG, H = 0.19, W = 0.13, D = 0.16, SILL = 0.065, T = 0.008;
   gb.box(0, -0.012, 0, 0.026, 0.03, 0.06, '#2b2b2e');
   gb.box(0, F + H + 0.015, 0, 0.012, -0.012 - (F + H + 0.015), 0.012, '#4a5055');
   gb.box(0, F + H + 0.012, 0, 0.05, 0.012, 0.03, '#4a5055');
-  gb.cbox(0, F, 0, W, H, D, color, 0, 0.018);
-  gb.box(0, F - 0.008, 0, W - 0.02, 0.012, D - 0.02, '#2b2b2e');
-  gb.cbox(0, F + H, 0, W + 0.008, 0.018, D + 0.008, '#e8e2d4', 0, 0.008);
-  gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
+  // the floor, panels in the line's colour up to the sills, a post at each
+  // corner and a rail along the tops of the windows, which are open above
+  // the sills so the riders inside can be seen; the roof over it all
+  gb.box(0, F - 0.008, 0, W, 0.014, D, '#2b2b2e');
   for (const s of [-1, 1]) {
-    gb.box(0, F + 0.07, s * (D / 2 + 0.002), W - 0.03, 0.06, 0.006, '#34475b');
-    gb.box(s * (W / 2 + 0.002), F + 0.07, 0, 0.006, 0.06, D - 0.03, '#34475b');
+    gb.box(0, F, s * (D / 2 - T / 2), W, SILL, T, color);
+    gb.box(s * (W / 2 - T / 2), F, 0, T, SILL, D, color);
+    gb.box(0, F + H - 0.02, s * (D / 2 - T / 2), W, 0.02, T, color);
+    gb.box(s * (W / 2 - T / 2), F + H - 0.02, 0, T, 0.02, D, color);
   }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * (W / 2 - 0.008), F, sz * (D / 2 - 0.008), 0.016, H, 0.016, color);
+  gb.cbox(0, F + H, 0, W + 0.01, 0.018, D + 0.01, '#e8e2d4', 0, 0.008);
+  // a lamp under the roof, lit at night
+  gb.glow(WARM[0], WARM[1], WARM[2], 1.6);
+  gb.box(0, F + H - 0.012, 0, 0.034, 0.01, 0.034, '#ffe2a0');
   gb.noGlow();
   return gb.build();
 }
@@ -532,6 +541,34 @@ export class Transit {
     return changed;
   }
 
+  // The headings each gondola station's cables leave it on, to the next
+  // station along each of its lines and back (b.cables, worked out afresh,
+  // never saved), so its way up stands clear of the cabins coming and
+  // going; redrawing those that change.
+  _exits() {
+    const w = this.world, out = new Map();
+    for (const line of w.lines) {
+      if (line.mode !== 'gondola') continue;
+      const st = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
+      for (let i = 0; i + 1 < st.length; i++) {
+        const a = st[i], b = st[i + 1], h = Math.atan2(b.x - a.x, b.z - a.z);
+        for (const [s, k] of [[a, h], [b, h + Math.PI]]) {
+          const l = out.get(s.id) || [];
+          const r = Math.round(Math.atan2(Math.sin(k), Math.cos(k)) * 100) / 100;
+          if (!l.includes(r)) l.push(r);
+          out.set(s.id, l);
+        }
+      }
+    }
+    for (const b of w.buildings.values()) {
+      if (b.type !== 'gondola') continue;
+      const l = (out.get(b.id) || []).sort((x, y) => x - y);
+      if (l.join() === (b.cables || []).join()) continue;
+      if (l.length) b.cables = l; else delete b.cables;
+      w.emit('building:refit', b);
+    }
+  }
+
   // Can a pylon stand at (x, z), and how good a spot is it: 0 open ground,
   // 1 a field or a park, 2 the verge of a road (near the edge of its tile);
   // -1 not at all (on a building, in the road, on track or in water).
@@ -679,6 +716,7 @@ export class Transit {
       }
       if (!this._lift(lifts)) break;
     }
+    this._exits();
     this.routes.clear();
     for (const line of w.lines) {
       // (a gondola line with its stations held at those heights; it doesn't
@@ -795,11 +833,53 @@ export class Transit {
     this.game.agents.go(r, q.dest);
   }
 
-  _dropOff(p, stop) {
+  // A passenger off at stop (at: where a gondola cabin stands there, to
+  // step out of it), or home if the line is gone. Returns how long stepping
+  // out takes.
+  _dropOff(p, stop, at = null) {
     this.riders.delete(p.r.id);
-    if (!this.world.residents.has(p.r.id)) return;
-    if (stop) this.game.agents.alight(p.r, stop, p.dest);
-    else { p.r.loc = 'in'; p.r.at = p.r.home; }
+    if (!this.world.residents.has(p.r.id)) return 0;
+    if (stop) return this.game.agents.alight(p.r, stop, p.dest, at) || 0;
+    if (p.r.walk) this.game.agents._drop(p.r.walk);
+    p.r.loc = 'in'; p.r.at = p.r.home;
+    return 0;
+  }
+
+  // How high a gondola cabin's floor stands (its riders stand on it).
+  cabinFloor(v) { return v.meshes[0].position.y - G_HANG + 0.006; }
+
+  // Where on a gondola station's deck a villager waits: round its middle,
+  // clear of the way the cabins of every line through it pass (world
+  // [x, z] spots, at the deck's height).
+  deckSpots(stop) {
+    const d = stop.deck;
+    if (!d) return null;
+    const segs = [];
+    for (const line of this.world.lines) {
+      const r = line.mode === 'gondola' && line.stops.includes(stop.id) ? this.routes.get(line.id) : null;
+      if (!r) continue;
+      for (let i = 0; i + 1 < r.pts.length; i++) {
+        const a = r.pts[i], b = r.pts[i + 1];
+        if (Math.hypot((a[0] + b[0]) / 2 - d.x, (a[1] + b[1]) / 2 - d.z) < 0.7) segs.push([a, b]);
+      }
+    }
+    const away = (x, z, [a, b]) => {
+      const ex = b[0] - a[0], ez = b[1] - a[1], L2 = ex * ex + ez * ez || 1e-9;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / L2));
+      return Math.hypot(x - a[0] - ex * t, z - a[1] - ez * t);
+    };
+    const all = [];
+    for (let k = 0; k < 16; k++) {
+      const ang = (k * Math.PI) / 8;
+      for (const rad of [0.22, 0.17]) {
+        const x = d.x + Math.sin(ang) * rad, z = d.z + Math.cos(ang) * rad;
+        all.push([x, z, Math.min(Infinity, ...segs.map(sg => away(x, z, sg)))]);
+      }
+    }
+    // (on a busy deck, where nowhere is quite clear, the spots furthest from
+    // the cabins' way)
+    const clear = all.filter(p => p[2] > 0.17);
+    return (clear.length ? clear : all.sort((a, b) => b[2] - a[2]).slice(0, 3)).map(p => [p[0], p[1]]);
   }
 
   forget(r) {
@@ -821,9 +901,14 @@ export class Transit {
     const w = this.world, route = v.route;
     const stop = w.buildings.get(mark.stop);
     if (!stop) return;
+    // a gondola cabin stands here, its riders step out and in (and it waits
+    // for them); the waiting board only once up on the deck
+    const cable = v.line.mode === 'gondola', at = cable ? this._sample(route, mark.s) : null;
+    if (at) at.v = v;
+    let wait = 0;
     const keep = [];
     for (const p of v.passengers) {
-      if (p.alight === mark.stop) this._dropOff(p, stop);
+      if (p.alight === mark.stop) wait = Math.max(wait, this._dropOff(p, stop, at));
       else keep.push(p);
     }
     v.passengers = keep;
@@ -832,14 +917,15 @@ export class Transit {
     const remain = [];
     let fares = 0;
     for (const q of list) {
-      if (q.plan.line === v.line && (q.plan.at == null || q.plan.at === v.next || route.marks[q.plan.at]?.stop !== mark.stop) && v.passengers.length < cap && this.world.residents.has(q.r.id)) {
-        this.game.agents.board(q.r);
+      if (q.plan.line === v.line && (q.plan.at == null || q.plan.at === v.next || route.marks[q.plan.at]?.stop !== mark.stop) && v.passengers.length < cap && this.world.residents.has(q.r.id) && this.game.agents.onDeck(q.r)) {
+        wait = Math.max(wait, this.game.agents.board(q.r, at && { ...at, seat: v.passengers.length }) || 0);
         v.passengers.push({ r: q.r, alight: q.plan.alight.id, dest: q.dest });
         this.riders.set(q.r.id, v);
         fares += this.game.sim.recordVisit(stop, TRANSIT[v.line.mode].fare);
       } else remain.push(q);
     }
     this.waiting.set(mark.stop, remain);
+    if (wait) v.dwell = Math.max(v.dwell, wait);
     if (fares) {
       const p = v.meshes[0].position;
       this.game.emit('coins', { x: p.x, y: p.y + 0.4, z: p.z, v: fares });
