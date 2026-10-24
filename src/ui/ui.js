@@ -42,6 +42,7 @@ import { roadSelTool, roadSelHTML, roadSelAct, bindRoadSel, dressAct, boulevardH
 import { roadRun } from '../world/roadEdit.js';
 import { boulevardTiles } from '../world/boulevard.js';
 import { perfHTML, bindPerf, readPerf, group, check, seg, segValue, bindSegs } from './perfSettings.js';
+import { minionIcon, MINION, MINIONS } from './minion.js';
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,7 +60,7 @@ const ICONS = {
   '🔓': 'lock_open', '⬆': 'arrow_upward', '⬇': 'download', '🧰': 'work', '💸': 'money_off', '🎥': 'videocam', '💻': 'computer',
   '☁': 'cloud', '📁': 'folder', '🧳': 'luggage', '🎉': 'celebration', '💡': 'lightbulb', '💾': 'save', '📊': 'bar_chart',
   '⚙': 'settings', '❓': 'help', '👁': 'layers', '🌅': 'wb_twilight', '☀': 'light_mode', '🌙': 'dark_mode', '🌸': 'local_florist',
-  '🍂': 'eco', '❄': 'ac_unit', '🧑': 'person', '🧒': 'child_care', '🧓': 'elderly', '👪': 'groups', '🎲': 'casino',
+  '🍂': 'eco', '❄': 'ac_unit', '🎲': 'casino',
   '🐟': 'set_meal', '🌾': 'grass', '🪓': 'carpenter', '🔨': 'hardware', '🥖': 'bakery_dining', '🍺': 'sports_bar',
   '🧺': 'shopping_basket', '🏛': 'account_balance', '🌷': 'local_florist', '🌼': 'filter_vintage', '🚉': 'train', '🏠': 'home',
   '😢': 'sentiment_dissatisfied', '🗽': 'person_pin', '🧱': 'construction', '🏗': 'construction', '🏘': 'holiday_village',
@@ -67,9 +68,11 @@ const ICONS = {
   '🥕': 'nutrition', '🥩': 'kebab_dining', '👞': 'steps', '🧵': 'checkroom', '🔧': 'build', '💊': 'medication', '📖': 'menu_book',
   '☕': 'local_cafe', '🏦': 'savings', '✉': 'mail', '🏢': 'business_center', '🏬': 'local_mall', '🛝': 'toys', '🎾': 'sports_tennis', '⚽': 'sports_soccer',
 };
-const EMOJI_RE = new RegExp(Object.keys(ICONS).join('|'), 'g');
+// ...and people as little minions, like the villagers themselves (ui/minion.js).
+const SVG_ICONS = { '🧑': MINION, '🧒': MINION, '🧓': MINION, '👪': MINIONS };
+const EMOJI_RE = new RegExp([...Object.keys(ICONS), ...Object.keys(SVG_ICONS)].join('|'), 'g');
 export function ico(html) {
-  return String(html).replace(/️/g, '').replace(/🪙 ?/gu, '$$').replace(EMOJI_RE, (m) => `<span class="ms">${ICONS[m]}</span>`);
+  return String(html).replace(/️/g, '').replace(/🪙 ?/gu, '$$').replace(EMOJI_RE, (m) => `<span class="ms">${SVG_ICONS[m] || ICONS[m]}</span>`);
 }
 
 const TOOLS = [
@@ -124,6 +127,8 @@ export class UI {
     $('showUI').onclick = () => this.setUIHidden(false);
     $('btnBudget').onclick = () => this.showBudget();
     $('btnPeople').onclick = () => this.showPeople();
+    // the townsfolk, as a pair of minions
+    for (const el of [$('pop').previousElementSibling, $('btnPeople').firstElementChild]) el.innerHTML = MINIONS;
     const insp = $('inspector');
     // where it was dragged to (on a smaller screen it is brought back on when it opens)
     try { const p = JSON.parse(localStorage.getItem('hearthvale.win.inspector') || 'null'); if (p) { insp.style.left = `${p.x}px`; insp.style.top = `${p.y}px`; insp.style.right = 'auto'; } } catch {}
@@ -629,7 +634,7 @@ export class UI {
         h += `<div class="sec"><h5>${many ? `${fams.size} households` : 'Household'}</h5>`;
         for (const members of fams.values()) {
           if (many) h += `<div class="hh">The ${esc(members[0].last)} ${members.length > 1 ? 'family' : 'household'} <span class="muted">· ${members.length}</span></div>`;
-          h += `<div class="chips">${members.map(r => `<span class="chip link" data-act="resident" data-id="${r.id}">${ageIcon(r)} ${esc(r.first)} <i>${Math.floor(yearsOf(r))}</i></span>`).join('')}</div>`;
+          h += `<div class="chips">${members.map(r => `<span class="chip link" data-act="resident" data-id="${r.id}">${minionIcon(r)} ${esc(r.first)} <i>${Math.floor(yearsOf(r))}</i></span>`).join('')}</div>`;
         }
         h += '</div>';
       }
@@ -747,7 +752,7 @@ export class UI {
     const moodE = mood >= 75 ? '😄' : mood >= 55 ? '🙂' : mood >= 40 ? '😐' : '😟';
     let work = job ? `<span class="chip link" data-act="building" data-id="${job.id}">${esc(BUILDINGS[job.type].levels[job.level].name)}</span>` :
       (r.age === 'adult' ? 'Looking for work' : r.age === 'child' ? 'Student' : 'Retired');
-    let h = `<div class="head"><div class="big">${ageIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age}, ${Math.floor(yearsOf(r))} · ${moodE} ${mood}%</div></div></div>`;
+    let h = `<div class="head"><div class="big">${minionIcon(r)}</div><div><h3>${esc(r.first)} ${esc(r.last)}</h3><div class="sub">${age}, ${Math.floor(yearsOf(r))} · ${moodE} ${mood}%</div></div></div>`;
     h += `<div class="sec"><div class="row"><span>Now</span><b>${esc(ag.activity(r))}</b></div>`;
     h += `<div class="row"><span>Home</span><b>${home ? `<span class="chip link" data-act="building" data-id="${home.id}">${esc(BUILDINGS[home.type].levels[home.level].name)}</span>` : 'Homeless'}</b></div>`;
     h += `<div class="row"><span>Work</span><b>${work}</b></div>`;
@@ -778,7 +783,7 @@ export class UI {
     h += `<div class="sec"><h5>Personality</h5><div class="chips">${traits.map(t => `<span class="chip" title="${esc(TRAITS[t].desc)}">${esc(TRAITS[t].name)}</span>`).join('')}</div>`;
     h += `<div class="note">${traits.map(t => esc(TRAITS[t].desc)).join('. ')}.</div></div>`;
     const rel = relativesOf(w, r), friends = friendsOf(w, r);
-    const link = (o, label) => `<span class="chip link" data-act="resident" data-id="${o.id}">${ageIcon(o)} ${esc(o.first)}${o.last !== r.last ? ' ' + esc(o.last[0]) + '.' : ''} <i>${label}</i></span>`;
+    const link = (o, label) => `<span class="chip link" data-act="resident" data-id="${o.id}">${minionIcon(o)} ${esc(o.first)}${o.last !== r.last ? ' ' + esc(o.last[0]) + '.' : ''} <i>${label}</i></span>`;
     if (rel.length) h += `<div class="sec"><h5>Family</h5><div class="chips">${rel.map(x => link(x.r, x.role)).join('')}</div></div>`;
     h += `<div class="sec"><h5>Friends</h5><div class="chips">${friends.length ? friends.map(x => link(x.r, x.ctx)).join('') : '<span class="muted">Keeps to themselves</span>'}</div></div>`;
     h += `<div class="actions"><button class="btn ${this.game.follow === r.id ? 'gold' : 'primary'}" data-act="follow">${this.game.follow === r.id ? '◉ Following' : '🎥 Follow'}</button><button class="btn" data-act="people">👪 All villagers</button></div>`;
@@ -1774,7 +1779,7 @@ export class UI {
         const total = list.length;
         list = list.slice(0, 400);
         c.querySelector('#pplN').textContent = total > 400 ? `showing 400 of ${fmt(total)}` : `${fmt(total)} shown`;
-        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${ageIcon(x.r)} ${esc(x.name)}</td><td class="num">${Math.floor(x.years)}</td><td>${EDU[x.edu]}</td><td>${esc(x.home) || '—'}</td><td>${x.school ? (x.school.ok ? esc(x.school.text) : '<span class="bad">No school place</span>') : x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
+        body.innerHTML = ico(list.map(x => `<tr data-id="${x.r.id}"><td>${minionIcon(x.r)} ${esc(x.name)}</td><td class="num">${Math.floor(x.years)}</td><td>${EDU[x.edu]}</td><td>${esc(x.home) || '—'}</td><td>${x.school ? (x.school.ok ? esc(x.school.text) : '<span class="bad">No school place</span>') : x.job ? esc(x.job) : '<span class="bad">Looking for work</span>'}</td>` +
           `<td class="num">${x.pay ? '$' + x.pay.toFixed(1) : '—'}</td><td class="num ${x.wealth != null && x.wealth < 0 ? 'bad' : ''}">${x.wealth == null ? '—' : (x.wealth < 0 ? '−$' : '$') + fmt(Math.abs(x.wealth))}</td><td class="num">${x.mood}%</td><td class="traits">${x.traits.map(t => TRAITS[t].name).join(', ')}</td></tr>`).join(''));
         for (const th of c.querySelectorAll('th')) th.querySelector('.sort').textContent = th.dataset.k === st.k ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
       };
@@ -1841,7 +1846,6 @@ function toolKey(t) {
   }
 }
 
-function ageIcon(r) { return r.age === 'child' ? '🧒' : r.age === 'elder' ? '🧓' : '🧑'; }
 
 function nextTitle(pop) {
   for (const t of TITLES) if (t.pop > pop) return `${t.name} at ${t.pop}`;

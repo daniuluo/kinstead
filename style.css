@@ -40,6 +40,11 @@ body.pixel #app canvas { image-rendering: pixelated; }
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
 }
 .ms.coinico { color: #8a6400; }
+/* people as minions (src/ui/minion.js): plain ones in place of an icon, and
+   each villager's own in their colours */
+.ms .mn1 { display: block; width: 1em; height: 1em; }
+.mn { display: inline-block; width: 0.87em; height: 1.35em; vertical-align: -0.36em; }
+.inspector .head .big .mn { width: 34px; height: 52px; vertical-align: 0; }
 
 #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
 #hud > * { pointer-events: auto; }
