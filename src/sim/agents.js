@@ -10,6 +10,7 @@ import { curvesAt } from '../world/roadShape.js';
 import { workArea } from '../render/buildings.js';
 import { VillagerView, lookOf, dressOf, carryFrom, strideLen } from '../render/villagers.js';
 import { traitsOf } from './people.js';
+import { plotGrid, plotPath, stepsGrid, stepAt } from './plotNav.js';
 
 // How villagers look and are drawn lives in render/villagers.js.
 export { lookOf };
@@ -38,6 +39,35 @@ export function visitorCap(b) {
 
 const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sp = new THREE.Sphere(), _v = new THREE.Vector3();
 
+// The top of a doorstep above its door's threshold (see door() in
+// render/buildings.js).
+const STEP_UP = 0.02;
+
+// How high a walker stands: on the ground or the street, but on the way in
+// to a door or out of it, up the steps, the porch and the portico in front
+// of it as the model has them (wk.stairsIn / wk.stairsOut, from stepsGrid),
+// or where the model isn't known, up on the step and the threshold of the
+// door (which on a slope may be well above the street), hopping on to the
+// step over the last bit of the way to it and down again on the way out.
+export function walkY(w, wk) {
+  const g = w.walkHeight(wk.x, wk.z);
+  // leaving an open plot: on its ground (which may stand above the street
+  // on a slope) to its edge, then down to the street
+  if (wk.plotOut && wk.seg < wk.plotOut) return wk.seg < wk.plotOut - 1 ? wk.plotY : wk.plotY + (g - wk.plotY) * wk.t;
+  if (wk.floorIn == null && wk.floorOut == null) return g;
+  const n = wk.pts.length, s = wk.seg;
+  const st = wk.stairsOut && s < wk.doorOut ? wk.stairsOut : wk.stairsIn && s >= n - wk.doorIn - 2 ? wk.stairsIn : null;
+  if (st) return Math.max(g, stepAt(st, wk.x, wk.z));
+  // the step, the doorway and the step inside stand at the floor
+  const at = (i) => (wk.floorOut != null && i < Math.min(3, wk.doorOut) ? wk.floorOut : wk.floorIn != null && i >= n - Math.min(3, wk.doorIn) ? wk.floorIn : null);
+  const ya = at(s), yb = at(s + 1);
+  if (ya == null && yb == null) return g;
+  if (ya != null && yb != null) return Math.max(g, ya + (yb - ya) * wk.t);
+  const a = wk.pts[s], b = wk.pts[s + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const off = yb != null ? (1 - wk.t) * L : wk.t * L;   // how far from the step
+  return Math.max(g, (yb ?? ya) - Math.max(0, off - 0.02) * 4);
+}
+
 // Where a door's path meets the edge of its plot, straight out from the door
 // (a little past it, on the pavement); null when the door is at the front.
 function gateOf(B, d) {
@@ -60,6 +90,8 @@ export class Agents {
     this.plannedDay = -1;
     const scene = game.renderer.scene;
     this.view = new VillagerView(scene, CONFIG.MAX_AGENTS);
+    this._grids = new WeakMap();   // a drawn model → the way about its plot (plotNav)
+    this._stairs = new WeakMap();  // a drawn model → the steps up to its door
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
     this.ring.renderOrder = 8;
     this.ring.visible = false;
@@ -288,10 +320,23 @@ export class Agents {
     // further forward than the plot edge)
     if (out) { pts.shift(); pts.unshift(...out); }
     if (into) { pts.pop(); pts.push(...into); }
-    if (startPos) pts.unshift([startPos.x, startPos.z]);
+    let plotOut = 0;
+    if (startPos) {
+      // out of an open plot, round whatever stands in the way
+      const g = this._gridOf(A), way = g ? plotPath(g, startPos.x, startPos.z, pts[0][0], pts[0][1]) : null;
+      if (way) { way.pop(); pts.unshift(...way); }
+      pts.unshift([startPos.x, startPos.z]);
+      plotOut = 1 + (way ? way.length : 0);
+    }
     const wk = this._makeWalker(r.lk, pts, onArrive);
+    wk.plotOut = plotOut;
+    wk.plotY = A.baseY + 0.012;
     wk.doorOut = out ? out.length : 0;
     wk.doorIn = into ? into.length : 0;
+    wk.floorOut = out ? A.door.y + STEP_UP : null;
+    wk.floorIn = into ? B.door.y + STEP_UP : null;
+    wk.stairsOut = out ? this._stairsOf(A) : null;
+    wk.stairsIn = into ? this._stairsOf(B) : null;
     wk.dest = B.id;
     // the shopping carried home, and a satchel on the way to and from school
     wk.carry = carryFrom(A, r, this.world.day);
@@ -310,7 +355,7 @@ export class Agents {
       lk, pts, seg: 0, t: 0, x: pts[0][0], z: pts[0][1], y: 0,
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
-      area: null, ring: false, baseY: 0, working: false, tool: null, target: null,
+      area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
@@ -319,6 +364,33 @@ export class Agents {
   }
 
   _drop(wk) { this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+
+  // The way about B's open plot round what stands on it (plotNav), from its
+  // model as drawn: null headless, on a building site, or with no model.
+  _gridOf(B) {
+    const it = B && !B.con && this.game.view && this.game.view.items && this.game.view.items.get(B.id);
+    const mesh = it && it.mesh;
+    if (!mesh || !mesh.geometry) return null;
+    let g = this._grids.get(mesh);
+    if (g === undefined) { g = plotGrid(B, mesh, B.x, B.z, B.x + fw(B), B.z + fd(B)); this._grids.set(mesh, g); }
+    return g;
+  }
+
+  // The steps up to B's door as its model has them (plotNav stepsGrid): null
+  // headless, or with no door or model.
+  _stairsOf(B) {
+    const it = B && B.door && this.game.view && this.game.view.items && this.game.view.items.get(B.id);
+    const mesh = it && it.mesh;
+    if (!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) return null;
+    let s = this._stairs.get(mesh);
+    if (s === undefined) {
+      // only the strip from the door out to the street
+      const d = B.door, L = Math.max(fw(B), fd(B)) + 0.2, ex = d.x + d.dx * L, ez = d.z + d.dz * L;
+      s = stepsGrid(B, mesh, Math.min(d.x, ex) - 0.3, Math.min(d.z, ez) - 0.3, Math.max(d.x, ex) + 0.3, Math.max(d.z, ez) + 0.3, Math.max(d.y, B.baseY) + 0.15);
+      this._stairs.set(mesh, s);
+    }
+    return s;
+  }
 
   _arrive(r, destId) {
     const w = this.world;
@@ -358,6 +430,10 @@ export class Agents {
       wk.spots = !site && !wk.working && B.spots && B.spots.length ? B.spots : null;
       wk.idle = 0.3;
       wk.target = null;
+      wk.route = null;
+      wk.floorIn = wk.floorOut = null;
+      wk.stairsIn = wk.stairsOut = null;
+      wk.plotOut = 0;
       r.loc = 'out';
     } else {
       if (r.walk) this._drop(r.walk);
@@ -456,6 +532,7 @@ export class Agents {
       const delay = Math.random() * 1.5;
       for (let k = 0; k < 2; k++) pts.unshift([startEdge.x, startEdge.z]);
       const wk = this._makeWalker(r.lk, pts, () => { r.loc = 'in'; r.at = home.id; this._drop(wk); this.planDay(r, w.hours); });
+      if (into) { wk.doorIn = into.length; wk.floorIn = home.door.y + STEP_UP; wk.stairsIn = this._stairsOf(home); }
       wk.delay = delay;
       wk.r = r;
       r.walk = wk;
@@ -483,7 +560,7 @@ export class Agents {
       const out = this._doorway(from, r, false);
       if (out) { pts.shift(); pts.unshift(...out); }
       const wk = this._makeWalker(r.lk, pts, () => this._drop(wk));
-      if (out) wk.doorOut = out.length;
+      if (out) { wk.doorOut = out.length; wk.floorOut = from.door.y + STEP_UP; wk.stairsOut = this._stairsOf(from); }
       wk.ghost = true;
     }
     this.game.sim.dirty = true;
@@ -560,29 +637,43 @@ export class Agents {
         wk.z = a[1] + (b[1] - a[1]) * wk.t;
         const hd = Math.atan2(b[0] - a[0], b[1] - a[1]);
         wk.heading += angDiff(hd, wk.heading) * Math.min(1, dt * 12);
-        wk.y = w.walkHeight(wk.x, wk.z);
+        wk.y = walkY(w, wk);
         wk.phase += (want - rem) / strideLen(wk.lk.scale);
         wk.moving = speed > 0;
       } else if (wk.mode === 'wander') {
         wk.y = wk.baseY;
         if (wk.idle > 0) { wk.idle -= dt * speed; wk.moving = false; if (wk.working && speed) wk.phase += dt * speed * 4; continue; }
+        if (!wk.target && wk.route && wk.route.length) wk.target = wk.route.shift();
         if (!wk.target) {
           const [x0, z0, x1, z1] = wk.area;
-          if (wk.ring) {
-            // builders work their way round the scaffolding
-            const wx = x1 - x0, wz = z1 - z0, t = Math.random() * 2 * (wx + wz);
-            wk.target = t < wx ? [x0 + t, z0] : t < wx + wz ? [x1, z0 + t - wx] : t < 2 * wx + wz ? [x1 - (t - wx - wz), z1] : [x0, z1 - (t - 2 * wx - wz)];
-          } else if (wk.spots) {
-            const p = wk.spots[(Math.random() * wk.spots.length) | 0];
-            wk.target = [p[0] + (Math.random() - 0.5) * 0.08, p[1] + (Math.random() - 0.5) * 0.08];
-          } else wk.target = [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
+          const pick = () => {
+            if (wk.ring) {
+              // builders work their way round the scaffolding
+              const wx = x1 - x0, wz = z1 - z0, t = Math.random() * 2 * (wx + wz);
+              return t < wx ? [x0 + t, z0] : t < wx + wz ? [x1, z0 + t - wx] : t < 2 * wx + wz ? [x1 - (t - wx - wz), z1] : [x0, z1 - (t - 2 * wx - wz)];
+            }
+            if (wk.spots) {
+              const p = wk.spots[(Math.random() * wk.spots.length) | 0];
+              return [p[0] + (Math.random() - 0.5) * 0.08, p[1] + (Math.random() - 0.5) * 0.08];
+            }
+            return [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
+          };
+          wk.target = pick();
+          // the way there round the buildings, sheds and stalls on the plot;
+          // somewhere else if there's no way to it (shut in by railings, say)
+          const g = wk.ring ? null : this._gridOf(wk.r && w.buildings.get(wk.r.at));
+          let way = g ? plotPath(g, wk.x, wk.z, wk.target[0], wk.target[1]) : null;
+          for (let k = 0; g && !way && k < 3; k++) { wk.target = pick(); way = plotPath(g, wk.x, wk.z, wk.target[0], wk.target[1]); }
+          if (way && way.length) { wk.target = way.shift(); wk.route = way; }
+          else if (g) { wk.target = null; wk.idle = 1 + Math.random() * 2; wk.moving = false; continue; }
         }
         const dx = wk.target[0] - wk.x, dz = wk.target[1] - wk.z;
         const d = Math.hypot(dx, dz);
         const step = move * (wk.lk.scale < 0.8 ? 0.9 : 0.45);
         if (d <= step) {
           wk.x = wk.target[0]; wk.z = wk.target[1]; wk.target = null;
-          wk.idle = wk.working ? 1.5 + Math.random() * 3 : 1 + Math.random() * 5;
+          // (a corner on the way: straight on round it)
+          if (!(wk.route && wk.route.length)) wk.idle = wk.working ? 1.5 + Math.random() * 3 : 1 + Math.random() * 5;
         } else {
           wk.x += (dx / d) * step; wk.z += (dz / d) * step;
           wk.heading += angDiff(Math.atan2(dx, dz), wk.heading) * Math.min(1, dt * 10);
@@ -601,26 +692,59 @@ export class Agents {
 
   // The walkers to draw this frame: those in view, with a tile to spare for
   // their shadows (off-screen villagers cost time and look no different),
-  // and of those, if the Performance settings ask (settings.villagers),
-  // only some, or only those near the middle of the view. The selected
-  // villager always shows. Sets wk.shown, which their lanterns follow.
+  // and of those, as the Performance settings ask (settings.villagers), only
+  // some where crowds gather ('crowds', the default), all, about half, or
+  // only those near the middle of the view. The selected villager always
+  // shows. Sets wk.shown, which their lanterns follow.
   _drawList() {
     const out = this._shown || (this._shown = []);
     out.length = 0;
-    const g = this.game, cam = g.renderer && g.renderer.camera, mode = (g.settings && g.settings.villagers) || 'all';
+    const g = this.game, cam = g.renderer && g.renderer.camera, mode = (g.settings && g.settings.villagers) || 'crowds';
     if (cam) _fr.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     const c = cam && g.renderer.rig.target, sel = this.selected;
+    const crowd = mode === 'crowds' ? this._crowds() : null;
     for (const wk of this.walkers) {
       let show = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
       if (show && mode !== 'all' && !(sel && wk.r === sel)) {
         // the same half of the town every frame (the lane is each villager's own)
         if (mode === 'some') show = (wk.lk.lane * 997) % 1 < 0.5;
+        else if (crowd) show = luck(wk) < crowd.shareAt(wk.x, wk.z);
         else if (c) show = Math.hypot(wk.x - c.x, wk.z - c.z) < 12;
       }
       wk.shown = show;
       if (show) out.push(wk);
     }
     return out;
+  }
+
+  // How crowded each patch of the town is: in each square of CROWD_CELL
+  // tiles, the share of the villagers out there to draw so that about
+  // CROWD_MAX show (all of them where there are fewer). It eases towards
+  // that a little each frame, so as a crowd gathers or thins villagers fade
+  // from view or back one at a time rather than all at once; it blends
+  // from one patch to the next (shareAt), so nobody blinks in or out at the
+  // edge of one; and as each one's luck is their own, the same ones stay in
+  // sight as they walk on.
+  _crowds() {
+    const C = CONFIG.CROWD_CELL, n = Math.ceil(this.world.N / C);
+    let cr = this._crowd;
+    if (!cr || cr.n !== n) {
+      cr = this._crowd = { n, count: new Uint16Array(n * n), share: new Float32Array(n * n).fill(1) };
+      const cl = (v) => Math.min(n - 1, Math.max(0, v));
+      cr.at = (wk) => cl(Math.floor(wk.z / C)) * n + cl(Math.floor(wk.x / C));
+      cr.shareAt = (x, z) => {
+        const fx = x / C - 0.5, fz = z / C - 0.5, i = Math.floor(fx), k = Math.floor(fz), u = fx - i, v = fz - k;
+        const S = cr.share, i0 = cl(i), i1 = cl(i + 1), k0 = cl(k) * n, k1 = cl(k + 1) * n;
+        return (S[k0 + i0] * (1 - u) + S[k0 + i1] * u) * (1 - v) + (S[k1 + i0] * (1 - u) + S[k1 + i1] * u) * v;
+      };
+    }
+    cr.count.fill(0);
+    for (const wk of this.walkers) cr.count[cr.at(wk)]++;
+    for (let i = 0; i < cr.share.length; i++) {
+      const want = Math.min(1, CONFIG.CROWD_MAX / Math.max(1, cr.count[i]));
+      cr.share[i] += (want - cr.share[i]) * 0.05;
+    }
+    return cr;
   }
 
   _render(dt) {
@@ -692,6 +816,13 @@ export class Agents {
 // Where builders walk on a building site: a ring just inside the plot edge.
 export function siteArea(B) {
   return [B.x + 0.1, B.z + 0.1, B.x + fw(B) - 0.1, B.z + fd(B) - 0.1];
+}
+
+// A villager's own luck, from 0 to 1, the same every frame (the departing,
+// who are no longer residents, go by their lane).
+function luck(wk) {
+  const v = wk.r ? wk.r.id * 0.6180339887 : wk.lk.lane * 997;
+  return v - Math.floor(v);
 }
 
 function angDiff(a, b) {

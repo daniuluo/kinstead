@@ -23,11 +23,12 @@ import * as THREE from 'three';
 import { GeoBuilder } from '../src/render/geo.js';
 import { buildModel, workArea } from '../src/render/buildings.js';
 import { STARTERS, loadStarter } from '../src/world/starters.js';
-import { World, fw, fd, isOpen } from '../src/world/world.js';
+import { World, fw, fd, isOpen, doorPoint } from '../src/world/world.js';
+import { plotPath } from '../src/sim/plotNav.js';
 import { growDemoTown } from '../src/world/demo.js';
 import { PathFinder } from '../src/sim/path.js';
 import { Sim } from '../src/sim/sim.js';
-import { Agents } from '../src/sim/agents.js';
+import { Agents, walkY } from '../src/sim/agents.js';
 import { Transit } from '../src/sim/transit.js';
 import { Animals } from '../src/sim/animals.js';
 import { Construction } from '../src/sim/construction.js';
@@ -108,7 +109,7 @@ class Solids {
     const d = model.door;
     if (d) { const [x, z] = toW(d.x, d.z); b.door = { x, y: d.y + b.baseY, z, dx: d.dx * co + d.dz * si, dz: -d.dx * si + d.dz * co, ground: b.baseY }; } else b.door = null;
     b.open = !!model.open;
-    this.items.set(b.id, { mesh: { geometry: (target || model).geo }, site: b.con ? { target: (target || model).geo } : null });
+    this.items.set(b.id, { mesh: { geometry: (target || model).geo, position: { x: cx, y: b.baseY, z: cz }, rotation: { y: th } }, site: b.con ? { target: (target || model).geo } : null });
     // a building site's walls are only part built: nothing solid yet
     if (b.con || !model.geo) { this.byB.set(b.id, []); return; }
     const P = model.geo.attributes.position.array, I = model.geo.attributes.pid.array;
@@ -237,11 +238,13 @@ function sweepDoors(game, S, F, lanes) {
       const pts = wk.pts, n = pts.length - 1;   // the last leg (door → inside) is the way in through the wall
       if (TRACE === B.id) console.log(`  trace #${B.id} lane ${lane}: doorIn ${wk.doorIn} · ${pts.slice(-6).map(([x, z]) => at(x, z)).join(' → ')}`);
       let found = null;
-      for (let s = Math.max(0, n - 1 - wk.doorIn - 1); s < n - 1 && !found; s++) {
+      // from the last point on the street, through the gate, up the step to the door
+      for (let s = Math.max(0, n - wk.doorIn - 1); s < n - 1 && !found; s++) {
         const [ax, az] = pts[s], [bx, bz] = pts[s + 1], L = Math.hypot(bx - ax, bz - az), k = Math.max(1, Math.ceil(L / 0.02));
         for (let j = 0; j <= k && !found; j++) {
           const x = ax + ((bx - ax) * j) / k, z = az + ((bz - az) * j) / k;
-          const h = S.hit(x, z, w.walkHeight(x, z));
+          Object.assign(wk, { seg: s, t: j / k, x, z });
+          const h = S.hit(x, z, walkY(w, wk));
           if (h) found = { h, x, z, own: h.p.b === B };
         }
       }
@@ -254,39 +257,55 @@ function sweepDoors(game, S, F, lanes) {
   }
 }
 
-// Strollers walk straight from one of a park's walks and seats to another;
-// outdoor workers and visitors anywhere in their area.
+// Strollers walk from one of a park's walks and seats to another, outdoor
+// workers and visitors to anywhere in their area: every such walk, from the
+// gate and from one spot to another, the way the villagers take it (round
+// what stands on the plot, where the game knows the way: plotNav).
 function sweepGrounds(game, S, F) {
-  const w = game.world;
+  const w = game.world, ag = game.agents;
   for (const B of w.buildings.values()) {
     if (!isOpen(B)) continue;
     const def = BUILDINGS[B.type];
-    if (B.spots && B.spots.length > 1) {
-      const sp = B.spots;
-      let bad = 0, pairs = 0, ex = null, kind = 'low';
-      for (let i = 0; i < sp.length; i++) for (let j = i + 1; j < sp.length; j++) {
-        pairs++;
-        const [ax, az] = sp[i], [bx, bz] = sp[j], L = Math.hypot(bx - ax, bz - az), k = Math.max(1, Math.ceil(L / 0.03));
-        for (let s = 0; s <= k; s++) {
-          const x = ax + ((bx - ax) * s) / k, z = az + ((bz - az) * s) / k;
-          const h = S.hit(x, z, B.baseY + 0.012);
-          if (h) { bad++; if (h.kind === 'wall') kind = 'wall'; ex ||= at(x, z) + ` (${h.p.b === B ? 'its own' : name(h.p.b)})`; break; }
+    const strolls = B.spots && B.spots.length > 1;
+    if (!strolls && !(def.outdoorWork || def.outdoor || B.open)) continue;
+    let goals;
+    if (strolls) goals = B.spots;
+    else {
+      const area = B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + fw(B) - 0.15, B.z + fd(B) - 0.15];
+      goals = [];
+      for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) goals.push([area[0] + ((area[2] - area[0]) * i) / 4, area[1] + ((area[3] - area[1]) * j) / 4]);
+    }
+    const g = ag._gridOf(B), gate = doorPoint(B);
+    // a stroller sets off again from where they stopped: the spot, or the
+    // open ground nearest it if the model has something standing on it
+    const stop = (p) => (g && (plotPath(g, gate.x, gate.z, p[0], p[1]) || []).at(-1)) || p;
+    const froms = [[gate.x, gate.z], ...(strolls ? B.spots.map(stop) : [])];
+    let walks = 0, bad = 0, walls = 0, ex = null;
+    for (const from of froms) for (const to of goals) {
+      if (from === to) continue;
+      // (with no way there, a villager goes somewhere else instead)
+      const p = g ? plotPath(g, from[0], from[1], to[0], to[1]) : [to];
+      if (!p) continue;
+      walks++;
+      const way = [from, ...p];
+      let hit = null;
+      for (let i = 0; i < way.length - 1 && !hit; i++) {
+        const [ax, az] = way[i], [bx, bz] = way[i + 1], L = Math.hypot(bx - ax, bz - az), k = Math.max(1, Math.ceil(L / 0.03));
+        for (let s2 = 0; s2 <= k && !hit; s2++) {
+          const x = ax + ((bx - ax) * s2) / k, z = az + ((bz - az) * s2) / k;
+          // (the gate itself is on the plot's edge, by the pavement)
+          if (i === 0 && from === froms[0] && Math.hypot(x - gate.x, z - gate.z) < 0.06) continue;
+          hit = S.hit(x, z, B.baseY + 0.012);
+          if (hit) hit = { ...hit, x, z };
         }
       }
-      if (bad) F.add(`strollers walk through ${kind === 'wall' ? 'something solid' : 'something low'}`, `${name(B)}: ${bad} of ${pairs} walks`, `${ex} #${B.id}`, kind === 'wall' && bad / pairs > 0.1);
-      for (const [x, z] of sp) { const h = S.hit(x, z, B.baseY + 0.012); if (h && h.kind === 'wall') F.add('a stroll ends inside something', name(B), `${at(x, z)} #${B.id}`); }
+      if (!hit) continue;
+      bad++;
+      const where = at(hit.x, hit.z) + ` (${hit.p.b === B ? 'its own' : name(hit.p.b)})`;
+      if (hit.kind === 'wall' && !walls++) ex = where;
+      else ex ||= where;
     }
-    const outdoorWork = def.outdoorWork || def.outdoor || B.open;
-    if (!outdoorWork || (B.spots && B.spots.length > 1)) continue;
-    const area = B.work || workArea(B) || [B.x + 0.15, B.z + 0.15, B.x + fw(B) - 0.15, B.z + fd(B) - 0.15];
-    let bad = 0, n = 0, ex = null, walls = 0;
-    for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
-      const x = area[0] + ((area[2] - area[0]) * i) / 8, z = area[1] + ((area[3] - area[1]) * j) / 8;
-      n++;
-      const h = S.hit(x, z, B.baseY + 0.012);
-      if (h) { bad++; if (h.kind === 'wall') walls++; ex ||= at(x, z) + ` (${h.p.b === B ? 'its own' : name(h.p.b)})`; }
-    }
-    if (bad) F.add(`work or wander area overlaps ${walls ? 'something solid' : 'something low'}`, `${name(B)}: ${bad} of ${n} points`, `${ex} #${B.id}`, walls / n > 0.15);
+    if (bad) F.add(`${strolls ? 'strollers' : 'workers or visitors'} walk through ${walls ? 'something solid' : 'something low'}`, `${name(B)}: ${bad} of ${walks} walks${g ? '' : ' (no way round known)'}`, `${ex} #${B.id}`, walls > 0);
   }
 }
 
@@ -447,7 +466,7 @@ function play(label, w) {
     for (const wk of game.agents.walkers) {
       if (wk.delay > 0) continue;
       samples++;
-      const y = wk.mode === 'wander' ? wk.baseY : w.walkHeight(wk.x, wk.z);
+      const y = wk.mode === 'wander' ? wk.baseY : wk.mode === 'path' ? wk.y : w.walkHeight(wk.x, wk.z);
       let skip = null, where = wk.mode;
       if (wk.mode === 'path') {
         const n = wk.pts.length;
