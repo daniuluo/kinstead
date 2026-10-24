@@ -12,12 +12,14 @@ import { fw, fd } from '../src/world/world.js';
 
 // name, the town, the canvas size (pixel art at 2× makes the picture half
 // that), what to look at, the zoom, the time of day and the season
-// (0 spring … 3 winter), and a quarter turn of the view (view).
+// (0 spring … 3 winter), and a quarter turn of the view (view); at: a
+// spot of its own to look at instead of a building.
 const SHOTS = [
   { name: 'hero', town: 'city', W: 1920, H: 960, focus: 'townhall', zoom: 0.8, hours: 10.5, season: 1 },
   { name: 'og', town: 'city', W: 1200, H: 630, focus: 'townhall', zoom: 0.95, hours: 10.5, season: 1, sky: true, scale: 2 },
   { name: 'highstreet', town: 'city', W: 960, H: 600, focus: 'arcade', zoom: 4, hours: 11, season: 1 },
   { name: 'estates', town: 'city', W: 960, H: 600, focus: 'cathedralclose', zoom: 4.6, hours: 14.5, season: 1 },
+  { name: 'variety', town: 'city', W: 960, H: 600, at: { x: 45.8, z: 53.6 }, view: 2, zoom: 5.4, hours: 11, season: 1 },
   { name: 'civic', town: 'city', W: 960, H: 600, focus: 'townhall', zoom: 3.4, hours: 14.5, season: 1 },
   { name: 'villagers', town: 'market', W: 960, H: 600, focus: 'bakery', lineup: true, zoom: 15, gap: 0.1, hours: 11, season: 1 },
   { name: 'night', town: 'city', W: 960, H: 600, focus: 'townhall', zoom: 2.1, hours: 21.6, season: 1 },
@@ -262,7 +264,7 @@ async function shoot(spec) {
   await loadTown(spec);
   const g = G(), w = g.world;
   settings(spec);
-  const p = spec.focus ? focusOn(w, spec.focus) : centre(w);
+  const p = spec.at || (spec.focus ? focusOn(w, spec.focus) : centre(w));
   if (spec.fields) plough(w, p);
   let pic;
   if (spec.lineup) {

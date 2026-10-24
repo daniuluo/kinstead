@@ -20,6 +20,7 @@ import {
   house, bench, lamp, bush, hedge, fence, footing, pavilion, shelter, swings, slide, seesaw, roundabout, sandpit, fort,
   stripes, goal, frontage, rowFrame, gravel, gatePiers, glassRoof, wallClock, cafeTable, tubPlant, sign, logs, ownPick,
 } from './buildings.js';
+import { planOf } from './forms.js';
 
 // How many steps a season's turn is drawn in, for parks (the world view
 // rebuilds them at each): fewer than the ground and the wild trees take,
@@ -1132,46 +1133,58 @@ M.playground = (c, L) => {
 // hoops and a peg and a pavilion with a veranda; the Tennis Courts a court
 // (grass, clay or asphalt) with its net and lines inside a wire fence, a
 // clubhouse and an umpire's chair. Which side the hut stands, the stripes
-// and the colours by the park's seed.
+// and the colours by the park's seed; and its plan (planOf): the lawn or the
+// court across the plot with the hut behind it, or turned to run back from
+// the street with the hut or clubhouse beside it.
 M.courts = (c, L) => {
   const { gb, rng, pal } = c;
   c.work = [-0.4, -0.4, 0.4, 0.4];
-  const m = ownPick(c, [-1, 1], 1), wall = ownPick(c, ['hedge', 'hedge', 'wall'], 2);
+  const m = ownPick(c, [-1, 1], 1), wall = ownPick(c, ['hedge', 'hedge', 'wall'], 2), turned = planOf(c, 2) === 1;
   spot(c, m * 0.28, -0.32); spot(c, -m * 0.2, 0.3); spot(c, 0, 0.1);
+  // where the lawn or court lies (gx, gz, its middle; w across, d deep), and
+  // where the hut or clubhouse stands (hx, hz) and which way it faces (hr)
+  const gx = turned ? -m * 0.1 : 0, gz = turned ? 0.04 : 0.12;
+  const hx = turned ? m * 0.36 : m * -0.3, hz = turned ? 0.02 : -0.36, hr = turned ? -m * Math.PI / 2 : 0;
   if (L < 2) {
-    const z0 = 0.12, w = 0.8, d = 0.6;
+    const w = turned ? 0.6 : 0.8, d = turned ? 0.78 : 0.6, z0 = gz;
     const along = ownPick(c, [false, true], 3);
-    stripes(c, 0, z0, w, d, L ? 6 : 8, L ? '#6fa848' : '#7fb04f', L ? '#82b85a' : '#90c060', along);
+    stripes(c, gx, z0, w, d, L ? 6 : 8, L ? '#6fa848' : '#7fb04f', L ? '#82b85a' : '#90c060', along);
     const edge = (x, z, ew, ed) => (wall === 'hedge' ? phedge(c, x, z, ew, ed, 0.05) : gb.cbox(x, c.gy(x, z) - 0.01, z, ew, 0.045, ed, STONE_L, 0, 0.006));
-    edge(0, z0 - d / 2 - 0.02, w + 0.04, 0.04);
-    for (const s of [-1, 1]) edge(s * (w / 2 + 0.02), z0, 0.04, d);
-    for (const s of [-1, 1]) edge(s * 0.26, z0 + d / 2 + 0.02, 0.32, 0.04);
+    edge(gx, z0 - d / 2 - 0.02, w + 0.04, 0.04);
+    for (const s of [-1, 1]) edge(gx + s * (w / 2 + 0.02), z0, 0.04, d);
+    for (const s of [-1, 1]) edge(gx + s * w * 0.33, z0 + d / 2 + 0.02, w * 0.4, 0.04);
     if (L === 0) {
-      for (let i = 0; i < 6; i++) { const x = rng.float(-0.3, 0.3), z = rng.float(-0.2, 0.3); gb.sphere(x, c.gy(x, z) + 0.012, z, 0.013, i % 2 ? '#2a2420' : '#5a2a22', 0); }
-      gb.sphere(0.02, c.gy(0.02, 0.1) + 0.007, 0.1, 0.007, '#f2ede0', 0);
-      const hx = m * -0.3, hz = -0.36;
-      gb.cbox(hx, c.gy(hx, hz), hz, 0.16, 0.13, 0.12, pal.wood, 0, 0.008);
-      gb.wedge(hx, c.gy(hx, hz) + 0.13, hz, 0.19, 0.15, 0.05, pal.roof, 0);
-      bench(c, m * 0.2, -0.36, 0);
+      for (let i = 0; i < 6; i++) { const x = gx + rng.float(-0.3, 0.3) * (w / 0.8), z = gz + rng.float(-0.32, 0.18) * (d / 0.6); gb.sphere(x, c.gy(x, z) + 0.012, z, 0.013, i % 2 ? '#2a2420' : '#5a2a22', 0); }
+      gb.sphere(gx + 0.02, c.gy(gx + 0.02, gz - 0.02) + 0.007, gz - 0.02, 0.007, '#f2ede0', 0);
+      gb.push(hx, 0, hz, hr);
+      gb.cbox(0, c.gy(0, 0), 0, 0.16, 0.13, 0.12, pal.wood, 0, 0.008);
+      gb.wedge(0, c.gy(0, 0) + 0.13, 0, 0.19, 0.15, 0.05, pal.roof, 0);
+      gb.pop();
+      bench(c, turned ? m * 0.36 : m * 0.2, turned ? -0.3 : -0.36, turned ? -m * Math.PI / 2 : 0);
     } else {
-      for (const [x, z] of [[-0.25, -0.08], [0.25, -0.08], [-0.25, 0.32], [0.25, 0.32], [0, 0.04], [0, 0.2]]) {
-        const y = c.gy(x, z);
-        for (const s of [-1, 1]) gb.box(x + s * 0.012, y, z, 0.004, 0.026, 0.004, LINE);
-        gb.box(x, y + 0.024, z, 0.028, 0.004, 0.004, LINE);
+      const k = w / 0.8, kd = d / 0.6;
+      for (const [x, z] of [[-0.25, -0.2], [0.25, -0.2], [-0.25, 0.2], [0.25, 0.2], [0, -0.08], [0, 0.08]]) {
+        const px = gx + x * k, pz = gz + z * kd, y = c.gy(px, pz);
+        for (const s of [-1, 1]) gb.box(px + s * 0.012, y, pz, 0.004, 0.026, 0.004, LINE);
+        gb.box(px, y + 0.024, pz, 0.028, 0.004, 0.004, LINE);
       }
-      gb.cyl(0, c.gy(0, 0.12), 0.12, 0.006, 0.006, 0.05, 5, '#c8423a');
-      for (let i = 0; i < 4; i++) { const x = rng.float(-0.25, 0.25), z = rng.float(-0.06, 0.32); gb.sphere(x, c.gy(x, z) + 0.01, z, 0.01, PAINT[i], 0); }
-      pavilion(c, m * 0.02, -0.37, 0.4, 0.1, ownPick(c, ['#ece6da', '#ece6da', pal.wall, '#c9d3b8'], 4), ownPick(c, [pal.roof, pal.slate, '#3f5a46'], 5));
-      for (const x of [-0.33, 0.33]) {
-        const z = -0.3, y = c.gy(x, z);
+      gb.cyl(gx, c.gy(gx, gz), gz, 0.006, 0.006, 0.05, 5, '#c8423a');
+      for (let i = 0; i < 4; i++) { const x = gx + rng.float(-0.25, 0.25) * k, z = gz + rng.float(-0.18, 0.2) * kd; gb.sphere(x, c.gy(x, z) + 0.01, z, 0.01, PAINT[i], 0); }
+      gb.push(turned ? hx : m * 0.02, 0, turned ? hz : -0.37, hr);
+      pavilion(c, 0, 0, turned ? 0.36 : 0.4, 0.1, ownPick(c, ['#ece6da', '#ece6da', pal.wall, '#c9d3b8'], 4), ownPick(c, [pal.roof, pal.slate, '#3f5a46'], 5));
+      gb.pop();
+      for (const x of turned ? [-0.38 * m] : [-0.33, 0.33]) {
+        const z = turned ? -0.36 : -0.3, y = c.gy(x, z);
         gb.boxC(x, y + 0.03, z, 0.04, 0.004, 0.06, '#d8c8a0', -0.5);
         gb.boxC(x, y + 0.04, z + 0.004, 0.036, 0.05, 0.003, ownPick(c, ['#3f6a8f', '#c8423a', '#4f7a45'], 6), -0.3);
       }
     }
     return;
   }
-  // the court, its lines, the net, and a wire fence round it
-  const cx = 0, cz = 0.1, cw = 0.74, cd = 0.56;
+  // the court, its lines, the net, and a wire fence round it (turned, the
+  // court runs back from the street, its clubhouse beside it)
+  gb.push(gx, 0, turned ? 0.0 : 0.1, turned ? Math.PI / 2 : 0);
+  const cx = 0, cz = 0, cw = turned ? 0.7 : 0.74, cd = turned ? 0.5 : 0.56;
   gb.box(cx, c.gy(cx, cz) - 0.006, cz, cw, 0.01, cd, ownPick(c, ['#6fa848', '#b8673e', '#3f6a5a'], 7));
   const ly = c.gy(cx, cz) + 0.004, iw = cw - 0.14, id = cd - 0.1;
   for (const s of [-1, 1]) { gb.box(cx + s * iw / 2, ly, cz, 0.008, 0.003, id, LINE); gb.box(cx, ly, cz + s * id / 2, iw, 0.003, 0.008, LINE); gb.box(cx + s * iw * 0.36, ly, cz, 0.006, 0.003, id, LINE); }
@@ -1188,12 +1201,16 @@ M.courts = (c, L) => {
     gb.box(0, y, fz0, 2 * fx, 0.004, 0.004, '#3a463a'); gb.box(0, y, fz1, 2 * fx, 0.004, 0.004, '#3a463a');
     gb.box(-fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a'); gb.box(fx, y, (fz0 + fz1) / 2, 0.004, 0.004, fz1 - fz0, '#3a463a');
   }
-  // the umpire's chair, and the clubhouse behind
-  const ux = cx + m * (iw / 2 + 0.06), uy = c.gy(ux, cz);
-  for (const s of [-1, 1]) gb.box(ux, uy, cz + s * 0.015, 0.008, 0.11, 0.008, '#ece6da');
-  gb.box(ux, uy + 0.11, cz, 0.03, 0.008, 0.04, '#ece6da');
-  pavilion(c, m * -0.08, -0.37, 0.5, 0.1, ownPick(c, [pal.wall, '#ece6da', '#e2b9a8'], 9), pal.slate, true);
-  bed(c, m * 0.34, -0.36, 0.1, 0.1, { edge: 'brick' });
+  // the umpire's chair
+  const ux = cx, uz = cz + (turned ? -m : m) * (cd / 2 + 0.01), uy = c.gy(ux, uz);
+  for (const s of [-1, 1]) gb.box(ux + s * 0.015, uy, uz, 0.008, 0.11, 0.008, '#ece6da');
+  gb.box(ux, uy + 0.11, uz, 0.04, 0.008, 0.03, '#ece6da');
+  gb.pop();
+  // and the clubhouse, behind the court or beside it
+  gb.push(turned ? hx : m * -0.08, 0, turned ? hz : -0.37, hr);
+  pavilion(c, 0, 0, turned ? 0.42 : 0.5, 0.1, ownPick(c, [pal.wall, '#ece6da', '#e2b9a8'], 9), pal.slate, true);
+  gb.pop();
+  bed(c, turned ? m * 0.36 : m * 0.34, turned ? 0.36 : -0.36, 0.1, 0.1, { edge: 'brick' });
 };
 
 // ------------------------------------------------- joined (2×1) parks

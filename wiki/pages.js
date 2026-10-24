@@ -130,7 +130,7 @@ export const PAGES = [
     sections: () => [
       { id: 'about', title: 'What Kinstead is', html: `
         <p>You lay out a village in a green valley: streets, cottages, a market, a well. Families move in from the edge of the map, find work and school places, and go about their day. As the village grows you upgrade its buildings, research new ones, join neighbours into bigger buildings, and keep everyone housed, employed, supplied and happy, until the hamlet is a market town or a cathedral city.</p>
-        <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same.</p>
+        <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same: two family houses side by side differ in their plan, their roofs and their porches, not just their colours (see ${pl('styles/forms', 'shapes')}).</p>
         <p>Kinstead is free and runs in any modern browser with WebGL: there's nothing to install, and your towns are saved in your browser (or to a file).</p>` },
       { id: 'title', title: 'The title screen', html: `
         <p>Behind the title card a little demo village goes about its evening. The buttons:</p>
@@ -565,8 +565,8 @@ export const PAGES = [
     see: ['taxes', 'plots', 'styles', 'kinds'],
   },
   {
-    id: 'styles', title: 'Styles and restyling', icon: 'palette', group: 'grow',
-    summary: 'Timber frame, limewash, painted, brick, stone or clapboard, chosen as a home or shop is upgraded or restyled.',
+    id: 'styles', title: 'Styles, shapes and restyling', icon: 'palette', group: 'grow',
+    summary: 'Timber frame, limewash, painted, brick, stone or clapboard, chosen as a home or shop is upgraded or restyled; and the shape every building takes of its own.',
     sections: () => {
       const STY = [
         ['timber', 'Timber frame', 'Steep roofs, a jettied upper floor and a central stack.'],
@@ -581,6 +581,26 @@ export const PAGES = [
           <p>Pick a <b>style</b> for any home or shop upgrade. Each builds differently, not just in different colours. A style needs its research first:</p>
           <div class="style-grid">${STY.map(([id, n, d]) => `<figure>${pic('house', 1, { variant: 4242, look: id, alt: `A family house in the ${n.toLowerCase()} style` })}<figcaption><b>${esc(n)}</b>${esc(d)} <span class="muted">Research: ${STYLE_TECH[id] ? tl(STYLE_TECH[id]) : '—'}</span></figcaption></figure>`).join('')}</div>
           <p>Tick <b>Preview in town</b> to see the style in place before building.</p>` },
+        { id: 'forms', title: 'Every building its own shape', html: `
+          <p>Buildings with the same name don't share a shape. Each one's seed gives it a form of its own, which it keeps as it is upgraded, on every load and for every player in a multiplayer town:</p>
+          ${list([
+            '<b>Its plan.</b> A family house can be a double pile with a lean-to, an L with a cross wing coming forward, narrow and deep with its gable to the street, a gabled bay in the middle of its front, a square house with a veranda, or a house with a low wing at the side. A cottage can be a plain block, a long house with its byre, an L, a dormered cottage, an outshut under a catslide roof, or a square cottage under a pyramid roof.',
+            '<b>Its roofs.</b> Gable, hip, half-hip, saltbox, cross gable, mansard, gambrel or a flat roof behind a parapet, and a gable to the street finished plain, crow-stepped, curved or Dutch, as its style allows.',
+            '<b>Its features.</b> Dormers (gabled, hipped or flat), a porch or door case (a canopy, a gabled porch, a hood, a pediment, a fanlight, a portico, a stoop or a veranda), a bay window, an oriel, a balcony, a turret on a corner, and a cupola, finials or a weather vane on the ridge.',
+            '<b>Its storeys.</b> Some shops stand a storey taller than others of their level, with their own kind of shopfront (plain, pilastered, with transom lights, or with the door set back) and a second sign (a blade sign, a painted band or a board along the eaves).',
+            '<b>Everything else has plans too.</b> Flats, terraces, mansions and apartments, the market hall, banks and offices, chapels and schools (their towers at the front, beside them or over the middle, crowned with a spire, a pyramid, battlements, a belfry or a lantern), fire stations and watch posts, farms (a gable barn, a Dutch barn or a long barn, an oast house, a silo of concrete, timber or brick, a tower mill or a post mill), works and yards (laid out either way round), coach stops, stations, water towers, wind generators, tennis courts and bowling greens, and the town hall within its style.',
+          ])}
+          <div class="style-grid">${[
+            [3, 'An L', 'A cross wing comes forward with its gable to the street.'],
+            [139, 'Gable to the street', 'Narrow and deep, its gable a Dutch one.'],
+            [279, 'A gabled bay', 'The door in a gabled bay in the middle of the front.'],
+            [22, 'A square house', 'A hipped roof, a dormer and a veranda.'],
+            [20, 'A side wing', 'A low wing set back at one side.'],
+            [55, 'A gambrel', 'Two slopes a side, a stack up the gable.'],
+            [160, 'A mansard', 'Steep slopes with dormers, a low top.'],
+            [378, 'A turret', 'A round turret on a front corner.'],
+          ].map(([v, n, d]) => `<figure>${pic('house', 1, { variant: v, alt: `A family house: ${n.toLowerCase()}` })}<figcaption><b>${esc(n)}</b>${esc(d)}</figcaption></figure>`).join('')}</div>
+          <p>A style a player picks keeps to its own kinds of roof and porch (limewash keeps its thatch and half-hips, clapboard its saltboxes, gambrels and verandas), so a style changes the shape too, while each building still keeps its own plan.</p>` },
         { id: 'restyle', title: 'Restyling', html: `
           <p>A home or shop can change style without being upgraded: its panel's <b>Restyle</b> section lists every style you have researched, and builders rebuild its fronts and roof in the one you pick, for ${pct(fact('restyle', 0))} of what the building is worth (at least ${money(fact('restyle', 1))}). Changing style during an upgrade adds the same ${pct(fact('restyle', 0))} to the upgrade's price.</p>` },
       ];

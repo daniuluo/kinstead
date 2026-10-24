@@ -4936,14 +4936,28 @@ MODELS.arcade = (c, L) => {
     gb.boxC(x, h * 0.5, fz + 0.06, W / n, 0.012, 0.12, i % 2 ? '#e9dfc9' : pal.awning, 0.45);
   }
   for (let k = 1; k < (L ? 3 : 2); k++) for (let i = 0; i < n; i++) win(c, -W / 2 + ((i + 0.5) * W) / n, h * 0.6 + 0.06 + (k - 1) * 0.18, fz - 0.06, 0.07, 0.1, 'f');
-  if (L === 0) gb.gable(0, h, z0 - 0.07, W + 0.02, D - 0.1, 0.22, wall, pal.roof, 0.05, false, 0.035);
-  else {
+  // the roof, its own way (planOf): a long gable (with gables to the street
+  // over the arcade, or not), a hip with a clock lantern, or a mansard with
+  // a pedimented middle
+  const plan = planOf(c, 3);
+  if (L === 0 || plan === 1) {
+    gb.gable(0, h, z0 - 0.07, W + 0.02, D - 0.1, 0.22, wall, L ? pal.slate : pal.roof, 0.05, false, 0.035);
+    if (plan === 1) for (const x of [-W * 0.3, 0, W * 0.3]) wallGable(c, 'plain', x, fz - 0.07, 0.3, h, 0.2, 0.25, wall, L ? pal.slate : pal.roof, trim, 0.8);
+  } else if (plan === 2) {
+    gb.push(0, 0, z0 - 0.07);
+    const M = mansardRoof(c, W + 0.02, D - 0.1, h, 0.3, pal.slate, trim);
+    mansardDormers(c, 5, W * 0.9, D - 0.1, h, M, wall, pal.slate, 0.7);
+    gb.pop();
+    gb.gable(0, h + 0.01, fz - 0.06, 0.5, 0.04, 0.12, trim, trim, 0.01, true);
+  } else {
     gb.hip(0, h, z0 - 0.07, W + 0.02, D - 0.1, 0.26, pal.slate, 0.05);
     // a clock lantern on the ridge
     gb.cbox(0, h + 0.2, z0 - 0.07, 0.15, 0.16, 0.15, trim, 0, 0.01);
     gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, h + 0.28, z0 + 0.006, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
     gb.roof(0, h + 0.36, z0 - 0.07, 0.18, 0.18, 0.14, 0, pal.slate);
   }
+  // round arches over the arcade, on some
+  if (c.form.b < 0.5) for (let i = 0; i < n; i++) gb.arch(-W / 2 + ((i + 0.5) * W) / n, h * 0.6 - (W / n) * 0.42, fz - 0.015, (W / n) * 0.42, 0.03, 8, trim);
   if (L >= 2) { gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, h + 0.005, z0 - 0.07, W * 0.5, 0.03, 0.18, '#a9c4c8'); gb.noGlow(); }
   sign(c, 0, h * 0.6 + 0.03, fz + 0.012, 0.36, 0.06, '#3b2f2a');
   const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050', '#6f4a8a'];
@@ -4963,10 +4977,15 @@ MODELS.inn = (c, L) => {
   const floors = L + 2, h = floors * 0.26;
   const wall = L === 2 ? '#ebe4d6' : pal.wall;
   // main house, with a carriage arch through to the yard behind
+  // under one long roof, with gables to the street, or (the Grand Hotel) a
+  // mansard and a corner dome (planOf)
+  const plan = planOf(c, 3);
   house(c, {
-    x: 0, z: z0, w: W, d: D, h, floors, wall, roof: L === 2 ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26,
-    timber: L < 2 && pal.timber, nFront: Math.round(W / 0.2), doorX: -W * 0.3, chimney: true, lit: 0.95, fancy: false, plinth: STONE,
+    x: 0, z: z0, w: W, d: D, h, floors, wall, roof: L === 2 ? pal.slate : pal.roof, roofType: L === 2 ? (plan === 2 ? 'mansard' : 'hip') : 'gable', rh: L === 2 && plan === 2 ? 0.32 : 0.26,
+    dormers: L === 2 && plan === 2 ? 6 : undefined, timber: L < 2 && pal.timber, nFront: Math.round(W / 0.2), doorX: -W * 0.3, chimney: true, lit: 0.95, fancy: false, plinth: STONE,
   });
+  if (plan === 1) for (const x of [-W * 0.3, W * 0.05, W * 0.38]) wallGable(c, L < 2 && pal.timber ? 'plain' : c.form.gable, x, fz, 0.26, h, 0.22, D * 0.42, wall, L === 2 ? pal.slate : pal.roof, '#e3dccd', 0.9);
+  if (L === 2 && plan === 2) turret(c, 'dome', W / 2 - 0.08, fz - 0.06, 0, h + 0.2, 0.1, 0.26, wall, '#5f8f7e', 0.9);
   const ax = W * 0.18;
   gb.box(ax, 0, fz + 0.004, 0.2, 0.22, 0.012, '#3a2f28');
   gb.cyl(ax, 0.22, fz + 0.006, 0.1, 0.1, 0.012, 10, '#3a2f28', 0, Math.PI / 2);
@@ -5324,15 +5343,28 @@ MODELS.deptstore = (c, L) => {
     gb.box(0, H + 0.02, fz + 0.007, bw * 1.0, 0.05, 0.008, fascia);
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H + 0.033, fz + 0.012, bw * 0.86, 0.024, 0.006, '#e0c070'); gb.noGlow();
   }
-  // the corner tower with a copper cupola and a flag
-  const tx = W / 2 - 0.15, tz = z0 + 0.04, th = H + (L ? 0.3 : 0.22);
-  gb.cbox(tx, H - 0.03, tz, 0.26, th - H + 0.03, 0.26, wall, 0, 0.012);
-  for (const [dx, dz, face] of [[0, 0.13, 'f'], [0.13, 0, 'r'], [-0.13, 0, 'l']]) win(c, tx + dx, th - 0.16, tz + dz, 0.06, 0.1, face, 0.8);
-  gb.box(tx, th, tz, 0.29, 0.025, 0.29, trim);
-  gb.cyl(tx, th + 0.025, tz, 0.09, 0.1, 0.06, 10, trim);
-  gb.sphere(tx, th + 0.085, tz, 0.09, copper, 1, 0.85);
-  gb.box(tx, th + 0.16, tz, 0.01, 0.22, 0.01, IRON_D);
-  gb.box(tx + 0.05, th + 0.32, tz, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
+  // the corner tower (at one end, or one at each), with a copper cupola, a
+  // spire or a clock stage, and a flag (planOf)
+  const crown = planOf(c, 3);
+  for (const ts of c.form.b < 0.3 ? [-1, 1] : [1]) {
+    const tx = ts * (W / 2 - 0.15), tz = z0 + 0.04, th = H + (L ? 0.3 : 0.22);
+    gb.cbox(tx, H - 0.03, tz, 0.26, th - H + 0.03, 0.26, wall, 0, 0.012);
+    for (const [dx, dz, face] of [[0, 0.13, 'f'], [0.13, 0, 'r'], [-0.13, 0, 'l']]) win(c, tx + dx, th - 0.16, tz + dz, 0.06, 0.1, face, 0.8);
+    gb.box(tx, th, tz, 0.29, 0.025, 0.29, trim);
+    let top = th + 0.16;
+    if (crown === 1) { gb.roof(tx, th + 0.025, tz, 0.27, 0.27, 0.34, 0, pal.slate); top = th + 0.36; }
+    else if (crown === 2) {
+      gb.cbox(tx, th + 0.025, tz, 0.2, 0.12, 0.2, wall, 0, 0.008);
+      wallClock(c, tx, th + 0.085, tz + 0.102, 0.045);
+      gb.hip(tx, th + 0.145, tz, 0.22, 0.22, 0.1, copper, 0.01);
+      top = th + 0.24;
+    } else {
+      gb.cyl(tx, th + 0.025, tz, 0.09, 0.1, 0.06, 10, trim);
+      gb.sphere(tx, th + 0.085, tz, 0.09, copper, 1, 0.85);
+    }
+    gb.box(tx, top, tz, 0.01, 0.22, 0.01, IRON_D);
+    gb.box(tx + 0.05, top + 0.16, tz, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
+  }
   lamp(c, -W / 2 + 0.04, f.dep / 2 - 0.06, 0.3); lamp(c, W / 2 - 0.04, f.dep / 2 - 0.06, 0.3);
   if (f.turned) gb.pop();
 };
@@ -5385,17 +5417,32 @@ MODELS.exchange = (c, L) => {
       gb.cyl(x, H + 0.08, fz - 0.015, 0.011, 0.014, 0.06, 6, STONE);
       gb.sphere(x, H + 0.15, fz - 0.015, 0.012, STONE, 0);
     }
-    const dz = z0 - 0.02;
-    gb.cyl(0, H, dz, 0.2, 0.2, 0.14, 14, wall);
-    for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.42; stainedGlass(c, Math.cos(a) * 0.2, H + 0.03, dz - Math.sin(a) * 0.2, 0.05, 0.08, 2, 'f', a + Math.PI / 2); }
-    gb.box(0, H + 0.14, dz, 0.44, 0.02, 0.44, trim);
-    gb.sphere(0, H + 0.16, dz, 0.2, copper, 1, 0.75);
-    gb.cyl(0, H + 0.3, dz, 0.04, 0.05, 0.07, 8, trim);
-    gb.cone(0, H + 0.37, dz, 0.045, 0.06, 8, copper);
+    const dz = z0 - 0.02, crown = planOf(c, 3);
+    if (crown === 1) {
+      // a clock tower over the trading floor
+      tower(c, 'lantern', 0, dz, 0.26, H + 0.42, wall, copper, { clock: true });
+    } else if (crown === 2) {
+      // a cupola at either end of the front
+      for (const s2 of [-1, 1]) { gb.cbox(s2 * 0.5, H, z0 + 0.1, 0.18, 0.12, 0.18, wall, 0, 0.008); gb.cyl(s2 * 0.5, H + 0.12, z0 + 0.1, 0.07, 0.08, 0.05, 8, trim); gb.sphere(s2 * 0.5, H + 0.17, z0 + 0.1, 0.075, copper, 1, 0.9); }
+    } else {
+      gb.cyl(0, H, dz, 0.2, 0.2, 0.14, 14, wall);
+      for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.42; stainedGlass(c, Math.cos(a) * 0.2, H + 0.03, dz - Math.sin(a) * 0.2, 0.05, 0.08, 2, 'f', a + Math.PI / 2); }
+      gb.box(0, H + 0.14, dz, 0.44, 0.02, 0.44, trim);
+      gb.sphere(0, H + 0.16, dz, 0.2, copper, 1, 0.75);
+      gb.cyl(0, H + 0.3, dz, 0.04, 0.05, 0.07, 8, trim);
+      gb.cone(0, H + 0.37, dz, 0.045, 0.06, 8, copper);
+    }
     for (const s of [-1, 1]) {
       gb.box(s * (W / 2 - 0.08), H, z0, 0.01, 0.3, 0.01, IRON_D);
       gb.box(s * (W / 2 - 0.08) + 0.05, H + 0.24, z0, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#2f6a4a']));
     }
+  } else if (planOf(c, 2)) {
+    // a mansard over the offices, its dormers along the front
+    gb.push(0, 0, z0);
+    const M = mansardRoof(c, W + 0.02, D + 0.02, H, 0.28, pal.slate, trim);
+    mansardDormers(c, 6, W * 0.92, D + 0.02, H, M, wall, pal.slate, 0.7);
+    gb.pop();
+    for (const s of [-1, 1]) chimney(c, s * (W / 2 - 0.2), H - 0.05, M.top + 0.06, z0, 'home', STONE);
   } else {
     gb.hip(0, H, z0, W + 0.02, D + 0.02, 0.2, pal.slate, 0.04);
     for (const s of [-1, 1]) chimney(c, s * (W / 2 - 0.2), H - 0.05, H + 0.24, z0, 'home', STONE);
@@ -5407,12 +5454,10 @@ MODELS.exchange = (c, L) => {
 };
 
 // A watch house: the station on the street with a blue lamp over the door, a
-// watch tower at its end, and a walled yard with the cells along the back.
-// The Police Station is brick, three storeys, with a porch, a clock in the
-// tower and the police wagon in the yard.
-// A watch house (the Police Station): the station, its watch tower beside
-// it (crowned with a pyramid, battlements or an open belfry, a clock in it at
-// the Police Station), the cells along the back of a walled yard.
+// watch tower at its end (crowned with a pyramid, battlements or an open
+// belfry), and a walled yard with the cells along the back. The Police
+// Station is brick, three storeys, with a porch, a clock in the tower and
+// the police wagon in the yard.
 MODELS.watchhouse = (c, L) => {
   const { gb, rng, pal } = c;
   const f = rowFrame(c), crown = planOf(c, 3);
@@ -6364,7 +6409,20 @@ MODELS.manor = (c, L) => {
       noDoor: true, plinth: STONE, nFront: 3, chimney: false,
     });
   }
-  if (L) {
+  const crown = planOf(c, 3);
+  if (crown === 2) {
+    // pavilions at the wings' ends, a storey taller under pyramids
+    for (const s of [-1, 1]) {
+      const px = s * 0.64, pz = 0.22;
+      gb.cbox(px, 0, pz, 0.26, wh + 0.2, 0.22, wall, 0, 0.01);
+      for (let k = 0; k < 3; k++) win(c, px, 0.08 + k * 0.22, pz + 0.11, 0.06, 0.1, 'f', 0.8);
+      gb.roof(px, wh + 0.2, pz, 0.3, 0.26, 0.16, 0.04, roof);
+    }
+  }
+  if (L && crown === 1) {
+    // a clock tower rising out of the middle of the house
+    tower(c, 'lantern', 0, z0, 0.2, H + 0.42, wall, '#5f7f86', { clock: true });
+  } else if (L) {
     // a cupola with a flag over the middle of the house
     const top = H + 0.3 * pal.pitch;
     gb.cbox(0, top - 0.05, z0, 0.13, 0.12, 0.13, trim, 0, 0.01);
@@ -6428,14 +6486,17 @@ MODELS.manor = (c, L) => {
 };
 
 // Mansion Quadrangle: four ranges of flats round a garden court, the way in
-// through the middle of the street range.
+// through the middle of the street range; in one of its plans: hipped (flat
+// behind a cornice with pavilion roofs on the corners at the Grand Mansion
+// Court); under mansards with domed corner turrets; or gabled, a gate tower
+// over the entrance with a clock, bays up the street front.
 MODELS.quadrangle = (c, L) => {
   const { gb, rng, pal } = c;
-  const f = rowFrame(c);
+  const f = rowFrame(c), plan = planOf(c, 3);
   const floors = L ? 6 : 4, fh = 0.25, h = floors * fh;
   const wall = pal.style === 'brick' || (!pal.forced && rng.chance(0.5)) ? pal.brick : pal.stoneWall, trim = '#e3dccd';
   const RD = 0.42, fz = 0.6, W = 1.84, sl = 2 * fz - RD, ff = fz + RD / 2;
-  const roofType = L ? 'flat' : 'hip', base = { h, floors, wall, roof: pal.slate, roofType, rh: 0.26, plinth: STONE_D, fancy: false };
+  const roofType = plan === 1 ? 'mansard' : plan === 2 ? 'gable' : L ? 'flat' : 'hip', base = { h, floors, wall, roof: pal.slate, roofType, rh: plan === 1 ? 0.3 : 0.26, plinth: STONE_D, fancy: false };
   house(c, { ...base, x: 0, z: fz, w: W, d: RD, doorX: 0, doorW: 0.14, nFront: 11, door: '#3a2f28', chimney: true, chimneyPos: 'ends' });
   house(c, { ...base, x: 0, z: -fz, w: W, d: RD, noDoor: true, nFront: 11, chimney: true, chimneyPos: 'ends' });
   for (const s of [-1, 1]) house(c, { ...base, x: s * (W / 2 - RD / 2), z: 0, ry: (-s * Math.PI) / 2, w: sl, d: RD, noDoor: true, nFront: 4, chimney: false });
@@ -6444,15 +6505,22 @@ MODELS.quadrangle = (c, L) => {
     const y = k * fh - 0.008;
     for (const z of [fz, -fz]) gb.box(0, y, z, W + 0.02, 0.014, RD + 0.02, trim);
     for (const s of [-1, 1]) gb.box(s * (W / 2 - RD / 2), y, 0, RD + 0.02, 0.014, sl, trim);
-    for (const x of [-0.62, -0.28, 0.28, 0.62]) {
+    if (plan !== 2) for (const x of [-0.62, -0.28, 0.28, 0.62]) {
       gb.box(x, k * fh, ff + 0.035, 0.2, 0.012, 0.07, trim);
       gb.box(x, k * fh + 0.012, ff + 0.068, 0.2, 0.045, 0.006, IRON);
     }
   }
+  if (plan === 1) {
+    for (const z of [fz, -fz]) { gb.push(0, 0, z); mansardDormers(c, 7, W * 0.86, RD, h, { h1: 0.3 * 0.78, inset: Math.min(0.3 * 0.78 * 0.34, RD * 0.22) }, wall, pal.slate, 0.7); gb.pop(); }
+    for (const sx of [-1, 1]) turret(c, 'dome', sx * (W / 2 - 0.08), ff - 0.06, 0, h + fh, 0.11, fh, wall, '#5f8f7e', 0.8);
+  } else if (plan === 2) {
+    for (const x of [-0.62, -0.28, 0.28, 0.62]) tallBay(c, x, ff, fh, floors, wall, pal.slate, 0.8, true, floors, 0.16);
+    tower(c, 'pyramid', 0, ff - 0.08, 0.3, h + 0.3, wall, pal.slate, { clock: true });
+  }
   // a canopy on columns over the entrance
   for (const s of [-1, 1]) gb.cyl(s * 0.1, 0.02, ff + 0.08, 0.012, 0.014, 0.24, 8, trim);
   gb.gable(0, 0.26, ff + 0.05, 0.26, 0.11, 0.07, trim, pal.slate, 0.02);
-  if (L) {
+  if (L && plan === 0) {
     // a cornice, attic windows and a pavilion roof at each corner
     for (const z of [fz, -fz]) gb.box(0, h + 0.045, z, W + 0.03, 0.03, RD + 0.03, trim);
     for (const s of [-1, 1]) gb.box(s * (W / 2 - RD / 2), h + 0.045, 0, RD + 0.03, 0.03, sl, trim);
@@ -6502,7 +6570,12 @@ MODELS.markethall = (c, L) => {
     gb.push(0, 0, hz); quoins(c, hw, hd, h, wall); gb.pop();
     gb.gable(0, h, hz, hw, hd, 0.34, wall, roof, 0.05, true, 0.035);
     door(c, 0, fz, 0.14, 0.22, '#4e3424');
-    portico(c, 0, fz, 0.78, 0.4, 6, roof, trim);
+    const plan = planOf(c, 3);
+    if (plan === 1) {
+      // three great arches across the front instead of a portico
+      for (const x of [-0.26, 0, 0.26]) { gb.arch(x, 0.24, fz + 0.004, 0.1, 0.02, 10, trim); if (x) { gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(x, 0.02, fz + 0.006, 0.18, 0.22, 0.01, GLASS); gb.noGlow(); } }
+      gb.gable(0, h + 0.01, fz + 0.01, hw, 0.03, 0.34 * 0.95, trim, trim, 0.01, true);
+    } else portico(c, 0, fz, 0.78, 0.4, 6, roof, trim);
     for (const s of [-1, 1]) win(c, s * 0.46, 0.12, fz, 0.09, 0.2, 'f', 0.9);
     for (let i = 0; i < 4; i++) {
       const z = hz - hd / 2 + (i + 0.5) * (hd / 4);
@@ -6510,12 +6583,16 @@ MODELS.markethall = (c, L) => {
     }
     for (const x of [-0.3, 0.3]) win(c, x, 0.14, hz - hd / 2, 0.09, 0.2, 'b', 0.9);
     gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, 0.66, fz + 0.004, 0.06, 0.06, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
-    // a cupola on the ridge with a wheatsheaf vane
+    // a cupola on the ridge with a wheatsheaf vane (or, on the second plan,
+    // a bell-cote on the front gable)
     const top = h + 0.34;
-    gb.cbox(0, top - 0.05, hz, 0.14, 0.14, 0.14, trim, 0, 0.01);
-    gb.roof(0, top + 0.09, hz, 0.17, 0.17, 0.12, 0, roof);
-    gb.box(0, top + 0.21, hz, 0.01, 0.08, 0.01, '#c9a43a');
-    gb.sphere(0, top + 0.3, hz, 0.022, '#d9b84a', 0);
+    if (plan === 2) bellcote(c, 0, top - 0.02, fz - 0.02, wall, roof);
+    else {
+      gb.cbox(0, top - 0.05, hz, 0.14, 0.14, 0.14, trim, 0, 0.01);
+      gb.roof(0, top + 0.09, hz, 0.17, 0.17, 0.12, 0, roof);
+      gb.box(0, top + 0.21, hz, 0.01, 0.08, 0.01, '#c9a43a');
+      gb.sphere(0, top + 0.3, hz, 0.022, '#d9b84a', 0);
+    }
     // lean-to shops along both sides, their awnings out over the pavement
     for (const s of [-1, 1]) {
       const x = s * (hw / 2 + 0.14), sz = hz + 0.02, sd = hd - 0.3, ox = s * (hw / 2 + 0.28);
@@ -6550,6 +6627,8 @@ MODELS.markethall = (c, L) => {
     gb.cbox(0, nh + rh - 0.03, hz, 0.12, 0.09, 0.6, '#5a6268', 0, 0.006);
     for (const s of [-1, 1]) for (let i = 0; i < 6; i++) gb.box(s * 0.062, nh + rh + 0.0, hz - 0.25 + i * 0.1, 0.006, 0.045, 0.06, '#3a4248');
     gb.gable(0, nh + rh + 0.06, hz, 0.16, 0.64, 0.06, '#5a6268', '#4a5258', 0.02, true, 0.014);
+    // and (its own plan) a clock tower at one front corner
+    if (planOf(c, 2)) tower(c, c.form.b < 0.5 ? 'spire' : 'pyramid', c.form.side * (nw / 2 + aw - 0.1), fz - 0.1, 0.18, 1.0, brick, roof, { clock: true });
     for (const s of [-1, 1]) {
       const ax = s * (nw / 2 + aw / 2), ox = s * (nw / 2 + aw);
       gb.cbox(ax, 0, hz, aw, ah, hd - 0.06, brick, 0, 0.014);
@@ -7212,7 +7291,7 @@ const hasExt = (b) => !!(b.ext && (b.ext.x0 || b.ext.x1 || b.ext.z0 || b.ext.z1)
 
 // The models drawn either way round (see buildModel): no spinning wheels,
 // fountains or work areas in them, and no street corner of their own.
-const MIRRORED = new Set(['builder', 'lumber', 'workshop', 'joinery', 'contractor', 'craftshouse', 'brewhouse', 'foundry', 'timberworks', 'watchhouse', 'inn', 'teagarden', 'fishmarket', 'coachinginn', 'well', 'pump', 'powerplant', 'coachstop', 'musichall', 'markethall']);
+const MIRRORED = new Set(['builder', 'lumber', 'workshop', 'joinery', 'contractor', 'craftshouse', 'brewhouse', 'foundry', 'timberworks', 'watchhouse', 'inn', 'teagarden', 'fishmarket', 'coachinginn', 'well', 'pump', 'powerplant', 'coachstop', 'musichall', 'markethall', 'deptstore', 'arcade']);
 
 // The part of the world a building may use, in its own local frame: its plot,
 // grown or shrunk by any garden land bought from or sold to a neighbour.

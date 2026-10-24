@@ -199,6 +199,34 @@ ok(true, `all building models build (${verts} verts total)`);
   ok(!blank.length, `a building with streets at its sides and back has windows on every wall facing them (${n} models)${blank.length ? ': ' + blank.slice(0, 8).join('; ') : ''}`);
 }
 
+// 1e. buildings with the same name and level take shapes of their own (see
+// forms.js), not only colours of their own: the height of each of a few
+// building kinds over a 12 × 12 grid of its plot, compared seed by seed
+{
+  const G = 12, kinds = [['house', 0], ['house', 1], ['flats', 2], ['terrace', 2], ['grocer', 1], ['offices', 2], ['market', 3], ['chapel', 1], ['workshop', 2], ['farm', 0], ['coachstop', 0], ['townhall', 1]];
+  const flat = [];
+  for (const [type, level] of kinds) {
+    const d = BUILDINGS[type], W = d.merged ? 2 : d.size, D = d.merged ? 1 : d.size, maps = [];
+    for (let v = 0; v < 8; v++) {
+      const g = buildModel({ type, level, variant: 5003 + v * 7919, size: Math.max(W, D), w: W, d: D, baseY: 0, minY: 0, rot: 0 }, { flat: true }).geo, P = g.attributes.position.array;
+      const hm = new Float32Array(G * G);
+      for (let i = 0; i < P.length; i += 3) {
+        const gx = Math.floor(((P[i] + W / 2) / W) * G), gz = Math.floor(((P[i + 2] + D / 2) / D) * G);
+        if (gx >= 0 && gz >= 0 && gx < G && gz < G) hm[gz * G + gx] = Math.max(hm[gz * G + gx], P[i + 1]);
+      }
+      maps.push(hm);
+    }
+    let sum = 0, pairs = 0;
+    for (let a = 0; a < maps.length; a++) for (let b = a + 1; b < maps.length; b++) {
+      let n = 0;
+      for (let j = 0; j < G * G; j++) if (Math.abs(maps[a][j] - maps[b][j]) > 0.06) n++;
+      sum += n / (G * G); pairs++;
+    }
+    if (sum / pairs < 0.08) flat.push(`${type}.${level} ${(sum / pairs).toFixed(3)}`);
+  }
+  ok(!flat.length, `buildings of the same name and level take shapes of their own, seed by seed (${kinds.length} kinds)${flat.length ? ': too alike ' + flat.join(', ') : ''}`);
+}
+
 // 2. terrain generation over many seeds
 for (let s = 1; s <= 25; s++) {
   const w = World.createNew({ N: 48, seed: s * 7919, name: 'T' });
