@@ -248,7 +248,17 @@ function sweepDoors(game, S, F, lanes) {
       const wk = ag._walk(r, B, B, tiles, { x: from[0] + 0.5, z: from[1] + 0.5 }, () => {});
       ag._drop(wk);
       const pts = wk.pts, n = pts.length - 1;   // the last leg (door → inside) is the way in through the wall
-      if (TRACE === B.id) console.log(`  trace #${B.id} lane ${lane}: doorIn ${wk.doorIn} · ${pts.slice(-6).map(([x, z]) => at(x, z)).join(' → ')}`);
+      if (TRACE === B.id) {
+        console.log(`  trace #${B.id} lane ${lane}: doorIn ${wk.doorIn} · ${pts.slice(-6).map(([x, z]) => at(x, z)).join(' → ')}`);
+        // and the height a villager walks at, over the floor, along the last legs
+        const ys = [];
+        for (let s = Math.max(0, n - wk.doorIn - 1); s < n; s++) for (let j = 0; j < 4; j++) {
+          const [ax, az] = pts[s], [bx, bz] = pts[s + 1], x = ax + ((bx - ax) * j) / 4, z = az + ((bz - az) * j) / 4;
+          Object.assign(wk, { seg: s, t: j / 4, x, z });
+          ys.push((walkY(w, wk) - B.baseY).toFixed(3));
+        }
+        console.log(`    heights over the floor: ${ys.join(' ')} (door ${(B.door.y - B.baseY).toFixed(3)})`);
+      }
       let found = null;
       // from the last point on the street, through the gate, up the step to the door
       for (let s = Math.max(0, n - wk.doorIn - 1); s < n - 1 && !found; s++) {
@@ -365,7 +375,7 @@ function sweepCables(game, S, F) {
       for (let s = 0; s <= k; s++) {
         const u = s / k, x = ax + (bx - ax) * u, z = az + (bz - az) * u, y = ya + (yb - ya) * u;
         // the cabin: from its floor (G_HANG below the cable) to its roof (0.19 up); and the cable itself
-        for (const p of S.touch(x, z, y - 0.29, y - 0.06, 0.085)) if (!stops.has(p.b.id)) hits.set(p.b.id, { what: 'cabin', p, x, z });
+        for (const p of S.touch(x, z, y - 0.29, y - 0.06, 0.12)) if (!stops.has(p.b.id)) hits.set(p.b.id, { what: 'cabin', p, x, z });
         for (const p of S.touch(x, z, y - 0.01, y + 0.01, 0.01)) if (!stops.has(p.b.id) && !hits.has(p.b.id)) hits.set(p.b.id, { what: 'cable', p, x, z });
       }
     }
@@ -509,6 +519,7 @@ function play(label, w) {
       if (h && onWay && h.p.b.type === 'gondola') continue;
       if (!h || !once(wk, h.p.b)) continue;
       const serious = h.kind === 'wall' && (wk.mode !== 'wander' || where.startsWith('working'));
+      if (TRACE === h.p.b.id) console.log(`  hit #${TRACE}: ${where} at ${at(wk.x, wk.z)}, ${(y - h.p.b.baseY).toFixed(3)} over its floor; seg ${wk.seg} of ${wk.pts.length - 1}, doorIn ${wk.doorIn}, t ${wk.t.toFixed(2)}; part ${(h.p.y0 - h.p.b.baseY).toFixed(3)}–${(h.p.y1 - h.p.b.baseY).toFixed(3)} area ${h.p.a.toFixed(4)}; way ${wk.pts.slice(-5).map(([x, z]) => at(x, z)).join(' → ')}${wk.ys ? ' (with heights)' : ''}`);
       F.add(`villager inside ${THING[h.kind]}`, `${where}, in the ${name(h.p.b)}`, `${at(wk.x, wk.z)} #${h.p.b.id}`, serious);
     }
     // coaches, trains and carts on the ground; gondola cabins in the air
@@ -518,7 +529,7 @@ function play(label, w) {
         for (const m of v.meshes) {
           const p = m.position;
           if (cable) {
-            for (const q of S.touch(p.x, p.z, p.y - 0.29, p.y - 0.06, 0.085)) if (!v.line.stops.includes(q.b.id)) F.add('gondola cabin inside a building', `${v.line.name}, the ${name(q.b)}`, `${at(p.x, p.z)} y ${p.y.toFixed(2)} #${q.b.id}`);
+            for (const q of S.touch(p.x, p.z, p.y - 0.29, p.y - 0.06, 0.12)) if (!v.line.stops.includes(q.b.id)) F.add('gondola cabin inside a building', `${v.line.name}, the ${name(q.b)}`, `${at(p.x, p.z)} y ${p.y.toFixed(2)} #${q.b.id}`);
           } else {
             const h = S.hit(p.x, p.z, p.y, 0.03);
             if (h && h.kind === 'wall') F.add(`${v.line.mode === 'rail' ? 'train' : 'coach'} through a building`, `${v.line.name}, the ${name(h.p.b)}`, `${at(p.x, p.z)} #${h.p.b.id}`);

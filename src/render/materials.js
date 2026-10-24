@@ -172,6 +172,8 @@ export const MAT = {
     color: '#3f93bb', transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05, flatShading: true,
   }), { waves: true }, 'water'),
   waterSide: new THREE.MeshStandardMaterial({ color: '#3a86ad', transparent: true, opacity: 0.72, roughness: 0.3 }),
+  // clear glass you see through (a gondola cabin's windows, its riders behind them)
+  glass: new THREE.MeshStandardMaterial({ color: '#d2e8f0', transparent: true, opacity: 0.28, roughness: 0.08, metalness: 0.25, depthWrite: false, side: THREE.DoubleSide }),
   ghostOk: new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.62, emissive: '#2f7a2f', emissiveIntensity: 0.35, flatShading: true }),
   ghostBad: new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.5, emissive: '#c02020', emissiveIntensity: 0.6, flatShading: true }),
 };

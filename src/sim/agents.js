@@ -366,6 +366,7 @@ export class Agents {
     wk.plotY = A.baseY + 0.012;
     wk.doorOut = out ? out.length : 0;
     wk.doorIn = into ? into.length : 0;
+    wk.doorRef = into ? B.door : null;
     wk.floorOut = out ? A.door.y + STEP_UP : null;
     wk.floorIn = into ? B.door.y + STEP_UP : null;
     wk.stairsOut = out ? this._stairsOf(A) : null;
@@ -389,7 +390,7 @@ export class Agents {
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
-      ys: null, standY: null, cabin: null, seat: 0,
+      ys: null, standY: null, cabin: null, seat: 0, doorRef: null,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
@@ -398,6 +399,23 @@ export class Agents {
   }
 
   _drop(wk) { this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+
+  // A walker on its way in to a building whose door has moved since it set
+  // off (the building redrawn: a new neighbour, a street laid by it): the
+  // way in to the door as it is now, in place of the old one.
+  _redoor(wk) {
+    const B = this.world.buildings.get(wk.dest);
+    if (!B || B.door === wk.doorRef) return;
+    wk.doorRef = B.door || null;
+    const into = B.door ? this._doorway(B, wk.r, true) : null;
+    if (!into) return;
+    const keep = wk.pts.length - wk.doorIn;
+    wk.pts = wk.pts.slice(0, keep).concat(into);
+    if (wk.ys) wk.ys = wk.ys.slice(0, keep).concat(into.map(() => null));
+    wk.doorIn = into.length;
+    wk.floorIn = B.door.y + STEP_UP;
+    wk.stairsIn = this._stairsOf(B);
+  }
 
   // The way about B's open plot round what stands on it (plotNav), from its
   // model as drawn: null headless, on a building site, or with no model.
@@ -418,9 +436,11 @@ export class Agents {
     if (!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) return null;
     let s = this._stairs.get(mesh);
     if (s === undefined) {
-      // only the strip from the door out to the street
+      // only the strip from the door out to the street, and nothing more
+      // than a step or two above the threshold (a portico's steps, not the
+      // head of the door or a porch's roof)
       const d = B.door, L = Math.max(fw(B), fd(B)) + 0.2, ex = d.x + d.dx * L, ez = d.z + d.dz * L;
-      s = stepsGrid(B, mesh, Math.min(d.x, ex) - 0.3, Math.min(d.z, ez) - 0.3, Math.max(d.x, ex) + 0.3, Math.max(d.z, ez) + 0.3, Math.max(d.y, B.baseY) + 0.15);
+      s = stepsGrid(B, mesh, Math.min(d.x, ex) - 0.3, Math.min(d.z, ez) - 0.3, Math.max(d.x, ex) + 0.3, Math.max(d.z, ez) + 0.3, Math.max(d.y, B.baseY) + 0.1);
       this._stairs.set(mesh, s);
     }
     return s;
@@ -578,7 +598,7 @@ export class Agents {
   // Called by transit as a passenger boards: they're gone from sight; or on
   // a gondola station's deck (at: where the cabin stands, its heading, the
   // cabin v and the passenger's seat in it), across to the cabin and in, to
-  // ride in it, the first two seen through its windows. Returns how long
+  // ride in it, seen through its glass. Returns how long
   // the walk across takes (the cabin waits for it).
   board(r, at = null) {
     const wk = r.walk;
@@ -690,6 +710,9 @@ export class Agents {
       if (wk.delay > 0) { wk.delay -= dt * speed; continue; }
       wk.lamp = false;
       if (wk.mode === 'path') {
+        // nearly at the door, and the building has been redrawn since (its
+        // door moved): on to where its door is now
+        if (wk.doorRef && wk.seg >= wk.pts.length - wk.doorIn - 3 && wk.seg < wk.pts.length - wk.doorIn - 1) this._redoor(wk);
         const atDoor = (wk.doorOut && wk.seg < wk.doorOut - 1) || (wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1);
         let rem = move * wk.speedK * (atDoor ? 0.45 : 1);
         const want = rem;
@@ -788,8 +811,6 @@ export class Agents {
     const crowd = mode === 'crowds' ? this._crowds() : null;
     for (const wk of this.walkers) {
       let show = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
-      // (a gondola cabin has room to see two of its riders)
-      if (show && wk.mode === 'ride' && wk.seat > 1 && !(sel && wk.r === sel)) show = false;
       if (show && mode !== 'all' && !(sel && wk.r === sel)) {
         // the same half of the town every frame (the lane is each villager's own)
         if (mode === 'some') show = (wk.lk.lane * 997) % 1 < 0.5;
@@ -912,10 +933,11 @@ export function siteArea(B) {
 }
 
 // Where a rider stands in a gondola cabin at (at.x, at.z) heading at.heading:
-// seat 0 on its left, 1 on its right, the rest between (unseen).
+// two across and three deep, seat 0 and 1 in the middle, then the front,
+// then the back.
 function seatAt(at, seat) {
-  const sx = seat === 0 ? -0.03 : seat === 1 ? 0.03 : 0, h = at.heading || 0;
-  return [at.x + sx * Math.cos(h), at.z - sx * Math.sin(h)];
+  const sx = seat % 2 ? 0.037 : -0.037, sz = [0, 0.075, -0.075][Math.floor(seat / 2) % 3], h = at.heading || 0;
+  return [at.x + sx * Math.cos(h) + sz * Math.sin(h), at.z - sx * Math.sin(h) + sz * Math.cos(h)];
 }
 
 // A villager's own luck, from 0 to 1, the same every frame (the departing,

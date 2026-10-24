@@ -110,17 +110,20 @@ function carriageModel(color) {
 // A gondola cabin, hung from its grip on the cable (the origin): a little
 // box with windows all round on an arm down from the grip, its floor G_HANG
 // below the cable.
+// A cabin holds six villagers standing, two across and three deep (each about
+// 0.07 round, a grown-up 0.15 tall), and passes the pylons' masts and a cabin
+// on the other cable (2 G_OFF over) with room between: H high, W across, D
+// long, its panels up to SILL, walls T thick.
+const CABIN = { H: 0.19, W: 0.16, D: 0.24, SILL: 0.065, T: 0.008 };
 function cabinModel(color) {
   const gb = new GeoBuilder();
-  // tall enough inside for a grown-up villager (0.15) to stand in, and narrow
-  // enough to pass one on the other cable (2 G_OFF over) with room between
-  const F = -G_HANG, H = 0.19, W = 0.13, D = 0.16, SILL = 0.065, T = 0.008;
+  const F = -G_HANG, { H, W, D, SILL, T } = CABIN;
   gb.box(0, -0.012, 0, 0.026, 0.03, 0.06, '#2b2b2e');
   gb.box(0, F + H + 0.015, 0, 0.012, -0.012 - (F + H + 0.015), 0.012, '#4a5055');
   gb.box(0, F + H + 0.012, 0, 0.05, 0.012, 0.03, '#4a5055');
   // the floor, panels in the line's colour up to the sills, a post at each
-  // corner and a rail along the tops of the windows, which are open above
-  // the sills so the riders inside can be seen; the roof over it all
+  // corner and a rail along the tops of the windows (their glass is
+  // cabinGlass), and the roof over it all
   gb.box(0, F - 0.008, 0, W, 0.014, D, '#2b2b2e');
   for (const s of [-1, 1]) {
     gb.box(0, F, s * (D / 2 - T / 2), W, SILL, T, color);
@@ -129,11 +132,26 @@ function cabinModel(color) {
     gb.box(s * (W / 2 - T / 2), F + H - 0.02, 0, T, 0.02, D, color);
   }
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * (W / 2 - 0.008), F, sz * (D / 2 - 0.008), 0.016, H, 0.016, color);
+  // and a post in the middle of each long side
+  for (const s of [-1, 1]) gb.box(s * (W / 2 - T / 2), F, 0, T + 0.004, H, 0.012, color);
   gb.cbox(0, F + H, 0, W + 0.01, 0.018, D + 0.01, '#e8e2d4', 0, 0.008);
   // a lamp under the roof, lit at night
   gb.glow(WARM[0], WARM[1], WARM[2], 1.6);
   gb.box(0, F + H - 0.012, 0, 0.034, 0.01, 0.034, '#ffe2a0');
   gb.noGlow();
+  return gb.build();
+}
+
+// A cabin's windows: a pane of clear glass in each side between the sills,
+// the corner posts and the rail, drawn see-through (MAT.glass) so the riders
+// show through it.
+function cabinGlass() {
+  const gb = new GeoBuilder();
+  const F = -G_HANG, { H, W, D, SILL, T } = CABIN, y0 = F + SILL, h = H - SILL - 0.02;
+  for (const s of [-1, 1]) {
+    gb.box(0, y0, s * (D / 2 - T / 2), W - 0.03, h, 0.003, '#ffffff');
+    gb.box(s * (W / 2 - T / 2), y0, 0, 0.003, h, D - 0.03, '#ffffff');
+  }
   return gb.build();
 }
 
@@ -167,7 +185,7 @@ const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // than G_MAXH tall, and hold the cable G_GROUND above the ground and G_ROOF
 // above the roofs it passes over, so the cabins clear them; between them
 // it sags a little (sagOf a span's length).
-const G_OFF = 0.12, G_CABLE = 1.05, G_HANG = 0.27, G_LIFT = 3.5, G_SPAN = 6, G_MAXH = 6, G_GROUND = 1.05, G_ROOF = 0.42;
+const G_OFF = 0.14, G_CABLE = 1.05, G_HANG = 0.27, G_LIFT = 3.5, G_SPAN = 6, G_MAXH = 6, G_GROUND = 1.05, G_ROOF = 0.42;
 const sagOf = (len) => Math.min(0.12, len * 0.006);
 // Why a gondola line can't run (route.blocked: what is in the cable's way).
 export const blockedReason = (bl) => `The cable can't clear ${bl.by ? `the ${BUILDINGS[bl.by.type].levels[bl.by.level].name}` : 'the ground'}: move a station, or put one nearer it`;
@@ -453,7 +471,7 @@ export class Transit {
     for (let k = 0; k <= NS; k++) {
       const [x0, z0] = at((L * k) / NS);
       let need = -Infinity, what = null;
-      for (const o of [-0.22, 0, 0.22]) {
+      for (const o of [-0.24, 0, 0.24]) {
         const x = x0 - uz * o, z = z0 + ux * o, tx = Math.floor(x), tz = Math.floor(z);
         if (!w.inBounds(tx, tz)) continue;
         need = Math.max(need, Math.max(t.heightAt(x, z), CONFIG.WATER_LEVEL) + G_GROUND);
@@ -758,6 +776,8 @@ export class Transit {
     } else if (line.mode === 'gondola') {
       const m = new THREE.Mesh(this._geo('cabin' + line.color, () => cabinModel(line.color)), MAT.building);
       m.rotation.order = 'YXZ';   // it swings fore and aft on its grip
+      // its windows, glass you see the riders through, swinging with it
+      m.add(new THREE.Mesh(this._geo('cabinGlass', cabinGlass), MAT.glass));
       meshes.push(m);
     } else {
       meshes.push(new THREE.Mesh(this._geo('coach' + line.color, () => coachModel(line.color)), MAT.building));
@@ -871,14 +891,14 @@ export class Transit {
     const all = [];
     for (let k = 0; k < 16; k++) {
       const ang = (k * Math.PI) / 8;
-      for (const rad of [0.22, 0.17]) {
+      for (const rad of [0.27, 0.23, 0.18]) {
         const x = d.x + Math.sin(ang) * rad, z = d.z + Math.cos(ang) * rad;
         all.push([x, z, Math.min(Infinity, ...segs.map(sg => away(x, z, sg)))]);
       }
     }
     // (on a busy deck, where nowhere is quite clear, the spots furthest from
     // the cabins' way)
-    const clear = all.filter(p => p[2] > 0.17);
+    const clear = all.filter(p => p[2] > CABIN.W / 2 + 0.045);
     return (clear.length ? clear : all.sort((a, b) => b[2] - a[2]).slice(0, 3)).map(p => [p[0], p[1]]);
   }
 

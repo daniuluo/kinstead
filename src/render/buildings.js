@@ -4227,8 +4227,13 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
     return;
   }
   // the stairs: up a side strip from the street end, on round the back (and
-  // the other side) as far as they need, up the right side or the left
-  const ways = [1, -1].map(sx => [[sx * S, 0.42], [sx * S, -S], [-sx * S, -S], [-sx * S, S]]);
+  // the other side) as far as they need, up the right side or the left; or
+  // first along the front from one corner and on round the far side, so the
+  // top can come to the deck on any of its four sides
+  const ways = [
+    ...[1, -1].map(sx => [[sx * S, 0.42], [sx * S, -S], [-sx * S, -S], [-sx * S, S]]),
+    ...[1, -1].map(sx => [[-sx * 0.42, S], [sx * S, S], [sx * S, -S], [-sx * S, -S]]),
+  ];
   const N = Math.ceil(DECK / RISE), rise = DECK / N;
   // the treads along a way ([x, z, height, heading] each), the corners it
   // turns (landings, [x, z, height]) and its top
@@ -4293,7 +4298,10 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
   const inx = Math.abs(top[0]) > Math.abs(top[1]) ? -Math.sign(top[0]) : 0, inz = inx ? 0 : -Math.sign(top[1]);
   way.push({ x: top[0] + inx * 0.15, y: DECK, z: top[1] + inz * 0.15 });
   c.stair = way;
-  lamp(c, fx - Math.sign(fx) * 0.1, 0.45, 0.3);
+  // (a street lamp by its foot: beside it on the front, or along the side
+  // strip when the stairs start along the front)
+  if (Math.abs(fz - S) < 1e-6) lamp(c, fx, S - 0.14, 0.3);
+  else lamp(c, fx - Math.sign(fx) * 0.1, 0.45, 0.3);
   bench(c, -Math.sign(fx) * 0.2, 0.24, 0);
 }
 
