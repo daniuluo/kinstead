@@ -12,6 +12,8 @@ import { TiltShiftPass } from './tiltShift.js';
 // Classic 2:1 pixel-art isometric (dimetric) projection: 26.57° above the ground.
 export const ISO_ELEV = Math.atan(0.5);
 const DIST = 140;
+// how close the camera can come: near enough to see a villager's face
+const MAX_ZOOM = 24;
 const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _c = new THREE.Vector3(), _lz = new THREE.Vector3();
 
 export class Renderer {
@@ -214,7 +216,7 @@ export class Renderer {
   zoomBy(factor, clientX = null, clientY = null) {
     const rig = this.rig;
     const z0 = rig.zoomT;
-    const z1 = Math.min(6, Math.max(rig.minZoom || 0.45, z0 * factor));
+    const z1 = Math.min(MAX_ZOOM, Math.max(rig.minZoom || 0.45, z0 * factor));
     if (clientX !== null) {
       // Zoom toward the cursor: remember the ground point under it and its
       // offset from the view centre (scaled by zoom), and hold it fixed while
@@ -228,7 +230,7 @@ export class Renderer {
     }
     rig.zoomT = z1;
   }
-  setZoom(z) { this.rig.zoomT = Math.min(6, Math.max(this.rig.minZoom || 0.45, z)); }
+  setZoom(z) { this.rig.zoomT = Math.min(MAX_ZOOM, Math.max(this.rig.minZoom || 0.45, z)); }
 
   pan(dxPx, dyPx) {
     const rig = this.rig;

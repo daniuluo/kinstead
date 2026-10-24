@@ -192,7 +192,7 @@ export const PAGES = [
         `<p>With the interface hidden (${k('V')}) only the camera and speed keys answer, and ${k('V')} or ${k('Esc')} brings it back. Shortcuts don't fire while you type in a box.</p>` },
       { id: 'views', title: 'Turning the view and the 2D map', html: `
         <p>${k('Q')} and ${k('E')} (or the turn buttons beside <b>2D</b> in the top bar) swing the camera a quarter turn around the ground at the middle of the screen, so you can see the town from all four sides. The sun stays where it is in the sky, so the shadows keep falling the same way and the far side of the town is the shaded side.</p>
-        <p>${k('T')} or the <b>2D</b> button swings the camera straight down for a grid-aligned map, which turns too. Zoom with the wheel or the <b>+</b>/<b>−</b> buttons.</p>` },
+        <p>${k('T')} or the <b>2D</b> button swings the camera straight down for a grid-aligned map, which turns too. Zoom with the wheel or the <b>+</b>/<b>−</b> buttons, from the whole valley right down to a single villager, near enough to see their goggles.</p>` },
       { id: 'hide', title: 'Hiding the interface', html: `
         <p>The eye button in the top bar, or ${k('V')}, hides every panel, button and pop-up to leave just the town, for a picture or to take it in. The camera, zoom, turning and game speed still work, while clicks on the town do nothing. ${k('V')}, ${k('Esc')} or the faint <b>Show interface</b> button in the corner brings it all back.</p>` },
       { id: 'windows', title: 'Windows, overlays and the Issues panel', html: `
