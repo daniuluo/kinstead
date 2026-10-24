@@ -2239,7 +2239,9 @@ const placePair = (tw, ta, tb) => {
         const out = Math.max(Math.abs(lx) - 0.5, -lz - 0.5, lz - 0.5 - front);
         if (out > worst) { worst = out; at = `${type} L${b.level} turned ${a.toFixed(2)}`; }
       }
-      if (m.door) {
+      // (an open-air place's door, a pavilion's on the courts, say, isn't the
+      // way in, and may face any way)
+      if (m.door && !def.outdoor && !def.park) {
         doors++;
         const ft = facingAngle(b) + b.pose.a, c2 = Math.cos(ft), s2 = Math.sin(ft);
         const wdx = m.door.dx * c2 + m.door.dz * s2, wdz = -m.door.dx * s2 + m.door.dz * c2;

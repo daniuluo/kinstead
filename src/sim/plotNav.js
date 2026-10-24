@@ -11,14 +11,21 @@ const CELL = 0.05;
 const LO = 0.09, HI = 0.13;
 
 // The grid for building b drawn as mesh (its geometry in the mesh's frame,
-// turned by mesh.rotation.y and placed at mesh.position), over the plot and
-// a cell or two round it. Null without a model.
+// turned by mesh.rotation.y and placed at mesh.position), over its plot
+// (x0, z0)–(x1, z1) and a cell or two round it; the cells beyond the plot
+// are blocked, as a neighbour's building may stand right up to its edge.
+// Null without a model.
 export function plotGrid(b, mesh, x0, z0, x1, z1) {
   const geo = mesh && mesh.geometry, pos = geo && geo.attributes && geo.attributes.position;
   if (!pos) return null;
+  const px0 = x0, pz0 = z0, px1 = x1, pz1 = z1;
   x0 -= CELL * 2; z0 -= CELL * 2; x1 += CELL * 2; z1 += CELL * 2;
   const nx = Math.ceil((x1 - x0) / CELL), nz = Math.ceil((z1 - z0) / CELL);
   const blocked = new Uint8Array(nx * nz);
+  for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) {
+    const cx = x0 + (i + 0.5) * CELL, cz = z0 + (k + 0.5) * CELL;
+    if (cx < px0 || cx > px1 || cz < pz0 || cz > pz1) blocked[k * nx + i] = 2;
+  }
   const th = mesh.rotation.y, co = Math.cos(th), si = Math.sin(th), px = mesh.position.x, pz = mesh.position.z;
   const floor = b.baseY - mesh.position.y;
   const P = pos.array, I = geo.index ? geo.index.array : null, n = I ? I.length : pos.count;
@@ -54,7 +61,20 @@ export function plotGrid(b, mesh, x0, z0, x1, z1) {
       if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) mark(cx, cz);
     }
   }
-  return { x0, z0, nx, nz, blocked };
+  // a cell's room round all of it, so a villager (about that wide) going
+  // round a corner doesn't brush through it (tight: the grid as drawn, for
+  // squeezing up a portico's steps between its columns)
+  const wide = blocked.slice();
+  for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) {
+    if (blocked[k * nx + i] !== 1) continue;
+    for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
+      const a = i + di, c = k + dk;
+      if (a >= 0 && c >= 0 && a < nx && c < nz) wide[c * nx + a] = 1;
+    }
+  }
+  const g = { x0, z0, nx, nz, blocked: wide };
+  g.tight = { x0, z0, nx, nz, blocked };
+  return g;
 }
 
 // What there is to stand on in front of a door: the tops of its steps,
@@ -119,6 +139,9 @@ function nearestFree(g, x, z) {
   }
   return null;
 }
+
+// Is (x, z) open ground on the grid?
+export function openAt(g, x, z) { return free(g, ...cellOf(g, x, z)); }
 
 // Is the straight line between two points open all the way?
 export function clearLine(g, ax, az, bx, bz) {

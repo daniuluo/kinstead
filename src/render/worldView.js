@@ -35,6 +35,14 @@ export class WorldView {
     this.group = new THREE.Group();
     scene.add(this.group);
     this.groundFn = (x, z) => world.terrain.heightAt(x, z);
+    // another building's plot or a road at (x, z) (not building id's own):
+    // what a pier reaching out beyond its plot stops short of
+    this.takenFn = (x, z, id) => {
+      const tx = Math.floor(x), tz = Math.floor(z);
+      if (!world.inBounds(tx, tz)) return false;
+      const o = world.buildingAt[world.idx(tx, tz)];
+      return (o >= 0 && o !== id) || !!world.roadAt(tx, tz);
+    };
     this.items = new Map();
     this.anims = [];
     this.pending = [];
@@ -121,7 +129,7 @@ export class WorldView {
   // ----------------------------------------------------------- buildings
   addBuilding(b, animate = false, upgrade = false) {
     if (b.con) { this._addSite(b, animate); return; }
-    const model = buildModel(b, { season: this.season, seasonW: this.seasonW, ground: this.groundFn });
+    const model = buildModel(b, { season: this.season, seasonW: this.seasonW, ground: this.groundFn, taken: this.takenFn });
     const mesh = new THREE.Mesh(model.geo, MAT.building);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -165,7 +173,7 @@ export class WorldView {
 
   // A building site: the finished model is kept and re-cut as work progresses.
   _addSite(b, animate) {
-    const opts = { season: this.season, seasonW: this.seasonW, ground: this.groundFn };
+    const opts = { season: this.season, seasonW: this.seasonW, ground: this.groundFn, taken: this.takenFn };
     const con = b.con;
     const up = con.kind === 'upgrade';
     const target = buildModel(up ? { ...b, type: con.toType || b.type, level: con.to, look: con.look !== undefined ? con.look : b.look, flavor: con.flavor !== undefined ? con.flavor : b.flavor } : b, opts);
@@ -248,7 +256,7 @@ export class WorldView {
     }
     const it = b && spec ? this.items.get(b.id) : null;
     if (!it || it.site) return;
-    const model = buildModel({ ...b, type: spec.type, level: spec.level, look: spec.look, con: null }, { season: this.season, seasonW: this.seasonW, ground: this.groundFn });
+    const model = buildModel({ ...b, type: spec.type, level: spec.level, look: spec.look, con: null }, { season: this.season, seasonW: this.seasonW, ground: this.groundFn, taken: this.takenFn });
     if (model.spin) model.spin.geo.dispose();
     const mesh = new THREE.Mesh(model.geo, MAT.building);
     mesh.castShadow = true;

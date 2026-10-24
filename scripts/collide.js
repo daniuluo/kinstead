@@ -102,9 +102,11 @@ class Solids {
   add(b) {
     const w = this.w, t = w.terrain;
     const ground = (x, z) => t.heightAt(x, z);
+    // as WorldView.takenFn: another building's plot or a road (a pier stops short of it)
+    const taken = (x, z, id) => { const tx = Math.floor(x), tz = Math.floor(z); if (!w.inBounds(tx, tz)) return false; const o = w.buildingAt[w.idx(tx, tz)]; return (o >= 0 && o !== id) || !!w.roadAt(tx, tz); };
     const up = b.con && b.con.kind === 'upgrade';
-    const target = b.con ? buildModel(up ? { ...b, type: b.con.toType || b.type, level: b.con.to, look: b.con.look !== undefined ? b.con.look : b.look, flavor: b.con.flavor !== undefined ? b.con.flavor : b.flavor } : b, { ground }) : null;
-    const model = b.con ? (up ? buildModel(b, { ground }) : target) : buildModel(b, { ground });
+    const target = b.con ? buildModel(up ? { ...b, type: b.con.toType || b.type, level: b.con.to, look: b.con.look !== undefined ? b.con.look : b.look, flavor: b.con.flavor !== undefined ? b.con.flavor : b.flavor } : b, { ground, taken }) : null;
+    const model = b.con ? (up ? buildModel(b, { ground, taken }) : target) : buildModel(b, { ground, taken });
     const jit = model.jitter;
     const th = facingAngle(b) + jit.yaw, co = Math.cos(th), si = Math.sin(th);
     const cx = b.x + fw(b) / 2 + jit.ox, cz = b.z + fd(b) / 2 + jit.oz;
@@ -270,7 +272,8 @@ function sweepDoors(game, S, F, lanes) {
 function sweepGrounds(game, S, F) {
   const w = game.world, ag = game.agents;
   for (const B of w.buildings.values()) {
-    if (!isOpen(B)) continue;
+    // (nobody comes to a place with no road to it)
+    if (!isOpen(B) || !B.access) continue;
     const def = BUILDINGS[B.type];
     const strolls = B.spots && B.spots.length > 1;
     if (!strolls && !(def.outdoorWork || def.outdoor || B.open)) continue;

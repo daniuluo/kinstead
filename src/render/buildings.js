@@ -3244,6 +3244,13 @@ function landingNow(c, L) {
   let tip = -0.5 - (harbour ? 0.62 : 0.4);
   for (let z = -0.5; z > -2.2; z -= 0.05) if (c.gy(jx, z) < wy - 0.12) { tip = Math.min(tip, z - (harbour ? 0.34 : 0.24)); break; }
   tip = Math.max(tip, -2.4);
+  // ...but never over a neighbour's plot (another harbour along the shore,
+  // say), its boats and all: short of it, or no pier where it can't start
+  const room = harbour ? half + 0.075 + 0.06 : half + 0.12;
+  for (let z = -0.5; z >= tip; z -= 0.04) {   // (from the edge of its own plot)
+    if ([-room, 0, room].some(dx => c.takenAt(jx + dx, z))) { tip = z + 0.06; break; }
+  }
+  if (root - tip < 0.3) { gb.pop(); return; }
   const deck = Math.max(wy + 0.07, c.gy(jx, root)), len = root - tip, mz = (root + tip) / 2;
   if (harbour) {
     // dressed stone from the bed, a lighter coping along the top
@@ -5460,7 +5467,9 @@ MODELS.deptstore = (c, L) => {
     gb.box(0, 0.3, fz + 0.075, W - 0.04, 0.012, 0.15, IRON_D);
     gb.glow(1.6, 1.4, 1.0, 1.5); gb.box(0, 0.312, fz + 0.075, W - 0.06, 0.008, 0.13, GLASS_ROOF); gb.noGlow();
     for (let i = 0; i <= n; i++) gb.boxC(-W / 2 + 0.02 + i * ((W - 0.04) / n), 0.27, fz + 0.06, 0.008, 0.008, 0.12, IRON_D, 0.45);
-    coach(c, -W / 2 + 0.4, fz + 0.2, Math.PI / 2, rng.pick(['#5a2a4a', '#2a3a5a', '#2f4a3a']), true);
+    // a carriage drawn up at the doors (not on a deep plot, where the front
+    // is the side path in from the street, and it would stand across it)
+    if (!f.turned) coach(c, -W / 2 + 0.4, fz + 0.2, Math.PI / 2, rng.pick(['#5a2a4a', '#2a3a5a', '#2f4a3a']), true);
   } else {
     gb.hip(0, H, z0, W + 0.02, D + 0.02, 0.24, pal.slate, 0.04);
     // the name on the parapet over the doors
@@ -7519,6 +7528,15 @@ export function buildModel(b, opts = {}) {
       const lx = e[0] * x + e[8] * z + e[12], lz = e[2] * x + e[10] * z + e[14];
       const wx = cx + lx * co + lz * si, wz = cz - lx * si + lz * co;
       return ground(wx, wz) - b.baseY - e[13];
+    },
+    // is local point (x, z) on another building's plot or a road (opts.taken,
+    // in the town; never in a picture in a menu)? For what reaches out
+    // beyond the plot, like a pier, to stop short of it.
+    takenAt(x, z) {
+      if (!opts.taken) return false;
+      const e = gb.M.elements;
+      const lx = e[0] * x + e[8] * z + e[12], lz = e[2] * x + e[10] * z + e[14];
+      return opts.taken(cx + lx * co + lz * si, cz - lx * si + lz * co, b.id);
     },
     // the surface of the water (as drawn), relative to the current frame
     waterY() { return ground ? CONFIG.WATER_LEVEL - 0.02 - b.baseY - gb.M.elements[13] : -0.03; },

@@ -563,7 +563,7 @@ export class Input {
     if (q >= 0) b.diag = q + 1;
     const pose = cleanPose(gh.pose);
     if (pose) b.pose = pose;
-    const model = buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z), season: this.game.view.season });
+    const model = buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z), taken: this.game.view.takenFn, season: this.game.view.season });
     if (model.spin) model.spin.geo.dispose();
     this.ghost = new THREE.Mesh(model.geo, gh.ok ? MAT.ghostOk : MAT.ghostBad);
     this.ghost.position.set(gh.x + W / 2 + model.jitter.ox, maxH + 0.002, gh.z + D / 2 + model.jitter.oz);

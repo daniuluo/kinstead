@@ -4,13 +4,13 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { BUILDINGS, TRADES, servicesOf, tradesOf, visitOf } from '../defs.js';
-import { doorPoint, fw, fd, isOpen } from '../world/world.js';
+import { doorPoint, fw, fd, isOpen, DIRS } from '../world/world.js';
 import { tilePolyline } from './path.js';
 import { curvesAt } from '../world/roadShape.js';
 import { workArea } from '../render/buildings.js';
 import { VillagerView, lookOf, dressOf, carryFrom, strideLen } from '../render/villagers.js';
 import { traitsOf } from './people.js';
-import { plotGrid, plotPath, stepsGrid, stepAt } from './plotNav.js';
+import { plotGrid, plotPath, stepsGrid, stepAt, openAt } from './plotNav.js';
 
 // How villagers look and are drawn lives in render/villagers.js.
 export { lookOf };
@@ -299,7 +299,10 @@ export class Agents {
   // walls), the doorway, the doorstep, and the gate: the edge of the plot
   // straight out from the door, so a door set back behind a forecourt, a
   // portico or a garden is walked up to square on rather than across the
-  // corner of a wall. Null for open-air places.
+  // corner of a wall. A door that doesn't face the street the building is
+  // reached from (down the side of a row on a deep plot, or round a corner)
+  // is reached from that street's edge of the plot, round the building to
+  // it where its model is known (plotNav). Null for open-air places.
   _doorway(B, r, arriving) {
     const d = B && B.door;
     if (!d || B.open) return null;
@@ -308,7 +311,27 @@ export class Agents {
     const inside = [d.x - d.dx * 0.09, d.z - d.dz * 0.09], door = [d.x, d.z], step = [d.x + d.dx * 0.08, d.z + d.dz * 0.08];
     const way = [step, door, inside];
     const gate = gateOf(B, d);
-    if (gate) way.unshift(gate);
+    const a = B.access, side = (x, z) => (x < B.x ? 'w' : x > B.x + fw(B) ? 'e' : z < B.z ? 'n' : z > B.z + fd(B) ? 's' : '');
+    const as = a && side(a.x + 0.5, a.z + 0.5), g = gate && as && side(gate[0], gate[1]) !== as ? this._gridOf(B) : null;
+    let round = null, from = null;
+    if (g) {
+      // in from the street's edge of the plot (and the verge it may come
+      // forward into), in line with the door's step
+      const [X0, Z0, X1, Z1] = plotRect(B), cl = (v, lo, hi) => Math.min(hi - 0.06, Math.max(lo + 0.06, v));
+      from = as === 'n' ? [cl(step[0], X0, X1), Z0 - 0.03] : as === 's' ? [cl(step[0], X0, X1), Z1 + 0.03] : as === 'w' ? [X0 - 0.03, cl(step[1], Z0, Z1)] : [X1 + 0.03, cl(step[1], Z0, Z1)];
+      // to the open ground straight out from the door (beyond a porch or a
+      // portico, whose columns leave no room on the grid), then straight in
+      // (or, where even that is shut in, on the grid as drawn, without the room
+      // kept round everything)
+      for (const gg of [g, g.tight]) {
+        let reach = null;
+        for (let u = 0; u <= 0.5 && !reach; u += 0.025) if (openAt(gg, step[0] + d.dx * u, step[1] + d.dz * u)) reach = [step[0] + d.dx * u, step[1] + d.dz * u];
+        round = reach && plotPath(gg, from[0], from[1], reach[0], reach[1]);
+        if (round) break;
+      }
+    }
+    if (round) way.unshift(from, ...round);
+    else if (gate) way.unshift(gate);
     return arriving ? way : way.reverse();
   }
 
@@ -372,7 +395,7 @@ export class Agents {
     const mesh = it && it.mesh;
     if (!mesh || !mesh.geometry) return null;
     let g = this._grids.get(mesh);
-    if (g === undefined) { g = plotGrid(B, mesh, B.x, B.z, B.x + fw(B), B.z + fd(B)); this._grids.set(mesh, g); }
+    if (g === undefined) { g = plotGrid(B, mesh, ...plotRect(B)); this._grids.set(mesh, g); }
     return g;
   }
 
@@ -812,6 +835,13 @@ export class Agents {
     if (b && BUILDINGS[b.type].service === 'education') return 'At school';
     return `Visiting the ${name(r.at)}`;
   }
+}
+
+// A building's plot, with the verge of the street in front that it may
+// come forward into (b.front), as [x0, z0, x1, z1].
+function plotRect(B) {
+  const [dx, dz] = DIRS[B.rot] || [0, 1], f = B.front || 0;
+  return [B.x - (dx < 0 ? f : 0), B.z - (dz < 0 ? f : 0), B.x + fw(B) + (dx > 0 ? f : 0), B.z + fd(B) + (dz > 0 ? f : 0)];
 }
 
 // Where builders walk on a building site: a ring just inside the plot edge.
