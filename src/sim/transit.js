@@ -888,14 +888,12 @@ export class Transit {
       const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / L2));
       return Math.hypot(x - a[0] - ex * t, z - a[1] - ez * t);
     };
+    // (the places the station's model leaves clear of its benches and
+    // lamps, or failing those, round its middle)
     const all = [];
-    for (let k = 0; k < 16; k++) {
-      const ang = (k * Math.PI) / 8;
-      for (const rad of [0.27, 0.23, 0.18]) {
-        const x = d.x + Math.sin(ang) * rad, z = d.z + Math.cos(ang) * rad;
-        all.push([x, z, Math.min(Infinity, ...segs.map(sg => away(x, z, sg)))]);
-      }
-    }
+    const cand = stop.stand && stop.stand.length ? stop.stand.map(p => [p.x, p.z]) : [];
+    if (!cand.length) for (let k = 0; k < 16; k++) for (const rad of [0.22, 0.17]) cand.push([d.x + Math.sin((k * Math.PI) / 8) * rad, d.z + Math.cos((k * Math.PI) / 8) * rad]);
+    for (const [x, z] of cand) all.push([x, z, Math.min(Infinity, ...segs.map(sg => away(x, z, sg)))]);
     // (on a busy deck, where nowhere is quite clear, the spots furthest from
     // the cabins' way)
     const clear = all.filter(p => p[2] > CABIN.W / 2 + 0.045);

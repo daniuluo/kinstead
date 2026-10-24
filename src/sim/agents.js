@@ -42,6 +42,9 @@ const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sp = new THREE.Sphe
 // The top of a doorstep above its door's threshold (see door() in
 // render/buildings.js).
 const STEP_UP = 0.02;
+// how far a gondola station's bench seat is above its deck (bench() in
+// render/buildings.js)
+const G_DECK_SEAT = 0.05;
 
 // How high a walker stands: on the ground or the street, but on the way in
 // to a door or out of it, up the steps, the porch and the portico in front
@@ -102,6 +105,7 @@ export class Agents {
     this.view = new VillagerView(scene, CONFIG.MAX_AGENTS);
     this._grids = new WeakMap();   // a drawn model → the way about its plot (plotNav)
     this._stairs = new WeakMap();  // a drawn model → the steps up to its door
+    this._seated = new Map();      // a bench seat at a gondola station → who has it
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
     this.ring.renderOrder = 8;
     this.ring.visible = false;
@@ -390,7 +394,7 @@ export class Agents {
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
-      ys: null, standY: null, cabin: null, seat: 0, doorRef: null,
+      ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
@@ -398,7 +402,20 @@ export class Agents {
     return wk;
   }
 
-  _drop(wk) { this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+  _drop(wk) { this._unseat(wk); this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+
+  // A free seat on one of a gondola station's benches (stop.seats), or null.
+  _freeSeat(stop) {
+    const free = (stop.seats || []).filter(s => { const o = this._seated.get(s); return !o || !this.walkers.has(o) || o.seatOf !== s; });
+    return free.length ? free[(Math.random() * free.length) | 0] : null;
+  }
+
+  // Up off a bench (boarding, or gone).
+  _unseat(wk) {
+    if (wk.seatOf && this._seated.get(wk.seatOf) === wk) this._seated.delete(wk.seatOf);
+    wk.seatOf = null;
+    wk.sit = false;
+  }
 
   // A walker on its way in to a building whose door has moved since it set
   // off (the building redrawn: a new neighbour, a street laid by it): the
@@ -570,12 +587,27 @@ export class Agents {
   // way through (transit.deckSpots); they board only once up there (onDeck).
   waitAt(r, stop) {
     if (stop.stair && stop.deck && r.walk) {
-      const wk = r.walk, spots = this.game.transit.deckSpots(stop);
-      const spot = spots && spots.length ? spots[(Math.random() * spots.length) | 0] : [stop.deck.x, stop.deck.z];
+      // a seat on one of its benches if there's one free (taken from the
+      // front), or somewhere to stand, facing the middle where the cabins
+      // come in
+      const wk = r.walk, d = stop.deck, seat = this._freeSeat(stop);
+      let end;
+      if (seat) {
+        this._seated.set(seat, wk);
+        wk.seatOf = seat;
+        end = [[seat.x + Math.sin(seat.h) * 0.06, seat.z + Math.cos(seat.h) * 0.06], [seat.x, seat.z]];
+      } else {
+        const spots = this.game.transit.deckSpots(stop);
+        end = [spots && spots.length ? spots[(Math.random() * spots.length) | 0] : [d.x, d.z]];
+      }
       Object.assign(wk, {
-        pts: [[wk.x, wk.z], ...stop.stair.map(p => [p.x, p.z]), spot], ys: [null, ...stop.stair.map(p => p.y), stop.deck.y],
-        seg: 0, t: 0, mode: 'path', delay: 0, doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, standY: null,
-        onArrive: () => { wk.mode = 'wait'; wk.standY = stop.deck.y; wk.y = stop.deck.y; },
+        pts: [[wk.x, wk.z], ...stop.stair.map(p => [p.x, p.z]), ...end], ys: [null, ...stop.stair.map(p => p.y), ...end.map(() => d.y)],
+        seg: 0, t: 0, mode: 'path', delay: 0, doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, standY: null, sit: false,
+        onArrive: () => {
+          wk.mode = 'wait';
+          if (seat && wk.seatOf === seat) { wk.sit = true; wk.standY = wk.y = seat.y; wk.heading = seat.h; }
+          else { wk.standY = wk.y = d.y; wk.heading = Math.atan2(d.x - wk.x, d.z - wk.z); }
+        },
       });
       r.loc = 'wait';
       return;
@@ -585,7 +617,22 @@ export class Agents {
     const wk = r.walk || this._makeWalker(r.lk, [[p.x, p.z]], null);
     wk.r = r;
     r.walk = wk;
+    // a seat on the stop's bench if there's one free (taken from the front),
+    // or standing about by the stop, looking out for the coach
+    const seat = this._freeSeat(stop);
+    if (seat) {
+      this._seated.set(seat, wk);
+      wk.seatOf = seat;
+      Object.assign(wk, {
+        pts: [[wk.x, wk.z], [seat.x + Math.sin(seat.h) * 0.06, seat.z + Math.cos(seat.h) * 0.06], [seat.x, seat.z]], ys: null,
+        seg: 0, t: 0, mode: 'path', delay: 0, doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, standY: null, sit: false,
+        onArrive: () => { wk.mode = 'wait'; if (wk.seatOf === seat) { wk.sit = true; wk.standY = wk.y = seat.y; wk.heading = seat.h; } },
+      });
+      r.loc = 'wait';
+      return;
+    }
     wk.mode = 'wait';
+    wk.standY = null;
     wk.x = p.x + (cx - p.x) * 0.25 + (Math.random() - 0.5) * 0.35;
     wk.z = p.z + (cz - p.z) * 0.25 + (Math.random() - 0.5) * 0.35;
     wk.heading = Math.atan2(p.x - cx, p.z - cz);
@@ -604,7 +651,8 @@ export class Agents {
     const wk = r.walk;
     r.loc = 'ride';
     if (!wk || !at || wk.mode !== 'wait' || wk.standY == null) { if (wk) this._drop(wk); return 0; }
-    const p = seatAt(at, at.seat), y = wk.standY;
+    const p = seatAt(at, at.seat), y = wk.sit ? wk.standY - G_DECK_SEAT : wk.standY;   // (up off a bench to the deck)
+    this._unseat(wk);
     Object.assign(wk, {
       pts: [[wk.x, wk.z], p], ys: [y, y], seg: 0, t: 0, mode: 'path', doorIn: 0, doorOut: 0, floorIn: null, floorOut: null,
       onArrive: () => { wk.mode = 'ride'; wk.cabin = at.v; wk.seat = at.seat; },

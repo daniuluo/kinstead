@@ -165,6 +165,9 @@ export class WorldView {
     // a gondola station's way up from the street and its deck, for its riders
     b.stair = model.stair ? model.stair.map(p => toWorld(p)) : null;
     b.deck = model.deck ? toWorld(model.deck) : null;
+    // its benches (where a villager sits, and the way they face) and places to stand
+    b.seats = model.seats ? model.seats.map(p => ({ ...toWorld(p), h: p.h + mesh.rotation.y, at: b.id })) : null;
+    b.stand = model.stand ? model.stand.map(p => toWorld(p)) : null;
     this.items.set(b.id, item);
     if (animate) {
       mesh.scale.set(1, 0.01, 1);
@@ -205,7 +208,7 @@ export class WorldView {
     b.door = this._doorOf(old || target, mesh, b);
     b.foot = target.foot;
     b.open = !!(old || target).open;
-    b.stair = b.deck = null;
+    b.stair = b.deck = b.seats = b.stand = null;
     this.items.set(b.id, item);
     this._refreshSite(item);
     if (animate) this.dust(cx, b.baseY, cz, b.size, false);

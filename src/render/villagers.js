@@ -627,6 +627,7 @@ export class VillagerView {
       const lk = wk.lk, s = lk.scale * FIG;
       const ph = wk.phase, sn = Math.sin(ph), cs = Math.cos(ph);
       const moving = wk.moving, working = !!wk.working && !moving && wk.mode === 'wander';
+      const sitting = wk.sit && !moving;
       const tool = wk.working ? wk.tool || (wk.ring ? 'hammer' : 'hoe') : null;
       let swing = 0, bob = 0, sq = 1, lean = lk.stoop, roll = 0, turn = 0;
       let aL = 0, aR = 0, rL = -ARM_OUT, rR = ARM_OUT;
@@ -640,6 +641,16 @@ export class VillagerView {
         lean += 0.05;
         roll = 0.11 * sn;
         aL = -swing * 1.1; aR = swing * 1.1;
+      } else if (sitting) {
+        // on a bench: down on the seat, legs out in front, hands in the lap,
+        // leaning back a little and glancing round now and then
+        const br = Math.sin(t * 2.2 + ph);
+        sq = 1 + 0.015 * br;
+        bob = -LEG_L;
+        lean = -0.14;
+        aL = aR = -0.62; rL = -0.12; rR = 0.12;
+        const look = Math.sin(t * 0.55 + ph * 1.7);
+        turn = Math.abs(look) > 0.7 ? Math.sign(look) * 0.15 * (Math.abs(look) - 0.7) / 0.3 : 0;
       } else if (working) {
         const k = sn;
         if (tool === 'hammer') { lean += 0.2 + 0.1 * Math.max(0, k); aR = -1.75 + 0.9 * k; aL = -0.6; rL = -0.05; }
@@ -677,8 +688,8 @@ export class VillagerView {
       R[0] = hc; R[1] = 0; R[2] = -hs; R[3] = 0; R[4] = s; R[5] = 0; R[6] = hs; R[7] = 0; R[8] = hc;
       R[9] = wk.x; R[10] = wk.y + bob * s; R[11] = wk.z;
       // legs
-      this.leg.put(turnX(move(copyF(_f, R), -LEG_X, LEG_L, 0), swing), lk.blue, lk.shoe);
-      this.leg.put(turnX(move(copyF(_f, R), LEG_X, LEG_L, 0), -swing), lk.blue, lk.shoe);
+      this.leg.put(turnX(move(copyF(_f, R), -LEG_X, LEG_L, 0), sitting ? -1.4 : swing), lk.blue, lk.shoe);
+      this.leg.put(turnX(move(copyF(_f, R), LEG_X, LEG_L, 0), sitting ? -1.4 : -swing), lk.blue, lk.shoe);
       // the body, leaning about the hip and squashing as they bounce, at
       // their own height, and what they wear on it
       turnZ(turnX(move(copyF(_tb, R), 0, LEG_L, 0), lean), roll);

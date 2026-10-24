@@ -121,6 +121,8 @@ class Solids {
     const toW3 = (p) => { const [x, z] = toW(p.x, p.z); return { x, y: p.y + b.baseY, z }; };
     b.stair = !b.con && model.stair ? model.stair.map(toW3) : null;
     b.deck = !b.con && model.deck ? toW3(model.deck) : null;
+    b.seats = !b.con && model.seats ? model.seats.map(p => ({ ...toW3(p), h: p.h + th, at: b.id })) : null;
+    b.stand = !b.con && model.stand ? model.stand.map(toW3) : null;
     this.items.set(b.id, { mesh: { geometry: (target || model).geo, position: { x: cx, y: b.baseY, z: cz }, rotation: { y: th } }, site: b.con ? { target: (target || model).geo } : null });
     // a building site's walls are only part built: nothing solid yet
     if (b.con || !model.geo) { this.byB.set(b.id, []); return; }
@@ -483,7 +485,7 @@ function play(label, w) {
   const once = (wk, b) => { const k = (wk.r ? wk.r.id : 'g' + wk.lk.lane) + ':' + b.id; if (seen.has(k)) return false; seen.add(k); return true; };
   const start = w.day;
   let steps = 0, samples = 0;
-  const rode = new Set(), climbed = new Set();   // who rode a gondola, who climbed up to one
+  const rode = new Set(), climbed = new Set(), sat = new Set();   // who rode a gondola, who climbed up to one, who sat down to wait
   while (w.day < start + DAYS && steps < 400000) {
     const g = game.sim.update(0.1);
     game.agents.update(0.1, g);
@@ -496,6 +498,7 @@ function play(label, w) {
       samples++;
       // (in a gondola cabin: the cabins are checked below)
       if (wk.mode === 'ride') { if (wk.r) rode.add(wk.r.id); continue; }
+      if (wk.sit && wk.r) sat.add(wk.r.id);
       const onWay = wk.mode === 'path' && wk.ys && wk.ys[wk.seg] != null && wk.ys[wk.seg + 1] != null;
       if (onWay && wk.ys[wk.seg + 1] > wk.ys[wk.seg] + 0.05 && wk.r) climbed.add(wk.r.id);
       const y = wk.mode === 'wander' ? wk.baseY : wk.y;
@@ -547,7 +550,7 @@ function play(label, w) {
   sweepCables(game, S, F);
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   const parts = [...S.byB.values()].reduce((n, l) => n + l.length, 0);
-  console.log(`${F.serious ? 'FAIL' : 'ok  '} ${label}: ${w.buildings.size} buildings (${parts} solid parts, models in ${(built / 1000).toFixed(1)} s) · ${w.population} villagers · ${game.world.lines.length} lines (${climbed.size} climbed to a gondola, ${rode.size} rode one in sight) · ${DAYS} days, ${samples} villager positions checked · ${secs} s`);
+  console.log(`${F.serious ? 'FAIL' : 'ok  '} ${label}: ${w.buildings.size} buildings (${parts} solid parts, models in ${(built / 1000).toFixed(1)} s) · ${w.population} villagers · ${game.world.lines.length} lines (${climbed.size} climbed to a gondola, ${rode.size} rode one in sight, ${sat.size} sat down to wait) · ${DAYS} days, ${samples} villager positions checked · ${secs} s`);
   F.print('     ');
   return F.serious;
 }
