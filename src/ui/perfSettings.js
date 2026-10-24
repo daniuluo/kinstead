@@ -49,7 +49,7 @@ export function perfHTML(s) {
     ${seg('pfRes', 'Resolution', [[1, '100%'], [0.75, '75%'], [0.5, '50%']], s.resScale ?? 1)}
     ${seg('pfShadow', 'Shadows', [['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['off', 'Off']], shadows)}
     ${seg('pfFx', 'Smoke & dust', [['full', 'Full', 'Smoke, dust and fireworks as they are'], ['reduced', 'Fewer'], ['off', 'Off']], s.effects || 'full')}
-    ${seg('pfPeople', 'Villagers shown', [['all', 'All'], ['some', 'Half', 'About half of them'], ['near', 'Near view', 'Only those near the middle of the view']], s.villagers || 'all')}
+    ${seg('pfPeople', 'Villagers shown', [['crowds', 'Thinned', 'Where crowds gather, only some of those there are drawn: busy streets, not packed ones'], ['all', 'All', 'Every villager, however crowded the street'], ['some', 'Half', 'About half of them'], ['near', 'Near view', 'Only those near the middle of the view']], s.villagers || 'crowds')}
     ${check('pfPaused', s.pausedSlow, 'Draw slowly while paused', 'Only a few frames a second while the game is paused')}`);
 }
 

@@ -375,7 +375,7 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
     game.transit.rebuild();
     const r = game.transit.routes.get(gl.line.id);
     const pylons = r.legs.flatMap(l => l.pylons);
-    ok(pylons.length >= 1 && pylons.every(p => { const tx = Math.floor(p.x), tz = Math.floor(p.z); return !w.buildingOn(tx, tz) && !w.roadAt(tx, tz) && !w.terrain.isWater(tx, tz) && p.h - p.g <= 4.001; }), `its ${pylons.length} pylon(s) stand on open ground, at most 4 high`);
+    ok(pylons.length >= 1 && pylons.every(p => { const o = w.buildingOn(Math.floor(p.x), Math.floor(p.z)); return game.transit._pylonSpot(p.x, p.z) >= 0 && (!o || BUILDINGS[o.type].park) && p.h - p.g <= 6.001; }), `its ${pylons.length} pylon(s) stand where there is room (open ground, a field, a park or a road's verge), at most 6 high`);
     let worst = Infinity;
     r.pts.forEach(([x, z], i) => {
       if (Math.hypot(x - A.x - 0.5, z - A.z - 0.5) < 0.7 || Math.hypot(x - B.x - 0.5, z - B.z - 0.5) < 0.7) return;

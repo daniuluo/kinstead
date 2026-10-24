@@ -3071,10 +3071,15 @@ MODELS.station = (c, L) => {
 // cable (1.05 above the floor), the bullwheel it turns round at the end of a
 // line and the cabins, whose floors pass level with the deck (0.78 up).
 // Stairs climb to the deck from the street. The terminal has a brick booking
-// hall under the deck, iron columns and a lantern on the roof.
+// hall under the deck, iron columns and a lantern on the roof. Where the
+// cable must run higher to clear the roofs round about, the station stands
+// that much taller (c.lift, from b.lift), on longer stilts braced in bays,
+// and from half a tile up a lift rises through the middle to the deck, in
+// place of the stairs.
 MODELS.gondola = (c, L) => {
   const { gb, pal, rng } = c;
-  const DECK = 0.78, EAVE = 1.27, D = 0.3;   // deck top, eaves, the deck's half-width
+  const lift = c.lift || 0;
+  const DECK = 0.78 + lift, EAVE = 1.27 + lift, D = 0.3;   // deck top, eaves, the deck's half-width
   const post = L ? (rng.chance(0.5) ? '#4c5a60' : '#3f4a3f') : rng.chance(0.6) ? pal.wood : pal.accent;
   const floor = L ? STONE : '#8a6a48', beam = shade(post, 0.85);
   footing(c, 0, 0, 0.92, 0.92);
@@ -3092,12 +3097,26 @@ MODELS.gondola = (c, L) => {
     win(c, -0.15, 0.13, 0.07, 0.08, 0.1, 'f', 0.8);
     door(c, -0.02, 0.07, 0.07, 0.17, pal.door);
   }
-  // the stilts, braced below the deck, up to the eaves
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * D, 0, sz * D, 0.045, EAVE, 0.045, post);
-  const span = 2 * D, rise = DECK - 0.1, len = Math.hypot(span, rise), a = Math.atan2(rise, span);
-  for (const s of [-1, 1]) {
-    gb.boxC(0, rise / 2 + 0.03, -D, len, 0.022, 0.018, beam, 0, 0, s * a);
-    gb.boxC(-D, rise / 2 + 0.03, 0, 0.018, 0.022, len, beam, s * a);
+  // the stilts, braced below the deck in a bay or more, up to the eaves
+  const sw = lift > 1.5 ? 0.06 : 0.045;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * D, 0, sz * D, sw, EAVE, sw, post);
+  const bays = Math.max(1, Math.ceil((DECK - 0.1) / 0.8)), span = 2 * D, rise = (DECK - 0.1) / bays, len = Math.hypot(span, rise), a = Math.atan2(rise, span);
+  for (let j = 0; j < bays; j++) {
+    const y = 0.03 + rise * (j + 0.5);
+    for (const s of [-1, 1]) {
+      gb.boxC(0, y, -D, len, 0.022, 0.018, beam, 0, 0, s * a);
+      gb.boxC(-D, y, 0, 0.018, 0.022, len, beam, s * a);
+    }
+    if (j) for (const s of [-1, 1]) { gb.box(0, 0.03 + rise * j - 0.015, s * D, span, 0.03, 0.024, beam); gb.box(s * D, 0.03 + rise * j - 0.015, 0, 0.024, 0.03, span, beam); }
+  }
+  // a tall station's lift, up through the middle of the deck to the drive
+  // (it holds the bullwheel up too); its glass lit at night
+  if (lift >= 0.5) {
+    gb.box(0, 0, 0, 0.07, DECK + 0.33, 0.07, '#4f565b');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
+    for (let y = 0.6; y < DECK - 0.15; y += 0.45) for (const s of [-1, 1]) gb.box(0, y, s * 0.036, 0.05, 0.12, 0.006, GLASS);
+    gb.noGlow();
+    gb.box(0, DECK, 0.036, 0.05, 0.13, 0.006, '#2f2c2a');
   }
   // the deck, its edge beams and a few lengths of railing by the posts
   gb.box(0, DECK - 0.05, 0, 2 * D + 0.04, 0.05, 2 * D + 0.04, floor);
@@ -3110,23 +3129,25 @@ MODELS.gondola = (c, L) => {
     gb.box(sx * D, DECK + 0.085, sz * (D - 0.06), 0.012, 0.012, 0.12, post);
   }
   // the stairs up the right-hand side, from the street to a landing
-  const n = 10, run = 0.6 / n, step = DECK / n, sx = 0.39;
-  for (let i = 0; i < n; i++) {
-    const z = 0.45 - (i + 0.5) * run, top = (i + 1) * step;
-    if (L) gb.box(sx, 0, z, 0.13, top, run + 0.002, STONE);
-    else gb.box(sx, top - 0.02, z, 0.13, 0.02, run + 0.004, '#8a6a48');
+  if (lift < 0.5) {
+    const n = Math.round(DECK / 0.078), run = 0.6 / n, step = DECK / n, sx = 0.39;
+    for (let i = 0; i < n; i++) {
+      const z = 0.45 - (i + 0.5) * run, top = (i + 1) * step;
+      if (L) gb.box(sx, 0, z, 0.13, top, run + 0.002, STONE);
+      else gb.box(sx, top - 0.02, z, 0.13, 0.02, run + 0.004, '#8a6a48');
+    }
+    const sl = Math.hypot(0.6, DECK), sa = Math.atan2(DECK, 0.6);
+    if (!L) for (const o of [-0.07, 0.07]) gb.boxC(sx + o, DECK / 2 - 0.01, 0.15, 0.016, 0.03, sl, post, sa);
+    gb.boxC(sx + 0.07, DECK / 2 + 0.1, 0.15, 0.01, 0.01, sl, post, sa);
+    gb.box(sx, DECK - 0.04, -0.22, 0.15, 0.04, 0.14, floor);
   }
-  const sl = Math.hypot(0.6, DECK), sa = Math.atan2(DECK, 0.6);
-  if (!L) for (const o of [-0.07, 0.07]) gb.boxC(sx + o, DECK / 2 - 0.01, 0.15, 0.016, 0.03, sl, post, sa);
-  gb.boxC(sx + 0.07, DECK / 2 + 0.1, 0.15, 0.01, 0.01, sl, post, sa);
-  gb.box(sx, DECK - 0.04, -0.22, 0.15, 0.04, 0.14, floor);
   // the roof: open on every side, with the drive under it
   for (const s of [-1, 1]) {
     gb.box(0, EAVE - 0.05, s * D, 2 * D + 0.04, 0.05, 0.03, beam);
     gb.box(s * D, EAVE - 0.05, 0, 0.03, 0.05, 2 * D + 0.04, beam);
   }
-  gb.box(0, 1.11, 0, 0.22, 0.11, 0.22, '#5a5f63');
-  gb.box(0, 1.22, 0, 0.06, EAVE - 1.22, 0.06, '#5a5f63');
+  gb.box(0, DECK + 0.33, 0, 0.22, 0.11, 0.22, '#5a5f63');
+  gb.box(0, DECK + 0.44, 0, 0.06, EAVE - DECK - 0.44, 0.06, '#5a5f63');
   gb.hip(0, EAVE, 0, 0.76, 0.76, rng.chance(0.5) ? 0.24 : 0.17, L ? pal.slate : pal.roof, 0.05);
   if (L) {
     // a lantern on the roof, and a flag
@@ -5881,6 +5902,7 @@ export function buildModel(b, opts = {}) {
     spots: [],   // where a park's visitors like to stroll to (see parks.js spot)
     beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
+    lift: b.lift || 0,   // a gondola station standing taller (worked out by transit.js)
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
     gy(x, z) {
