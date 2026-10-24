@@ -1327,7 +1327,7 @@ export class UI {
       const st = g.transit.stats[l.id] || { riders: 0, fares: 0 };
       const cfg = TRANSIT[l.mode];
       return `<div class="line-item"><span class="dot" style="background:${l.color}"></span>
-        <div><b>${esc(l.name)}</b> ${l.broken ? '<span class="chip no">Route broken</span>' : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.vehicles > 1 ? cfg.vehicles : cfg.vehicle} ·${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
+        <div><b>${esc(l.name)}</b> ${l.broken ? `<span class="chip no"${l.blocked ? ` title="${esc(l.blocked)}"` : ''}>${l.blocked ? 'Cable blocked' : 'Route broken'}</span>` : ''}${l.blocked ? `<div class="m" style="font-size:12px;color:var(--brick)">${esc(l.blocked)}</div>` : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.vehicles > 1 ? cfg.vehicles : cfg.vehicle} ·${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
         <div class="inline"><button class="btn small" data-veh="${l.id}" data-d="-1">−</button><button class="btn small" data-veh="${l.id}" data-d="1" title="Add a vehicle ($${cfg.vehicleCost})">+</button><button class="btn small danger" data-ldel="${l.id}">✕</button></div></div>`;
     }).join('')}</div>`;
     this.openModal(h, (c) => {

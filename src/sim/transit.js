@@ -153,10 +153,15 @@ const CAR_SPACING = 0.56;   // distance between train car centres along the trac
 const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // Gondolas: the two cables run G_OFF either side of the line, G_CABLE above a
 // station's floor (its deck is level with a cabin's floor, G_HANG lower; see
-// MODELS.gondola). Pylons stand about G_SPAN apart, never more than G_MAXH
-// tall, and hold the cable G_GROUND above the ground and G_ROOF above the
-// roofs it passes over, so the cabins clear them.
-const G_OFF = 0.12, G_CABLE = 1.05, G_HANG = 0.27, G_SPAN = 6, G_MAXH = 4, G_GROUND = 1.05, G_ROOF = 0.42;
+// MODELS.gondola), or up to G_LIFT higher where a station stands taller to
+// clear its neighbours (b.lift). Pylons stand about G_SPAN apart, never more
+// than G_MAXH tall, and hold the cable G_GROUND above the ground and G_ROOF
+// above the roofs it passes over, so the cabins clear them; between them
+// it sags a little (sagOf a span's length).
+const G_OFF = 0.12, G_CABLE = 1.05, G_HANG = 0.27, G_LIFT = 3.5, G_SPAN = 6, G_MAXH = 6, G_GROUND = 1.05, G_ROOF = 0.42;
+const sagOf = (len) => Math.min(0.12, len * 0.006);
+// Why a gondola line can't run (route.blocked: what is in the cable's way).
+export const blockedReason = (bl) => `The cable can't clear ${bl.by ? `the ${BUILDINGS[bl.by.type].levels[bl.by.level].name}` : 'the ground'}: move a station, or put one nearer it`;
 
 export class Transit {
   constructor(game) {
@@ -198,6 +203,7 @@ export class Transit {
     const line = { id: w.newId(), mode, name: `${cfg.lineName} ${n}`, color, stops: stops.slice(), vehicles: 1 };
     const route = this._route(line);
     if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : mode === 'gondola' ? 'Pick gondola stations' : 'Stops are not connected by road' };
+    if (route.blocked) return { ok: false, reason: blockedReason(route.blocked) };
     w.money -= cfg.vehicleCost;
     w.lines.push(line);
     w.emit('lines');
@@ -233,11 +239,13 @@ export class Transit {
   // ------------------------------------------------------------ routing
   _stopTile(b, mode) { return mode === 'rail' ? b.rail : b.access; }
 
-  _route(line) {
+  // lifts: for a gondola line, how much taller each station stands (see
+  // _cableRoute); without them its stations are free to rise.
+  _route(line, lifts = null) {
     const w = this.world, paths = this.game.paths;
     const stops = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
     if (stops.length < 2) return null;
-    if (line.mode === 'gondola') return stops.every(b => b.type === 'gondola') ? this._cableRoute(stops) : null;
+    if (line.mode === 'gondola') return stops.every(b => b.type === 'gondola') ? this._cableRoute(stops, lifts) : null;
     const stopTiles = stops.map(b => this._stopTile(b, line.mode));
     if (stopTiles.some(t => !t)) return null;
     let tiles = [];
@@ -344,12 +352,28 @@ export class Transit {
   // station where the line doubles back). pts: the path of a cabin's grip;
   // ys: the cable's height along it, level through the stations and slung
   // from pylon to pylon between them.
-  _cableRoute(stops) {
+  // lifts: how much taller than usual each station stands (by id), so the
+  // cable clears what is round it. Without them the stations are free to
+  // rise as far as G_LIFT, and the route says how far each must (lifts);
+  // with them they are held there. blocked: what the cable still can't
+  // clear, if anything.
+  _cableRoute(stops, lifts = null) {
     const n = stops.length;
     const P = stops.map(b => [b.x + 0.5, b.z + 0.5]);
-    const H = stops.map(b => (b.baseY || 0) + G_CABLE);
+    // a station's height, shared by the spans either side of it (and by
+    // every visit to it, should a line come back through it)
+    const ref = new Map();
+    for (const b of stops) if (!ref.has(b.id)) {
+      const h = (b.baseY || 0) + G_CABLE + (lifts ? lifts.get(b.id) || 0 : 0);
+      ref.set(b.id, { h, base: (b.baseY || 0) + G_CABLE, max: lifts ? h : h + G_LIFT, station: true });
+    }
     const legs = [];
-    for (let i = 0; i < n - 1; i++) legs.push(this._span(P[i], P[i + 1], H[i], H[i + 1], stops[i], stops[i + 1]));
+    for (let i = 0; i < n - 1; i++) legs.push(this._span(P[i], P[i + 1], stops[i], stops[i + 1], ref.get(stops[i].id), ref.get(stops[i + 1].id)));
+    const blocked = this._solve(legs);
+    // a station rises in steps of a quarter tile (the cable only goes higher)
+    const lift = new Map();
+    for (const [id, s] of ref) if (!lifts) { const k = Math.ceil((s.h - s.base) / 0.25 - 1e-6) * 0.25; s.h = s.base + k; if (k > 0) lift.set(id, k); }
+    const H = stops.map(b => ref.get(b.id).h);
     // the stations in the order a cabin calls at them: out, then back
     const seq = [];
     for (let i = 0; i < n; i++) seq.push(i);
@@ -400,86 +424,126 @@ export class Transit {
     const marks = joins.map((J, k) => ({ stop: stops[J.si].id, s: cum[markIdx[k]] }));
     // what the drawing depends on: it is redrawn only when this changes
     const sig = P.map((p, i) => `${p[0]},${p[1]},${H[i].toFixed(3)}`).join(';') + '|' + legs.map(l => l.pylons.map(p => `${p.x.toFixed(2)},${p.z.toFixed(2)},${p.h.toFixed(2)}`).join(';')).join('|');
-    return { pts, ys, cum, length: cum[cum.length - 1], marks, mode: 'gondola', legs, wheels, sig };
+    return { pts, ys, cum, length: cum[cum.length - 1], marks, mode: 'gondola', legs, wheels, sig, lifts: lift, blocked };
   }
 
   // One span of a gondola line, from station centre a to station centre b
-  // (the cable at Ha and Hb there; A and B the stations): where its pylons
-  // stand, how tall, and prof(u), the cable's height u along it. A pylon goes
-  // up every G_SPAN or so, on open ground (not on a building, a road, track,
-  // fields or water), just tall enough for the cable either side of it to
-  // clear what lies below.
-  _span(a, b, Ha, Hb, A, B) {
+  // (A and B the stations, s0 and s1 their heights): what the cable must
+  // clear along it, where its pylons stand, and prof(u), the cable's height
+  // u along it once _solve has set the heights. A pylon goes up every
+  // G_SPAN or so, wherever along that stretch there is room for one (best
+  // on open ground, then in a field or a park, then on a road's verge).
+  _span(a, b, A, B, s0, s1) {
     const w = this.world, t = w.terrain;
     const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1e-6;
     const ux = dx / L, uz = dz / L;
     const at = (u) => [a[0] + ux * u, a[1] + uz * u];
-    // the least height the cable may run at, every quarter tile along
-    const NS = Math.max(1, Math.ceil(L / 0.25)), req = [];
+    // the least height the cable may run at, every quarter tile along, and
+    // what sets it there (by: a building, or null for the ground)
+    const NS = Math.max(1, Math.ceil(L / 0.25)), req = [], by = [];
     for (let k = 0; k <= NS; k++) {
       const [x0, z0] = at((L * k) / NS);
-      let need = -Infinity;
+      let need = -Infinity, what = null;
       for (const o of [-0.22, 0, 0.22]) {
         const x = x0 - uz * o, z = z0 + ux * o, tx = Math.floor(x), tz = Math.floor(z);
         if (!w.inBounds(tx, tz)) continue;
         need = Math.max(need, Math.max(t.heightAt(x, z), CONFIG.WATER_LEVEL) + G_GROUND);
         const ob = w.buildingOn(tx, tz);
-        if (ob && ob !== A && ob !== B) need = Math.max(need, this._topOf(ob) + G_ROOF);
+        if (ob && ob !== A && ob !== B) { const h = this._topOf(ob) + G_ROOF; if (h > need) { need = h; what = ob; } }
       }
-      req.push(need);
+      req.push(need); by.push(what);
     }
-    const sup = [{ u: 0, h: Ha, fixed: true }];
+    const pylons = [];
     const n = Math.max(0, Math.ceil(L / G_SPAN) - 1);
     for (let j = 1; j <= n; j++) {
       const u0 = (L * j) / (n + 1);
       let best = null;
-      for (let d = 0; d <= 1.5 && best == null; d += 0.25) for (const u of d ? [u0 - d, u0 + d] : [u0]) {
-        if (u < 1 || u > L - 1 || sup.some(s => Math.abs(s.u - u) < 2)) continue;
-        const [x, z] = at(u);
-        if (this._pylonFits(x, z)) { best = u; break; }
+      for (let u = Math.max(1, u0 - G_SPAN / 2); u <= Math.min(L - 1, u0 + G_SPAN / 2); u += 0.1) {
+        if (pylons.some(p => Math.abs(p.u - u) < 1.5)) continue;
+        const [x, z] = at(u), kind = this._pylonSpot(x, z);
+        if (kind < 0) continue;
+        const score = kind * 2 + Math.abs(u - u0);
+        if (!best || score < best.score) best = { u, x, z, score };
       }
-      if (best == null) continue;
-      const [x, z] = at(best), g = t.heightAt(x, z);
-      sup.push({ u: best, x, z, g, h: Math.min(g + G_MAXH, Math.max(g + 1.3, req[Math.round((best / L) * NS)])), max: g + G_MAXH });
+      if (!best) continue;
+      const g = t.heightAt(best.x, best.z), need = req[Math.round((best.u / L) * NS)];
+      pylons.push({ u: best.u, x: best.x, z: best.z, g, h: Math.min(g + G_MAXH, Math.max(g + 1.3, need)), max: g + G_MAXH, ry: Math.atan2(ux, uz) });
     }
-    sup.push({ u: L, h: Hb, fixed: true });
-    const sagOf = (len) => Math.min(0.12, len * 0.006);
-    // raise the pylons until the cable clears everything, or they are as tall as they go
-    for (let pass = 0; pass < 8; pass++) {
-      let moved = false;
-      for (let i = 0; i < sup.length - 1; i++) {
-        const s0 = sup[i], s1 = sup[i + 1], len = s1.u - s0.u, S = sagOf(len);
-        for (let k = 0; k <= NS; k++) {
-          const u = (L * k) / NS;
-          if (u <= s0.u || u >= s1.u) continue;
-          const f = (u - s0.u) / len, d = req[k] - (s0.h + (s1.h - s0.h) * f - S * 4 * f * (1 - f));
-          if (d <= 1e-3) continue;
-          const h0 = s0.h, h1 = s1.h;
-          if (!s0.fixed && !s1.fixed) { s0.h += d; s1.h += d; }
-          else if (!s1.fixed) s1.h += d / f;
-          else if (!s0.fixed) s0.h += d / (1 - f);
-          for (const s of [s0, s1]) if (!s.fixed) s.h = Math.min(s.h, s.max);
-          if (s0.h !== h0 || s1.h !== h1) moved = true;
-        }
-      }
-      if (!moved) break;
-    }
+    pylons.sort((p, q) => p.u - q.u);
+    const sup = [{ u: 0, s: s0 }, ...pylons.map(p => ({ u: p.u, s: p })), { u: L, s: s1 }];
     const prof = (u) => {
       u = Math.min(L, Math.max(0, u));
       let i = 0;
       while (i < sup.length - 2 && sup[i + 1].u < u) i++;
-      const s0 = sup[i], s1 = sup[i + 1], len = s1.u - s0.u || 1e-6, f = Math.min(1, Math.max(0, (u - s0.u) / len));
-      return s0.h + (s1.h - s0.h) * f - sagOf(len) * 4 * f * (1 - f);
+      const p0 = sup[i], p1 = sup[i + 1], len = p1.u - p0.u || 1e-6, f = Math.min(1, Math.max(0, (u - p0.u) / len));
+      return p0.s.h + (p1.s.h - p0.s.h) * f - sagOf(len) * 4 * f * (1 - f);
     };
-    const ry = Math.atan2(ux, uz);
-    return { a, ux, uz, L, prof, pylons: sup.filter(s => !s.fixed).map(s => ({ x: s.x, z: s.z, g: s.g, h: s.h, ry })) };
+    return { a, ux, uz, L, NS, req, by, sup, prof, pylons, at };
   }
 
-  _pylonFits(x, z) {
+  // Set the heights of a line's pylons and stations so the cable clears
+  // everything under every span: where it runs too low, the pylons either
+  // side rise first (the nearer one more), and a station only when they are
+  // as tall as they go, or there are none. Then each pylon is made at least
+  // nearly as tall as the lower of its neighbours, so the cable never dips
+  // to one for nothing. Returns what still stands in the way, if anything.
+  _solve(legs) {
+    const raise = (s, d) => { const h0 = s.h; s.h = Math.min(s.max, s.h + d); return s.h - h0; };
+    for (let pass = 0; pass < 16; pass++) {
+      let moved = false;
+      for (const leg of legs) for (let i = 0; i < leg.sup.length - 1; i++) {
+        const p0 = leg.sup[i], p1 = leg.sup[i + 1], len = p1.u - p0.u, S = sagOf(len);
+        for (let k = 0; k <= leg.NS; k++) {
+          const u = (leg.L * k) / leg.NS;
+          if (u <= p0.u || u >= p1.u) continue;
+          const f = (u - p0.u) / len;
+          let left = leg.req[k] - (p0.s.h + (p1.s.h - p0.s.h) * f - S * 4 * f * (1 - f));
+          if (left <= 1e-3) continue;
+          const ends = [[p0.s, 1 - f], [p1.s, f]].sort((a, b) => (!!a[0].station - !!b[0].station) || b[1] - a[1]);
+          for (const [s, wt] of ends) if (left > 1e-4 && wt > 1e-3) { const got = raise(s, left / wt) * wt; left -= got; if (got > 1e-4) moved = true; }
+        }
+      }
+      if (!moved) break;
+    }
+    for (const leg of legs) for (let i = 1; i < leg.sup.length - 1; i++) {
+      const p = leg.sup[i].s;
+      p.h = Math.min(p.max, Math.max(p.h, Math.min(leg.sup[i - 1].s.h, leg.sup[i + 1].s.h) - 0.25));
+    }
+    for (const leg of legs) for (let k = 0; k <= leg.NS; k++) {
+      const u = (leg.L * k) / leg.NS;
+      if (leg.req[k] - leg.prof(u) > 0.02) { const [x, z] = leg.at(u); return { by: leg.by[k], x, z }; }
+    }
+    return null;
+  }
+
+  // Stand each gondola station as tall as its lines need (b.lift, worked
+  // out afresh every time, never saved), redrawing those that change.
+  // Returns whether any did.
+  _lift(lifts) {
+    let changed = false;
+    for (const b of this.world.buildings.values()) {
+      if (b.type !== 'gondola') continue;
+      const k = lifts.get(b.id) || 0;
+      if (k === (b.lift || 0)) continue;
+      if (k) b.lift = k; else delete b.lift;
+      this.world.emit('building:refit', b);
+      changed = true;
+    }
+    return changed;
+  }
+
+  // Can a pylon stand at (x, z), and how good a spot is it: 0 open ground,
+  // 1 a field or a park, 2 the verge of a road (near the edge of its tile);
+  // -1 not at all (on a building, in the road, on track or in water).
+  _pylonSpot(x, z) {
     const w = this.world, tx = Math.floor(x), tz = Math.floor(z);
-    if (!w.inBounds(tx, tz)) return false;
+    if (!w.inBounds(tx, tz)) return -1;
     const i = w.idx(tx, tz);
-    return !w.buildingOn(tx, tz) && !w.roadAt(tx, tz) && !w.rails[i] && !w.terrain.isWater(tx, tz) && !(w.fields && w.fields[i] >= 0);
+    if (w.rails[i] || w.terrain.isWater(tx, tz)) return -1;
+    const b = w.buildingOn(tx, tz);
+    if (b) return BUILDINGS[b.type].park ? 1 : -1;
+    if (w.roadAt(tx, tz)) return Math.max(Math.abs(x - tx - 0.5), Math.abs(z - tz - 0.5)) > 0.38 ? 2 : -1;
+    return w.fields && w.fields[i] >= 0 ? 1 : 0;
   }
 
   // How high a building reaches: the top of its model as drawn, or a fair
@@ -604,11 +668,25 @@ export class Transit {
   rebuild() {
     this.dirty = false;
     const w = this.world;
+    // how tall each gondola station must stand, for the tallest of its lines
+    // (once more if that changes a station another line passes over)
+    let lifts;
+    for (let again = 0; again < 2; again++) {
+      lifts = new Map();
+      for (const line of w.lines) {
+        const r = line.mode === 'gondola' ? this._route(line) : null;
+        if (r) for (const [id, k] of r.lifts) lifts.set(id, Math.max(lifts.get(id) || 0, k));
+      }
+      if (!this._lift(lifts)) break;
+    }
     this.routes.clear();
     for (const line of w.lines) {
-      const r = this._route(line);
-      line.broken = !r;
-      if (r) this.routes.set(line.id, r);
+      // (a gondola line with its stations held at those heights; it doesn't
+      // run while something stands in the cable's way)
+      const r = this._route(line, lifts);
+      line.broken = !r || !!r.blocked;
+      if (r && r.blocked) line.blocked = blockedReason(r.blocked); else delete line.blocked;
+      if (r && !r.blocked) this.routes.set(line.id, r);
     }
     // sync vehicles
     for (const v of [...this.vehicles]) {

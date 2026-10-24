@@ -206,7 +206,7 @@ function gondola(w, p) {
       const d = Math.hypot(x2 - x, z2 - z), across = ((x2 - x) - (z2 - z)) / Math.SQRT2 / (d || 1);
       if (d < 7.5 || d > 10 || across < 0.93 || !open(x2, z2)) continue;
       const mx = (x + x2) / 2 + 0.5, mz = (z + z2) / 2 + 0.5;
-      const pylon = [-1, -0.5, 0, 0.5, 1].some(o => g.transit._pylonFits(mx + ((x2 - x) / d) * o, mz + ((z2 - z) / d) * o));
+      const pylon = [-1, -0.5, 0, 0.5, 1].some(o => g.transit._pylonSpot(mx + ((x2 - x) / d) * o, mz + ((z2 - z) / d) * o) === 0);
       const score = under({ x, z }, { x: x2, z: z2 }) + (pylon ? 4 : 0) - Math.hypot(mx - p.x, mz - p.z) * 0.3;
       if (!best || score > best.score) best = { a: [x, z], b: [x2, z2], score };
     }
