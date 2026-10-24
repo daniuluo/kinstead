@@ -14,11 +14,13 @@ import { CORNERS } from '../src/world/roadShape.js';
 
 // name, the town, the canvas size (pixel art at 2× makes the picture half
 // that), what to look at, the zoom, the time of day and the season
-// (0 spring … 3 winter), and a quarter turn of the view (view); at: a
-// spot of its own to look at instead of a building.
+// (0 spring … 3 winter), and a quarter turn of the view (view), or a free
+// turn from the classic view and a tilt in degrees (turn, elev) through a
+// perspective lens of fov°; at: a spot of its own to look at instead of a
+// building.
 const SHOTS = [
   { name: 'hero', town: 'city', W: 1920, H: 960, focus: 'townhall', zoom: 0.8, hours: 10.5, season: 1 },
-  { name: 'og', town: 'city', W: 1200, H: 630, focus: 'townhall', zoom: 0.95, hours: 10.5, season: 1, sky: true, scale: 2 },
+  { name: 'og', town: 'city', W: 1200, H: 630, focus: 'townhall', zoom: 0.95, hours: 10.5, season: 1, sky: true, scale: 2, jpeg: true },
   { name: 'highstreet', town: 'city', W: 960, H: 600, focus: 'arcade', zoom: 4, hours: 11, season: 1 },
   { name: 'estates', town: 'city', W: 960, H: 600, focus: 'cathedralclose', zoom: 4.6, hours: 14.5, season: 1 },
   { name: 'variety', town: 'city', W: 960, H: 600, at: { x: 45.8, z: 53.6 }, view: 2, zoom: 5.4, hours: 11, season: 1 },
@@ -32,6 +34,7 @@ const SHOTS = [
   { name: 'merge', merge: ['market', 'hamlet'], W: 960, H: 600, zoom: 1.6, fit: true, hours: 10, season: 1 },
   { name: 'gondola', town: 'market', W: 960, H: 600, gondola: true, zoom: 3.2, hours: 10.5, season: 1 },
   { name: 'diagonals', town: 'market', W: 960, H: 600, diagonal: true, zoom: 4.8, hours: 10.5, season: 1 },
+  { name: 'camera', town: 'market', W: 960, H: 600, focus: 'townhall', zoom: 2.4, hours: 15, season: 1, turn: 160, elev: 15, fov: 45, sky: true },
 ];
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -50,8 +53,10 @@ function sizeTo(W, H) {
   R.renderer.setSize(W, H, false);
   if (R.post) { R.post.composer.setPixelRatio(R.renderer.getPixelRatio()); R.post.composer.setSize(W, H); }
   const halfH = CONFIG.VIEW_HEIGHT / 2, halfW = halfH * (W / H);
-  Object.assign(R.camera, { left: -halfW, right: halfW, top: halfH, bottom: -halfH });
-  R.camera.updateProjectionMatrix();
+  Object.assign(R.ortho, { left: -halfW, right: halfW, top: halfH, bottom: -halfH });
+  R.ortho.updateProjectionMatrix();
+  R.persp.aspect = W / H;
+  R.persp.updateProjectionMatrix();
 }
 
 // The picture just drawn, one pixel per art pixel.
@@ -167,14 +172,18 @@ function crowd() {
   const [bx, bz] = best[0].split(',').map(Number);
   return { x: bx * 2 + 1, z: bz * 2 + 1 };
 }
-function aim(p, zoom, view = null) {
-  const R = G().renderer, rig = R.rig;
+function aim(p, zoom, view = null, spec = {}) {
+  const R = G().renderer, rig = R.rig, w = G().world;
   R.lookAt(p.x, p.z, true);
-  // (p.y: look at a point up in the air, not on the ground)
+  // (p.y: look at a point up in the air, not on the ground; a perspective
+  // view looks at the ground itself)
   if (p.y != null) rig.target.y = rig.goal.y = p.y;
+  else if (spec.fov) rig.target.y = rig.goal.y = w.terrain.heightAt(p.x, p.z);
   rig.zoom = rig.zoomT = zoom;
   // (view: a quarter turn round, to see a building from its front)
   if (view != null) { rig.view = view; rig.turnT = (view * Math.PI) / 2; }
+  if (spec.turn != null) rig.turnT = (spec.turn * Math.PI) / 180;
+  rig.elevT = spec.elev != null ? (spec.elev * Math.PI) / 180 : Math.atan(0.5);
   rig.turn = rig.turnT; rig.base = rig.baseT; rig.elev = rig.elevT;
 }
 
@@ -266,7 +275,7 @@ function diagonal(w, p) {
 
 function settings(spec) {
   const g = G(), s = g.settings;
-  Object.assign(s, { pixelArt: true, pixelSize: 2, ao: false, tiltShift: spec.tilt || 'off', tiltBand: 'normal', fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false });
+  Object.assign(s, { pixelArt: true, pixelSize: 2, ao: false, tiltShift: spec.tilt || 'off', tiltBand: 'normal', fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false, camera: spec.fov ? 'perspective' : 'iso', fov: spec.fov || 45 });
   g.applySettings();
 }
 
@@ -274,7 +283,7 @@ async function render(spec, p) {
   const g = G(), w = g.world;
   let zoom = spec.zoom;
   if (spec.fit) ({ zoom, p } = fitZoom(w, spec.W, spec.H, spec.zoom));
-  aim(p, zoom, spec.view ?? 0);
+  aim(p, zoom, spec.view ?? 0, spec);
   // let the villagers get about for a few minutes, then hold still
   w.hours = spec.hours - 0.4;
   g.setSpeed(4);
@@ -282,7 +291,7 @@ async function render(spec, p) {
   g.setSpeed(0);
   if (spec.crowd) p = crowd() || p;
   sizeTo(spec.W, spec.H);
-  aim(p, zoom, spec.view ?? 0);
+  aim(p, zoom, spec.view ?? 0, spec);
   step(3, true);
   g.clock = performance.now() - 16;
   g.frame(true);
@@ -375,7 +384,7 @@ async function shoot(spec) {
     ctx.drawImage(pic, 0, 0, out.width, out.height);
     pic = out;
   }
-  await post(spec.name, pic, spec.sky ? 'jpeg' : 'webp', spec.sky ? 0.9 : 0.92);
+  await post(spec.name, pic, spec.jpeg ? 'jpeg' : 'webp', spec.jpeg ? 0.9 : 0.92);
   g.renderer.resize();
 }
 

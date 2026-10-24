@@ -91,6 +91,9 @@ body.pixel #app canvas { image-rendering: pixelated; }
 .menu button .ms, .zoom button .ms { font-size: 20px; vertical-align: 0; }
 .menu button:active, .zoom button:active, .speed button:active { box-shadow: var(--sunken); }
 .menu button.on { box-shadow: var(--sunken); background: #b5b5b5; }
+/* the classic-view compass turns with the view, and fades while the view is the classic one */
+#btnClassic .ms { display: inline-block; }
+#btnClassic.off .ms { opacity: 0.45; }
 
 .zoom { position: absolute; right: 8px; bottom: 92px; display: flex; flex-direction: column; padding: 4px; gap: 2px; }
 

@@ -124,6 +124,7 @@ export class UI {
     $('btnView').onclick = () => g.toggleTopDown();
     $('btnRotL').onclick = () => g.rotateView(-1);
     $('btnRotR').onclick = () => g.rotateView(1);
+    $('btnClassic').onclick = () => g.classicView();
     $('btnOverlay').onclick = () => this.toggleOverlayMenu();
     $('btnLines').onclick = () => this.showLines();
     $('btnHideUI').onclick = () => this.setUIHidden(true);
@@ -347,6 +348,14 @@ export class UI {
     const ci = env.snowing ? 'weather_snowy' : env.rain > 0.3 ? 'rainy' : env.cloud > 0.5 ? 'cloud'
       : night > 0.6 ? 'dark_mode' : (w.hours < 8 || w.hours > 18 ? 'wb_twilight' : 'light_mode');
     if (this._ci !== ci) { this._ci = ci; $('clockIcon').innerHTML = `<span class="ms">${ci}</span>`; }
+    // the classic-view button is a compass: it turns with the view, and
+    // stands out while the view is not the classic one
+    const R = this.game.renderer, deg = Math.round(((R.rig.angle - Math.PI / 4) * 180) / Math.PI), classic = R.classic;
+    if (this._compass !== deg || this._classic !== classic) {
+      this._compass = deg; this._classic = classic;
+      $('btnClassic').firstChild.style.transform = `rotate(${-deg}deg)`;
+      $('btnClassic').classList.toggle('off', classic);
+    }
     this._t += dt;
     if (this._t > 0.25) {
       this._t = 0;
@@ -990,7 +999,7 @@ export class UI {
     const layer = $('popups');
     if (layer.childElementCount > 30) return;
     const p = g.renderer.worldToScreen(new g.THREE.Vector3(x, y, z));
-    if (p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight) return;
+    if (p.behind || p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight) return;
     const el = document.createElement('div');
     el.className = 'coin';
     el.textContent = `+$${v}`;
@@ -1008,6 +1017,7 @@ export class UI {
     if (!pos) return;
     if (!el) { el = document.createElement('div'); el.className = 'label3d'; $('popups').appendChild(el); this.labels.set('sel', el); }
     const p = g.renderer.worldToScreen(new g.THREE.Vector3(pos.x, pos.y + 0.24, pos.z));
+    el.style.display = p.behind ? 'none' : '';
     el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
     el.textContent = `${r.first} · ${g.agents.activity(r)}`;
   }
@@ -1387,6 +1397,10 @@ export class UI {
       ${seg('stTiltBand', 'Sharp band', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], s.tiltBand || 'normal')}
       <p class="set-hint">Tilt-shift makes the town look like a tabletop model: the middle of the screen stays sharp and the view softens toward every edge.</p>
       ${check('stDay', s.alwaysDay, 'Always daytime', "The clock and the villagers' days run on, but the light never goes down")}`);
+    const camera = group('Camera', `
+      ${seg('stCam', 'Projection', [['iso', 'Isometric', 'Flat, the classic look: far things as big as near ones'], ['perspective', 'Perspective', 'Like a real camera: far things smaller']], s.camera || 'iso')}
+      ${seg('stFov', 'Field of view', [[30, '30°', 'Narrow, nearly flat'], [45, '45°', 'Normal'], [60, '60°', 'Wide, more depth']], s.fov || 45)}
+      <p class="set-hint">Turn and tilt the view freely with a middle-drag, Shift + right-drag, Shift + W A S D, or two fingers (twist to turn, drag up or down together to tilt). Home or the compass button goes back to the classic isometric view.</p>`);
     const sound = group('Sound', `
       ${check('stSound', s.sound, 'Sound effects')}
       ${check('stMusic', s.music !== false, 'Music')}
@@ -1406,7 +1420,7 @@ export class UI {
       ${check('stInst', sb.instantBuild, 'Instant building', 'No builders needed', guest)}`) : '';
     this.openModal(`<h2>Settings</h2>
       <p class="lead">Changes apply as you make them.</p>
-      <div class="set-cols"><div>${display}${perfHTML(s)}</div><div>${sound}${pops}${game}${sandbox}</div></div>
+      <div class="set-cols"><div>${display}${perfHTML(s)}</div><div>${camera}${sound}${pops}${game}${sandbox}</div></div>
       <div class="actions set-actions"><button class="btn" id="stMenu">Quit to title</button><span style="flex:1"></span><button class="btn primary" id="stOk">Close</button></div>`, (c) => {
       c.classList.add('settings-win');
       bindSegs(c);
@@ -1415,6 +1429,7 @@ export class UI {
       const syncDisplay = () => {
         for (const b of val('stPixSize').querySelectorAll('button')) b.disabled = !val('stPix').checked;
         for (const b of val('stTiltBand').querySelectorAll('button')) b.disabled = segValue(c, 'stTilt') === 'off';
+        for (const b of val('stFov').querySelectorAll('button')) b.disabled = segValue(c, 'stCam') !== 'perspective';
       };
       syncDisplay();
       const apply = (e) => {
@@ -1425,6 +1440,8 @@ export class UI {
         s.alwaysDay = val('stDay').checked;
         s.tiltShift = segValue(c, 'stTilt');
         s.tiltBand = segValue(c, 'stTiltBand');
+        s.camera = segValue(c, 'stCam');
+        s.fov = Number(segValue(c, 'stFov'));
         s.sound = val('stSound').checked;
         s.music = val('stMusic').checked;
         s.musicVol = Number(val('stMusicVol').value);
@@ -1833,12 +1850,14 @@ export class UI {
     const k = (s) => `<span class="kbd">${s}</span>`;
     this.openModal(`<h2>How to play</h2><p class="lead">Grow a cozy village: lay roads, build homes, give villagers work, services and pretty places — and watch them go about their day.</p>
       <div class="grid2"><div class="help-grid">
-        ${k('Drag')}<span>Pan (right / middle mouse, or left-drag with Select)</span>
+        ${k('Drag')}<span>Pan (right mouse, or left-drag with Select)</span>
+        ${k('Middle-drag')}<span>Turn and tilt the view (or ${k('Shift')} + right-drag; on a touch screen, twist two fingers, or drag them up or down together)</span>
         ${k('Wheel')}<span>Zoom in & out</span>
-        ${k('W A S D')}<span>Pan the camera</span>
+        ${k('W A S D')}<span>Pan the camera · with ${k('Shift')}, turn (A D) and tilt (W S) it</span>
         ${k('T')}<span>Toggle 2D top-down / isometric</span>
         ${k('V')}<span>Hide the interface to see just the town (V or Esc brings it back)</span>
         <span>${k('Q')} ${k('E')}</span><span>Rotate the view a quarter turn</span>
+        ${k('Home')}<span>Back to the classic isometric view (the compass button too)</span>
         <span>${k('1')}–${k('8')}</span><span>Tool menus · ${k('R')} roads · ${k('X')} demolish</span>
         ${k('Tab')}<span>Flip a building's entrance</span>
         ${k('Space')}<span>Pause · ${k('[')} ${k(']')} slower / faster (up to 32×)</span>

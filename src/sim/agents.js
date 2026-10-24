@@ -765,6 +765,7 @@ export class Agents {
       if (!wk.r || wk.ghost || wk.delay > 0) continue;
       _v.set(wk.x, wk.y + 0.08 * wk.lk.scale, wk.z);
       const p = this.game.renderer.worldToScreen(_v);
+      if (p.behind) continue;
       const d = Math.hypot(p.x - clientX, p.y - clientY);
       if (d < bd) { bd = d; best = wk.r; }
     }

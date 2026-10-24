@@ -6,12 +6,15 @@ const VS = `
 attribute float aSize;
 attribute vec4 aColor;
 uniform float uScale;
+uniform float uDist;
 varying vec4 vColor;
 void main() {
   vColor = aColor;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = max(1.0, aSize * uScale);
+  // (uScale is the size at the camera's target: a perspective camera,
+  // uDist from it, draws nearer points bigger and farther ones smaller)
+  gl_PointSize = max(1.0, aSize * uScale * (uDist > 0.0 ? uDist / max(0.01, -mv.z) : 1.0));
 }`;
 
 const FS = `
@@ -39,11 +42,12 @@ export class Particles {
     this.geo.setDrawRange(0, 0);
     this.mat = new THREE.ShaderMaterial({
       vertexShader: VS, fragmentShader: FS,
-      uniforms: { uScale: { value: 1 }, uSoft: { value: soft } },
+      uniforms: { uScale: { value: 1 }, uSoft: { value: soft }, uDist: { value: 0 } },
       transparent: true, depthWrite: false,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     this.points = new THREE.Points(this.geo, this.mat);
+    this.points.onBeforeRender = (r, s, cam) => { this.mat.uniforms.uDist.value = cam.isPerspectiveCamera ? cam.userData.dist || 0 : 0; };
     this.points.frustumCulled = false;
     this.points.renderOrder = additive ? 5 : 4;
     scene.add(this.points);

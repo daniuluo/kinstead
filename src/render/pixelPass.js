@@ -11,12 +11,19 @@ uniform sampler2D tDiffuse;
 uniform sampler2D tDepth;
 uniform sampler2D tNormal;
 uniform vec4 resolution;
-uniform float depthScale;
+uniform float cameraNear;
+uniform float cameraFar;
+uniform float persp;
 uniform float outline;
 uniform float highlight;
 varying vec2 vUv;
 
-float D(float x, float y) { return texture2D(tDepth, vUv + vec2(x, y) * resolution.zw).r * depthScale; }
+// the depth buffer as stored: in a perspective view it is linear in 1/distance,
+// so a flat plane still has zero second derivative across the screen
+float R(float x, float y) { return texture2D(tDepth, vUv + vec2(x, y) * resolution.zw).r; }
+// how far in front of the camera, in world units
+float lin(float r) { return persp > 0.5 ? cameraNear * cameraFar / (cameraFar - r * (cameraFar - cameraNear)) : r * (cameraFar - cameraNear); }
+float D(float x, float y) { return lin(R(x, y)); }
 vec3 Nr(float x, float y) { return texture2D(tNormal, vUv + vec2(x, y) * resolution.zw).rgb * 2.0 - 1.0; }
 
 float nEdge(float x, float y, float d, vec3 n) {
@@ -29,13 +36,15 @@ float nEdge(float x, float y, float d, vec3 n) {
 
 void main() {
   vec4 c = texture2D(tDiffuse, vUv);
-  float d = D(0.0, 0.0);
+  float r = R(0.0, 0.0), d = lin(r);
   vec3 n = Nr(0.0, 0.0);
   // silhouette: depth jumps (not just slopes — a sloped plane has zero second
-  // derivative) and this pixel is the nearer side of the jump
-  float dl = D(-1.0, 0.0), dr = D(1.0, 0.0), du = D(0.0, 1.0), dd = D(0.0, -1.0);
-  float lap = max(abs(dl + dr - 2.0 * d), abs(du + dd - 2.0 * d));
-  float gap = max(max(dl, dr), max(du, dd)) - d;
+  // derivative) and this pixel is the nearer side of the jump; the jumps in
+  // the stored depth, in world units at this pixel's distance
+  float rl = R(-1.0, 0.0), rr = R(1.0, 0.0), ru = R(0.0, 1.0), rd = R(0.0, -1.0);
+  float unit = persp > 0.5 ? d * d * (cameraFar - cameraNear) / (cameraFar * cameraNear) : cameraFar - cameraNear;
+  float lap = max(abs(rl + rr - 2.0 * r), abs(ru + rd - 2.0 * r)) * unit;
+  float gap = lin(max(max(rl, rr), max(ru, rd))) - d;
   float de = step(0.06, lap) * step(0.06, gap);
   float ne = step(0.12, nEdge(0.0, -1.0, d, n) + nEdge(0.0, 1.0, d, n) + nEdge(-1.0, 0.0, d, n) + nEdge(1.0, 0.0, d, n));
   float k = de > 0.0 ? (1.0 - outline) : (1.0 + highlight * ne);
@@ -66,7 +75,7 @@ export class PixelPass extends Pass {
       uniforms: {
         tDiffuse: { value: null }, tDepth: { value: null }, tNormal: { value: null },
         resolution: { value: new THREE.Vector4(1, 1, 1, 1) },
-        depthScale: { value: 100 }, outline: { value: 0.42 }, highlight: { value: 0.22 },
+        cameraNear: { value: 1 }, cameraFar: { value: 100 }, persp: { value: 0 }, outline: { value: 0.42 }, highlight: { value: 0.22 },
       },
       vertexShader: VERT, fragmentShader: FRAG,
     });
@@ -87,7 +96,9 @@ export class PixelPass extends Pass {
 
   render(renderer, writeBuffer) {
     const u = this.material.uniforms;
-    u.depthScale.value = this.camera.far - this.camera.near;
+    u.cameraNear.value = this.camera.near;
+    u.cameraFar.value = this.camera.far;
+    u.persp.value = this.camera.isPerspectiveCamera ? 1 : 0;
     renderer.setRenderTarget(this.beauty);
     renderer.clear();
     renderer.render(this.scene, this.camera);
