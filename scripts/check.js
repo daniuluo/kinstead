@@ -2180,6 +2180,79 @@ const placePair = (tw, ta, tb) => {
   ok(turnDiag(1, 1) === 2 && turnDiag(8 | (CUT << 3), 1) === (1 | CUT) && turnDiag(0x5a, 4) === 0x5a && turnDiag(turnDiag(0x36, 1), 3) === 0x36, 'a turned town turns its diagonals with it');
 }
 
+// 3k. freeform: a building can be turned to any angle on its plot (up to 45
+// degrees either way from facing its street) and nudged on it; whatever the
+// turn, its model stays on its plot (and the verge it may come forward
+// into), its door turns with it, and its real footprint is a polygon in
+// world space. One beside the outside of a bend in the street squares itself
+// to the curve. Poses are placed, changed and squared up by commands, saved,
+// and checked
+{
+  const { cleanPose, poseRec, TURN_MAX, NUDGE } = await import('../src/world/pose.js');
+  const { facingAngle } = await import('../src/world/diagonal.js');
+  const { strokeTiles } = await import('../src/world/diagonal.js');
+  const { surfaceAt } = await import('../src/world/roadShape.js');
+  const { runCommand } = await import('../src/commands.js');
+  ok(cleanPose([0.3, 0.1, -0.05]).a === 0.3 && cleanPose([9, 9, -9]).a === Math.round(TURN_MAX * 1000) / 1000 && cleanPose([9, 9, -9]).x === NUDGE && cleanPose([0, 0, 0]) === null && cleanPose(['x', 0, 0]) === null && cleanPose(null) === null, 'a pose is kept within its limits, and none at all is no pose');
+  // every one-tile building, turned and nudged, on a plain plot and coming forward into the street
+  const turns = [-TURN_MAX, -0.35, 0.2, TURN_MAX], nudges = [[0, 0], [NUDGE, -NUDGE], [-0.1, 0.15]];
+  let tried = 0, worst = 0, at = '', doors = 0, wrongDoor = 0;
+  for (const [type, def] of Object.entries(BUILDINGS)) {
+    if (def.size !== 1 || def.merged || def.needsRail || def.fields || def.needsWater) continue;
+    for (const [i, a] of turns.entries()) {
+      const [x, z] = nudges[i % nudges.length], rot = i % 4, front = i % 2 ? 0.16 : 0;
+      const b = { type, level: def.levels.length - 1, variant: 11 + i, size: 1, w: 1, d: 1, x: 10, z: 10, baseY: 0.5, minY: 0.5, rot, front, pose: cleanPose([a, x, z]) };
+      const m = buildModel(b);
+      tried++;
+      // its footprint in the plot's own frame (turned back by its facing)
+      const th = (rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      for (const [wx, wz] of m.foot) {
+        const dx = wx - 10.5, dz = wz - 10.5, lx = dx * co - dz * si, lz = dx * si + dz * co;
+        const out = Math.max(Math.abs(lx) - 0.5, -lz - 0.5, lz - 0.5 - front);
+        if (out > worst) { worst = out; at = `${type} L${b.level} turned ${a.toFixed(2)}`; }
+      }
+      if (m.door) {
+        doors++;
+        const ft = facingAngle(b) + b.pose.a, c2 = Math.cos(ft), s2 = Math.sin(ft);
+        const wdx = m.door.dx * c2 + m.door.dz * s2, wdz = -m.door.dx * s2 + m.door.dz * c2;
+        if (wdx * Math.sin(ft) + wdz * Math.cos(ft) < 0.7) wrongDoor++;
+      }
+    }
+  }
+  ok(tried > 150 && worst < 0.003, `turned and nudged, every one-tile building stays on its plot and the verge it comes forward into (${tried} tried, at most ${worst.toFixed(4)} over${worst > 0.003 ? ': ' + at : ''})`);
+  ok(doors > 100 && !wrongDoor, `and its door turns with it (${doors} doors)`);
+  // in a town: placed turned, turned again, squared up; saved
+  const tw = World.createNew({ N: 48, seed: 61, name: 'Turnham' });
+  tw.money = 1e6;
+  tw.setSandbox({ unlockAll: true });
+  for (const b of [...tw.buildings.values()]) tw.demolishBuilding(b.id);
+  for (let z = 0; z < 48; z++) for (let x = 0; x < 48; x++) { tw.terrain.setCh(x, z, 0.5); tw._clearTrees(x, z); }
+  for (let z = 0; z < 48; z++) for (let x = 0; x < 48; x++) if (tw.roadAt(x, z) && !(x === tw.entry.x && z === tw.entry.z)) tw.removeRoad(x, z);
+  // an L street: along row 10, turning north up column 14
+  tw.placeRoads(strokeTiles({ x: 4, z: 10 }, { x: 14, z: 10 }, false), 2, { stroke: true });
+  tw.placeRoads(strokeTiles({ x: 14, z: 10 }, { x: 14, z: 4 }, false), 2, { stroke: true });
+  const cg = { world: tw, demo: false };
+  const pr = runCommand(cg, { t: 'place', type: 'house', x: 8, z: 11, yaw: 0.5 });
+  const hb = pr.building;
+  ok(pr.ok && hb.pose && hb.pose.a === 0.5 && !runCommand(cg, { t: 'place', type: 'house', x: 9, z: 11, yaw: 1.2 }).ok, 'a building can be placed turned (and no further than 45 degrees)');
+  let refits = 0;
+  tw.on('building:refit', (b) => { if (b === hb) refits++; });
+  ok(runCommand(cg, { t: 'pose', id: hb.id, pose: [-0.3, 0.12, -0.08] }).ok && hb.pose.a === -0.3 && hb.pose.x === 0.12 && hb.pose.z === -0.08 && refits === 1, 'turned and nudged again, it is rebuilt where it now stands');
+  ok(!runCommand(cg, { t: 'pose', id: hb.id, pose: [0, 0.5, 0] }).ok && !runCommand(cg, { t: 'pose', id: hb.id, pose: [0, 0] }).ok, 'a nudge off its plot, or a pose that makes no sense, is refused');
+  const saved = serialize(tw), back = deserialize(JSON.parse(JSON.stringify(saved)));
+  ok(JSON.stringify(back.buildings.get(hb.id).pose) === JSON.stringify(hb.pose) && JSON.stringify(poseRec(hb)) === JSON.stringify([-0.3, 0.12, -0.08]), 'its pose is saved and loaded');
+  const plain = JSON.parse(JSON.stringify(saved));
+  for (const rec of plain.buildings) rec.length = Math.min(rec.length, 15);
+  ok(!deserialize(plain).buildings.get(hb.id).pose && saved.buildings.filter(r => r.length > 15).length === 1, 'only a building with a pose saves one, and older saves load square');
+  ok(runCommand(cg, { t: 'pose', id: hb.id, pose: null }).ok && !hb.pose, 'squared up, it faces its street again');
+  // the outside of the bend: squared to its curve, on its plot and off the road
+  const bh = tw.placeBuilding('house', 14, 11, { instant: true }).building, bm = buildModel(bh);
+  ok(Math.abs(Math.abs(bh.curve) - 0.322) < 0.002 && !bm.foot.some(([x, z]) => surfaceAt(tw, x, z)) && bm.foot.every(([x, z]) => x > 13.99 && x < 15.01 && z > 10.83 && z < 12.01), `a house on the outside of a bend turns to sit square to the curve (${(bh.curve * 180 / Math.PI).toFixed(1)} degrees), on its plot and off the road`);
+  ok(!JSON.stringify(serialize(tw).buildings).includes('0.322') && deserialize(JSON.parse(JSON.stringify(serialize(tw)))).buildings.get(bh.id).curve === bh.curve, 'its turn comes from the street, so it is never saved, and a load works it out again');
+  tw.placeRoads(strokeTiles({ x: 14, z: 10 }, { x: 18, z: 10 }, false), 2, { stroke: true });
+  ok(!bh.curve, 'with the bend now a junction, it faces the street square again');
+}
+
 // 4. save round-trip
 const data = serialize(w);
 const json = JSON.stringify(data);

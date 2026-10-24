@@ -17,7 +17,8 @@
 //   towns: starter ids, comma-separated ('all': every starter but the heavy
 //   Metropolis, and 'diagonal'; 'scale': a big town grown by the demo bot;
 //   'diagonal': the market town with diagonal streets laid out of it, lined
-//   with buildings turned to face them)
+//   with buildings turned to face them; 'freeform': the market town with
+//   every building turned and nudged on its plot)
 //   --probe: the solid parts of building id over point (x, z), its door, and
 //   the way villagers walk in to it
 
@@ -28,6 +29,7 @@ import { STARTERS, loadStarter } from '../src/world/starters.js';
 import { World, fw, fd, isOpen, doorPoint } from '../src/world/world.js';
 import { facingAngle, strokeTiles } from '../src/world/diagonal.js';
 import { surfaceAt, CORNERS } from '../src/world/roadShape.js';
+import { TURN_MAX, NUDGE } from '../src/world/pose.js';
 import { plotPath } from '../src/sim/plotNav.js';
 import { growDemoTown } from '../src/world/demo.js';
 import { PathFinder } from '../src/sim/path.js';
@@ -530,7 +532,7 @@ function play(label, w) {
 function diagonalStreets(w) {
   w.setSandbox({ ...w.sandbox, infiniteMoney: true, unlockAll: true });
   const kinds = ['house', 'bakery', 'house', 'grocer', 'house', 'tavern', 'house', 'coffeehouse', 'playground', 'house', 'garden'];
-  let laid = 0, n = 0;
+  let laid = 0, n = 0, t = 0;
   for (let z = 2; z < w.N - 2 && laid < 4; z++) for (let x = 2; x < w.N - 2 && laid < 4; x++) {
     if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)] || (x * 7 + z * 3) % 5) continue;
     for (const [dx, dz] of CORNERS) {
@@ -539,7 +541,8 @@ function diagonalStreets(w) {
       if (!w.placeRoads(tiles, 1 + (laid % 3), { stroke: true }).placed) continue;
       laid++;
       for (let i = 1; i < tiles.length - 1; i++) for (const [hx, hz] of [[tiles[i + 1][0], tiles[i][1]], [tiles[i][0], tiles[i + 1][1]]]) {
-        if (w.placeBuilding(kinds[n % kinds.length], hx, hz, { instant: true }).ok) n++;
+        if (w.placeBuilding(kinds[n % kinds.length], hx, hz, { instant: true, variant: 1000 + n * 7919 + t * 31 + Number(process.env.COLLIDE_SEED || 0) * 104729 }).ok) n++;
+        t++;
       }
       break;
     }
@@ -548,8 +551,18 @@ function diagonalStreets(w) {
 }
 
 let failed = 0;
-const towns = which.includes('all') ? [...STARTERS.filter(d => !d.heavy).map(d => d.id), 'diagonal'] : which;
+const towns = which.includes('all') ? [...STARTERS.filter(d => !d.heavy).map(d => d.id), 'diagonal', 'freeform'] : which;
 for (const id of towns) {
+  if (id === 'freeform') {
+    const w = loadStarter('market', { name: 'Askew' });
+    // every building turned up to 45 degrees either way and nudged (see world/pose.js)
+    let n = 0, seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
+    for (const b of w.buildings.values()) if (w.setPose(b.id, [(rnd() * 2 - 1) * TURN_MAX, (rnd() * 2 - 1) * NUDGE, (rnd() * 2 - 1) * NUDGE]).ok && b.pose) n++;
+    console.log(`     (${n} buildings turned and nudged)`);
+    failed += play('market town, every building askew', w) ? 1 : 0;
+    continue;
+  }
   if (id === 'diagonal') {
     const w = loadStarter('market', { name: 'Slantham' });
     diagonalStreets(w);

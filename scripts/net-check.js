@@ -100,7 +100,7 @@ function differences(a, b) {
   for (const x of A.buildings.values()) {
     const y = B.buildings.get(x.id);
     if (!y) { add(`building ${x.id} (${x.type}) missing`); continue; }
-    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.diag || 0, o.look || null, o.flavor || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
+    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.diag || 0, o.pose || null, o.curve || 0, o.look || null, o.flavor || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
       o.con ? [o.con.kind, o.con.to, o.con.toType, o.con.wait || null] : null]);
     if (k(x) !== k(y)) add(`building ${x.id} differs: ${k(x)} vs ${k(y)}`);
     else if (x.con && Math.abs(x.con.done - y.con.done) > 0.02) add(`site ${x.id} progress ${x.con.done} vs ${y.con.done}`);
@@ -395,6 +395,10 @@ let ended = null;
       }
       await until(() => house && gw().buildings.has(house.id) && hw.buildings.get(house.id).diag && gw().buildings.get(house.id).diag);
       ok(house && hw.buildings.get(house.id).diag && gw().buildings.get(house.id).diag === hw.buildings.get(house.id).diag, 'a house the guest puts beside it faces it for everyone');
+      // and turns it a little more, and nudges it, on its plot
+      const pr = house && await ask(guest, { t: 'pose', id: house.id, pose: [0.3, -0.1, 0.05] });
+      await until(() => house && JSON.stringify(gw().buildings.get(house.id).pose || null) === JSON.stringify(hw.buildings.get(house.id).pose || null) && hw.buildings.get(house.id).pose);
+      ok(pr && pr.ok && JSON.stringify(hw.buildings.get(house.id).pose) === '{"a":0.3,"x":-0.1,"z":0.05}' && JSON.stringify(gw().buildings.get(house.id).pose) === JSON.stringify(hw.buildings.get(house.id).pose), 'the guest turns and nudges it on its plot, and everyone sees it so');
     } else ok(false, 'no room for a diagonal street');
   }
   // a coach line between two stops

@@ -60,6 +60,7 @@ export const KEYS = [
   { show: ['8'], keys: ['8'], what: 'Terrain menu (raise, lower, level, plant trees)' },
   { show: ['X', 'Delete'], keys: ['x', 'delete'], what: 'Demolish' },
   { show: ['Tab'], keys: ['tab'], what: "Turn a building's entrance before placing it; with a road, switch between diagonal streets and the grid only; with Select roads, switch between picking stretches and dragging a box" },
+  { show: ['Z', 'C'], keys: ['z', 'c'], what: 'Turn a building while placing it, up to 45° either way (Shift: in small steps)' },
   { show: ['Enter'], keys: ['enter'], what: 'Finish the transit line you are drawing' },
   { show: ['Backspace'], keys: ['backspace'], what: 'Take back the last stop of a new line, or the last stretch of road picked' },
   { show: ['O'], keys: ['o'], what: 'Data overlays' },
@@ -474,10 +475,14 @@ export const PAGES = [
   })),
   {
     id: 'construction', title: 'Building and upgrading', icon: 'construction', group: 'buildings',
-    summary: 'Placing buildings, the builders, upgrades, demolishing and moving.',
+    summary: 'Placing buildings (turned to any angle if you like), the builders, upgrades, demolishing and moving.',
     sections: () => [
       { id: 'place', title: 'Placing a building', html: `
-        <p>Pick a building from a menu in the toolbar and click a plot beside a road; ${k('Tab')} turns its entrance first. A green ghost means it fits. Most buildings take one tile; double-plot and 2×2 buildings come from ${pl('joins', 'joins')}, ${pl('plots', 'grown plots')} and ${pl('estates', 'estates')}. Some need water beside them (fisheries, pumps, water wheels), track (stations) or trees around them (woodcutters earn more in the woods), and a town has only one town hall.</p>` },
+        <p>Pick a building from a menu in the toolbar and click a plot beside a road; ${k('Tab')} turns its entrance first, and ${k('Z')} / ${k('C')} turn it to any angle (see ${pl('construction/turn', 'turning and nudging')}). A green ghost means it fits. Most buildings take one tile; double-plot and 2×2 buildings come from ${pl('joins', 'joins')}, ${pl('plots', 'grown plots')} and ${pl('estates', 'estates')}. Some need water beside them (fisheries, pumps, water wheels), track (stations) or trees around them (woodcutters earn more in the woods), and a town has only one town hall.</p>` },
+      { id: 'turn', title: 'Turning and nudging', html: `
+        <p>A building stands on its plot facing its street, but it needn't stand square. While placing it, ${k('Z')} and ${k('C')} turn it, in steps of 15° (with Shift, 5°), up to 45° either way; the ghost shows how it will stand. A building already standing can be turned the same way, and nudged across its plot or towards and away from the street, with the buttons under <b>On its plot</b> in its panel; <b>Square up</b> sets it straight again.</p>
+        <p>However it is turned or nudged it keeps to its own plot (and the verge in front of it, if it comes forward into the street): a building turned well round is drawn a little smaller so its corners stay clear of the road and the neighbours. Its door turns with it, and villagers walk in and out through it. The town still counts it on its plot, so its homes, jobs, reach and way to the street are as they were. A building turned and nudged keeps its pose when it is moved, saved, shared with other players or merged into another village; one that grows onto the plot next door is squared up on its bigger plot.</p>
+        <p>Some turn themselves. A one-tile building facing the outside of a bend in the street turns to sit square to the curve, and one beside a ${pl('roads/diagonals', 'diagonal street')} turns 45° to face it.</p>` },
       { id: 'builders', title: 'Builders and building sites', html: `
         <p>Nothing appears at once. Builders from the ${bl('builder')} walk to each site and work round the scaffolding, and a building goes up in stages: a pegged-out plot and materials, foundations, walls rising, roof. It only progresses while someone is working on it. Hired hands from the village start every site straight away and keep at it until the town's builders arrive; with no builders in town, they do all of it. Bigger buildings take many builder-hours, which the building pages list.</p>
         <p>Tick <b>Priority</b> on a site's panel to send the builders there first; a flag marks it until it's finished. The ${bl('contractor', 0)} builds faster with more builders. The <b>Instant building</b> sandbox switch skips the builders.</p>` },

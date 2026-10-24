@@ -244,6 +244,11 @@ function botDay() {
   if (MODE !== 'economy' && rng.chance(0.4)) boulevard();
   // and diagonal streets out of town, with homes facing them
   if (MODE !== 'economy' && rng.chance(0.3)) diagonal();
+  // and buildings turned and nudged on their plots, or squared up again
+  if (MODE !== 'economy' && rng.chance(0.4)) {
+    const b = rng.pick([...w.buildings.values()]);
+    if (b && w.setPose(b.id, rng.chance(0.2) ? null : [rng.float(-0.785, 0.785), rng.float(-0.2, 0.2), rng.float(-0.2, 0.2)]).ok && b.pose) counts.posed = (counts.posed || 0) + 1;
+  }
 }
 
 function diagonal() {

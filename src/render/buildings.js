@@ -13,6 +13,7 @@ import { CONFIG } from '../config.js';
 import { PARK_MODELS, parkTree, blooms, spot } from './parks.js';
 import { CIVIC_MODELS } from './civic.js';
 import { facingAngle } from '../world/diagonal.js';
+import { poseJitter } from '../world/pose.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
 
@@ -5854,8 +5855,12 @@ function landBox(b, Ex, Ez) {
   };
 }
 
-// Small per-building yaw and offset so streets don't look ruled with a pencil.
+// Small per-building yaw and offset so streets don't look ruled with a pencil
+// (or the turn and nudge the player gave it, or its turn to a curved street:
+// see world/pose.js).
 export function jitterOf(b) {
+  const p = poseJitter(b);
+  if (p) return p;
   if (b.size > 1 || b.type === 'plaza' || b.type === 'station' || hasExt(b) || b.diag) return { yaw: 0, ox: 0, oz: 0 };
   const h1 = hash2(b.variant & 0xffff, b.variant >>> 16, 31), h2 = hash2(b.variant & 0xffff, b.variant >>> 16, 32), h3 = hash2(b.variant & 0xffff, b.variant >>> 16, 33);
   return { yaw: (h1 - 0.5) * 0.12, ox: (h2 - 0.5) * 0.04, oz: (h3 - 0.5) * 0.04 };
@@ -5943,8 +5948,11 @@ export function buildModel(b, opts = {}) {
     const tx = c.boxAware ? 0 : bcx, tz = c.boxAware ? 0 : bcz;
     const ex = Math.max(bcx - bb.min.x - tx, bb.max.x + tx - bcx), ez = Math.max(bcz - bb.min.z - tz, bb.max.z + tz - bcz);
     const ya = Math.abs(fit.yaw), cy = Math.cos(ya), sy = Math.sin(ya);
-    const m = 0.02 + Math.abs(fit.ox) + Math.abs(fit.oz);
-    const k = Math.min(1, (hx - m) / (ex * cy + ez * sy), (hz - m) / (ex * sy + ez * cy));
+    const m = 0.02 + (fit.m ?? Math.abs(fit.ox) + Math.abs(fit.oz));
+    // (it turns about the middle of the plot, so the middle of a box that has
+    // come forward into the street turns with it)
+    const ys = Math.sin(fit.yaw), mx = Math.abs(bcx * (cy - 1) + bcz * ys), mz = Math.abs(bcz * (cy - 1) - bcx * ys);
+    const k = Math.min(1, (hx - m - mx) / (ex * cy + ez * sy), (hz - m - mz) / (ex * sy + ez * cy));
     if (opts.fit) Object.assign(opts.fit, { k, ex, ez, hx, hz });   // (for tests: how much it was shrunk to fit)
     if (k < 1 || tx || tz) {
       geo.translate(tx - bcx, 0, tz - bcz);
@@ -5993,7 +6001,14 @@ export function buildModel(b, opts = {}) {
     const g3 = gb3.build();
     if (g3) { weather(g3); tint(g3, pal.tint); geo = mergeGeometries([geo, g3], false); geo.computeBoundingSphere(); }
   }
-  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, open: !!c.openAir, houses: c.houses, spots: c.spots };
+  // its real footprint: the corners of all it stands on, in world space
+  let foot = null;
+  if (geo) {
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    foot = [[bb.min.x, bb.min.z], [bb.max.x, bb.min.z], [bb.max.x, bb.max.z], [bb.min.x, bb.max.z]].map(([lx, lz]) => [cx + lx * co + lz * si, cz - lx * si + lz * co]);
+  }
+  return { geo, smoke: c.smoke, glows: c.glows, spin: c.spin, work: c.work, fountain: c.fountain, jitter: jit, door: c.doorAt || null, open: !!c.openAir, houses: c.houses, spots: c.spots, foot };
 }
 
 // A home, shop or service built out across the land it took: the house itself

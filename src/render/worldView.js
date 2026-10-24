@@ -152,6 +152,7 @@ export class WorldView {
     b.work = workArea(b);
     b.spots = model.spots && model.spots.length ? model.spots.map(p => { const v = toWorld({ x: p.x, y: 0, z: p.z }); return [v.x, v.z]; }) : null;
     b.door = this._doorOf(model, mesh, b);
+    b.foot = model.foot;   // all it stands on, in world space (see world/pose.js)
     b.open = !!model.open;   // open-air: villagers wander in it rather than going in
     this.items.set(b.id, item);
     if (animate) {
@@ -191,6 +192,7 @@ export class WorldView {
     b.spots = null;
     mesh.updateMatrixWorld(true);
     b.door = this._doorOf(old || target, mesh, b);
+    b.foot = target.foot;
     b.open = !!(old || target).open;
     this.items.set(b.id, item);
     this._refreshSite(item);

@@ -6,8 +6,9 @@ import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, 
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { findBoulevards, dressFits } from './boulevard.js';
-import { SIDES, CORNERS, CUT, spillsOf, diagLinked } from './roadShape.js';
-import { tidyDiag, linkStroke, isStroke, cornerTo, diagCapable, facingCorner } from './diagonal.js';
+import { SIDES, CORNERS, CUT, spillsOf, diagLinked, roadTile, cornerFrame } from './roadShape.js';
+import { tidyDiag, linkStroke, isStroke, cornerTo, diagCapable, facingCorner, sideTo } from './diagonal.js';
+import { cleanPose } from './pose.js';
 import { newTownId } from '../util/text.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
 
@@ -428,7 +429,7 @@ export class World {
     const w = o.w ?? def.size, d = o.d ?? def.size;
     const variant = o.variant ?? ((Math.random() * 1e9) | 0);
     const pick = chk.access.length ? chk.access[(o.accessIndex || 0) % chk.access.length] : null;
-    return {
+    const b = {
       id: this.newId(), type, level: o.level || 0, x, z, size: Math.max(w, d), w, d, flavor: o.flavor || null, look: o.look || null,
       rot: pick ? pick.rot : variant % 4,
       variant,
@@ -441,6 +442,10 @@ export class World {
       happiness: o.happiness ?? 60, factors: o.factors ?? null,
       con: null,
     };
+    // turned or nudged on its plot (see pose.js): as asked, or as it stood
+    const p = cleanPose(o.pose || (o.yaw ? [o.yaw, 0, 0] : null));
+    if (p) b.pose = p;
+    return b;
   }
 
   // A building comes forward into the street when every tile along its
@@ -533,9 +538,10 @@ export class World {
         this._diagAccess(b, dq);
       }
       const f = dg ? 0 : this._frontOf(b), r = dg ? null : spareRect(b), own = r ? this._frontOf(b, r) : undefined;
-      const cn = dg ? 0 : this._cornerOf(b), sd = dg ? this._diagSides(b, dq) : this._sidesOf(b);
-      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0) || dg !== (b.diag || 0)) {
+      const cn = dg ? 0 : this._cornerOf(b), sd = dg ? this._diagSides(b, dq) : this._sidesOf(b), cv = dg ? 0 : this._curveOf(b);
+      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0) || dg !== (b.diag || 0) || cv !== (b.curve || 0)) {
         if (dg) b.diag = dg; else delete b.diag;
+        if (cv) b.curve = cv; else delete b.curve;
         if (sd) b.sides = sd; else delete b.sides;
         b.front = f;
         if (own === undefined) delete b.ownFront; else b.ownFront = own;
@@ -544,6 +550,35 @@ export class World {
       }
     }
     for (const b of refit) this.emit('building:refit', b);
+  }
+
+  // A one-tile building facing the outside of a bend in the street turns to
+  // sit square to its curve: towards the corner the bend turns round (b.curve,
+  // radians from facing straight out of its plot; 0 for none). See pose.js.
+  _curveOf(b) {
+    if (!b.access || !diagCapable(b) || b.spare) return 0;
+    const { x: ax, z: az } = b.access, [fx, fz] = DIRS[b.rot];
+    if (b.x + fx !== ax || b.z + fz !== az) return 0;
+    const s = roadTile(this, ax, az);
+    if (!s || s.bend < 0 || s.arms[sideTo(ax, az, b.x, b.z)]) return 0;
+    const K = cornerFrame(ax, az, s.bend);
+    let rel = Math.atan2(K.Kx - b.x - 0.5, K.Kz - b.z - 0.5) - (b.rot * Math.PI) / 2;
+    while (rel > Math.PI) rel -= 2 * Math.PI;
+    while (rel < -Math.PI) rel += 2 * Math.PI;
+    return Math.abs(rel) < 0.7 ? Math.round(rel * 1000) / 1000 : 0;
+  }
+
+  // Turn and nudge a building on its plot (pose: [turn, across, forward], see
+  // pose.js); null squares it to its street again.
+  setPose(id, pose) {
+    const b = this.buildings.get(id);
+    if (!b) return { ok: false, reason: 'That building is gone' };
+    if (b.spare) return { ok: false, reason: 'Build it across its whole plot first' };
+    const p = pose == null ? null : cleanPose(pose);
+    if (JSON.stringify(p) === JSON.stringify(b.pose || null)) return { ok: true, building: b };
+    if (p) b.pose = p; else delete b.pose;
+    this.emit('building:refit', b);
+    return { ok: true, building: b };
   }
 
   // The corner a building faces a diagonal across (see above), or -1.
@@ -913,6 +948,7 @@ export class World {
       spare.sx = sign(lx); spare.sz = sign(lz);
     }
     b.spare = spare;
+    delete b.pose;   // (a turn was for the plot it had: square on the bigger one)
     setFloor(this.terrain, b);
     this._updateFronts(b);
     this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
@@ -962,7 +998,7 @@ export class World {
     if (!chk.ok) return { ok: false, reason: chk.reason };
     const nb = this._record(b.type, x, z, chk, {
       w: fw(b), d: fd(b), level: b.level, variant: b.variant, flavor: b.flavor, look: b.look, accessIndex: opts.accessIndex,
-      happiness: b.happiness, factors: b.factors,
+      happiness: b.happiness, factors: b.factors, pose: b.pose,
     });
     if (b.spare) nb.spare = { ...b.spare };
     this._occupy(nb);
@@ -1094,6 +1130,8 @@ export class World {
     };
     const spare = spareOf(rec.spare, w, d);
     if (spare) { b.spare = spare; setFloor(this.terrain, b); }
+    const pose = spare ? null : cleanPose(rec.pose);
+    if (pose) b.pose = pose;
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) this.buildingAt[this.idx(rec.x + dx, rec.z + dz)] = b.id;
     if (Array.isArray(rec.leases) && rec.leases.length) {
       b.leases = rec.leases.map(l => ({ ...l }));

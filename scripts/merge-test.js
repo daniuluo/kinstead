@@ -370,10 +370,15 @@ for (const [label, a, b, arr, days] of runs) {
   const links = (w) => { let n = 0; for (let i = 0; i < w.N * w.N; i++) for (let k = 0; k < 4; k++) if (diagLinked(w, i % w.N, (i / w.N) | 0, k)) n++; return n / 2; };
   const facing = (w) => [...w.buildings.values()].filter(b => b.diag).length;
   ok(laid && laid.house && laid.house.diag && wA.diagN === 5, `a town with a diagonal street and a house facing it (${wA.diagN} links)`);
+  // and a few buildings turned and nudged by hand (their poses go with them)
+  const posed = [...wA.buildings.values()].filter(b => !b.con && !b.spare).slice(0, 6);
+  posed.forEach((b, i) => wA.setPose(b.id, [0.1 * (i - 2), 0.05, -0.05]));
+  const poses = (w) => [...w.buildings.values()].filter(b => b.pose).length;
   const dA = JSON.parse(JSON.stringify(serialize(wA)));
   for (const [label, a, b, arr] of [['a diagonal beside', dA, T.b, { ...besideOffset(48, 48, 'right'), rot: 0 }], ['a diagonal turned 90°', T.b, dA, { ...besideOffset(48, 48, 'left'), rot: 1 }]]) {
     const r = checkMerge(label, a, b, arr);
     if (r) ok(links(r.w) >= 5 && r.w.diagN === links(r.w) && facing(r.w) >= 1, `${label}: the street comes through linked, and the house still faces it (${links(r.w)} links, ${facing(r.w)} facing)`);
+    if (r) ok(poses(r.w) >= posed.filter(b => b.pose).length - 1, `${label}: buildings turned on their plots stay turned (${poses(r.w)} of ${posed.filter(b => b.pose).length})`);
   }
 }
 // something must actually have been settled across all those arrangements
