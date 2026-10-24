@@ -68,6 +68,47 @@ function wedgeGeo(w, d, h) {
   return g;
 }
 
+// Truncated pyramid: base w×d at y=0, top tw×td at y=h (the steep lower
+// slopes of a mansard roof, a corbel, a spire's broach).
+function frustumGeo(w, d, h, tw, td) {
+  const hw = w / 2, hd = d / 2, tx = tw / 2, tz = td / 2;
+  const A = [-hw, 0, -hd], B = [hw, 0, -hd], C = [hw, 0, hd], D = [-hw, 0, hd];
+  const a = [-tx, h, -tz], b = [tx, h, -tz], c = [tx, h, tz], d2 = [-tx, h, tz];
+  const tris = [D, C, c, D, c, d2, C, B, b, C, b, c, B, A, a, B, a, b, A, D, d2, A, d2, a, d2, c, b, d2, b, a];
+  const pos = new Float32Array(tris.length * 3);
+  tris.forEach((p, i) => { pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2]; });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return g;
+}
+
+// A profile in the (z, y) plane (a convex outline, in order round it, its
+// foot along y=0) drawn out along x for `len`, centred: the solid of a
+// gambrel or any other roof with a bent slope, ends closed.
+function prismGeo(len, profile) {
+  const hl = len / 2, pos = [];
+  const tri = (p, q, r, out) => {
+    const u = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], v = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) pos.push(...p, ...r, ...q); else pos.push(...p, ...q, ...r);
+  };
+  const cz = profile.reduce((s, p) => s + p[0], 0) / profile.length, cy = profile.reduce((s, p) => s + p[1], 0) / profile.length;
+  for (let i = 0; i < profile.length; i++) {
+    const [z0, y0] = profile[i], [z1, y1] = profile[(i + 1) % profile.length];
+    if (y0 === 0 && y1 === 0) continue;   // the foot stands on the walls
+    const out = [0, (y0 + y1) / 2 - cy, (z0 + z1) / 2 - cz];
+    const A = [-hl, y0, z0], B = [hl, y0, z0], C = [hl, y1, z1], D = [-hl, y1, z1];
+    tri(A, B, C, out); tri(A, C, D, out);
+  }
+  for (const s of [-1, 1]) for (let i = 1; i < profile.length - 1; i++) {
+    const P = (k) => [s * hl, profile[k][1], profile[k][0]];
+    tri(P(0), P(i), P(i + 1), [s, 0, 0]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  return g;
+}
+
 // Box with chamfered vertical edges and a softened top rim — reads far less
 // "blocky" than a plain box while staying low-poly.
 const bevelCache = new Map();
@@ -196,6 +237,12 @@ export class GeoBuilder {
   }
   wedge(x, y, z, w, d, h, color, ry = 0) {
     return this.add(wedgeGeo(w, d, h), color, this._local(x, y, z, 1, 1, 1, 0, ry, 0));
+  }
+  frustum(x, y, z, w, d, h, tw, td, color, ry = 0) {
+    return this.add(frustumGeo(w, d, h, tw, td), color, this._local(x, y, z, 1, 1, 1, 0, ry, 0));
+  }
+  prism(x, y, z, len, profile, color, ry = 0) {
+    return this.add(prismGeo(len, profile), color, this._local(x, y, z, 1, 1, 1, 0, ry, 0));
   }
 
   // Gable roof with overhanging slabs. Ridge runs along local x (or z if alongZ).
