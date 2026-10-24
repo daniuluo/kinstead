@@ -31,7 +31,7 @@
 // tile stops being a boulevard (dressFits).
 
 import { DRESSINGS, lookPart } from '../config.js';
-import { HALF } from './roadShape.js';
+import { HALF, spillsOf } from './roadShape.js';
 import { hash2 } from '../util/rng.js';
 
 // the world.blvd bit for each side
@@ -44,7 +44,13 @@ export function findBoulevards(w, roads = w.roads, out = null) {
   const N = w.N, rails = w.rails;
   if (!out || out.length !== N * N) out = new Uint8Array(N * N);
   else out.fill(0);
-  const road = (x, z) => x >= 0 && z >= 0 && x < N && z < N && roads[z * N + x] > 0;
+  // (tiles a diagonal street touches never make a boulevard: see diagonal.js)
+  let diag = null;
+  if (w.diagN) {
+    diag = new Uint8Array(N * N);
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if ((w.diag[z * N + x] & 15) || spillsOf(w, x, z)) diag[z * N + x] = 1;
+  }
+  const road = (x, z) => x >= 0 && z >= 0 && x < N && z < N && roads[z * N + x] > 0 && !(diag && diag[z * N + x]);
   // two passes: boulevards running east-west (strips down each column,
   // ax 0) and north-south (strips along each row, ax 1). u runs along the
   // boulevard, v across it.

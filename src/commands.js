@@ -10,6 +10,7 @@ import { BUILDINGS, TECHS, TRANSIT, PRODUCE, KINDS } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
 import { applyDress } from './world/roadDress.js';
+import { isStroke } from './world/diagonal.js';
 import { DRESSINGS } from './config.js';
 import { cleanText, hasKey } from './util/text.js';
 
@@ -41,9 +42,11 @@ export const COMMANDS = {
       && (c.flavor == null || (hasKey(KINDS, c.type) && hasKey(KINDS[c.type], c.flavor))),
     run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0, flavor: c.flavor ?? undefined }),
   },
+  // lay road on tiles; a drag (stroke: true) lists them in order, each next
+  // to the last, and links them as it runs, diagonally across corners
   roads: {
-    check: (w, c) => int(c.level, 1, 3) && tiles(w, c.tiles),
-    run: (g, c) => g.world.placeRoads(c.tiles, c.level),
+    check: (w, c) => int(c.level, 1, 3) && tiles(w, c.tiles) && (c.stroke == null || (typeof c.stroke === 'boolean' && (!c.stroke || isStroke(c.tiles)))),
+    run: (g, c) => g.world.placeRoads(c.tiles, c.level, { stroke: !!c.stroke }),
   },
   rails: {
     check: (w, c) => tiles(w, c.tiles),
@@ -190,7 +193,7 @@ export function runCommand(game, cmd, from = null) {
 // Results travel back to a guest as plain data: building and line objects
 // become ids (the guest looks them up in its own copy of the town, which has
 // already been updated by the time the result arrives).
-const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n', 'refund', 'skipped'];
+const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n', 'refund', 'skipped', 'linked'];
 export function packResult(r) {
   if (!r || typeof r !== 'object') return { ok: !!r };
   const out = {};

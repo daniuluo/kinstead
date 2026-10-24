@@ -11,6 +11,8 @@ import { householdsIn } from '../sim/people.js';
 import { roadRun, roadsInBox, roadsAt, planRoadEdit } from '../world/roadEdit.js';
 import { planDress } from '../world/roadDress.js';
 import { selTiles, dressOp } from './roadSelect.js';
+import { strokeTiles, diagCapable, facingCorner, facingAngle } from '../world/diagonal.js';
+import { spillsOf } from '../world/roadShape.js';
 
 const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a', WARN = '#ffa64a';
 
@@ -170,10 +172,10 @@ export class Input {
     } else if (d.type === 'maybePan') {
       this._selectClick(e);
     } else if (d.type === 'line') {
-      const tiles = this._lineTiles(d.start, d.end);
-      const c = this.tool.kind === 'rail' ? { t: 'rails', tiles } : { t: 'roads', tiles, level: this.tool.level };
+      const tiles = this._strokeOf(d);
+      const c = this.tool.kind === 'rail' ? { t: 'rails', tiles } : { t: 'roads', tiles, level: this.tool.level, stroke: true };
       this.game.cmd(c, (r) => {
-        if (r.placed) this.game.sfx('build');
+        if (r.placed || r.linked) this.game.sfx('build');
         if (r.failed && !r.placed) this.ui.toast(r.failed, 'bad');
         else if (r.failed && r.failed === 'Not enough money') this.ui.toast('Ran out of money part-way', 'bad', '$');
       });
@@ -289,6 +291,11 @@ export class Input {
     return { x: Math.round(tile.px - w / 2), z: Math.round(tile.pz - d / 2) };
   }
 
+  // The tiles a road or track drag lays, in order: roads go diagonally when
+  // the drag is nearer 45 degrees than the grid (unless Tab has set the tool
+  // to keep to the grid); track always keeps to it (see world/diagonal.js).
+  _strokeOf(d) { return strokeTiles(d.start, d.end, this.tool.kind === 'road' && !this.tool.grid); }
+
   _lineTiles(a, b) {
     const out = [];
     const dx = b.x - a.x, dz = b.z - a.z;
@@ -380,14 +387,16 @@ export class Input {
         } else tiles.push({ x: h.x, z: h.z, color: SOFT, alpha: 0.12 });
       }
     } else if ((t.kind === 'road' || t.kind === 'rail') && (d || h)) {
-      const list = d ? this._lineTiles(d.start, d.end) : [[h.x, h.z]];
-      let cost = 0, bad = null;
-      for (const [x, z] of list) {
-        const c = t.kind === 'rail' ? w.checkRail(x, z) : w.checkRoad(x, z, t.level);
+      const list = d ? this._strokeOf(d) : [[h.x, h.z]];
+      const plan = t.kind === 'road' ? w.checkStroke(list, t.level) : list.map(([x, z]) => w.checkRail(x, z));
+      let cost = 0, bad = null, diag = false;
+      list.forEach(([x, z], n) => {
+        const c = plan[n];
         tiles.push({ x, z, color: c.ok ? OK : BAD, alpha: c.noop ? 0.15 : 0.4 });
         if (c.ok) cost += c.cost; else bad ||= c.reason;
-      }
-      tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name} · $${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
+        if (n && list[n - 1][0] !== x && list[n - 1][1] !== z) diag = true;
+      });
+      tip = `${t.kind === 'rail' ? 'Railway track' : ROAD_LEVELS[t.level].name}${diag ? ' · diagonal' : ''} · $${fmt(cost)}` + (bad ? `<br><span class="bad">${bad}</span>` : '') + (cost > w.money ? '<br><span class="bad">Not enough coins</span>' : '');
     } else if (t.kind === 'fields') {
       // the farm and its fields in gold; what a drag would add (green) or
       // can't (red), or which fields it would take out
@@ -504,17 +513,20 @@ export class Input {
     const minH = isFinite(c.minH) ? c.minH : w.terrain.tileMin(gh.x, gh.z);
     const maxH = isFinite(c.maxH) ? c.maxH : w.terrain.tileMax(gh.x, gh.z);
     const W = gh.w ?? def.size, D = gh.d ?? def.size, variant = gh.variant ?? this.variant;
-    const key = `${gh.type}|${gh.level || 0}|${gh.x}|${gh.z}|${W}|${D}|${rot}|${gh.ok}|${variant}|${gh.flavor || ''}`;
+    const key = `${gh.type}|${gh.level || 0}|${gh.x}|${gh.z}|${W}|${D}|${rot}|${gh.ok}|${variant}|${gh.flavor || ''}|${w.diagN}`;
     if (key === this.ghostKey) return;
     this.ghostKey = key;
     if (this.ghost) { scene.remove(this.ghost); this.ghost.geometry.dispose(); }
     const b = { type: gh.type, level: gh.level || 0, variant, flavor: gh.flavor || null, size: Math.max(W, D), w: W, d: D, baseY: floorHeight(w.terrain, gh.type, gh.x, gh.z, W, D, rot, minH, maxH), minY: minH, rot, rail: c.rail || null };
     b.x = gh.x; b.z = gh.z;
+    // beside a diagonal street it will stand turned to face it (see world/diagonal.js)
+    const q = w.diagN && diagCapable(b) ? facingCorner(spillsOf(w, gh.x, gh.z), rot) : -1;
+    if (q >= 0) b.diag = q + 1;
     const model = buildModel(b, { ground: (x, z) => w.terrain.heightAt(x, z), season: this.game.view.season });
     if (model.spin) model.spin.geo.dispose();
     this.ghost = new THREE.Mesh(model.geo, gh.ok ? MAT.ghostOk : MAT.ghostBad);
     this.ghost.position.set(gh.x + W / 2 + model.jitter.ox, maxH + 0.002, gh.z + D / 2 + model.jitter.oz);
-    this.ghost.rotation.y = (rot * Math.PI) / 2 + model.jitter.yaw;
+    this.ghost.rotation.y = facingAngle(b) + model.jitter.yaw;
     this.ghost.renderOrder = 9;
     scene.add(this.ghost);
   }
@@ -568,6 +580,8 @@ export class Input {
       case 'tab':
         e.preventDefault();
         if (this.tool.kind === 'roadsel') { this.tool.box = !this.tool.box; ui.updateHint(); ui.renderInspector(true); }
+        // roads: diagonals when the drag runs near 45 degrees, or the grid only
+        else if (this.tool.kind === 'road') { this.tool.grid = !this.tool.grid; ui.updateHint(); }
         else { this.accessIndex++; this.ghostKey = ''; }
         this.refresh();
         break;

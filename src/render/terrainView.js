@@ -9,7 +9,7 @@ import { BUILDINGS, produceOf } from '../defs.js';
 import { makeNoise2D, fbm, hash2, clamp, smoothstep } from '../util/rng.js';
 import { doorPoint, fw, fd, farmlandOf } from '../world/world.js';
 import { railArc } from './roadsView.js';
-import { roadTile, cornerFrame, SIDES } from '../world/roadShape.js';
+import { roadTile, cornerFrame, SIDES, CORNERS, diagLinked, cutsOf } from '../world/roadShape.js';
 
 export const SUB = 5;
 const BASE_Y = -2.2;
@@ -404,6 +404,9 @@ export class TerrainView {
       const off = j(mx, mz);
       segs.push([cx, cz, mx + (dz ? off : 0), mz + (dx ? off : 0)]);
     }
+    // diagonal streets: straight on to the corner the next tile shares (no
+    // wobble there, so both halves meet)
+    if (grid === w.roads && w.diagN) for (let k = 0; k < 4; k++) if (diagLinked(w, x, z, k)) segs.push([cx, cz, x + 0.5 + CORNERS[k][0] * 0.5, z + 0.5 + CORNERS[k][1] * 0.5]);
     if (!segs.length) segs.push([cx, cz, cx, cz]);
     return segs;
   }
@@ -428,7 +431,7 @@ export class TerrainView {
         const arc = railArc(x, z, [SIDES[shape.bend], SIDES[(shape.bend + 1) & 3]]);
         segs = [];
         for (let k = 0; k < arc.length - 1; k++) segs.push([arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1]]);
-      } else segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07, w.blvd ? w.blvd[z * N + x] : 0);
+      } else segs = this._arms(x, z, w.roads, L === 3 ? 0.02 : 0.07, (w.blvd ? w.blvd[z * N + x] : 0) | cutsOf(w, x, z));
       const corners = shape ? shape.fillets.map(k => cornerFrame(x, z, k)) : [];
       const hw = HW[L], sf = SOFT[L];
       this._range(x - 0.45, z - 0.45, x + 1.45, z + 1.45, (vi, px, pz) => {

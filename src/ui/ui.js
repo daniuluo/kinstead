@@ -238,7 +238,7 @@ export class UI {
     if (cat === 'roads') {
       for (const L of [1, 2, 3]) {
         const d = ROAD_LEVELS[L];
-        cards.push(card(`road:${L}`, ['🟫', '🪨', '⬛'][L - 1], d.name, `${d.cost} / tile`, pop < d.unlock ? d.unlock : 0, () => this.game.input.setTool({ kind: 'road', level: L }), 'Drag to build. Drawing over a lesser road upgrades it.'));
+        cards.push(card(`road:${L}`, ['🟫', '🪨', '⬛'][L - 1], d.name, `${d.cost} / tile`, pop < d.unlock ? d.unlock : 0, () => this.game.input.setTool({ kind: 'road', level: L }), 'Drag to build, along the grid or at 45° for a diagonal street. Drawing over a lesser road upgrades it.'));
       }
       cards.push(card('roadsel', '<span class="ms">highlight_alt</span>', 'Select roads', '', 0, () => this.game.input.setTool(roadSelTool()), 'Pick whole stretches of road, then upgrade, downgrade or take them all up at once.'));
     } else if (cat === 'terrain') {
@@ -314,7 +314,7 @@ export class UI {
     const h = $('toolHint');
     let msg = '';
     switch (t.kind) {
-      case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
+      case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · ${t.grid ? 'along the grid only (Tab: diagonals too)' : 'drag at 45° for a diagonal street (Tab: grid only)'} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
       case 'roadsel': msg = `Click a road to pick its stretch · Shift-click adds · drag to pick a ${t.box ? 'box' : 'line'} (Tab: ${t.box ? 'line' : 'box'}) · Backspace undoes · right-click clears`; break;
       case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name}${KINDS[t.type] ? ` (${t.flavor ? KINDS[t.type][t.flavor].name.toLowerCase() : 'its kind by its seed'}: choose above)` : ''} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
@@ -801,7 +801,7 @@ export class UI {
       h += `<div class="head"><div class="big">${['', '🟫', '🪨', '⬛'][L]}</div><div><h3>${d.name}</h3><div class="sub">${w.terrain.isWater(x, z) ? 'Bridge' : 'Road'} · upkeep ${d.upkeep}/day</div></div></div>`;
       const lane = !!w.blvd[w.idx(x, z)], dv = w.dress[w.idx(x, z)];
       const chip = (D) => (D ? `<span class="chip"><span class="ms">${D.icon}</span> ${D.name}</span>` : '');
-      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${lane ? '<span class="chip"><span class="ms">add_road</span> Boulevard</span>' : ''}${chip(DRESSINGS[lookPart(dv)])}${chip(DRESSINGS[streetPart(dv)])}</div>`;
+      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${lane ? '<span class="chip"><span class="ms">add_road</span> Boulevard</span>' : ''}${w.diag[w.idx(x, z)] & 15 ? '<span class="chip"><span class="ms">north_east</span> Diagonal</span>' : ''}${chip(DRESSINGS[lookPart(dv)])}${chip(DRESSINGS[streetPart(dv)])}</div>`;
       if (lane) h += boulevardHTML(this.game, x, z);
       h += buryHTML(this.game, x, z);
       if (L < 3) {

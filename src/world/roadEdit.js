@@ -8,21 +8,16 @@
 // 'roadedit' command, so multiplayer guests use it the same way.
 
 import { roadRefund, DRESSINGS, dressRefund, streetPart, lookPart, packDress } from '../config.js';
-import { fw, fd, sideBit } from './world.js';
+import { fw, fd } from './world.js';
 import { findBoulevards, boulevardTiles, dressFits } from './boulevard.js';
+import { linksOf, SIDES, CORNERS, CUT } from './roadShape.js';
 
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 export const ROAD_OPS = ['up', 'down', 'remove'];
 
-// whether the road on (x, z) runs on towards (dx, dz): not across a
-// boulevard's median, where the lanes keep apart
-const runsOn = (w, x, z, dx, dz) => !!w.roadAt(x + dx, z + dz) && !(w.blvd[w.idx(x, z)] & sideBit(dx, dz));
-
-function degree(w, x, z) {
-  let n = 0;
-  for (const [dx, dz] of DIRS) if (runsOn(w, x, z, dx, dz)) n++;
-  return n;
-}
+// how many roads the road on (x, z) runs on to: not across a boulevard's
+// median, where the lanes keep apart, nor where a diagonal passes by; and
+// diagonally (see diagonal.js)
+const degree = (w, x, z) => linksOf(w, x, z).length;
 
 // The stretch of road through tile (x, z): it follows the road round bends
 // and stops short of junctions (where three or four roads meet) and at dead
@@ -37,9 +32,8 @@ export function roadRun(w, x, z) {
   const seen = new Set(start.map(([a, b]) => b * N + a)), out = start.slice(), q = start.slice();
   while (q.length) {
     const [cx, cz] = q.pop();
-    for (const [dx, dz] of DIRS) {
-      const nx = cx + dx, nz = cz + dz;
-      if (!runsOn(w, cx, cz, dx, dz) || seen.has(nz * N + nx) || degree(w, nx, nz) >= 3) continue;
+    for (const [nx, nz] of linksOf(w, cx, cz)) {
+      if (seen.has(nz * N + nx) || degree(w, nx, nz) >= 3) continue;
       seen.add(nz * N + nx);
       out.push([nx, nz]);
       q.push([nx, nz]);
@@ -147,7 +141,7 @@ function removalEffects(w, gone, paths) {
   const N = w.N, roads = w.roads.slice(), goneSet = new Set();
   for (const t of gone) { roads[t.z * N + t.x] = 0; goneSet.add(t.z * N + t.x); }
   const has = (x, z) => x >= 0 && z >= 0 && x < N && z < N && roads[z * N + x] > 0;
-  const piece = new Int32Array(N * N).fill(-1);
+  const piece = new Int32Array(N * N).fill(-1), D = w.diag;
   let np = 0;
   for (let i = 0; i < N * N; i++) {
     if (!roads[i] || piece[i] >= 0) continue;
@@ -155,10 +149,19 @@ function removalEffects(w, gone, paths) {
     piece[i] = np;
     while (q.length) {
       const j = q.pop(), x = j % N, z = (j / N) | 0;
-      for (const [dx, dz] of DIRS) {
+      for (let s = 0; s < 4; s++) {
+        const [dx, dz] = SIDES[s];
         if (!has(x + dx, z + dz)) continue;
         const k = (z + dz) * N + x + dx;
+        // (not where a diagonal passes by, cut off from it)
+        if ((D[j] & (CUT << s)) || (D[k] & (CUT << ((s + 2) & 3)))) continue;
         if (piece[k] < 0) { piece[k] = np; q.push(k); }
+      }
+      if (D[j] & 15) for (let c = 0; c < 4; c++) {
+        const [dx, dz] = CORNERS[c];
+        if (!(D[j] & (1 << c)) || !has(x + dx, z + dz)) continue;
+        const k = (z + dz) * N + x + dx;
+        if ((D[k] & (1 << ((c + 2) & 3))) && piece[k] < 0) { piece[k] = np; q.push(k); }
       }
     }
     np++;

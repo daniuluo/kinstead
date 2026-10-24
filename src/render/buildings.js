@@ -12,6 +12,7 @@ import { RNG, hash2 } from '../util/rng.js';
 import { CONFIG } from '../config.js';
 import { PARK_MODELS, parkTree, blooms, spot } from './parks.js';
 import { CIVIC_MODELS } from './civic.js';
+import { facingAngle } from '../world/diagonal.js';
 
 const fw = (b) => b.w ?? b.size, fd = (b) => b.d ?? b.size;
 
@@ -5804,7 +5805,15 @@ const hasExt = (b) => !!(b.ext && (b.ext.x0 || b.ext.x1 || b.ext.z0 || b.ext.z1)
 
 // The part of the world a building may use, in its own local frame: its plot,
 // grown or shrunk by any garden land bought from or sold to a neighbour.
+// A building facing a diagonal street stands turned 45 degrees on its plot
+// (b.diag, see world/diagonal.js), its front at the pavement where the
+// street passes the plot's corner: in its own frame the plot is a diamond
+// (|x| + |z| <= 0.707) with the street's edge across its front point. The
+// largest square there that clears the plots behind keeps it to this box.
+export const DIAG_BOX = { x0: -0.36, x1: 0.36, z0: -0.343, z1: 0.377 };
+
 function plotBox(b, Ex, Ez) {
+  if (b.diag) return { ...DIAG_BOX };
   const box = landBox(b, Ex, Ez);
   // the front may come forward into the street's verge (b.front, set by the world)
   if (b.front) box.z1 += b.front;
@@ -5826,7 +5835,7 @@ function landBox(b, Ex, Ez) {
 
 // Small per-building yaw and offset so streets don't look ruled with a pencil.
 export function jitterOf(b) {
-  if (b.size > 1 || b.type === 'plaza' || b.type === 'station' || hasExt(b)) return { yaw: 0, ox: 0, oz: 0 };
+  if (b.size > 1 || b.type === 'plaza' || b.type === 'station' || hasExt(b) || b.diag) return { yaw: 0, ox: 0, oz: 0 };
   const h1 = hash2(b.variant & 0xffff, b.variant >>> 16, 31), h2 = hash2(b.variant & 0xffff, b.variant >>> 16, 32), h3 = hash2(b.variant & 0xffff, b.variant >>> 16, 33);
   return { yaw: (h1 - 0.5) * 0.12, ox: (h2 - 0.5) * 0.04, oz: (h3 - 0.5) * 0.04 };
 }
@@ -5840,10 +5849,13 @@ export function workArea(b) {
   else if (b.type === 'plaza' || b.type === 'sportsground') r = [-0.85, -0.85, 0.85, 0.85];
   if (!r) return null;
   const E = b.size / 2, j = jitterOf(b);
-  const th = (b.rot * Math.PI) / 2 + j.yaw, co = Math.cos(th), si = Math.sin(th);
+  // (turned to a diagonal, the model is fitted to DIAG_BOX: about three quarters the size)
+  if (b.diag) r = r.map((v, i) => v * 0.75 + (i % 2 ? 0.017 : 0));
+  const th = facingAngle(b) + j.yaw, co = Math.cos(th), si = Math.sin(th);
   const cx = b.x + fw(b) / 2 + j.ox, cz = b.z + fd(b) / 2 + j.oz;
-  const pts = [[r[0], r[1]], [r[2], r[3]]].map(([lx, lz]) => [cx + lx * co + lz * si, cz - lx * si + lz * co]);
-  return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
+  const pts = [[r[0], r[1]], [r[2], r[3]], ...(b.diag ? [[r[0], r[3]], [r[2], r[1]]] : [])].map(([lx, lz]) => [cx + lx * co + lz * si, cz - lx * si + lz * co]);
+  const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+  return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)];
 }
 
 export function buildModel(b, opts = {}) {
@@ -5856,7 +5868,7 @@ export function buildModel(b, opts = {}) {
   const odd = (b.rot & 1) === 1;
   const Ex = (odd ? fd(b) : fw(b)) / 2, Ez = (odd ? fw(b) : fd(b)) / 2;
   const jit = opts.flat ? { yaw: 0, ox: 0, oz: 0 } : jitterOf(b);
-  const th = (b.rot * Math.PI) / 2 + jit.yaw, co = Math.cos(th), si = Math.sin(th);
+  const th = facingAngle(b) + jit.yaw, co = Math.cos(th), si = Math.sin(th);
   const cx = b.x + fw(b) / 2 + jit.ox, cz = b.z + fd(b) / 2 + jit.oz;
   const ground = opts.ground;
   const makeCtx = (gb, rng) => {

@@ -105,6 +105,7 @@ export class Tracker {
     this.rails = w.rails.slice();
     this.buried = w.buried.slice();
     this.dress = w.dress.slice();
+    this.diag = w.diag.slice();
     this.fields = w.fields.slice();
     this.H = heights(w);
     this.trees = new Map([...treeTiles(w)].map(([t, a]) => [t, a.join()]));
@@ -159,6 +160,9 @@ export class Tracker {
     if (bu) d.bu = bu;
     const ds = gridDiff(this.dress, w.dress);
     if (ds) d.ds = ds;
+    // diagonal streets' links
+    const dg = gridDiff(this.diag, w.diag);
+    if (dg) d.dg = dg;
     const fl = gridDiff(this.fields, w.fields);
     if (fl) d.fl = fl;
     if (this.hDirty) {
@@ -252,7 +256,7 @@ export function applyDelta(game, d) {
 
   // 3. roads, track and the lie of the land
   const grid = (arr, list) => { for (let i = 0; i < list.length; i += 2) arr[list[i]] = list[i + 1]; return list.length > 0; };
-  const roads = d.rd ? grid(w.roads, d.rd) : false;
+  const roads = (d.rd ? grid(w.roads, d.rd) : false) | (d.dg ? grid(w.diag, d.dg) : false);
   const rails = d.rl ? grid(w.rails, d.rl) : false;
   // power lines laid underground
   if (d.bu && grid(w.buried, d.bu)) w.emit('lines');
