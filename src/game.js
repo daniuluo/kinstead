@@ -532,7 +532,7 @@ export class Game {
     if (t.kind === 'line' && t.stops.length >= 2) {
       const tmp = { mode: t.mode, stops: t.stops };
       const r = this.transit._route(tmp);
-      if (r) ribbons.push({ points: r.pts.map(([x, z]) => [x, this.transit._height(t.mode, x, z) + 0.02, z]), color: '#ffffff', opacity: 0.7, width: 0.05 });
+      if (r) ribbons.push({ points: this.transit.routePoints(r).map(([x, y, z]) => [x, y + 0.02, z]), color: '#ffffff', opacity: 0.7, width: 0.05 });
     }
     this.view.overlay.setRoutes(ribbons);
   }

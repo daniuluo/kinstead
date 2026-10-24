@@ -3065,6 +3065,87 @@ MODELS.station = (c, L) => {
   gb.pop();
 };
 
+// A gondola station: a deck on stilts that the cabins glide across, under an
+// open-sided roof, so a cable can come in from any side. transit.js draws the
+// cable (1.05 above the floor), the bullwheel it turns round at the end of a
+// line and the cabins, whose floors pass level with the deck (0.78 up).
+// Stairs climb to the deck from the street. The terminal has a brick booking
+// hall under the deck, iron columns and a lantern on the roof.
+MODELS.gondola = (c, L) => {
+  const { gb, pal, rng } = c;
+  const DECK = 0.78, EAVE = 1.27, D = 0.3;   // deck top, eaves, the deck's half-width
+  const post = L ? (rng.chance(0.5) ? '#4c5a60' : '#3f4a3f') : rng.chance(0.6) ? pal.wood : pal.accent;
+  const floor = L ? STONE : '#8a6a48', beam = shade(post, 0.85);
+  footing(c, 0, 0, 0.92, 0.92);
+  gb.box(0, 0, 0, 0.92, 0.02, 0.92, L ? '#c9c1b0' : '#b8ad98');
+  // under the deck: a booking office, or the terminal's booking hall
+  if (L) {
+    gb.cbox(-0.05, 0, -0.04, 0.48, 0.44, 0.46, pal.brick, 0, 0.012);
+    gb.box(-0.05, 0.44, -0.04, 0.52, 0.03, 0.5, STONE);
+    for (const x of [-0.2, 0.1]) win(c, x, 0.13, 0.19, 0.07, 0.17, 'f', 0.85);
+    for (const z of [-0.15, 0.07]) win(c, -0.29, 0.13, z, 0.07, 0.17, 'l', 0.85);
+    door(c, -0.05, 0.19, 0.08, 0.2, pal.door);
+  } else {
+    gb.cbox(-0.09, 0, -0.07, 0.3, 0.3, 0.28, pal.wall, 0, 0.01);
+    gb.wedge(-0.09, 0.3, -0.07, 0.34, 0.32, 0.06, pal.roof);
+    win(c, -0.15, 0.13, 0.07, 0.08, 0.1, 'f', 0.8);
+    door(c, -0.02, 0.07, 0.07, 0.17, pal.door);
+  }
+  // the stilts, braced below the deck, up to the eaves
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * D, 0, sz * D, 0.045, EAVE, 0.045, post);
+  const span = 2 * D, rise = DECK - 0.1, len = Math.hypot(span, rise), a = Math.atan2(rise, span);
+  for (const s of [-1, 1]) {
+    gb.boxC(0, rise / 2 + 0.03, -D, len, 0.022, 0.018, beam, 0, 0, s * a);
+    gb.boxC(-D, rise / 2 + 0.03, 0, 0.018, 0.022, len, beam, s * a);
+  }
+  // the deck, its edge beams and a few lengths of railing by the posts
+  gb.box(0, DECK - 0.05, 0, 2 * D + 0.04, 0.05, 2 * D + 0.04, floor);
+  for (const s of [-1, 1]) {
+    gb.box(0, DECK - 0.09, s * D, 2 * D, 0.04, 0.03, beam);
+    gb.box(s * D, DECK - 0.09, 0, 0.03, 0.04, 2 * D, beam);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    gb.box(sx * (D - 0.06), DECK + 0.085, sz * D, 0.12, 0.012, 0.012, post);
+    gb.box(sx * D, DECK + 0.085, sz * (D - 0.06), 0.012, 0.012, 0.12, post);
+  }
+  // the stairs up the right-hand side, from the street to a landing
+  const n = 10, run = 0.6 / n, step = DECK / n, sx = 0.39;
+  for (let i = 0; i < n; i++) {
+    const z = 0.45 - (i + 0.5) * run, top = (i + 1) * step;
+    if (L) gb.box(sx, 0, z, 0.13, top, run + 0.002, STONE);
+    else gb.box(sx, top - 0.02, z, 0.13, 0.02, run + 0.004, '#8a6a48');
+  }
+  const sl = Math.hypot(0.6, DECK), sa = Math.atan2(DECK, 0.6);
+  if (!L) for (const o of [-0.07, 0.07]) gb.boxC(sx + o, DECK / 2 - 0.01, 0.15, 0.016, 0.03, sl, post, sa);
+  gb.boxC(sx + 0.07, DECK / 2 + 0.1, 0.15, 0.01, 0.01, sl, post, sa);
+  gb.box(sx, DECK - 0.04, -0.22, 0.15, 0.04, 0.14, floor);
+  // the roof: open on every side, with the drive under it
+  for (const s of [-1, 1]) {
+    gb.box(0, EAVE - 0.05, s * D, 2 * D + 0.04, 0.05, 0.03, beam);
+    gb.box(s * D, EAVE - 0.05, 0, 0.03, 0.05, 2 * D + 0.04, beam);
+  }
+  gb.box(0, 1.11, 0, 0.22, 0.11, 0.22, '#5a5f63');
+  gb.box(0, 1.22, 0, 0.06, EAVE - 1.22, 0.06, '#5a5f63');
+  gb.hip(0, EAVE, 0, 0.76, 0.76, rng.chance(0.5) ? 0.24 : 0.17, L ? pal.slate : pal.roof, 0.05);
+  if (L) {
+    // a lantern on the roof, and a flag
+    gb.box(0, EAVE + 0.16, 0, 0.13, 0.08, 0.13, '#e9e2d4');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3);
+    for (const [fx, fz] of [[0, 0.066], [0, -0.066], [0.066, 0], [-0.066, 0]]) gb.box(fx, EAVE + 0.175, fz, fz ? 0.07 : 0.006, 0.05, fz ? 0.006 : 0.07, GLASS);
+    gb.noGlow();
+    gb.hip(0, EAVE + 0.24, 0, 0.13, 0.13, 0.07, pal.slate, 0.02);
+    gb.box(0, EAVE + 0.31, 0, 0.01, 0.16, 0.01, '#2f2c2a');
+    gb.box(0.04, EAVE + 0.41, 0, 0.07, 0.045, 0.005, pal.awning);
+  }
+  // the name board under the deck, with the gondola's roundel
+  gb.box(-0.05, DECK - 0.18, D + 0.018, 0.3, 0.085, 0.012, '#2f4858');
+  gb.cyl(-0.15, DECK - 0.137, D + 0.026, 0.03, 0.03, 0.006, 10, '#e8e0d0', 0, Math.PI / 2);
+  gb.box(0.02, DECK - 0.142, D + 0.026, 0.13, 0.012, 0.004, '#e8e0d0');
+  lamp(c, -0.4, 0.4, 0.3);
+  lamp(c, -D + 0.05, D - 0.05, 0.2, DECK);
+  bench(c, -0.14, 0.4, 0);
+};
+
 // A faint per-building colour cast, so neighbours never look copy-pasted.
 // ------------------------------------------------- the two home branches
 

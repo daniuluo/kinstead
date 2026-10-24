@@ -4,7 +4,7 @@
 // (src/ui/guide.js), so the wiki says what the game's guide says.
 
 import {
-  BUILDINGS, CATEGORIES, SERVICES, TECHS, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, GRAND, FARM_JOIN, NEEDS, RESEARCH_SOURCES, CORNER_SHOPS,
+  BUILDINGS, CATEGORIES, SERVICES, TECHS, TRANSIT, BRANCHES, MERGES, LARGE, ESTATE, ESTATE_TYPES, GRAND, FARM_JOIN, NEEDS, RESEARCH_SOURCES, CORNER_SHOPS,
   STYLE_TECH, CAPABILITIES, CIVIC_QUARTER, kindsOf, unlockOf, techForLevel, workNeeded, choosesProduce,
 } from '../src/defs.js';
 import { CONFIG } from '../src/config.js';
@@ -139,7 +139,7 @@ function notes(type) {
   if (d.builders) out.push(`Its workers are builders (${pl('construction/builders', 'Builders')}).`);
   if (d.fields) out.push(`Ploughs fields beyond its plot${choosesProduce(type) ? ' and chooses what it grows' : ''} (${pl('farms', 'Farms and fields')}).`);
   if (CORNER_SHOPS.has(type)) out.push(`On a street corner it turns its shopfront round the corner (${pl('highstreet/corners', 'Corner shopfronts')}).`);
-  if (d.stop) out.push(`A stop for ${d.stop === 'rail' ? 'trains' : 'coaches'} (${pl('transport', 'Transit')}).`);
+  if (d.stop) out.push(`A stop for ${TRANSIT[d.stop].vehicles} (${pl(`transport/${d.stop}`, 'Transit')}).`);
   return out;
 }
 
@@ -205,6 +205,7 @@ export function unlocksOf(id) {
   }
   for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) add(`${STYLES.find(s => s.id === style).name} style`, '#styles/styles', ['house', 1, 4242, null, style]);
   if (id === 'railways') add('Railway track and lines', '#transport/rail');
+  if (id === 'cablecars') add('Gondola lines', '#transport/gondola');
   if (id === 'bigplots') for (const t of ESTATE_TYPES) add(`${lname(t)} (new path)`, hrefOf(t), [t, 0]);
   return out;
 }

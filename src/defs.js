@@ -986,11 +986,24 @@ export const BUILDINGS = {
       { name: 'Railway Station', cost: 700, upkeep: 8, jobs: 3, unlock: 60 },
     ],
   },
+  // A gondola: little cabins on a cable slung straight from station to
+  // station, over whatever lies between: streets, roofs, the river, a hill.
+  gondola: {
+    name: 'Gondola', cat: 'transit', size: 1, stop: 'gondola', unlock: 40, tech: 'cablecars', icon: '🚡',
+    desc: 'A station on stilts for a gondola: cabins on a cable run straight from station to station, over roofs, streets and the river. Link two or more stations into a line.',
+    levels: [
+      { name: 'Gondola Station', cost: 320, upkeep: 4 },
+      { name: 'Gondola Terminal', cost: 700, upkeep: 7, unlock: 80 },
+    ],
+  },
 };
 
+// maxVehicles: how many a line can run; vehicle(s), stop, lineName and icon:
+// what the menus and messages call them
 export const TRANSIT = {
-  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.225, capacity: 8, stopType: 'coachstop', unlock: 0 },
-  rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25 },
+  coach: { name: 'Coach', vehicleCost: 150, upkeep: 4, fare: 2, speed: 0.225, capacity: 8, stopType: 'coachstop', unlock: 0, maxVehicles: 5, vehicle: 'coach', vehicles: 'coaches', stop: 'coach stop', lineName: 'Coach Line', icon: '🐴' },
+  rail: { name: 'Railway', vehicleCost: 600, upkeep: 12, fare: 4, speed: 0.7, capacity: 24, stopType: 'station', unlock: 25, maxVehicles: 3, vehicle: 'train', vehicles: 'trains', stop: 'railway station', lineName: 'Rail Line', icon: '🚂' },
+  gondola: { name: 'Gondola', vehicleCost: 90, upkeep: 2, fare: 3, speed: 0.45, capacity: 6, stopType: 'gondola', unlock: 40, maxVehicles: 12, vehicle: 'cabin', vehicles: 'cabins', stop: 'gondola station', lineName: 'Gondola Line', icon: '🚡' },
 };
 export const RAIL_COST = 30;
 export const LINE_COLORS = ['#d9534f', '#3f7fbf', '#4f9a5a', '#e3a73b', '#8a5aa8', '#2fa3a3', '#d9734a', '#c75b9b'];
@@ -1062,6 +1075,7 @@ export const TECHS = {
   colleges: { name: 'Colleges', cost: 825, tier: 3, branch: 'learn', needs: ['academies'], desc: 'Colleges where young adults study instead of working, and college quads on a 2×2 estate.' },
   universities: { name: 'Universities', cost: 1530, tier: 4, branch: 'learn', needs: ['colleges', 'electricity'], desc: 'Research universities: graduates, and plenty of research.' },
   railways: { name: 'Railways', cost: 420, tier: 2, branch: 'transport', needs: ['woodwork', 'stonework'], desc: 'Track, stations and steam trains, football grounds with a stand for the crowds the trains bring, and tram reservations down a paved boulevard.' },
+  cablecars: { name: 'Cable Cars', cost: 560, tier: 3, branch: 'transport', needs: ['railways', 'industry3'], desc: 'Gondola stations on stilts, and little cabins on a cable slung straight from station to station, over the roofs, the streets and the river.' },
 };
 
 // Upgrade levels unlock by research too. Unless a level names its own

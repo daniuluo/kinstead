@@ -1,5 +1,6 @@
-// Transit: horse-drawn coach lines on roads, steam trains on rails, and
-// delivery carts trundling from farms and workshops to the shops.
+// Transit: horse-drawn coach lines on roads, steam trains on rails, gondola
+// cabins on a cable slung straight from station to station, and delivery
+// carts trundling from farms and workshops to the shops.
 
 import * as THREE from 'three';
 import { BUILDINGS, TRANSIT, LINE_COLORS } from '../defs.js';
@@ -7,7 +8,7 @@ import { CONFIG } from '../config.js';
 import { GeoBuilder } from '../render/geo.js';
 import { MAT } from '../render/materials.js';
 import { tilePolyline, smoothPolyline } from './path.js';
-import { bridgeDeckY, isOpen } from '../world/world.js';
+import { bridgeDeckY, isOpen, fw, fd } from '../world/world.js';
 
 const WARM = [1.7, 1.2, 0.55];
 
@@ -106,9 +107,56 @@ function carriageModel(color) {
   return gb.build();
 }
 
+// A gondola cabin, hung from its grip on the cable (the origin): a little
+// box with windows all round on an arm down from the grip, its floor G_HANG
+// below the cable.
+function cabinModel(color) {
+  const gb = new GeoBuilder();
+  const F = -G_HANG, H = 0.15, W = 0.12, D = 0.15;
+  gb.box(0, -0.012, 0, 0.026, 0.03, 0.06, '#2b2b2e');
+  gb.box(0, F + H + 0.015, 0, 0.012, -0.012 - (F + H + 0.015), 0.012, '#4a5055');
+  gb.box(0, F + H + 0.012, 0, 0.05, 0.012, 0.03, '#4a5055');
+  gb.cbox(0, F, 0, W, H, D, color, 0, 0.018);
+  gb.box(0, F - 0.008, 0, W - 0.02, 0.012, D - 0.02, '#2b2b2e');
+  gb.cbox(0, F + H, 0, W + 0.008, 0.018, D + 0.008, '#e8e2d4', 0, 0.008);
+  gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
+  for (const s of [-1, 1]) {
+    gb.box(0, F + 0.07, s * (D / 2 + 0.002), W - 0.03, 0.06, 0.006, '#34475b');
+    gb.box(s * (W / 2 + 0.002), F + 0.07, 0, 0.006, 0.06, D - 0.03, '#34475b');
+  }
+  gb.noGlow();
+  return gb.build();
+}
+
+// A pylon under a gondola line: a tapering steel mast on a concrete footing,
+// with a crossarm at the top and a train of sheaves under each cable. p: where
+// it stands (x, z, the ground g), the cable's height there (h) and the line's
+// heading (ry).
+const STEEL = '#848d92', STEEL_D = '#626a6f', SHEAVE = '#2b2b2e';
+function pylon(gb, p) {
+  const H = p.h - p.g;
+  gb.push(p.x, p.g, p.z, p.ry);
+  gb.box(0, -0.1, 0, 0.17, 0.13, 0.17, '#a8a094');
+  gb.cyl(0, 0, 0, 0.035, 0.085, H - 0.04, 4, STEEL, Math.PI / 4);
+  for (let y = 0.28; y < H - 0.2; y += 0.28) {
+    const r = 0.085 - (0.05 * y) / H;
+    gb.cyl(0, y, 0, r + 0.008, r + 0.008, 0.016, 4, STEEL_D, Math.PI / 4);
+  }
+  gb.box(0, H - 0.07, 0, 2 * G_OFF + 0.1, 0.035, 0.045, STEEL);
+  for (const s of [-1, 1]) gb.box(s * G_OFF, H - 0.035, 0, 0.026, 0.03, 0.14, SHEAVE);
+  gb.pop();
+}
+const CABLE_MAT = new THREE.LineBasicMaterial({ color: '#26282b' });
+
 const CARGO = { farm: 'hay', lumber: 'logs', fishery: 'fish', workshop: 'crates' };
 const CAR_SPACING = 0.56;   // distance between train car centres along the track
 const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+// Gondolas: the two cables run G_OFF either side of the line, G_CABLE above a
+// station's floor (its deck is level with a cabin's floor, G_HANG lower; see
+// MODELS.gondola). Pylons stand about G_SPAN apart, never more than G_MAXH
+// tall, and hold the cable G_GROUND above the ground and G_ROOF above the
+// roofs it passes over, so the cabins clear them.
+const G_OFF = 0.12, G_CABLE = 1.05, G_HANG = 0.27, G_SPAN = 6, G_MAXH = 4, G_GROUND = 1.05, G_ROOF = 0.42;
 
 export class Transit {
   constructor(game) {
@@ -125,6 +173,7 @@ export class Transit {
     this.cartPlan = [];
     this.dirty = true;
     this.geoCache = new Map();
+    this.cables = new Map();   // gondola line id → its drawn cable, pylons and bullwheels
     const mark = () => { this.dirty = true; };
     for (const e of ['roads', 'rails', 'lines', 'building:remove', 'building:add', 'building:change']) this.world.on(e, mark);
     this.stats = {};
@@ -146,9 +195,9 @@ export class Transit {
     const used = new Set(w.lines.map(l => l.color));
     const color = LINE_COLORS.find(c => !used.has(c)) || LINE_COLORS[w.lines.length % LINE_COLORS.length];
     const n = w.lines.filter(l => l.mode === mode).length + 1;
-    const line = { id: w.newId(), mode, name: `${mode === 'rail' ? 'Rail' : 'Coach'} Line ${n}`, color, stops: stops.slice(), vehicles: 1 };
+    const line = { id: w.newId(), mode, name: `${cfg.lineName} ${n}`, color, stops: stops.slice(), vehicles: 1 };
     const route = this._route(line);
-    if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : 'Stops are not connected by road' };
+    if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : mode === 'gondola' ? 'Pick gondola stations' : 'Stops are not connected by road' };
     w.money -= cfg.vehicleCost;
     w.lines.push(line);
     w.emit('lines');
@@ -169,7 +218,7 @@ export class Transit {
     const w = this.world;
     const line = w.lines.find(l => l.id === id);
     if (!line) return { ok: false };
-    n = Math.max(1, Math.min(line.mode === 'rail' ? 3 : 5, n));
+    n = Math.max(1, Math.min(TRANSIT[line.mode].maxVehicles, n));
     if (n === line.vehicles) return { ok: false, reason: null };
     if (n > line.vehicles) {
       const cost = TRANSIT[line.mode].vehicleCost;
@@ -188,6 +237,7 @@ export class Transit {
     const w = this.world, paths = this.game.paths;
     const stops = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
     if (stops.length < 2) return null;
+    if (line.mode === 'gondola') return stops.every(b => b.type === 'gondola') ? this._cableRoute(stops) : null;
     const stopTiles = stops.map(b => this._stopTile(b, line.mode));
     if (stopTiles.some(t => !t)) return null;
     let tiles = [];
@@ -287,6 +337,217 @@ export class Transit {
     return null;
   }
 
+  // ------------------------------------------------------------ gondolas
+  // A gondola line runs out along its stations on one cable and back on the
+  // other, G_OFF either side of the straight line from station to station,
+  // round a bullwheel at each end station (and round the outside of any
+  // station where the line doubles back). pts: the path of a cabin's grip;
+  // ys: the cable's height along it, level through the stations and slung
+  // from pylon to pylon between them.
+  _cableRoute(stops) {
+    const n = stops.length;
+    const P = stops.map(b => [b.x + 0.5, b.z + 0.5]);
+    const H = stops.map(b => (b.baseY || 0) + G_CABLE);
+    const legs = [];
+    for (let i = 0; i < n - 1; i++) legs.push(this._span(P[i], P[i + 1], H[i], H[i + 1], stops[i], stops[i + 1]));
+    // the stations in the order a cabin calls at them: out, then back
+    const seq = [];
+    for (let i = 0; i < n; i++) seq.push(i);
+    for (let i = n - 2; i >= 1; i--) seq.push(i);
+    const m = seq.length;
+    const dir = (i, j) => { const dx = P[j][0] - P[i][0], dz = P[j][1] - P[i][1], L = Math.hypot(dx, dz) || 1; return [dx / L, dz / L]; };
+    const wheels = [];
+    // how the cable gets through each station: a mitre where it bends a
+    // little, round a wheel where it turns back
+    const joins = seq.map((si, k) => {
+      const din = dir(seq[(k - 1 + m) % m], si), dout = dir(si, seq[(k + 1) % m]);
+      const r1 = [-din[1], din[0]], r2 = [-dout[1], dout[0]], V = P[si];
+      const dot = r1[0] * r2[0] + r1[1] * r2[1];
+      if (1 + dot > 0.5) return { pts: [[V[0] + ((r1[0] + r2[0]) * G_OFF) / (1 + dot), V[1] + ((r1[1] + r2[1]) * G_OFF) / (1 + dot)]], mid: 0, si };
+      // a sharp bend towards the other cable: straight across
+      if (din[0] * dout[1] - din[1] * dout[0] > 1e-9) return { pts: [[V[0] + r1[0] * G_OFF, V[1] + r1[1] * G_OFF], [V[0] + r2[0] * G_OFF, V[1] + r2[1] * G_OFF]], mid: 0, si };
+      let phi = Math.atan2(r2[0] * din[0] + r2[1] * din[1], dot);
+      if (phi < 0) phi += Math.PI * 2;
+      const steps = Math.max(2, Math.ceil(phi / (Math.PI / 10))), pts = [];
+      for (let j = 0; j <= steps; j++) {
+        const t = (phi * j) / steps, c = Math.cos(t), s = Math.sin(t);
+        pts.push([V[0] + (r1[0] * c + din[0] * s) * G_OFF, V[1] + (r1[1] * c + din[1] * s) * G_OFF]);
+      }
+      if (!wheels.some(wh => wh.x === V[0] && wh.z === V[1])) wheels.push({ x: V[0], z: V[1], y: H[si] });
+      return { pts, mid: steps >> 1, si };
+    });
+    const pts = [], ys = [], markIdx = [];
+    const add = (x, z, y) => {
+      const q = pts[pts.length - 1];
+      if (q && Math.hypot(q[0] - x, q[1] - z) < 1e-4) return;
+      pts.push([x, z]); ys.push(y);
+    };
+    for (let k = 0; k < m; k++) {
+      const J = joins[k];
+      J.pts.forEach((p, j) => { add(p[0], p[1], H[J.si]); if (j === J.mid) markIdx.push(pts.length - 1); });
+      // then straight on to the next station, sagging between the pylons
+      const N = joins[(k + 1) % m], a = J.pts[J.pts.length - 1], b = N.pts[0];
+      const leg = legs[Math.min(J.si, N.si)];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.ceil(len / 0.2));
+      for (let j = 1; j < steps; j++) {
+        const x = a[0] + ((b[0] - a[0]) * j) / steps, z = a[1] + ((b[1] - a[1]) * j) / steps;
+        add(x, z, leg.prof((x - leg.a[0]) * leg.ux + (z - leg.a[1]) * leg.uz));
+      }
+    }
+    pts.push([...pts[0]]); ys.push(ys[0]);
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const marks = joins.map((J, k) => ({ stop: stops[J.si].id, s: cum[markIdx[k]] }));
+    // what the drawing depends on: it is redrawn only when this changes
+    const sig = P.map((p, i) => `${p[0]},${p[1]},${H[i].toFixed(3)}`).join(';') + '|' + legs.map(l => l.pylons.map(p => `${p.x.toFixed(2)},${p.z.toFixed(2)},${p.h.toFixed(2)}`).join(';')).join('|');
+    return { pts, ys, cum, length: cum[cum.length - 1], marks, mode: 'gondola', legs, wheels, sig };
+  }
+
+  // One span of a gondola line, from station centre a to station centre b
+  // (the cable at Ha and Hb there; A and B the stations): where its pylons
+  // stand, how tall, and prof(u), the cable's height u along it. A pylon goes
+  // up every G_SPAN or so, on open ground (not on a building, a road, track,
+  // fields or water), just tall enough for the cable either side of it to
+  // clear what lies below.
+  _span(a, b, Ha, Hb, A, B) {
+    const w = this.world, t = w.terrain;
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1e-6;
+    const ux = dx / L, uz = dz / L;
+    const at = (u) => [a[0] + ux * u, a[1] + uz * u];
+    // the least height the cable may run at, every quarter tile along
+    const NS = Math.max(1, Math.ceil(L / 0.25)), req = [];
+    for (let k = 0; k <= NS; k++) {
+      const [x0, z0] = at((L * k) / NS);
+      let need = -Infinity;
+      for (const o of [-0.22, 0, 0.22]) {
+        const x = x0 - uz * o, z = z0 + ux * o, tx = Math.floor(x), tz = Math.floor(z);
+        if (!w.inBounds(tx, tz)) continue;
+        need = Math.max(need, Math.max(t.heightAt(x, z), CONFIG.WATER_LEVEL) + G_GROUND);
+        const ob = w.buildingOn(tx, tz);
+        if (ob && ob !== A && ob !== B) need = Math.max(need, this._topOf(ob) + G_ROOF);
+      }
+      req.push(need);
+    }
+    const sup = [{ u: 0, h: Ha, fixed: true }];
+    const n = Math.max(0, Math.ceil(L / G_SPAN) - 1);
+    for (let j = 1; j <= n; j++) {
+      const u0 = (L * j) / (n + 1);
+      let best = null;
+      for (let d = 0; d <= 1.5 && best == null; d += 0.25) for (const u of d ? [u0 - d, u0 + d] : [u0]) {
+        if (u < 1 || u > L - 1 || sup.some(s => Math.abs(s.u - u) < 2)) continue;
+        const [x, z] = at(u);
+        if (this._pylonFits(x, z)) { best = u; break; }
+      }
+      if (best == null) continue;
+      const [x, z] = at(best), g = t.heightAt(x, z);
+      sup.push({ u: best, x, z, g, h: Math.min(g + G_MAXH, Math.max(g + 1.3, req[Math.round((best / L) * NS)])), max: g + G_MAXH });
+    }
+    sup.push({ u: L, h: Hb, fixed: true });
+    const sagOf = (len) => Math.min(0.12, len * 0.006);
+    // raise the pylons until the cable clears everything, or they are as tall as they go
+    for (let pass = 0; pass < 8; pass++) {
+      let moved = false;
+      for (let i = 0; i < sup.length - 1; i++) {
+        const s0 = sup[i], s1 = sup[i + 1], len = s1.u - s0.u, S = sagOf(len);
+        for (let k = 0; k <= NS; k++) {
+          const u = (L * k) / NS;
+          if (u <= s0.u || u >= s1.u) continue;
+          const f = (u - s0.u) / len, d = req[k] - (s0.h + (s1.h - s0.h) * f - S * 4 * f * (1 - f));
+          if (d <= 1e-3) continue;
+          const h0 = s0.h, h1 = s1.h;
+          if (!s0.fixed && !s1.fixed) { s0.h += d; s1.h += d; }
+          else if (!s1.fixed) s1.h += d / f;
+          else if (!s0.fixed) s0.h += d / (1 - f);
+          for (const s of [s0, s1]) if (!s.fixed) s.h = Math.min(s.h, s.max);
+          if (s0.h !== h0 || s1.h !== h1) moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    const prof = (u) => {
+      u = Math.min(L, Math.max(0, u));
+      let i = 0;
+      while (i < sup.length - 2 && sup[i + 1].u < u) i++;
+      const s0 = sup[i], s1 = sup[i + 1], len = s1.u - s0.u || 1e-6, f = Math.min(1, Math.max(0, (u - s0.u) / len));
+      return s0.h + (s1.h - s0.h) * f - sagOf(len) * 4 * f * (1 - f);
+    };
+    const ry = Math.atan2(ux, uz);
+    return { a, ux, uz, L, prof, pylons: sup.filter(s => !s.fixed).map(s => ({ x: s.x, z: s.z, g: s.g, h: s.h, ry })) };
+  }
+
+  _pylonFits(x, z) {
+    const w = this.world, tx = Math.floor(x), tz = Math.floor(z);
+    if (!w.inBounds(tx, tz)) return false;
+    const i = w.idx(tx, tz);
+    return !w.buildingOn(tx, tz) && !w.roadAt(tx, tz) && !w.rails[i] && !w.terrain.isWater(tx, tz) && !(w.fields && w.fields[i] >= 0);
+  }
+
+  // How high a building reaches: the top of its model as drawn, or a fair
+  // guess (headless, or before it is drawn).
+  _topOf(b) {
+    const it = this.game.view && this.game.view.items && this.game.view.items.get(b.id);
+    const g = it && (it.site ? it.site.target : it.mesh && it.mesh.geometry);
+    if (g && g.attributes && g.attributes.position) {
+      if (!g.boundingBox) g.computeBoundingBox();
+      return (b.baseY || 0) + g.boundingBox.max.y;
+    }
+    const def = BUILDINGS[b.type];
+    return (b.baseY || 0) + (def.park ? 0.35 : 0.55 + 0.2 * (b.level + 1) * Math.sqrt(fw(b) * fd(b)));
+  }
+
+  // Each gondola line's cables, pylons and bullwheels, drawn again only when
+  // its route or what it has to clear changes.
+  _drawCables() {
+    const keep = new Set();
+    for (const line of this.world.lines) {
+      const r = this.routes.get(line.id);
+      if (line.mode !== 'gondola' || !r) continue;
+      keep.add(line.id);
+      const old = this.cables.get(line.id);
+      if (old && old.sig === r.sig) continue;
+      if (old) this._dropCable(old);
+      this.cables.set(line.id, this._cableMeshes(r));
+    }
+    for (const [id, c] of this.cables) if (!keep.has(id)) { this._dropCable(c); this.cables.delete(id); }
+  }
+
+  _cableMeshes(r) {
+    const gb = new GeoBuilder(), seen = new Set();
+    for (const leg of r.legs) for (const p of leg.pylons) {
+      const key = `${p.x.toFixed(2)},${p.z.toFixed(2)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pylon(gb, p);
+    }
+    for (const wh of r.wheels) {
+      gb.cyl(wh.x, wh.y - 0.014, wh.z, G_OFF + 0.012, G_OFF + 0.012, 0.028, 16, '#3a3f44');
+      gb.cyl(wh.x, wh.y + 0.014, wh.z, 0.03, 0.03, 0.06, 8, SHEAVE);
+    }
+    // the cable, thick enough to see close up...
+    const pos = new Float32Array((r.pts.length - 1) * 6);
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1], y0 = r.ys[i], y1 = r.ys[i + 1];
+      const hz = Math.hypot(x1 - x0, z1 - z0);
+      gb.boxC((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, 0.009, 0.009, Math.hypot(hz, y1 - y0) + 0.004, '#2b2b2e', -Math.atan2(y1 - y0, hz), Math.atan2(x1 - x0, z1 - z0));
+      pos.set([x0, y0, z0, x1, y1, z1], i * 6);
+    }
+    const mesh = new THREE.Mesh(gb.build(), MAT.building);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // ...and a line a pixel wide, so far off it never breaks up
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const wire = new THREE.LineSegments(lg, CABLE_MAT);
+    this.group.add(mesh, wire);
+    return { sig: r.sig, mesh, wire };
+  }
+
+  _dropCable(c) {
+    this.group.remove(c.mesh, c.wire);
+    c.mesh.geometry.dispose();
+    c.wire.geometry.dispose();
+  }
+
   _sample(route, s) {
     const { pts, cum, length } = route;
     s = ((s % length) + length) % length;
@@ -295,7 +556,14 @@ export class Transit {
     const a = pts[lo], b = pts[hi];
     const L = cum[hi] - cum[lo] || 1;
     const t = (s - cum[lo]) / L;
-    return { x: a[0] + (b[0] - a[0]) * t, z: a[1] + (b[1] - a[1]) * t, heading: Math.atan2(b[0] - a[0], b[1] - a[1]) };
+    const y = route.ys ? route.ys[lo] + (route.ys[hi] - route.ys[lo]) * t : 0;
+    return { x: a[0] + (b[0] - a[0]) * t, y, z: a[1] + (b[1] - a[1]) * t, heading: Math.atan2(b[0] - a[0], b[1] - a[1]) };
+  }
+
+  // A route's path in 3D (for the overlay): along the ground, or the cable.
+  routePoints(route) {
+    if (route.ys) return route.pts.map(([x, z], i) => [x, route.ys[i] - 0.12, z]);
+    return route.pts.map(([x, z]) => [x, this._height(route.mode, x, z), z]);
   }
 
   _height(mode, x, z) {
@@ -357,6 +625,7 @@ export class Transit {
       while (mine.length > line.vehicles) this._removeVehicle(mine.pop());
       for (let k = mine.length; k < line.vehicles; k++) mine.push(this._spawnVehicle(line, r, (r.length * k) / line.vehicles));
     }
+    this._drawCables();
     this.game.emit('transit:routes');
   }
 
@@ -370,12 +639,16 @@ export class Transit {
     if (line.mode === 'rail') {
       meshes.push(new THREE.Mesh(this._geo('engine', engineModel), MAT.building));
       for (let k = 0; k < 2; k++) meshes.push(new THREE.Mesh(this._geo('car' + line.color, () => carriageModel(line.color)), MAT.building));
+    } else if (line.mode === 'gondola') {
+      const m = new THREE.Mesh(this._geo('cabin' + line.color, () => cabinModel(line.color)), MAT.building);
+      m.rotation.order = 'YXZ';   // it swings fore and aft on its grip
+      meshes.push(m);
     } else {
       meshes.push(new THREE.Mesh(this._geo('coach' + line.color, () => coachModel(line.color)), MAT.building));
     }
     for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
     const legs = line.mode === 'rail' ? null : this._horseLegs(meshes[0], COACH_HORSE);
-    const v = { line, route, s, meshes, legs, gait: 0, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0 };
+    const v = { line, route, s, meshes, legs, gait: 0, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0, swing: s * 1.7 };
     this.vehicles.push(v);
     return v;
   }
@@ -395,20 +668,30 @@ export class Transit {
     for (const line of w.lines) {
       const route = this.routes.get(line.id);
       if (!route || line.broken) continue;
+      // the stops nearest each end...
       let sA = null, sB = null, dA = Infinity, dB = Infinity;
       for (const m of route.marks) {
         const st = w.buildings.get(m.stop);
         if (!st || !st.access) continue;
         const da = man(A, st), db = man(B, st);
-        if (da < dA) { dA = da; sA = m; }
-        if (db < dB) { dB = db; sB = m; }
+        if (da < dA) { dA = da; sA = m.stop; }
+        if (db < dB) { dB = db; sB = m.stop; }
       }
-      if (!sA || !sB || sA === sB || dA > 7 || dB > 7) continue;
-      const ride = ((sB.s - sA.s) + route.length) % route.length;
+      if (sA == null || sB == null || sA === sB || dA > 7 || dB > 7) continue;
+      // ...and the shortest ride between them: a gondola calls at a station
+      // between its ends on the way out and on the way back, so board going
+      // the right way (at: the call to board at)
+      let ride = Infinity, at = 0;
+      route.marks.forEach((a, i) => {
+        if (a.stop !== sA) return;
+        for (const b of route.marks) if (b.stop === sB) { const d = ((b.s - a.s) + route.length) % route.length; if (d < ride) { ride = d; at = i; } }
+      });
       const cfg = TRANSIT[line.mode];
-      const cost = dA + dB + (ride * CONFIG.WALK_SPEED) / cfg.speed + 3;
+      // the wait for a cabin: half the time between them (they come often)
+      const wait = line.mode === 'gondola' ? ((route.length / Math.max(1, line.vehicles) / 2) * CONFIG.WALK_SPEED) / cfg.speed : 3;
+      const cost = dA + dB + (ride * CONFIG.WALK_SPEED) / cfg.speed + wait;
       if (cost < walkLen * 0.85 && (!best || cost < best.cost)) {
-        best = { line, board: w.buildings.get(sA.stop), alight: w.buildings.get(sB.stop), cost };
+        best = { line, board: w.buildings.get(sA), alight: w.buildings.get(sB), at, cost };
       }
     }
     return best;
@@ -457,7 +740,7 @@ export class Transit {
   lineNameOf(r) { const v = this.riders.get(r.id); return v ? v.line.name : null; }
 
   _atStop(v, mark) {
-    const w = this.world;
+    const w = this.world, route = v.route;
     const stop = w.buildings.get(mark.stop);
     if (!stop) return;
     const keep = [];
@@ -471,7 +754,7 @@ export class Transit {
     const remain = [];
     let fares = 0;
     for (const q of list) {
-      if (q.plan.line === v.line && v.passengers.length < cap && this.world.residents.has(q.r.id)) {
+      if (q.plan.line === v.line && (q.plan.at == null || q.plan.at === v.next || route.marks[q.plan.at]?.stop !== mark.stop) && v.passengers.length < cap && this.world.residents.has(q.r.id)) {
         this.game.agents.board(q.r);
         v.passengers.push({ r: q.r, alight: q.plan.alight.id, dest: q.dest });
         this.riders.set(q.r.id, v);
@@ -503,7 +786,7 @@ export class Transit {
     for (const v of this.vehicles) {
       const cfg = TRANSIT[v.line.mode];
       const route = v.route;
-      const rail = v.line.mode === 'rail';
+      const rail = v.line.mode === 'rail', cable = v.line.mode === 'gondola';
       if (v.state === 'dwell') {
         v.dwell -= dt * speed;
         if (v.dwell <= 0) { v.state = 'move'; v.next = (v.next + 1) % route.marks.length; }
@@ -512,20 +795,30 @@ export class Transit {
         let dist = mark.s - v.s;
         if (dist < 0) dist += route.length;
         let step = dt * speed * cfg.speed;
-        if (rail) {
-          // pull away gently and brake into the platform
+        if (rail || cable) {
+          // pull away gently and brake into the platform; a cabin lets go of
+          // the cable in a station and creeps through it
           const prevMark = route.marks[(v.next - 1 + route.marks.length) % route.marks.length];
           let since = v.s - prevMark.s;
           if (since < 0) since += route.length;
-          step *= Math.min(1, 0.25 + Math.min(dist, since) * 0.6);
+          step *= rail ? Math.min(1, 0.25 + Math.min(dist, since) * 0.6) : Math.min(1, 0.3 + Math.min(dist, since) * 1.6);
         }
         if (v.legs) v.gait += Math.min(step, dist) * GAIT_PER_TILE;
         if (step >= dist) {
           v.s = mark.s;
           v.state = 'dwell';
-          v.dwell = rail ? 2.6 : 1.4;
+          v.dwell = rail ? 2.6 : cable ? 1 : 1.4;
           this._atStop(v, mark);
         } else v.s = (v.s + step) % route.length;
+      }
+      if (cable) {
+        // a cabin hangs from the cable, swinging a little on its grip
+        const p = this._sample(route, v.s), m = v.meshes[0];
+        m.position.set(p.x, p.y, p.z);
+        m.rotation.y = p.heading;
+        v.swing += dt * speed * 2.2;
+        m.rotation.x = Math.sin(v.swing) * (v.state === 'move' ? 0.05 : 0.015);
+        continue;
       }
       // place meshes: trains are centred on their position (engine in front)
       for (let k = 0; k < v.meshes.length; k++) {
@@ -634,8 +927,7 @@ export class Transit {
     for (const line of this.world.lines) {
       const r = this.routes.get(line.id);
       if (!r) continue;
-      const pts = r.pts.map(([x, z]) => [x, this._height(line.mode, x, z), z]);
-      out.push({ points: pts, color: line.color });
+      out.push({ points: this.routePoints(r), color: line.color });
     }
     return out;
   }
@@ -643,5 +935,6 @@ export class Transit {
   dispose() {
     this.scene.remove(this.group);
     for (const g of this.geoCache.values()) g.dispose();
+    for (const c of this.cables.values()) this._dropCable(c);
   }
 }

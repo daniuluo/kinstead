@@ -8,6 +8,8 @@ import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
 import { STYLES } from '../render/buildings.js';
 import { TRAITS, traitsOf, salaryOf, livingCostOf, pensionOf, wealthOf, relativesOf, friendsOf, yearsOf, eduOf, EDU, schoolingOf, familyOf, householdsIn } from '../sim/people.js';
+// What keeps gondola lines locked: too few villagers, or Cable Cars not researched.
+const gondolaLock = (w) => w.unlockPop < TRANSIT.gondola.unlock ? TRANSIT.gondola.unlock : !w.hasTech('cablecars') ? `🔬 ${TECHS.cablecars.name}` : 0;
 // What feeds a home's happiness, and what to do about each.
 const HAPPY = {
   base: { label: 'Everyday life', icon: 'cottage', tip: '' },
@@ -53,7 +55,7 @@ const pad = (n) => String(n).padStart(2, '0');
 // Emoji used around the codebase are rendered as calm monochrome icons.
 const ICONS = {
   '🖐': 'pan_tool', '🛤': 'add_road', '🏡': 'cottage', '🛍': 'storefront', '⚒': 'handyman', '⛲': 'account_balance',
-  '🌳': 'park', '🚂': 'train', '⛰': 'landscape', '🚜': 'delete', '🙂': 'sentiment_satisfied', '😄': 'sentiment_very_satisfied',
+  '🌳': 'park', '🚂': 'train', '🚡': 'gondola_lift', '⛰': 'landscape', '🚜': 'delete', '🙂': 'sentiment_satisfied', '😄': 'sentiment_very_satisfied',
   '😐': 'sentiment_neutral', '😟': 'sentiment_dissatisfied', '💧': 'water_drop', '🩺': 'medical_services', '📚': 'school',
   '🛡': 'shield', '🔔': 'church', '🏭': 'factory', '🚏': 'directions_bus', '🟫': 'route', '🪨': 'grid_on', '⬛': 'road',
   '🕳': 'vertical_align_bottom', '📐': 'straighten', '🌲': 'forest', '🐴': 'directions_bus', '📋': 'list_alt', '🔒': 'lock',
@@ -256,6 +258,7 @@ export class UI {
         cards.push(card('rail', '🛤️', 'Lay track', `${RAIL_COST} / tile`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'rail' }), 'Drag to lay railway track. Trains never reverse, so lines need a loop of track. Track can cross roads.'));
         cards.push(card('line:coach', '🐴', 'New coach line', `${TRANSIT.coach.vehicleCost}`, 0, () => this.game.input.setTool({ kind: 'line', mode: 'coach', stops: [] }), 'Click coach stops in order, then press Enter.'));
         cards.push(card('line:rail', '🚂', 'New rail line', `${TRANSIT.rail.vehicleCost}`, pop < 25 ? 25 : 0, () => this.game.input.setTool({ kind: 'line', mode: 'rail', stops: [] }), 'Stations must sit on a loop of track (trains never reverse). Click them in order, then press Enter.'));
+        cards.push(card('line:gondola', '🚡', 'New gondola line', `${TRANSIT.gondola.vehicleCost}`, gondolaLock(this.world), () => this.game.input.setTool({ kind: 'line', mode: 'gondola', stops: [] }), 'Click gondola stations in order, then press Enter. The cable runs straight from station to station, over roofs, streets and the river.'));
         cards.push(card('lines', '📋', 'Manage lines', '', 0, () => this.showLines()));
       }
     }
@@ -324,7 +327,7 @@ export class UI {
       case 'fields': msg = t.add ? `Drag a box over open land to plough it as fields · behind or beside the farm, touching it or its fields · $${CONFIG.FIELD_COST} each · right-click to stop` : 'Drag over the farm\'s fields to take them out (a quarter back) · right-click to stop'; break;
       case 'terrain': msg = `Click or drag to ${t.mode === 'flatten' ? 'level' : t.mode} the land · $${TERRAFORM_COST} each`; break;
       case 'trees': msg = `Click or drag to plant trees · $${TREE_COST} each`; break;
-      case 'line': msg = `Click ${t.mode === 'rail' ? 'stations on a loop of track' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
+      case 'line': msg = `Click ${t.mode === 'rail' ? 'stations on a loop of track' : t.mode === 'gondola' ? 'gondola stations (the cable runs straight between them)' : 'coach stops'} in order (${t.stops.length} chosen) · Enter to create · Backspace to undo · Esc to cancel`; break;
       default: msg = '';
     }
     h.textContent = msg;
@@ -1316,19 +1319,21 @@ export class UI {
   showLines() {
     const g = this.game, w = this.world;
     const lines = w.lines;
-    let h = `<h2>Transit lines</h2><p class="lead">Coaches loop between coach stops on the roads. Trains never reverse, so a rail line needs a loop of track passing every station; a loop can run up to three trains. Villagers on long trips walk to a stop, wait, ride and pay a fare.</p>`;
-    h += `<div class="actions" style="margin:0 0 12px"><button class="btn primary" id="nlCoach">🐴 New coach line</button><button class="btn primary" id="nlRail" ${w.unlockPop < 25 ? 'disabled title="Unlocks at 25 villagers"' : ''}>🚂 New rail line</button></div>`;
+    const gLock = gondolaLock(w);
+    let h = `<h2>Transit lines</h2><p class="lead">Coaches loop between coach stops on the roads. Trains never reverse, so a rail line needs a loop of track passing every station; a loop can run up to three trains. Gondola cabins run on a cable straight from station to station and back, over roofs, streets and the river; a line takes up to ${TRANSIT.gondola.maxVehicles} cabins. Villagers on long trips walk to a stop, wait, ride and pay a fare.</p>`;
+    h += `<div class="actions" style="margin:0 0 12px"><button class="btn primary" id="nlCoach">🐴 New coach line</button><button class="btn primary" id="nlRail" ${w.unlockPop < 25 ? 'disabled title="Unlocks at 25 villagers"' : ''}>🚂 New rail line</button><button class="btn primary" id="nlGondola" ${gLock ? `disabled title="${typeof gLock === 'number' ? `Unlocks at ${gLock} villagers` : `Research ${TECHS.cablecars.name} first`}"` : ''}>🚡 New gondola line</button></div>`;
     if (!lines.length) h += `<div class="empty">No lines yet. Build at least two coach stops (Transit menu), then create a line.</div>`;
     h += `<div class="lines-list">${lines.map(l => {
       const st = g.transit.stats[l.id] || { riders: 0, fares: 0 };
       const cfg = TRANSIT[l.mode];
       return `<div class="line-item"><span class="dot" style="background:${l.color}"></span>
-        <div><b>${esc(l.name)}</b> ${l.broken ? '<span class="chip no">Route broken</span>' : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.mode === 'rail' ? 'train' : 'coach'}${l.vehicles > 1 ? (l.mode === 'rail' ? 's' : 'es') : ''} · ${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
+        <div><b>${esc(l.name)}</b> ${l.broken ? '<span class="chip no">Route broken</span>' : ''}<div class="m" style="font-size:12px;color:var(--ink-2);font-weight:700">${l.stops.length} stops · ${l.vehicles} ${l.vehicles > 1 ? cfg.vehicles : cfg.vehicle} ·${fmt(st.riders)} riders · $${fmt(st.fares)} fares · upkeep ${cfg.upkeep * l.vehicles}/day</div></div>
         <div class="inline"><button class="btn small" data-veh="${l.id}" data-d="-1">−</button><button class="btn small" data-veh="${l.id}" data-d="1" title="Add a vehicle ($${cfg.vehicleCost})">+</button><button class="btn small danger" data-ldel="${l.id}">✕</button></div></div>`;
     }).join('')}</div>`;
     this.openModal(h, (c) => {
       c.querySelector('#nlCoach').onclick = () => { this.closeModal(); this.openFlyout('transit'); g.input.setTool({ kind: 'line', mode: 'coach', stops: [] }); };
       c.querySelector('#nlRail').onclick = () => { this.closeModal(); this.openFlyout('transit'); g.input.setTool({ kind: 'line', mode: 'rail', stops: [] }); };
+      c.querySelector('#nlGondola').onclick = () => { this.closeModal(); this.openFlyout('transit'); g.input.setTool({ kind: 'line', mode: 'gondola', stops: [] }); };
       for (const b of c.querySelectorAll('[data-veh]')) b.onclick = () => {
         const l = w.lines.find(x => x.id === Number(b.dataset.veh));
         if (!l) return;
@@ -1451,6 +1456,7 @@ export class UI {
     }
     for (const [style, t] of Object.entries(STYLE_TECH)) if (t === id) add(`${STYLES.find(s => s.id === style).name} style`, thumb('house', 1, 4242, null, style));
     if (id === 'railways') add('Railway track and lines');
+    if (id === 'cablecars') add('Gondola lines');
     // Great Plots opens every 2×2 estate building, whatever else it needs
     if (id === 'bigplots') for (const type of ESTATE_TYPES) add(`${BUILDINGS[type].levels[0].name} (new path)`, thumb(type, 0));
     return out;

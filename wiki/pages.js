@@ -221,7 +221,7 @@ export const PAGES = [
         ${list([
           '<b>Upkeep</b> of buildings: most services, utilities and transit stops cost coins every day (each building page lists its upkeep).',
           `<b>Roads</b>: ${and(ROAD_LEVELS.filter(Boolean).map(r => `${esc(r.name.toLowerCase())} ${money(r.upkeep)}`))} a tile a day, plus any ${pl('roads/dress', 'street dressing')} or ${pl('roads/boulevards', 'boulevard look')}, and railway track.`,
-          `<b>Transit</b>: every coach or train on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train).`,
+          `<b>Transit</b>: every coach, train or gondola cabin on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train, ${money(TRANSIT.gondola.upkeep)} a cabin).`,
           '<b>Building work</b>: building, upgrading, joining, moving and restyling are paid for when you order them.',
         ])}` },
       { id: 'costs', title: 'What things cost', html: table(['Thing', '#Price'], [
@@ -234,7 +234,7 @@ export const PAGES = [
         ['A neighbouring plot of land', money(CONFIG.PLOT_PRICE)],
         ['A field of farmland', money(CONFIG.FIELD_COST)],
         ['Burying the power lines (a road tile)', money(BURY_COST)],
-        ['A coach / a train', `${money(TRANSIT.coach.vehicleCost)} / ${money(TRANSIT.rail.vehicleCost)}`],
+        ['A coach / a train / a gondola cabin', `${money(TRANSIT.coach.vehicleCost)} / ${money(TRANSIT.rail.vehicleCost)} / ${money(TRANSIT.gondola.vehicleCost)}`],
         ['Joining two buildings', `${money(fact('joinCost', 0))} + ${pct(fact('joinCost', 1))} of the new level`],
         ['Moving a building', `${money(fact('moveCost', 0))} + ${pct(fact('moveCost', 1))} of its worth`],
         ['Restyling', `${pct(fact('restyle', 0))} of its worth (at least ${money(fact('restyle', 1))})`],
@@ -378,17 +378,21 @@ export const PAGES = [
   },
   {
     id: 'transport', title: 'Transit', icon: 'directions_bus', group: 'town',
-    summary: 'Horse-drawn coach lines and steam railways.',
+    summary: 'Horse-drawn coach lines, steam railways and gondolas on a cable over the rooftops.',
     sections: () => {
       const T = (m) => TRANSIT[m];
-      const row = (m) => [esc(T(m).name), money(T(m).vehicleCost), money(T(m).upkeep), money(T(m).fare), `${T(m).capacity}`, `${fmt(T(m).speed)}`, bl(T(m).stopType)];
+      const row = (m) => [esc(T(m).name), money(T(m).vehicleCost), money(T(m).upkeep), money(T(m).fare), `${T(m).capacity}`, `${fmt(T(m).speed)}`, `${T(m).maxVehicles}`, bl(T(m).stopType)];
       return [
-        { id: 'modes', title: 'Coaches and trains', html: table(['Mode', '#Each vehicle', '#Upkeep a day', '#Fare', '#Seats', '#Speed (tiles/s)', 'Stops'], [row('coach'), row('rail')]) +
+        { id: 'modes', title: 'Coaches, trains and gondolas', html: table(['Mode', '#Each vehicle', '#Upkeep a day', '#Fare', '#Seats', '#Speed (tiles/s)', '#Most on a line', 'Stops'], [row('coach'), row('rail'), row('gondola')]) +
           `<p>Villagers on long trips walk to a stop, wait there, ride, and pay the fare. A home within ${fact('happyTransit', 0)} tiles of a stop is happier (+${fact('happyTransit', 1)}).</p>` },
         { id: 'coach', title: 'Coach lines', html: `
           <p>Build ${bl('coachstop', 0, 'coach stops')} beside the road (Transit menu, ${k('7')}), then make a line: pick the stops in order, press ${k('Enter')} to finish (${k('Backspace')} takes back the last stop). The coaches loop between the stops along the roads. The lines window (${k('L')}) lists every line, with its riders, vehicles and colour.</p>` },
         { id: 'rail', title: 'Railways', html: `
           <p>${tl('railways')} unlocks track (${money(RAIL_COST)} a tile, with curves) and ${bl('station', 0, 'stations')}, which need a road on one side and track on another. Trains never reverse, so a rail line needs a <b>loop</b> of track through its stations: the trains drive forward around it, ease in and out of the stations and stop centred on each platform. A loop takes up to three trains; a dead-end line is refused.</p>` },
+        { id: 'gondola', title: 'Gondolas', html: `
+          <p>${tl('cablecars')} unlocks ${bl('gondola', 0, 'gondola stations')}: a deck on stilts under an open roof, with stairs up from the street, so a station needs a road beside it like a coach stop. Pick two or more stations in order and press ${k('Enter')}. The line needs no road or track between its stations: the cable runs <b>straight</b> from each station to the next, over streets, roofs, fields, the river or a hill, whatever lies between.</p>
+          <p>Each line has two cables side by side, one out and one back. Cabins in the line's colour hang from them and run out along the stations and back again, turning round a bullwheel under the roof of each end station. In a station a cabin lets go of the cable, creeps across the deck while villagers get in and out, and swings a little on its arm once it is off again. A station in the middle of a line is called at both ways, and riders take the cabin going their way. A line runs up to ${T('gondola').maxVehicles} cabins, evenly spaced. Villagers take the gondola when it beats walking. They reckon on waiting half the time between cabins, so more cabins bring more riders, and a line pays best where the road goes the long way round: over the river, up a hill or across a crowded town.</p>
+          <p>Steel pylons carry the cable about every six tiles. They stand on open ground, never on a building, road, track, field or water, and each is just tall enough for the cabins to clear the roofs and the ground beneath them, up to four tiles high. The cable sags a little between them. When something taller goes up under the line, the pylons rise to clear it. The Gondola Terminal adds a brick booking hall under the deck and a lantern on the roof.</p>` },
       ];
     },
     see: ['transit', 'roads'],
