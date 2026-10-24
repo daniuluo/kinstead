@@ -151,7 +151,7 @@ export const COMMANDS = {
     run: (g, c) => { const had = g.world.lines.some(l => l.id === c.id); g.transit.deleteLine(c.id); return ok(had, 'That line is gone'); },
   },
   vehicles: {
-    check: (w, c) => int(c.id) && int(c.n, 0, 10),
+    check: (w, c) => int(c.id) && int(c.n, 0, 16),
     run: (g, c) => g.transit.setVehicles(c.id, c.n),
   },
   speed: {

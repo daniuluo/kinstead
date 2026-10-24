@@ -36,7 +36,7 @@ export class Game {
     this.THREE = THREE;
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, v: 3, ...PERF_DEFAULTS };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, v: 4, ...PERF_DEFAULTS };
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}
     Object.assign(this.settings, saved);
@@ -44,6 +44,9 @@ export class Game {
     // version 3 start from it once (a later choice of the smooth look or
     // another pixel size is kept)
     if ((saved.v || 0) < 3) Object.assign(this.settings, { pixelArt: true, pixelSize: 2, v: 3 });
+    // and busy streets thinned out, as from version 4, unless only some or
+    // only the nearest villagers were already being drawn
+    if ((saved.v || 0) < 4) Object.assign(this.settings, { villagers: this.settings.villagers === 'some' || this.settings.villagers === 'near' ? this.settings.villagers : 'crowds', v: 4 });
     this.speed = 1;
     this.prevSpeed = 1;
     this.env = { hours: 7, night: 0, season: 0, snowing: false };
@@ -532,7 +535,7 @@ export class Game {
     if (t.kind === 'line' && t.stops.length >= 2) {
       const tmp = { mode: t.mode, stops: t.stops };
       const r = this.transit._route(tmp);
-      if (r) ribbons.push({ points: r.pts.map(([x, z]) => [x, this.transit._height(t.mode, x, z) + 0.02, z]), color: '#ffffff', opacity: 0.7, width: 0.05 });
+      if (r) ribbons.push({ points: this.transit.routePoints(r).map(([x, y, z]) => [x, y + 0.02, z]), color: '#ffffff', opacity: 0.7, width: 0.05 });
     }
     this.view.overlay.setRoutes(ribbons);
   }

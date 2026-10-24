@@ -1047,7 +1047,7 @@ function mergeLines(w, A, B, rep) {
     }
     const line = { id: s.id(l.id), mode: l.mode, name: l.name, color: l.color, stops, vehicles: l.vehicles };
     if (names.has(line.name)) {
-      const base = line.mode === 'rail' ? 'Rail Line' : 'Coach Line';
+      const base = TRANSIT[line.mode]?.lineName || 'Coach Line';
       let n = 1;
       while (names.has(`${base} ${n}`)) n++;
       line.name = `${base} ${n}`;

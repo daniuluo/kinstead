@@ -263,7 +263,7 @@ export class Input {
     const t = this.tool;
     const b = this.pickBuilding(e) || (() => { const tl = this.pickTile(e); return tl ? this.world.buildingOn(tl.x, tl.z) : null; })();
     const want = TRANSIT[t.mode].stopType;
-    if (!b || b.type !== want) { this.ui.toast(`Click a ${t.mode === 'rail' ? 'railway station' : 'coach stop'}`, 'bad'); return; }
+    if (!b || b.type !== want) { this.ui.toast(`Click a ${TRANSIT[t.mode].stop}`, 'bad'); return; }
     if (t.stops[t.stops.length - 1] === b.id) return;
     if (t.stops.length >= 2 && t.stops[0] === b.id) { this.finishLine(); return; }
     t.stops.push(b.id);
@@ -277,7 +277,7 @@ export class Input {
     if (t.kind !== 'line') return;
     this.game.cmd({ t: 'line', mode: t.mode, stops: t.stops.slice() }, (r) => {
       if (!r.ok) { this.ui.toast(r.reason || "Couldn't start that line", 'bad'); return; }
-      this.ui.toast(`${r.line.name} is running!`, 'good', t.mode === 'rail' ? '🚂' : '🐴');
+      this.ui.toast(`${r.line.name} is running!`, 'good', TRANSIT[t.mode].icon);
       this.game.sfx('upgrade');
       if (this.tool === t) this.setTool({ kind: 'line', mode: t.mode, stops: [] });
     });

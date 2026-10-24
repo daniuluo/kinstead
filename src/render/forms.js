@@ -406,7 +406,8 @@ export function tower(c, kind, x, z, w, h, wall, roof, o = {}) {
   const trim = o.trim || shade(wall, 1.15), face = z + w / 2;
   footing(c, x, z, w, w);
   gb.cbox(x, 0, z, w, h, w, wall, 0, 0.012);
-  for (let y = 0.14; y < h - 0.34; y += 0.3) win(c, x, y, face, Math.min(0.055, w * 0.28), 0.1, 'f', o.lit ?? 0.6);
+  // (o.door: the height of a door in its face, the windows starting over it)
+  for (let y = o.door ? o.door + 0.12 : 0.14; y < h - 0.34; y += 0.3) win(c, x, y, face, Math.min(0.055, w * 0.28), 0.1, 'f', o.lit ?? 0.6);
   gb.box(x, h - 0.17, face + 0.003, w * 0.42, 0.11, 0.008, '#2a2826');
   for (const s of [-1, 1]) gb.box(x + s * (w / 2 + 0.003), h - 0.17, z, 0.008, 0.11, w * 0.42, '#2a2826');
   if (o.clock) {

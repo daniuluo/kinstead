@@ -467,6 +467,13 @@ export function house(c, o) {
   if (fancy && (pal.style === 'clapboard' || o.siding)) siding(c, w, d, 0, h, o.wall);
   if (fancy && (pal.style === 'brick' || pal.style === 'stone') && !o.timber) quoins(c, w, d, h, o.wall);
   if (fancy && pal.ivy && !o.shopWindow) ivy(c, w, d, h);
+  const hw = w / 2, hd = d / 2;
+  let nF = o.nFront || Math.max(1, Math.floor(w / 0.22));
+  // a centred front door wants an odd number of bays so it stands in the middle
+  if (!o.nFront && fancy && pal.doorPos === 'center' && nF % 2 === 0 && w / (nF + 1) >= 0.14) nF++;
+  const nS = Math.max(1, Math.floor(d / 0.24));
+  const doorX = o.doorX ?? (fancy && pal.doorPos === 'center' ? 0
+    : (nF > 1 && (nF % 2 === 1 || (fancy && pal.doorPos === 'side'))) ? -hw + (w / nF) * 0.5 : 0);
   const rw = w + jetty * 2, rd = d + jetty * 2;
   const rh = (o.rh ?? 0.24) * (fancy ? pal.pitch : 1) * rhK;
   const trim = pal.style === 'stone' ? shade(o.wall, 1.14) : '#e3dccd';
@@ -488,8 +495,10 @@ export function house(c, o) {
     if (shaped) gableRoof(c, 0, h, 0, rw, rd, rh, o.wall, o.roof, 0.06, true, 0.012, 0.06);
     else gb.gable(0, h, 0, rw, rd, rh, o.wall, o.roof, 0.06, alongZ, 0.035);
     if (roofType === 'crossgable' && !alongZ && rw > 0.45) {
-      // a gabled bay facing the street
-      const gx = (rng.chance(0.5) ? 1 : -1) * rw * 0.22, gw = Math.min(0.26, rw * 0.38);
+      // a gabled bay facing the street, on the side away from the door (clear
+      // of it, when the door is in the middle)
+      const sg = rng.chance(0.5) ? 1 : -1, gw = Math.min(0.26, rw * 0.38);
+      const gx = Math.abs(doorX) > 0.05 ? -Math.sign(doorX) * rw * 0.22 : sg * Math.min(rw / 2 - gw / 2, Math.max(rw * 0.22, gw / 2 + 0.08));
       gb.cbox(gx, 0, rd / 2 - 0.02, gw, h, 0.09, o.wall, 0, 0.012);
       gb.gable(gx, h, rd / 2 - 0.02, gw, 0.13, rh * 0.85, o.wall, o.roof, 0.03, true, 0.03);
       win(c, gx, fh * 0.38, rd / 2 + 0.025, 0.07, 0.09, 'f', o.lit);
@@ -498,13 +507,6 @@ export function house(c, o) {
   }
   if (shaped) top = Math.max(top, shapedGable(c, shaped, rd / 2, h - 0.01, rw, rh, o.wall, trim));
 
-  const hw = w / 2, hd = d / 2;
-  let nF = o.nFront || Math.max(1, Math.floor(w / 0.22));
-  // a centred front door wants an odd number of bays so it stands in the middle
-  if (!o.nFront && fancy && pal.doorPos === 'center' && nF % 2 === 0 && w / (nF + 1) >= 0.14) nF++;
-  const nS = Math.max(1, Math.floor(d / 0.24));
-  const doorX = o.doorX ?? (fancy && pal.doorPos === 'center' ? 0
-    : (nF > 1 && (nF % 2 === 1 || (fancy && pal.doorPos === 'side'))) ? -hw + (w / nF) * 0.5 : 0);
   const ww = o.ww || (fancy ? pal.winW : 0.075);
   // walls along a street at the side or back: every window, and a door on
   // the ground floor (the side door nearest the front; the back door in the
@@ -990,7 +992,7 @@ function townhouseFlats(c) {
   const w = rng.float(0.8, 0.88), d = rng.float(0.6, 0.68), h = rng.float(0.82, 0.9), fz = -0.1 + d / 2, fh = h / 3;
   const stone = !pal.timber && rng.chance(0.4), wall = stone ? pal.stoneWall : pal.wall;
   const roof = rng.chance(0.55) ? pal.slate : pal.roof, trim = '#e3dccd';
-  house(c, {
+  const r = house(c, {
     x: 0, z: -0.1, w, d, h, floors: 3, wall, roof, roofType: pal.hip ? 'hip' : 'gable', rh: rng.float(0.28, 0.34),
     alongZ: false, chimney: true, timber: pal.timber, plinth: STONE, dormers: plan || pal.hip ? 0 : rng.int(1, 2), doorX: plan ? 0 : undefined, nFront: plan === 1 ? 4 : plan ? 5 : undefined,
     form: plan ? { turret: null, bay: null, balcony: plan === 2 ? null : F.balcony, front: 'eaves' } : {},
@@ -998,20 +1000,24 @@ function townhouseFlats(c) {
   if (plan === 1) {
     for (const x of [-w / 4, w / 4]) wallGable(c, F.gable, x, fz, w * 0.36, h, 0.24, d * 0.45, wall, roof, trim, 0.8);
   } else if (plan === 2) {
-    // the middle three bays brought forward and carried up into a pediment
+    // the middle three bays brought forward over the door and carried up
+    // into a pediment, on pilasters either side of the door
     const pw = w * 0.4;
-    gb.cbox(0, 0, fz + 0.015, pw, h + 0.04, 0.04, wall, 0, 0.006);
+    for (const s of [-1, 1]) gb.box(s * (pw / 2 - 0.015), 0, fz + 0.015, 0.03, fh, 0.03, '#e3dccd');
+    gb.cbox(0, fh - 0.01, fz + 0.015, pw, h + 0.05 - fh, 0.04, wall, 0, 0.006);
     for (let f = 0; f < 3; f++) for (const u of f ? [-pw / 3, 0, pw / 3] : [-pw / 3, pw / 3]) win(c, u, f * fh + fh * 0.38, fz + 0.036, 0.06, Math.min(0.11, fh * 0.4), 'f', 0.8);
     gb.box(0, h + 0.04, fz + 0.015, pw + 0.03, 0.02, 0.06, trim);
     gb.gable(0, h + 0.06, fz + 0.015, pw + 0.03, 0.05, 0.1, trim, trim, 0.01, true);
   } else if (plan === 3) {
     for (const x of [-w * 0.3, w * 0.3]) tallBay(c, x, fz, fh, 3, wall, roof, 0.8, false, 3, 0.18);
   } else if (rng.chance(0.4)) {
-    footing(c, side * 0.3, 0.14, 0.26, 0.3);
-    gb.cbox(side * 0.3, 0, 0.14, 0.26, 0.5, 0.3, pal.wall, 0, 0.018);
-    gb.hip(side * 0.3, 0.5, 0.14, 0.26, 0.3, 0.16, pal.roof, 0.04);
-    win(c, side * 0.3, 0.09, 0.29, 0.07, 0.09, 'f');
-    win(c, side * 0.3, 0.32, 0.29, 0.07, 0.09, 'f');
+    // a wing come forward, on the side away from the door
+    const wx = (Math.abs(r.doorX) > 0.05 ? -Math.sign(r.doorX) : side) * 0.3;
+    footing(c, wx, 0.14, 0.26, 0.3);
+    gb.cbox(wx, 0, 0.14, 0.26, 0.5, 0.3, pal.wall, 0, 0.018);
+    gb.hip(wx, 0.5, 0.14, 0.26, 0.3, 0.16, pal.roof, 0.04);
+    win(c, wx, 0.09, 0.29, 0.07, 0.09, 'f');
+    win(c, wx, 0.32, 0.29, 0.07, 0.09, 'f');
   } else if (rng.chance(0.5) && !F.balcony) {
     gb.box(0, 0.29, fz + 0.05, 0.32, 0.022, 0.1, '#5e432c');
     for (let i = -2; i <= 2; i++) gb.box(i * 0.075, 0.31, fz + 0.095, 0.01, 0.065, 0.01, '#3a2f28');
@@ -1233,20 +1239,22 @@ MODELS.market = (c, L) => {
   if (L === 0 || L >= 3) c.openAir = true;
   if (L === 0) {
     // the stalls, set out in the market's own way: two at angles; a row
-    // along the street; round a market cross; or a striped tent and a cart
+    // along the street; round a market cross; or a striped tent and a cart.
+    // (The front corners stay clear: a neighbour whose door faces the market
+    // is walked to across them, from the street.)
     const plan = planOf(c, 4);
     if (plan === 1) {
-      for (let i = 0; i < 3; i++) marketStall(c, -0.3 + i * 0.3, 0.1, 0, 0.66, i === 1 ? ownPick(c, AWNING, 3) : awnA);
-      handcart(c, 0.3, -0.3); crate(c, -0.32, -0.26); barrel(c, -0.2, -0.32);
+      for (let i = 0; i < 3; i++) marketStall(c, -0.22 + i * 0.22, -0.2, 0, 0.5, i === 1 ? ownPick(c, AWNING, 3) : awnA);
+      handcart(c, -0.02, 0.12); crate(c, -0.34, -0.4); barrel(c, 0.36, -0.4);
     } else if (plan === 2) {
       // a market cross on its steps, stalls either side facing it
-      const y = c.gy(0, -0.06);
-      for (let k = 0; k < 3; k++) gb.cbox(0, y - 0.02 + k * 0.035, -0.06, 0.24 - k * 0.06, 0.04, 0.24 - k * 0.06, STONE, Math.PI / 4, 0.006);
-      gb.cyl(0, y + 0.1, -0.06, 0.018, 0.024, 0.3, 6, '#b8b0a2');
-      gb.box(0, y + 0.38, -0.06, 0.08, 0.016, 0.016, '#b8b0a2');
-      gb.sphere(0, y + 0.42, -0.06, 0.02, '#b8b0a2', 0);
-      stall(-0.3, -0.06, Math.PI / 2, 0.75);
-      stall(0.3, -0.06, -Math.PI / 2, 0.75);
+      const y = c.gy(0, 0);
+      for (let k = 0; k < 3; k++) gb.cbox(0, y - 0.02 + k * 0.035, 0, 0.24 - k * 0.06, 0.04, 0.24 - k * 0.06, STONE, Math.PI / 4, 0.006);
+      gb.cyl(0, y + 0.1, 0, 0.018, 0.024, 0.3, 6, '#b8b0a2');
+      gb.box(0, y + 0.38, 0, 0.08, 0.016, 0.016, '#b8b0a2');
+      gb.sphere(0, y + 0.42, 0, 0.02, '#b8b0a2', 0);
+      stall(-0.22, -0.2, Math.PI / 2, 0.7);
+      stall(0.22, -0.2, -Math.PI / 2, 0.7);
       for (const x of [-0.12, 0.12]) basket(c, x, 0.3, rng.pick(['#c8402f', '#e0b030', '#9ab830']));
     } else if (plan === 3) {
       // a striped tent on poles, a cart of produce beside it
@@ -1257,7 +1265,7 @@ MODELS.market = (c, L) => {
       gb.box(tx, ty + 0.44, tz, 0.008, 0.06, 0.008, '#5e432c');
       gb.cbox(tx, ty, tz, 0.3, 0.12, 0.14, '#86613e', 0, 0.008);
       for (let i = 0; i < 6; i++) gb.sphere(tx - 0.12 + i * 0.048, ty + 0.14, tz, 0.02, rng.pick(['#b8402f', '#d98a32', '#7aa34a', '#d9c050']), 1);
-      handcart(c, 0.3, 0.12); crate(c, 0.32, -0.3); crate(c, 0.38, -0.22, 0.8, '#a88458');
+      handcart(c, 0.18, -0.3); crate(c, 0.34, -0.42); crate(c, 0.26, -0.4, 0.8, '#a88458');
     } else {
       stall(-0.14, 0.06, 0);
       stall(0.22, -0.22, -Math.PI / 2, 0.85);
@@ -1934,15 +1942,18 @@ function shopfront(c, x, z, w, h, o = {}) {
   const trim = o.trim || '#e3dccd', fascia = o.fascia || rng.pick(FASCIA), riser = o.riser || shade(fascia, 1.3);
   const dx = x + (o.doorX || 0), dw = o.doorW || 0.085, top = h - 0.06;
   // its style, the shop's own (forms.js): plain; pilasters with consoles under
-  // the fascia's ends; transom lights over the windows; the door set back in
-  // a lobby between the windows' glazed returns
-  const st = o.style || (c.form && c.form.shopfront) || 'plain', recess = st === 'recessed' && !o.noDoor ? 0.035 : 0;
+  // the fascia's ends; transom lights over the windows; or the windows brought
+  // forward either side of the door, so it stands back in a lobby between
+  // their glazed returns
+  const st = o.style || (c.form && c.form.shopfront) || 'plain', recess = st === 'recessed' && !o.noDoor && !o.bow ? 0.035 : 0;
   const a = x - w / 2 + 0.024, b = x + w / 2 - 0.024, gap = dw / 2 + 0.018 + (recess ? 0.006 : 0);
   const spans = o.noDoor ? [[a, b]] : [[a, dx - gap], [dx + gap, b]].filter(([s, e]) => e - s > 0.05);
-  const panes = [];
+  const panes = [], z0 = z;
   for (const [s, e] of spans) {
     const m = (s + e) / 2, sw = e - s;
     if (o.bow) { panes.push(bowWindow(c, m, z, sw, top, trim, riser)); continue; }
+    z = z0 + recess;
+    if (recess) gb.box(m, top - 0.012, z0 + recess / 2 + 0.006, sw + 0.008, 0.012, recess + 0.012, shade(trim, 0.85));
     gb.box(m, 0, z + 0.008, sw, 0.05, 0.02, riser);
     gb.glow(WARM[0], WARM[1], WARM[2], 1 + rng.float(0.02, 0.3));
     gb.box(m, 0.05, z + 0.006, sw, top - 0.05, 0.012, GLASS);
@@ -1957,23 +1968,23 @@ function shopfront(c, x, z, w, h, o = {}) {
     }
     panes.push({ m, w: sw, z: z + 0.016 });
   }
+  z = z0;
   const pw = st === 'pilasters' ? 0.036 : 0.026;
   for (const sd of [-1, 1]) gb.box(x + sd * (w / 2 - pw / 2), 0, z + 0.01, pw, h, pw, trim);
   if (st === 'pilasters') for (const sd of [-1, 1]) gb.cbox(x + sd * (w / 2 - 0.018), top - 0.012, z + 0.03, 0.03, 0.085, 0.04, shade(trim, 0.92), 0, 0.006);
   if (recess) {
-    // the lobby: its glazed returns and tiled floor
+    // the lobby: the windows' glazed returns and a tiled floor
     gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
-    for (const sd of [-1, 1]) gb.box(dx + sd * (gap - 0.004), 0.05, z - recess / 2 + 0.006, 0.008, top - 0.05, recess, GLASS);
+    for (const sd of [-1, 1]) gb.box(dx + sd * (gap - 0.004), 0.05, z + recess / 2 + 0.006, 0.008, top - 0.05, recess, GLASS);
     gb.noGlow();
-    gb.box(dx, 0.001, z - recess / 2 + 0.01, gap * 2, 0.006, recess + 0.01, '#d8d0bc');
-    gb.box(dx, top - 0.01, z - recess / 2 + 0.006, gap * 2 + 0.01, 0.012, recess + 0.012, trim);
+    gb.box(dx, 0.001, z + recess / 2 + 0.01, gap * 2, 0.006, recess + 0.01, '#d8d0bc');
   }
   gb.box(x, top, z + 0.012, w, 0.06, 0.03, fascia);
   gb.box(x, h, z + 0.016, w + 0.03, st === 'pilasters' ? 0.02 : 0.014, st === 'pilasters' ? 0.05 : 0.04, shade(trim, 0.9));
   if (o.lit) gb.glow(1.8, 1.4, 0.6, 3.1);
   gb.box(x, top + 0.016, z + 0.028, w * 0.6, 0.026, 0.006, o.letter || '#e0c070');
   gb.noGlow();
-  if (!o.noDoor) door(c, dx, z - recess, dw, Math.min(0.17, top), o.door || pal.door);
+  if (!o.noDoor) door(c, dx, z, dw, Math.min(0.17, top), o.door || pal.door);
   return { panes, top, fascia, letter: o.letter || '#e0c070' };
 }
 
@@ -2858,8 +2869,9 @@ MODELS.offices = (c, L) => {
     for (let i = 0; i < 5; i++) if (i !== 2) win(c, -W / 2 + (i + 0.5) * (W / 5), fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
     if (plan === 1) balcony(c, 'iron', 0, fh, fz, 0.42);
     else if (plan === 2) {
-      // the middle three bays under a pediment over the parapet
-      gb.cbox(0, 0, fz + 0.012, 0.48, H + 0.02, 0.024, wall, 0, 0.004);
+      // the middle three bays brought forward over the ground floor, under a
+      // pediment over the parapet
+      gb.cbox(0, fh - 0.01, fz + 0.012, 0.48, H + 0.03 - fh, 0.024, wall, 0, 0.004);
       for (const u of [-0.16, 0, 0.16]) win(c, u, fh + fh * 0.38, fz + 0.024, 0.075, 0.11, 'f', 0.8);
       gb.gable(0, H + 0.06, fz + 0.012, 0.52, 0.04, 0.12, trim, trim, 0.01, true);
     } else if (plan === 3) wallGable(c, F.gable === 'plain' ? 'dutch' : F.gable, 0, fz, 0.34, H, 0.24, 0.26, wall, pal.slate, trim, 0.8);
@@ -3955,6 +3967,8 @@ MODELS.coachstop = (c) => {
   const { gb, pal } = c;
   const F = c.form, kind = planOf(c, 5), z = 0.22;
   const roof = pal.thatched ? pal.thatch : pal.roof;
+  // laid out where it's drawn (passengers wait in front of it, z > 0.2)
+  c.boxAware = true;
   if (kind === 1) {
     // cast iron and glass
     footing(c, 0, z - 0.03, 0.5, 0.2);
@@ -3976,25 +3990,26 @@ MODELS.coachstop = (c) => {
     gb.gable(0, 0.24, z - 0.02, 0.44, 0.26, 0.14, pal.wood, roof, 0.04, false, 0.03);
   } else if (kind === 3) {
     // a round kiosk under a pointed roof, a canopy beside it
-    const kx = -0.16;
-    gb.cyl(kx, 0, z - 0.04, 0.08, 0.085, 0.24, 8, '#2f4a3a');
-    gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(kx, 0.1, z + 0.035, 0.06, 0.06, 0.012, GLASS); gb.noGlow();
-    gb.cyl(kx, 0.24, z - 0.04, 0.1, 0.1, 0.02, 8, '#d8ccb4');
-    gb.cone(kx, 0.26, z - 0.04, 0.1, 0.14, 8, roof);
-    gb.box(kx, 0.4, z - 0.04, 0.006, 0.05, 0.006, IRON_D);
-    for (const sz of [-1, 1]) gb.box(0.16, 0, z - 0.04 + sz * 0.08, 0.02, 0.22, 0.02, '#3f342c');
-    gb.box(0.08, 0.22, z - 0.04, 0.24, 0.016, 0.22, roof);
-    bench(c, 0.08, z - 0.06, 0);
+    const kx = -0.2, kz = z - 0.14;
+    gb.cyl(kx, 0, kz, 0.08, 0.085, 0.24, 8, '#2f4a3a');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(kx, 0.1, kz + 0.075, 0.06, 0.06, 0.012, GLASS); gb.noGlow();
+    gb.cyl(kx, 0.24, kz, 0.1, 0.1, 0.02, 8, '#d8ccb4');
+    gb.cone(kx, 0.26, kz, 0.1, 0.14, 8, roof);
+    gb.box(kx, 0.4, kz, 0.006, 0.05, 0.006, IRON_D);
+    for (const sx of [0.02, 0.22]) gb.box(sx, 0, z - 0.1, 0.02, 0.22, 0.02, '#3f342c');
+    gb.box(0.12, 0.22, z - 0.04, 0.26, 0.016, 0.2, roof);
+    bench(c, 0.12, z - 0.08, 0);
   } else if (kind === 4) {
     // a brick waiting room, a canopy along its front
-    footing(c, 0, z - 0.08, 0.46, 0.16);
-    gb.cbox(0, 0, z - 0.1, 0.44, 0.24, 0.14, pal.brick, 0, 0.008);
-    gb.hip(0, 0.24, z - 0.1, 0.46, 0.16, 0.08, pal.slate, 0.02);
-    plainDoor(c, -0.1, z - 0.03, 0.07, 0.16, pal.door);
-    win(c, 0.1, 0.08, z - 0.03, 0.08, 0.08, 'f', 0.8);
-    for (const sx of [-1, 1]) win(c, sx * 0.22, 0.08, z - 0.1, 0.05, 0.08, sx > 0 ? 'r' : 'l', 0.8);
-    gb.box(0, 0.2, z + 0.03, 0.46, 0.012, 0.1, '#2f2f33');
-    for (const sx of [-1, 1]) gb.boxC(sx * 0.18, 0.17, z - 0.0, 0.006, 0.07, 0.006, IRON_D, 0.6);
+    const rz = z - 0.15;
+    footing(c, 0, rz, 0.46, 0.16);
+    gb.cbox(0, 0, rz, 0.44, 0.24, 0.14, pal.brick, 0, 0.008);
+    gb.hip(0, 0.24, rz, 0.46, 0.16, 0.08, pal.slate, 0.02);
+    plainDoor(c, -0.1, rz + 0.07, 0.07, 0.16, pal.door);
+    win(c, 0.1, 0.08, rz + 0.07, 0.08, 0.08, 'f', 0.8);
+    for (const sx of [-1, 1]) win(c, sx * 0.22, 0.08, rz, 0.05, 0.08, sx > 0 ? 'r' : 'l', 0.8);
+    gb.box(0, 0.2, rz + 0.13, 0.46, 0.012, 0.1, '#2f2f33');
+    for (const sx of [-1, 1]) gb.boxC(sx * 0.18, 0.17, rz + 0.1, 0.006, 0.07, 0.006, IRON_D, 0.6);
   } else {
     footing(c, 0, z - 0.03, 0.5, 0.2);
     gb.cbox(0, 0, z - 0.11, 0.46, 0.24, 0.025, pal.wood, 0, 0.006);
@@ -4060,10 +4075,116 @@ MODELS.station = (c, L) => {
   gb.pop();
 };
 
+// A gondola station: a deck on stilts that the cabins glide across, under an
+// open-sided roof, so a cable can come in from any side. transit.js draws the
+// cable (1.05 above the floor), the bullwheel it turns round at the end of a
+// line and the cabins, whose floors pass level with the deck (0.78 up).
+// Stairs climb to the deck from the street. The terminal has a brick booking
+// hall under the deck, iron columns and a lantern on the roof. Where the
+// cable must run higher to clear the roofs round about, the station stands
+// that much taller (c.lift, from b.lift), on longer stilts braced in bays,
+// and from half a tile up a lift rises through the middle to the deck, in
+// place of the stairs.
+MODELS.gondola = (c, L) => {
+  const { gb, pal, rng } = c;
+  const lift = c.lift || 0;
+  const DECK = 0.78 + lift, EAVE = 1.27 + lift, D = 0.3;   // deck top, eaves, the deck's half-width
+  const post = L ? (rng.chance(0.5) ? '#4c5a60' : '#3f4a3f') : rng.chance(0.6) ? pal.wood : pal.accent;
+  const floor = L ? STONE : '#8a6a48', beam = shade(post, 0.85);
+  footing(c, 0, 0, 0.92, 0.92);
+  gb.box(0, 0, 0, 0.92, 0.02, 0.92, L ? '#c9c1b0' : '#b8ad98');
+  // under the deck: a booking office, or the terminal's booking hall
+  if (L) {
+    gb.cbox(-0.05, 0, -0.04, 0.48, 0.44, 0.46, pal.brick, 0, 0.012);
+    gb.box(-0.05, 0.44, -0.04, 0.52, 0.03, 0.5, STONE);
+    for (const x of [-0.2, 0.1]) win(c, x, 0.13, 0.19, 0.07, 0.17, 'f', 0.85);
+    for (const z of [-0.15, 0.07]) win(c, -0.29, 0.13, z, 0.07, 0.17, 'l', 0.85);
+    door(c, -0.05, 0.19, 0.08, 0.2, pal.door);
+  } else {
+    gb.cbox(-0.09, 0, -0.07, 0.3, 0.3, 0.28, pal.wall, 0, 0.01);
+    gb.wedge(-0.09, 0.3, -0.07, 0.34, 0.32, 0.06, pal.roof);
+    win(c, -0.15, 0.13, 0.07, 0.08, 0.1, 'f', 0.8);
+    door(c, -0.02, 0.07, 0.07, 0.17, pal.door);
+  }
+  // the stilts, braced below the deck in a bay or more, up to the eaves
+  const sw = lift > 1.5 ? 0.06 : 0.045;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * D, 0, sz * D, sw, EAVE, sw, post);
+  const bays = Math.max(1, Math.ceil((DECK - 0.1) / 0.8)), span = 2 * D, rise = (DECK - 0.1) / bays, len = Math.hypot(span, rise), a = Math.atan2(rise, span);
+  for (let j = 0; j < bays; j++) {
+    const y = 0.03 + rise * (j + 0.5);
+    for (const s of [-1, 1]) {
+      gb.boxC(0, y, -D, len, 0.022, 0.018, beam, 0, 0, s * a);
+      gb.boxC(-D, y, 0, 0.018, 0.022, len, beam, s * a);
+    }
+    if (j) for (const s of [-1, 1]) { gb.box(0, 0.03 + rise * j - 0.015, s * D, span, 0.03, 0.024, beam); gb.box(s * D, 0.03 + rise * j - 0.015, 0, 0.024, 0.03, span, beam); }
+  }
+  // a tall station's lift, up through the middle of the deck to the drive
+  // (it holds the bullwheel up too); its glass lit at night
+  if (lift >= 0.5) {
+    gb.box(0, 0, 0, 0.07, DECK + 0.33, 0.07, '#4f565b');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
+    for (let y = 0.6; y < DECK - 0.15; y += 0.45) for (const s of [-1, 1]) gb.box(0, y, s * 0.036, 0.05, 0.12, 0.006, GLASS);
+    gb.noGlow();
+    gb.box(0, DECK, 0.036, 0.05, 0.13, 0.006, '#2f2c2a');
+  }
+  // the deck, its edge beams and a few lengths of railing by the posts
+  gb.box(0, DECK - 0.05, 0, 2 * D + 0.04, 0.05, 2 * D + 0.04, floor);
+  for (const s of [-1, 1]) {
+    gb.box(0, DECK - 0.09, s * D, 2 * D, 0.04, 0.03, beam);
+    gb.box(s * D, DECK - 0.09, 0, 0.03, 0.04, 2 * D, beam);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    gb.box(sx * (D - 0.06), DECK + 0.085, sz * D, 0.12, 0.012, 0.012, post);
+    gb.box(sx * D, DECK + 0.085, sz * (D - 0.06), 0.012, 0.012, 0.12, post);
+  }
+  // the stairs up the right-hand side, from the street to a landing
+  if (lift < 0.5) {
+    const n = Math.round(DECK / 0.078), run = 0.6 / n, step = DECK / n, sx = 0.39;
+    for (let i = 0; i < n; i++) {
+      const z = 0.45 - (i + 0.5) * run, top = (i + 1) * step;
+      if (L) gb.box(sx, 0, z, 0.13, top, run + 0.002, STONE);
+      else gb.box(sx, top - 0.02, z, 0.13, 0.02, run + 0.004, '#8a6a48');
+    }
+    const sl = Math.hypot(0.6, DECK), sa = Math.atan2(DECK, 0.6);
+    if (!L) for (const o of [-0.07, 0.07]) gb.boxC(sx + o, DECK / 2 - 0.01, 0.15, 0.016, 0.03, sl, post, sa);
+    gb.boxC(sx + 0.07, DECK / 2 + 0.1, 0.15, 0.01, 0.01, sl, post, sa);
+    gb.box(sx, DECK - 0.04, -0.22, 0.15, 0.04, 0.14, floor);
+  }
+  // the roof: open on every side, with the drive under it
+  for (const s of [-1, 1]) {
+    gb.box(0, EAVE - 0.05, s * D, 2 * D + 0.04, 0.05, 0.03, beam);
+    gb.box(s * D, EAVE - 0.05, 0, 0.03, 0.05, 2 * D + 0.04, beam);
+  }
+  gb.box(0, DECK + 0.33, 0, 0.22, 0.11, 0.22, '#5a5f63');
+  gb.box(0, DECK + 0.44, 0, 0.06, EAVE - DECK - 0.44, 0.06, '#5a5f63');
+  // its roof, its own way (planOf): a hip, a gable, or a pyramid swept out at the eaves
+  const roofKind = planOf(c, 3), rr = L ? pal.slate : pal.roof;
+  if (roofKind === 1) gb.gable(0, EAVE, 0, 0.76, 0.76, 0.22, L ? pal.brick : pal.wood, rr, 0.05, false, 0.03);
+  else if (roofKind === 2) { gb.frustum(0, EAVE, 0, 0.86, 0.86, 0.05, 0.6, 0.6, rr); gb.roof(0, EAVE + 0.05, 0, 0.6, 0.6, 0.24, 0, rr); gb.box(0, EAVE + 0.29, 0, 0.01, 0.05, 0.01, '#2f2c2a'); }
+  else gb.hip(0, EAVE, 0, 0.76, 0.76, rng.chance(0.5) ? 0.24 : 0.17, rr, 0.05);
+  if (L && roofKind !== 2) {
+    // a lantern on the roof, and a flag
+    gb.box(0, EAVE + 0.16, 0, 0.13, 0.08, 0.13, '#e9e2d4');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3);
+    for (const [fx, fz] of [[0, 0.066], [0, -0.066], [0.066, 0], [-0.066, 0]]) gb.box(fx, EAVE + 0.175, fz, fz ? 0.07 : 0.006, 0.05, fz ? 0.006 : 0.07, GLASS);
+    gb.noGlow();
+    gb.hip(0, EAVE + 0.24, 0, 0.13, 0.13, 0.07, pal.slate, 0.02);
+    gb.box(0, EAVE + 0.31, 0, 0.01, 0.16, 0.01, '#2f2c2a');
+    gb.box(0.04, EAVE + 0.41, 0, 0.07, 0.045, 0.005, pal.awning);
+  }
+  // the name board under the deck, with the gondola's roundel
+  gb.box(-0.05, DECK - 0.18, D + 0.018, 0.3, 0.085, 0.012, '#2f4858');
+  gb.cyl(-0.15, DECK - 0.137, D + 0.026, 0.03, 0.03, 0.006, 10, '#e8e0d0', 0, Math.PI / 2);
+  gb.box(0.02, DECK - 0.142, D + 0.026, 0.13, 0.012, 0.004, '#e8e0d0');
+  lamp(c, -0.4, 0.4, 0.3);
+  lamp(c, -D + 0.05, D - 0.05, 0.2, DECK);
+  bench(c, -0.14, 0.4, 0);
+};
+
 // A faint per-building colour cast, so neighbours never look copy-pasted.
 // ------------------------------------------------- the two home branches
 
-/// Villa: a detached house in a proper garden, in one of its plans: with a
+// Villa: a detached house in a proper garden, in one of its plans: with a
 // glasshouse at the side; Italianate, a belvedere tower on a front corner;
 // Gothic, a steep gable to the street over a bay, a conservatory behind;
 // Regency, square under a low roof, a veranda along the front and a bow
@@ -4227,8 +4348,10 @@ function mansionBlock(c) {
   const roofType = ['hip', 'mansard', 'parapet', 'gable', 'hip', 'parapet'][plan];
   house(c, {
     z: z0, w: W, d: D, h, floors, wall, roof: pal.slate, roofType, rh: plan === 1 ? 0.38 : 0.34, dormers: plan === 1 ? 5 : 0,
-    plinth: STONE_D, doorX: 0, doorW: 0.13, nFront: 5, fancy: false, door: '#3a2f28',
+    plinth: STONE_D, doorX: 0, doorW: 0.13, nFront: 5, fancy: false, door: '#3a2f28', noDoor: plan === 4,
   });
+  // (the pavilion's door is the way in, in its front)
+  if (plan === 4) door(c, 0, fz + 0.12, 0.12, 0.2, '#3a2f28');
   for (let f = 1; f < floors; f++) gb.box(0, f * fh - 0.008, z0, W + 0.02, 0.016, D + 0.02, trim);
   if (plan === 0 || plan === 3 || plan === 4) gb.box(0, h - 0.02, z0, W + 0.05, 0.03, D + 0.05, trim);
   const rail = (x, y, w, z = fz) => {
@@ -4280,8 +4403,9 @@ function mansionBlock(c) {
   }
   // the door case: a portico, or a canopy on brackets
   if (plan === 1 || plan === 4) {
-    gb.box(0, 0.24, fz + 0.06, 0.26, 0.016, 0.12, '#2f2f33');
-    for (const s of [-1, 1]) gb.boxC(s * 0.11, 0.2, fz + 0.04, 0.008, 0.1, 0.008, IRON_D, 0.7);
+    const cz = plan === 4 ? fz + 0.12 : fz;
+    gb.box(0, 0.24, cz + 0.06, 0.26, 0.016, 0.12, '#2f2f33');
+    for (const s of [-1, 1]) gb.boxC(s * 0.11, 0.2, cz + 0.04, 0.008, 0.1, 0.008, IRON_D, 0.7);
   } else {
     for (let i = 0; i < 2; i++) gb.cyl(-0.06 + i * 0.12, 0.02, fz + 0.07, 0.016, 0.019, 0.3, 8, trim);
     gb.gable(0, 0.32, fz + 0.04, 0.24, 0.1, 0.07, trim, pal.slate, 0.02);
@@ -5993,9 +6117,10 @@ MODELS.apartments = (c, L) => {
   if (plan === 1) {
     for (const x of [-0.66, -0.3, 0.3, 0.66]) tallBay(c, x * (W / 1.88), fz, fh, floors, wall, pal.slate, 0.8, false, floors, 0.16);
   } else if (plan === 2) {
-    // a pedimented middle, brought forward and carried up over the cornice
+    // a pedimented middle, brought forward over the ground floor and carried
+    // up over the cornice
     const pw = 0.5;
-    gb.cbox(0, 0, fz + 0.02, pw, h + 0.04, 0.05, wall, 0, 0.006);
+    gb.cbox(0, fh - 0.01, fz + 0.02, pw, h + 0.05 - fh, 0.05, wall, 0, 0.006);
     for (let k = 1; k < floors; k++) for (const u of [-0.16, 0, 0.16]) win(c, u, k * fh + fh * 0.36, fz + 0.046, 0.06, 0.1, 'f', 0.8);
     gb.box(0, h + 0.04, fz + 0.02, pw + 0.03, 0.02, 0.07, trim);
     gb.gable(0, h + 0.06, fz + 0.02, pw + 0.03, 0.06, 0.12, trim, trim, 0.01, true);
@@ -6060,10 +6185,11 @@ MODELS.highschool = (c, L) => {
   const f = rowFrame(c), F = c.form, plan = planOf(c, 4), side = F.side;
   const W = f.len - 0.14, D = 0.56, z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2;
   const floors = L ? 3 : 2, h = floors * 0.26;
-  house(c, { x: 0, z: z0, w: W, d: D, h, floors, wall: pal.brick, roof: pal.slate, roofType: plan >= 2 ? 'gable' : 'hip', rh: 0.26, plinth: STONE, doorX: 0, doorW: 0.14, nFront: Math.round(W / 0.17), fancy: false, chimney: true, lit: 0.7 });
+  // (a tower in the middle of the front has the way in in its foot)
+  house(c, { x: 0, z: z0, w: W, d: D, h, floors, wall: pal.brick, roof: pal.slate, roofType: plan >= 2 ? 'gable' : 'hip', rh: 0.26, plinth: STONE, doorX: 0, doorW: 0.14, noDoor: plan < 2, nFront: Math.round(W / 0.17), fancy: false, chimney: true, lit: 0.7 });
   const kind = ['pyramid', 'lantern', 'battlement', 'spire'][plan];
   const tx = plan >= 2 ? side * (W / 2 - 0.16) : 0;
-  tower(c, kind, tx, fz - 0.05, 0.22, h + 0.32, plan === 2 ? pal.brick : pal.stoneWall, pal.slate, { clock: true, flag: '#3f6a8f' });
+  tower(c, kind, tx, fz - 0.05, 0.22, h + 0.32, plan === 2 ? pal.brick : pal.stoneWall, pal.slate, { clock: true, flag: '#3f6a8f', door: 0.18 });
   if (plan >= 2) for (const x of [-0.1, 0.32].map(u => -side * u)) wallGable(c, 'plain', x, fz, 0.28, h, 0.2, 0.28, pal.brick, pal.slate, '#e3dccd', 0.7);
   door(c, tx, fz + 0.06, 0.1, 0.18, '#3f2f28');
   // a sports field in front
@@ -6100,7 +6226,7 @@ MODELS.college = (c, L) => {
     for (const s of [-1, 1]) win(c, cx + s * (cw / 2 + 0.002), h * 0.35, z0 - 0.02, 0.06, 0.14, s > 0 ? 'r' : 'l', 0.8);
     gb.cyl(cx, h * 0.9 + 0.32, z0 - 0.02, 0.03, 0.04, 0.06, 6, pal.slate); gb.cone(cx, h * 0.9 + 0.38, z0 - 0.02, 0.035, 0.2, 6, pal.slate);
     const cz = z0 + 0.32;
-    for (let i = 0; i <= 8; i++) gb.box(-W / 2 + 0.1 + (i * (W - 0.2)) / 8, 0, cz, 0.025, 0.18, 0.025, shade(stone, 1.1));
+    for (let i = 0; i <= 8; i++) { const px = -W / 2 + 0.1 + (i * (W - 0.2)) / 8; if (Math.abs(px - hx) > 0.1) gb.box(px, 0, cz, 0.025, 0.18, 0.025, shade(stone, 1.1)); }
     gb.box(0, 0.18, cz - 0.03, W - 0.16, 0.025, 0.1, shade(stone, 1.1));
     gb.wedge(0, 0.205, cz - 0.04, W - 0.14, 0.12, 0.05, pal.slate, 0);
   } else {
@@ -6119,7 +6245,8 @@ MODELS.college = (c, L) => {
   gb.box(0, c.gy(0, qz) - 0.006, qz, W * 0.7, 0.012, 0.3, '#7fae4f');
   gb.box(0, c.gy(0, qz) - 0.002, qz, 0.08, 0.012, 0.3, '#cdbf9e');
   gb.box(0, c.gy(0, qz) - 0.002, qz, W * 0.7, 0.012, 0.06, '#cdbf9e');
-  smallTree(c, -W * 0.25, qz, 0.9); smallTree(c, W * 0.25, qz, 0.9);
+  // (two trees in the quad, not before the hall's door on the second plan)
+  for (const s of [-1, 1]) smallTree(c, plan === 2 && s === -side ? s * W * 0.12 : s * W * 0.25, qz + (plan === 2 && s === -side ? 0.06 : 0), 0.9);
   lamp(c, -0.1, f.dep / 2 - 0.06, 0.3); lamp(c, 0.1, f.dep / 2 - 0.06, 0.3);
   if (f.turned) gb.pop();
 };
@@ -6497,7 +6624,8 @@ MODELS.quadrangle = (c, L) => {
   const wall = pal.style === 'brick' || (!pal.forced && rng.chance(0.5)) ? pal.brick : pal.stoneWall, trim = '#e3dccd';
   const RD = 0.42, fz = 0.6, W = 1.84, sl = 2 * fz - RD, ff = fz + RD / 2;
   const roofType = plan === 1 ? 'mansard' : plan === 2 ? 'gable' : L ? 'flat' : 'hip', base = { h, floors, wall, roof: pal.slate, roofType, rh: plan === 1 ? 0.3 : 0.26, plinth: STONE_D, fancy: false };
-  house(c, { ...base, x: 0, z: fz, w: W, d: RD, doorX: 0, doorW: 0.14, nFront: 11, door: '#3a2f28', chimney: true, chimneyPos: 'ends' });
+  // (with a clock tower over the entrance, the door is in the tower's foot)
+  house(c, { ...base, x: 0, z: fz, w: W, d: RD, doorX: 0, doorW: 0.14, noDoor: plan === 2, nFront: 11, door: '#3a2f28', chimney: true, chimneyPos: 'ends' });
   house(c, { ...base, x: 0, z: -fz, w: W, d: RD, noDoor: true, nFront: 11, chimney: true, chimneyPos: 'ends' });
   for (const s of [-1, 1]) house(c, { ...base, x: s * (W / 2 - RD / 2), z: 0, ry: (-s * Math.PI) / 2, w: sl, d: RD, noDoor: true, nFront: 4, chimney: false });
   // string courses all round, and iron balconies on the street
@@ -6515,11 +6643,14 @@ MODELS.quadrangle = (c, L) => {
     for (const sx of [-1, 1]) turret(c, 'dome', sx * (W / 2 - 0.08), ff - 0.06, 0, h + fh, 0.11, fh, wall, '#5f8f7e', 0.8);
   } else if (plan === 2) {
     for (const x of [-0.62, -0.28, 0.28, 0.62]) tallBay(c, x, ff, fh, floors, wall, pal.slate, 0.8, true, floors, 0.16);
-    tower(c, 'pyramid', 0, ff - 0.08, 0.3, h + 0.3, wall, pal.slate, { clock: true });
+    tower(c, 'pyramid', 0, ff - 0.08, 0.3, h + 0.3, wall, pal.slate, { clock: true, door: 0.2 });
+    door(c, 0, ff + 0.07, 0.13, 0.2, '#3a2f28');
+    gb.arch(0, 0.2, ff + 0.07, 0.085, 0.012, 8, trim);
+  } else {
+    // a canopy on columns over the entrance
+    for (const s of [-1, 1]) gb.cyl(s * 0.1, 0.02, ff + 0.08, 0.012, 0.014, 0.24, 8, trim);
+    gb.gable(0, 0.26, ff + 0.05, 0.26, 0.11, 0.07, trim, pal.slate, 0.02);
   }
-  // a canopy on columns over the entrance
-  for (const s of [-1, 1]) gb.cyl(s * 0.1, 0.02, ff + 0.08, 0.012, 0.014, 0.24, 8, trim);
-  gb.gable(0, 0.26, ff + 0.05, 0.26, 0.11, 0.07, trim, pal.slate, 0.02);
   if (L && plan === 0) {
     // a cornice, attic windows and a pavilion roof at each corner
     for (const z of [fz, -fz]) gb.box(0, h + 0.045, z, W + 0.03, 0.03, RD + 0.03, trim);
@@ -7362,6 +7493,7 @@ export function buildModel(b, opts = {}) {
     spots: [],   // where a park's visitors like to stroll to (see parks.js spot)
     beyond: [],   // drawn after the fit, reaching out beyond the plot on purpose (a pier)
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
+    lift: b.lift || 0,   // a gondola station standing taller (worked out by transit.js)
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
     gy(x, z) {

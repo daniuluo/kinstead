@@ -95,7 +95,7 @@ export const SETTINGS = [
     ['Resolution', '100% · 75% · 50%', "The share of the screen's resolution drawn (in pixel-art mode, chunkier pixels instead)."],
     ['Shadows', `High · Medium · Low · Off`, `The sharpness of the shadow map (${SHADOW_SIZE.high}, ${SHADOW_SIZE.medium} or ${SHADOW_SIZE.low} texels across), or no shadows.`],
     ['Smoke & dust', 'Full · Fewer · Off', 'Smoke, dust, sparks, fireworks, snow and rain.'],
-    ['Villagers shown', 'All · Half · Near view', 'Draw every villager, about half of them, or only those near the middle of the view. Those not drawn still live their lives.'],
+    ['Villagers shown', 'Thinned · All · Half · Near view', 'Thinned (the default) draws every villager in a quiet street but only some of them where crowds gather, so the streets of a big town look busy rather than packed (the crowd fades in and out gently as it gathers and thins). All draws every villager, however crowded; Half about half of them; Near view only those near the middle of the view. Those not drawn still live their lives.'],
     ['Draw slowly while paused', 'On / off', 'Only a few frames a second while the game is paused and nothing moves.'],
   ] },
   { group: 'Sound', rows: [
@@ -221,7 +221,7 @@ export const PAGES = [
         ${list([
           '<b>Upkeep</b> of buildings: most services, utilities and transit stops cost coins every day (each building page lists its upkeep).',
           `<b>Roads</b>: ${and(ROAD_LEVELS.filter(Boolean).map(r => `${esc(r.name.toLowerCase())} ${money(r.upkeep)}`))} a tile a day, plus any ${pl('roads/dress', 'street dressing')} or ${pl('roads/boulevards', 'boulevard look')}, and railway track.`,
-          `<b>Transit</b>: every coach or train on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train).`,
+          `<b>Transit</b>: every coach, train or gondola cabin on a line costs its upkeep each day (${money(TRANSIT.coach.upkeep)} a coach, ${money(TRANSIT.rail.upkeep)} a train, ${money(TRANSIT.gondola.upkeep)} a cabin).`,
           '<b>Building work</b>: building, upgrading, joining, moving and restyling are paid for when you order them.',
         ])}` },
       { id: 'costs', title: 'What things cost', html: table(['Thing', '#Price'], [
@@ -234,7 +234,7 @@ export const PAGES = [
         ['A neighbouring plot of land', money(CONFIG.PLOT_PRICE)],
         ['A field of farmland', money(CONFIG.FIELD_COST)],
         ['Burying the power lines (a road tile)', money(BURY_COST)],
-        ['A coach / a train', `${money(TRANSIT.coach.vehicleCost)} / ${money(TRANSIT.rail.vehicleCost)}`],
+        ['A coach / a train / a gondola cabin', `${money(TRANSIT.coach.vehicleCost)} / ${money(TRANSIT.rail.vehicleCost)} / ${money(TRANSIT.gondola.vehicleCost)}`],
         ['Joining two buildings', `${money(fact('joinCost', 0))} + ${pct(fact('joinCost', 1))} of the new level`],
         ['Moving a building', `${money(fact('moveCost', 0))} + ${pct(fact('moveCost', 1))} of its worth`],
         ['Restyling', `${pct(fact('restyle', 0))} of its worth (at least ${money(fact('restyle', 1))})`],
@@ -378,17 +378,22 @@ export const PAGES = [
   },
   {
     id: 'transport', title: 'Transit', icon: 'directions_bus', group: 'town',
-    summary: 'Horse-drawn coach lines and steam railways.',
+    summary: 'Horse-drawn coach lines, steam railways and gondolas on a cable over the rooftops.',
     sections: () => {
       const T = (m) => TRANSIT[m];
-      const row = (m) => [esc(T(m).name), money(T(m).vehicleCost), money(T(m).upkeep), money(T(m).fare), `${T(m).capacity}`, `${fmt(T(m).speed)}`, bl(T(m).stopType)];
+      const row = (m) => [esc(T(m).name), money(T(m).vehicleCost), money(T(m).upkeep), money(T(m).fare), `${T(m).capacity}`, `${fmt(T(m).speed)}`, `${T(m).maxVehicles}`, bl(T(m).stopType)];
       return [
-        { id: 'modes', title: 'Coaches and trains', html: table(['Mode', '#Each vehicle', '#Upkeep a day', '#Fare', '#Seats', '#Speed (tiles/s)', 'Stops'], [row('coach'), row('rail')]) +
+        { id: 'modes', title: 'Coaches, trains and gondolas', html: table(['Mode', '#Each vehicle', '#Upkeep a day', '#Fare', '#Seats', '#Speed (tiles/s)', '#Most on a line', 'Stops'], [row('coach'), row('rail'), row('gondola')]) +
           `<p>Villagers on long trips walk to a stop, wait there, ride, and pay the fare. A home within ${fact('happyTransit', 0)} tiles of a stop is happier (+${fact('happyTransit', 1)}).</p>` },
         { id: 'coach', title: 'Coach lines', html: `
           <p>Build ${bl('coachstop', 0, 'coach stops')} beside the road (Transit menu, ${k('7')}), then make a line: pick the stops in order, press ${k('Enter')} to finish (${k('Backspace')} takes back the last stop). The coaches loop between the stops along the roads. The lines window (${k('L')}) lists every line, with its riders, vehicles and colour.</p>` },
         { id: 'rail', title: 'Railways', html: `
           <p>${tl('railways')} unlocks track (${money(RAIL_COST)} a tile, with curves) and ${bl('station', 0, 'stations')}, which need a road on one side and track on another. Trains never reverse, so a rail line needs a <b>loop</b> of track through its stations: the trains drive forward around it, ease in and out of the stations and stop centred on each platform. A loop takes up to three trains; a dead-end line is refused.</p>` },
+        { id: 'gondola', title: 'Gondolas', html: `
+          <p>${tl('cablecars')} unlocks ${bl('gondola', 0, 'gondola stations')}: a deck on stilts under an open roof, with stairs up from the street, so a station needs a road beside it like a coach stop. Pick two or more stations in order and press ${k('Enter')}. The line needs no road or track between its stations: the cable runs <b>straight</b> from each station to the next, over streets, roofs, fields, the river or a hill, whatever lies between.</p>
+          <p>Each line has two cables side by side, one out and one back. Cabins in the line's colour hang from them and run out along the stations and back again, turning round a bullwheel under the roof of each end station. In a station a cabin lets go of the cable, creeps across the deck while villagers get in and out, and swings a little on its arm once it is off again. A station in the middle of a line is called at both ways, and riders take the cabin going their way. A line runs up to ${T('gondola').maxVehicles} cabins, evenly spaced. Villagers take the gondola when it beats walking. They reckon on waiting half the time between cabins, so more cabins bring more riders, and a line pays best where the road goes the long way round: over the river, up a hill or across a crowded town.</p>
+          <p>Steel pylons carry the cable about every six tiles. Each stands wherever there is room along that stretch: best on open ground, otherwise in a field or a park, or on the verge at the edge of a road, but never on a building, in the middle of a road, on track or in water. Each is just tall enough for the cabins to clear the roofs and the ground beneath them, up to six tiles high, and the cable sags a little between them. Where a tall neighbour stands close by, a station rises on longer stilts, braced in bays, so the cable leaves it high enough, up to three and a half tiles taller. From half a tile up, a lift through the middle of the deck takes the place of its stairs. When something taller goes up under the line, the pylons and stations rise to clear it.</p>
+          <p>If the cable still can't clear something, such as a great building right beside a station, the line can't be made, and the game says what is in the way. A line that something is later built under stops, marked <b>Cable blocked</b> in the lines window with what blocks it, until that is gone or a station moves. The Gondola Terminal adds a brick booking hall under the deck and a lantern on the roof.</p>` },
       ];
     },
     see: ['transit', 'roads'],
@@ -659,7 +664,8 @@ export const PAGES = [
     sections: () => [
       { id: 'who', title: 'Who they are', html: `
         <p>Every resident has a name (families share a surname, and names rarely repeat), an age, an education, a home, maybe a job, a wage, savings, living costs, a family and friends (workmates, neighbours, classmates). Press ${k('P')} for the <b>Villagers</b> directory: search, filter and sort everyone in town, then click a name to follow them.</p>
-        <p>They are little minions, drawn to scale with the buildings: a yellow capsule of a body in blue dungarees, on short legs, with one big goggle or two on a strap round the head. Some are short and round, some tall and thin, children small; some have a few hairs on top. Their work shows as small touches over the dungarees (a farmhand's neckerchief and straw hat, a builder's tool belt and hard hat, a shopkeeper's apron, a clerk's tie and bowler, the watch's cross-belt) and the well-off wear a bow tie. They waddle about: builders swing their hammers round the scaffolding, shoppers carry home a basket, children take a satchel to school, and in winter most wear a scarf and a bobble hat. Each keeps their own look for life, and the panels show each one as their own little minion.</p>` },
+        <p>They are little minions, drawn to scale with the buildings: a yellow capsule of a body in blue dungarees, on short legs, with one big goggle or two on a strap round the head. Some are short and round, some tall and thin, children small; some have a few hairs on top. Their work shows as small touches over the dungarees (a farmhand's neckerchief and straw hat, a builder's tool belt and hard hat, a shopkeeper's apron, a clerk's tie and bowler, the watch's cross-belt) and the well-off wear a bow tie. They waddle about: builders swing their hammers round the scaffolding, shoppers carry home a basket, children take a satchel to school, and in winter most wear a scarf and a bobble hat. Each keeps their own look for life, and the panels show each one as their own little minion.</p>
+        <p>They go in and out of every building through its front door, hopping up the doorstep or climbing the flight of steps in front of a grand one, and in a park, a farmyard, a yard or a market square they find their way round the statues, stalls, sheds and pavilions rather than walking through them. In a big town the busiest streets thin out on screen (Settings → Performance → Villagers shown) so they look lively rather than packed; everyone still goes about their day.</p>` },
       { id: 'traits', title: 'Traits', html: `<p>Each villager has one or two traits that shape their daily routine:</p>` + '<div id="people-traits" data-gen="traits"></div>' },
       { id: 'ages', title: 'Ages and families', html: `
         <p>A year passes every two in-game days. Babies are born, children grow up, young adults move out of their parents' home, older villagers retire (with a pension of ${money(fact('pension'))} a day) and eventually die.</p>

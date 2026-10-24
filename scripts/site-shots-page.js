@@ -28,6 +28,7 @@ const SHOTS = [
   { name: 'seasons', town: 'market', W: 960, H: 600, focus: 'townhall', zoom: 2.3, hours: 12, seasons: true },
   { name: 'farms', town: 'mill', W: 960, H: 600, focus: 'farm', zoom: 2.4, hours: 11, season: 1, fields: true },
   { name: 'merge', merge: ['market', 'hamlet'], W: 960, H: 600, zoom: 1.6, fit: true, hours: 10, season: 1 },
+  { name: 'gondola', town: 'market', W: 960, H: 600, gondola: true, zoom: 3.2, hours: 10.5, season: 1 },
 ];
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -166,6 +167,8 @@ function crowd() {
 function aim(p, zoom, view = null) {
   const R = G().renderer, rig = R.rig;
   R.lookAt(p.x, p.z, true);
+  // (p.y: look at a point up in the air, not on the ground)
+  if (p.y != null) rig.target.y = rig.goal.y = p.y;
   rig.zoom = rig.zoomT = zoom;
   // (view: a quarter turn round, to see a building from its front)
   if (view != null) { rig.view = view; rig.turnT = (view * Math.PI) / 2; }
@@ -181,6 +184,43 @@ function plough(w, at) {
     w.setFields(b.id, tiles, true);
     if (Math.hypot(b.x - at.x, b.z - at.z) < 1) w.setProduce(b.id, 'wheat');
   }
+}
+
+// A gondola line across the town for its picture: two stations by the road
+// either side of the middle, the line running across the view (from the
+// left of the picture to the right) and over the roofs, with its cabins
+// spread along it. Returns the middle of the line.
+function gondola(w, p) {
+  const g = G();
+  w.setSandbox({ ...w.sandbox, infiniteMoney: true, unlockAll: true });
+  const open = (x, z) => w.inBounds(x, z) && !w.buildingOn(x, z) && !w.roadAt(x, z) && !w.terrain.isWater(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.roadAt(x + dx, z + dz));
+  const under = (a, b) => {
+    const seen = new Set(), L = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let u = 0; u <= L; u += 0.25) { const o = w.buildingOn(Math.floor(a.x + 0.5 + ((b.x - a.x) * u) / L), Math.floor(a.z + 0.5 + ((b.z - a.z) * u) / L)); if (o) seen.add(o.id); }
+    return seen.size;
+  };
+  // the best pair: across the view, near the middle, over the most roofs,
+  // with open ground halfway for a pylon
+  let best = null;
+  for (let z = Math.floor(p.z) - 9; z <= p.z + 9; z++) for (let x = Math.floor(p.x) - 9; x <= p.x + 9; x++) {
+    if (!open(x, z)) continue;
+    for (let z2 = z - 10; z2 <= z; z2++) for (let x2 = x; x2 <= x + 10; x2++) {
+      const d = Math.hypot(x2 - x, z2 - z), across = ((x2 - x) - (z2 - z)) / Math.SQRT2 / (d || 1);
+      if (d < 7.5 || d > 10 || across < 0.93 || !open(x2, z2)) continue;
+      const mx = (x + x2) / 2 + 0.5, mz = (z + z2) / 2 + 0.5;
+      const pylon = [-1, -0.5, 0, 0.5, 1].some(o => g.transit._pylonSpot(mx + ((x2 - x) / d) * o, mz + ((z2 - z) / d) * o) === 0);
+      const score = under({ x, z }, { x: x2, z: z2 }) + (pylon ? 4 : 0) - Math.hypot(mx - p.x, mz - p.z) * 0.3;
+      if (!best || score > best.score) best = { a: [x, z], b: [x2, z2], score };
+    }
+  }
+  if (!best) return p;
+  const st = [best.a, best.b].map(([x, z]) => w.placeBuilding('gondola', x, z, { instant: true })).filter(r => r.ok).map(r => r.building);
+  const r = g.transit.createLine('gondola', st.map(b => b.id));
+  if (!r.ok) return p;
+  g.transit.setVehicles(r.line.id, 8);
+  g.transit.rebuild();
+  // aimed halfway up, so the stations and the cable sit in the middle
+  return { x: (best.a[0] + best.b[0]) / 2 + 0.5, z: (best.a[1] + best.b[1]) / 2 + 0.5, y: (st[0].baseY + st[1].baseY) / 2 + 0.6 };
 }
 
 function settings(spec) {
@@ -264,8 +304,9 @@ async function shoot(spec) {
   await loadTown(spec);
   const g = G(), w = g.world;
   settings(spec);
-  const p = spec.at || (spec.focus ? focusOn(w, spec.focus) : centre(w));
+  let p = spec.at || (spec.focus ? focusOn(w, spec.focus) : centre(w));
   if (spec.fields) plough(w, p);
+  if (spec.gondola) p = gondola(w, p);
   let pic;
   if (spec.lineup) {
     setDay(spec.season);

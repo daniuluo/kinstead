@@ -8,6 +8,10 @@ export const CONFIG = {
   WALK_SPEED: 0.1375,      // tiles per real second at 1x: an unhurried stroll
   CART_SPEED: 0.18,        // a horse and cart at a walk, a little quicker than people on foot
   MAX_AGENTS: 1200,
+  // Villagers shown: Thinned (settings.villagers 'crowds'): in each patch of
+  // CROWD_CELL × CROWD_CELL tiles, about CROWD_MAX villagers at most are drawn
+  CROWD_CELL: 2,
+  CROWD_MAX: 5,
   AUTOSAVE_DAYS: 1,
   PLOT_PRICE: 60,           // a neighbouring plot of land, bought to grow a building's plot
   FIELD_COST: 40,           // a tile of farmland, ploughed and fenced (a quarter back when it's taken out)
@@ -30,7 +34,7 @@ export const CONFIG = {
 // middle of the view; pausedSlow draws a few frames a second while the game
 // is paused and nothing moves.
 export const SHADOW_SIZE = { high: 4096, medium: 2048, low: 1024 };
-export const PERF_DEFAULTS = { fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false };
+export const PERF_DEFAULTS = { fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'crowds', pausedSlow: false };
 export const BATTERY_SAVER = { fps: 30, resScale: 0.75, shadows: true, shadowQuality: 'low', effects: 'reduced', villagers: 'some', pausedSlow: true, ao: false, tiltShift: 'off' };
 
 // Tilt-shift (Settings → Graphics; see render/tiltShift.js): blur is the

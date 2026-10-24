@@ -13,7 +13,7 @@ import { Construction } from '../src/sim/construction.js';
 import { siteGeo, bodyBox } from '../src/render/construction.js';
 import { serialize, deserialize } from '../src/save/saves.js';
 import { buildModel, STYLES } from '../src/render/buildings.js';
-import { fw, fd, capOf } from '../src/world/world.js';
+import { fw, fd, capOf, isOpen } from '../src/world/world.js';
 import { BUILDINGS, TECHS } from '../src/defs.js';
 import { makeAudit } from './audit.js';
 
@@ -362,6 +362,91 @@ ok(game.transit.vehicles.length === 1, 'one coach on the line');
   } else console.log('      (no room for a rail loop on this map)');
   w.setSandbox({ infiniteMoney: false, unlockAll: false });
   ok(Number.isFinite(w.money), 'sandbox can be switched off again');
+}
+
+// 3b2. gondolas: a line runs straight between two stations over whatever lies
+// between, its pylons on open ground and its cabins clear of the roofs; the
+// cabins go round and round, evenly spaced, calling at both stations and
+// carrying riders; the line saves and loads, and goes with a station
+{
+  w.setSandbox({ infiniteMoney: true, unlockAll: true });
+  const man = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
+  const open = (x, z) => w.inBounds(x, z) && !w.buildingOn(x, z) && !w.roadAt(x, z) && !w.terrain.isWater(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => w.roadAt(x + dx, z + dz));
+  const station = (x, z) => {
+    const r = w.placeBuilding('gondola', x, z, { instant: true });
+    if (r.ok && r.building.connected && r.building.access) return r.building;
+    if (r.ok) w.removeBuilding(r.building.id, 0);
+    return null;
+  };
+  // how many buildings stand under the straight line between two tiles
+  const under = (a, b) => {
+    const seen = new Set(), L = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let u = 0; u <= L; u += 0.25) {
+      const o = w.buildingOn(Math.floor(a.x + 0.5 + ((b.x - a.x) * u) / L), Math.floor(a.z + 0.5 + ((b.z - a.z) * u) / L));
+      if (o && o !== a && o !== b) seen.add(o.id);
+    }
+    return seen.size;
+  };
+  let A = null, B = null;
+  for (let z = 2; z < w.N - 2 && !B; z += 3) for (let x = 2; x < w.N - 2 && !B; x += 3) {
+    if (!open(x, z) || !(A = station(x, z))) continue;
+    for (let z2 = 2; z2 < w.N - 2 && !B; z2++) for (let x2 = 2; x2 < w.N - 2 && !B; x2++) {
+      if (Math.hypot(x2 - x, z2 - z) < 14 || !open(x2, z2) || under(A, { x: x2, z: z2 }) < 3) continue;
+      B = station(x2, z2);
+    }
+    if (!B) { w.removeBuilding(A.id, 0); A = null; }
+  }
+  if (A && B) {
+    const gl = game.transit.createLine('gondola', [A.id, B.id]);
+    ok(gl.ok && gl.line.name.startsWith('Gondola Line'), `gondola line created over ${under(A, B)} buildings, ${Math.hypot(B.x - A.x, B.z - A.z).toFixed(1)} tiles (${gl.reason || gl.line.name})`);
+    game.transit.setVehicles(gl.line.id, 4);
+    game.transit.rebuild();
+    const r = game.transit.routes.get(gl.line.id);
+    const pylons = r.legs.flatMap(l => l.pylons);
+    ok(pylons.length >= 1 && pylons.every(p => { const o = w.buildingOn(Math.floor(p.x), Math.floor(p.z)); return game.transit._pylonSpot(p.x, p.z) >= 0 && (!o || BUILDINGS[o.type].park) && p.h - p.g <= 6.001; }), `its ${pylons.length} pylon(s) stand where there is room (open ground, a field, a park or a road's verge), at most 6 high`);
+    let worst = Infinity;
+    r.pts.forEach(([x, z], i) => {
+      if (Math.hypot(x - A.x - 0.5, z - A.z - 0.5) < 0.7 || Math.hypot(x - B.x - 0.5, z - B.z - 0.5) < 0.7) return;
+      const o = w.buildingOn(Math.floor(x), Math.floor(z));
+      if (o) worst = Math.min(worst, r.ys[i] - 0.27 - game.transit._topOf(o));
+    });
+    ok(worst > 0, `the cabins clear every roof under the line (the closest by ${worst.toFixed(2)})`);
+    ok(r.marks.length === 2 && r.wheels.length === 2 && game.transit.cables.has(gl.line.id), 'it turns round a bullwheel at each end, with its cable drawn');
+    // send a villager from near one station to near the other
+    const near = (S) => [...w.buildings.values()].find(b => b !== A && b !== B && b.access && b.connected && isOpen(b) && man(b, S) <= 4);
+    const from = near(A), to = near(B);
+    const rider = [...w.residents.values()].find(x => x.loc === 'in');
+    if (from && to && rider) { rider.at = from.id; game.agents.go(rider, to.id); }
+    const cabins = game.transit.vehicles.filter(v => v.line === gl.line);
+    const L = r.length, prev = cabins.map(v => v.s), called = new Set();
+    let backwards = 0, minGap = Infinity, rode = false;
+    for (let i = 0; i < 5000; i++) {
+      step(0.05);
+      cabins.forEach((v, k) => {
+        if (((v.s - prev[k]) + L) % L > L / 2) backwards++;
+        prev[k] = v.s;
+        if (v.state === 'dwell') called.add(v.route.marks[v.next].stop);
+      });
+      const ss = cabins.map(v => v.s).sort((a, b) => a - b);
+      for (let k = 0; k < ss.length; k++) minGap = Math.min(minGap, ((ss[(k + 1) % ss.length] - ss[k]) + L) % L);
+      if (rider && rider.loc === 'ride' && game.transit.lineNameOf(rider) === gl.line.name) rode = true;
+    }
+    const gs = game.transit.stats[gl.line.id] || { riders: 0, fares: 0 };
+    ok(cabins.length === 4 && backwards === 0 && called.size === 2, `4 cabins run round the line, never backwards, calling at both stations`);
+    ok(minGap > L / 8, `the cabins stay spread out (closest ${minGap.toFixed(1)} of ${(L / 4).toFixed(1)} tiles apart)`);
+    ok(gs.riders > 0 && gs.fares > 0 && (rode || !rider || !from || !to), `villagers ride the gondola (${gs.riders} riders, $${gs.fares} in fares${rode ? ', one sent across' : ''})`);
+    const back = deserialize(JSON.parse(JSON.stringify(serialize(w))));
+    const bl = back.lines.find(l => l.id === gl.line.id);
+    const t2 = new Transit({ world: back, renderer: { scene }, paths: new PathFinder(back), view: null, emit() {}, on() {} });
+    t2.rebuild();
+    ok(bl && bl.mode === 'gondola' && bl.vehicles === 4 && t2.routes.get(bl.id) && t2.vehicles.filter(v => v.line === bl).length === 4, 'a gondola line saves and loads, cabins and all');
+    w.removeBuilding(B.id);
+    game.transit.rebuild();
+    ok(gl.line.broken && !game.transit.vehicles.some(v => v.line === gl.line) && !game.transit.cables.has(gl.line.id), 'demolishing a station takes the line out of service, cable and cabins');
+    game.transit.deleteLine(gl.line.id);
+    w.removeBuilding(A.id);
+  } else console.log('      (no room for a gondola line on this map)');
+  w.setSandbox({ infiniteMoney: false, unlockAll: false });
 }
 
 // 3c. animals keep out of buildings and stay in their habitat
