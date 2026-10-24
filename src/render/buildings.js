@@ -1231,12 +1231,40 @@ MODELS.market = (c, L) => {
   // the stalls and the Market Hall's arcade are open: shoppers wander among them
   if (L === 0 || L >= 3) c.openAir = true;
   if (L === 0) {
-    stall(-0.14, 0.06, 0);
-    stall(0.22, -0.22, -Math.PI / 2, 0.85);
-    crate(c, 0.26, 0.3); crate(c, 0.35, 0.22, 0.8, '#a88458'); barrel(c, -0.4, -0.32);
-    if (rng.chance(0.6)) bench(c, -0.3, -0.28, Math.PI / 2);
+    // the stalls, set out in the market's own way: two at angles; a row
+    // along the street; round a market cross; or a striped tent and a cart
+    const plan = planOf(c, 4);
+    if (plan === 1) {
+      for (let i = 0; i < 3; i++) marketStall(c, -0.3 + i * 0.3, 0.1, 0, 0.66, i === 1 ? ownPick(c, AWNING, 3) : awnA);
+      handcart(c, 0.3, -0.3); crate(c, -0.32, -0.26); barrel(c, -0.2, -0.32);
+    } else if (plan === 2) {
+      // a market cross on its steps, stalls either side facing it
+      const y = c.gy(0, -0.06);
+      for (let k = 0; k < 3; k++) gb.cbox(0, y - 0.02 + k * 0.035, -0.06, 0.24 - k * 0.06, 0.04, 0.24 - k * 0.06, STONE, Math.PI / 4, 0.006);
+      gb.cyl(0, y + 0.1, -0.06, 0.018, 0.024, 0.3, 6, '#b8b0a2');
+      gb.box(0, y + 0.38, -0.06, 0.08, 0.016, 0.016, '#b8b0a2');
+      gb.sphere(0, y + 0.42, -0.06, 0.02, '#b8b0a2', 0);
+      stall(-0.3, -0.06, Math.PI / 2, 0.75);
+      stall(0.3, -0.06, -Math.PI / 2, 0.75);
+      for (const x of [-0.12, 0.12]) basket(c, x, 0.3, rng.pick(['#c8402f', '#e0b030', '#9ab830']));
+    } else if (plan === 3) {
+      // a striped tent on poles, a cart of produce beside it
+      const tx = -0.12, tz = -0.08, ty = c.gy(tx, tz);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(tx + sx * 0.2, ty, tz + sz * 0.16, 0.016, 0.24, 0.016, '#5e432c');
+      gb.cone(tx, ty + 0.24, tz, 0.3, 0.2, 4, awnA, Math.PI / 4);
+      gb.cone(tx, ty + 0.37, tz, 0.105, 0.072, 4, awnB, Math.PI / 4);
+      gb.box(tx, ty + 0.44, tz, 0.008, 0.06, 0.008, '#5e432c');
+      gb.cbox(tx, ty, tz, 0.3, 0.12, 0.14, '#86613e', 0, 0.008);
+      for (let i = 0; i < 6; i++) gb.sphere(tx - 0.12 + i * 0.048, ty + 0.14, tz, 0.02, rng.pick(['#b8402f', '#d98a32', '#7aa34a', '#d9c050']), 1);
+      handcart(c, 0.3, 0.12); crate(c, 0.32, -0.3); crate(c, 0.38, -0.22, 0.8, '#a88458');
+    } else {
+      stall(-0.14, 0.06, 0);
+      stall(0.22, -0.22, -Math.PI / 2, 0.85);
+      crate(c, 0.26, 0.3); crate(c, 0.35, 0.22, 0.8, '#a88458'); barrel(c, -0.4, -0.32);
+      if (rng.chance(0.6)) bench(c, -0.3, -0.28, Math.PI / 2);
+    }
   } else if (L === 1) {
-    const body = { z: -0.09, w: 0.72, d: 0.56, h: 0.5, floors: 2, nFront: 3, timber: pal.timber, alongZ: pal.alongZ }, P = backPlan(c, body, { hoist: true });
+    const T = tallOf(c, 1), body = { z: -0.09, w: 0.72, d: 0.56, h: 0.5 + T * 0.25, floors: 2 + T, nFront: 3, timber: pal.timber, alongZ: pal.alongZ || undefined }, P = backPlan(c, body, { hoist: true });
     house(c, {
       ...body, wall: pal.wall, roof: pal.roof, roofType: 'gable',
       rh: 0.28, chimney: rng.chance(0.5), shopWindow: true, doorX: 0, lit: 0.9, backClear: P.clear, bareSide: c.corner,
@@ -1250,18 +1278,91 @@ MODELS.market = (c, L) => {
     shopBack(c, P, { fascia: '#5e432c', letter: '#e9dfc9', load: 'crate' });
     backSpots(c, P, 2).forEach((p, i) => (i ? barrel(c, p.x, p.z, 0.8) : backCrate(c, p.x, p.z, '#a88458')));
   } else if (L >= 3) {
-    // Market Hall: open arcade below, hall above, clock lantern on the roof
-    footing(c, 0, -0.04, 0.9, 0.76);
-    gb.cbox(0, -0.01, -0.04, 0.9, 0.05, 0.76, STONE, 0, 0.01);
-    for (let i = 0; i < 5; i++) for (const z of [-0.39, 0.31]) gb.cbox(-0.4 + i * 0.2, 0.04, z, 0.055, 0.26, 0.055, '#cfc6b4', 0, 0.008);
-    for (const x of [-0.4, 0.4]) for (const z of [-0.16, 0.08]) gb.cbox(x, 0.04, z, 0.055, 0.26, 0.055, '#cfc6b4', 0, 0.008);
-    gb.cbox(0, 0.3, -0.04, 0.92, 0.36, 0.78, pal.brick, 0, 0.02);
-    for (let i = 0; i < 5; i++) { win(c, -0.36 + i * 0.18, 0.41, 0.35, 0.08, 0.13, 'f', 0.9); win(c, -0.36 + i * 0.18, 0.41, -0.43, 0.08, 0.13, 'b', 0.9); }
-    for (let i = 0; i < 3; i++) { win(c, 0.46, 0.41, -0.24 + i * 0.2, 0.08, 0.13, 'r', 0.9); win(c, -0.46, 0.41, -0.24 + i * 0.2, 0.08, 0.13, 'l', 0.9); }
-    gb.hip(0, 0.66, -0.04, 0.92, 0.78, 0.26, pal.slate, 0.05);
-    gb.cbox(0, 0.86, -0.04, 0.15, 0.15, 0.15, '#e9e2d4', 0, 0.01);
-    gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, 0.935, 0.036, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
-    gb.roof(0, 1.01, -0.04, 0.18, 0.18, 0.15, 0, pal.slate);
+    // Market Hall, in one of its plans: an open arcade below and the hall
+    // above under a hipped roof with a clock lantern; Gothic, the hall's
+    // steep gable to the street with a great window in it and a flèche;
+    // classical, a pediment to the street over arches, a cupola on the
+    // ridge; a market shed of iron and glass; or a market house of timber,
+    // the hall on posts, jettied under a tile roof.
+    const plan = planOf(c, 5), pier = '#cfc6b4';
+    const arcade = (col) => {
+      footing(c, 0, -0.04, 0.9, 0.76);
+      gb.cbox(0, -0.01, -0.04, 0.9, 0.05, 0.76, STONE, 0, 0.01);
+      for (let i = 0; i < 5; i++) for (const z of [-0.39, 0.31]) gb.cbox(-0.4 + i * 0.2, 0.04, z, 0.055, 0.26, 0.055, col, 0, 0.008);
+      for (const x of [-0.4, 0.4]) for (const z of [-0.16, 0.08]) gb.cbox(x, 0.04, z, 0.055, 0.26, 0.055, col, 0, 0.008);
+    };
+    const hallWindows = (y, h) => {
+      for (let i = 0; i < 5; i++) { win(c, -0.36 + i * 0.18, y, 0.35, 0.08, h, 'f', 0.9); win(c, -0.36 + i * 0.18, y, -0.43, 0.08, h, 'b', 0.9); }
+      for (let i = 0; i < 3; i++) { win(c, 0.46, y, -0.24 + i * 0.2, 0.08, h, 'r', 0.9); win(c, -0.46, y, -0.24 + i * 0.2, 0.08, h, 'l', 0.9); }
+    };
+    if (plan === 1) {
+      // Gothic: the hall's gable to the street, a great pointed window in it
+      arcade(pier);
+      gb.cbox(0, 0.3, -0.04, 0.92, 0.36, 0.78, pal.stoneWall, 0, 0.02);
+      const arched = c.arched; c.arched = true;
+      hallWindows(0.38, 0.17);
+      c.arched = arched;
+      gb.gable(0, 0.66, -0.04, 0.92, 0.78, 0.46, pal.stoneWall, pal.slate, 0.05, true, 0.035);
+      gb.glow(1.4, 1.1, 0.7, 1.1); gb.arch(0, 0.76, 0.352, 0.11, 0.012, 10, GLASS); gb.box(0, 0.68, 0.358, 0.22, 0.08, 0.012, GLASS); gb.noGlow();
+      for (let k = -1; k <= 1; k++) gb.box(k * 0.07, 0.68, 0.366, 0.008, 0.19, 0.006, pier);
+      gb.cyl(0, 1.1, -0.1, 0.035, 0.05, 0.08, 6, pal.slate);
+      gb.cone(0, 1.18, -0.1, 0.04, 0.2, 6, pal.slate);
+    } else if (plan === 2) {
+      // classical: round arches, a pediment to the street, a cupola
+      arcade(STUCCO);
+      for (let i = 0; i < 4; i++) gb.arch(-0.3 + i * 0.2, 0.22, 0.3, 0.075, 0.03, 8, STUCCO);
+      gb.cbox(0, 0.3, -0.04, 0.92, 0.36, 0.78, STUCCO, 0, 0.02);
+      hallWindows(0.41, 0.13);
+      gb.box(0, 0.64, -0.04, 0.96, 0.03, 0.82, '#ece6da');
+      gb.gable(0, 0.67, -0.04, 0.92, 0.78, 0.2, STUCCO, pal.slate, 0.04, true, 0.035);
+      gb.gable(0, 0.67, 0.36, 0.94, 0.03, 0.2, '#ece6da', '#ece6da', 0.01, true);
+      wallClock(c, 0, 0.74, 0.38, 0.045);
+      gb.cyl(0, 0.84, -0.1, 0.07, 0.07, 0.1, 8, '#ece6da');
+      gb.sphere(0, 0.94, -0.1, 0.075, '#5f8f7e', 1, 0.85);
+      gb.box(0, 1.0, -0.1, 0.008, 0.06, 0.008, IRON_D);
+    } else if (plan === 3) {
+      // a market shed: iron columns, glass roofs, brick ends with lunettes
+      footing(c, 0, -0.04, 0.92, 0.8);
+      gb.cbox(0, -0.01, -0.04, 0.92, 0.04, 0.8, STONE, 0, 0.01);
+      for (let i = 0; i < 4; i++) for (const z of [-0.4, -0.04, 0.32]) gb.cyl(-0.42 + i * 0.28, 0.03, z, 0.012, 0.016, 0.44, 6, '#2f3a3a');
+      for (const z of [-0.4, 0.32]) gb.box(0, 0.47, z, 0.9, 0.03, 0.03, '#2f3a3a');
+      for (const s of [-1, 1]) {
+        gb.cbox(s * 0.44, 0.03, -0.04, 0.05, 0.44, 0.76, pal.brick, 0, 0.008);
+        gb.glow(1.5, 1.2, 0.7, 1.1);
+        gb.box(s * 0.468, 0.12, -0.04, 0.01, 0.18, 0.3, GLASS);
+        gb.noGlow();
+        gb.gable(s * 0.44, 0.47, -0.04, 0.05, 0.8, 0.26, pal.brick, pal.brick, 0.005, false);
+      }
+      glassRoof(c, 0, 0.5, -0.04, 0.84, 0.8, 0.26, true, 8);
+      gb.box(0, 0.76, -0.04, 0.86, 0.02, 0.025, '#2f3a3a');
+      gb.glow(1.5, 1.2, 0.7, 1.1);
+      for (const z of [-0.43, 0.35]) gb.box(0, 0.25, z, 0.78, 0.14, 0.01, GLASS);
+      gb.noGlow();
+    } else if (plan === 4) {
+      // a timber market house: the hall on posts, jettied, under tiles
+      footing(c, 0, -0.04, 0.84, 0.66);
+      gb.cbox(0, -0.01, -0.04, 0.84, 0.04, 0.66, STONE, 0, 0.01);
+      for (let i = 0; i < 4; i++) for (const z of [-0.33, 0.25]) gb.box(-0.36 + i * 0.24, 0.03, z, 0.04, 0.27, 0.04, TIMBER);
+      for (const x of [-0.36, 0.36]) gb.box(x, 0.03, -0.04, 0.04, 0.27, 0.04, TIMBER);
+      gb.push(0, 0.3, -0.04);
+      gb.cbox(0, 0, 0, 0.9, 0.3, 0.72, pal.forced ? pal.wall : '#e6d9bf', 0, 0.01);
+      timber(c, 0.9, 0.72, 0.3, 1);
+      gb.pop();
+      gb.box(0, 0.29, -0.04, 0.92, 0.024, 0.74, TIMBER);
+      hallWindows(0.38, 0.1);
+      gb.gable(0, 0.6, -0.04, 0.9, 0.72, 0.34, pal.forced ? pal.wall : '#e6d9bf', pal.tile, 0.05, false, 0.035);
+      gb.cbox(0, 0.84, -0.04, 0.1, 0.12, 0.1, TIMBER, 0, 0.008);
+      gb.roof(0, 0.96, -0.04, 0.13, 0.13, 0.1, 0, pal.tile);
+    } else {
+      // open arcade below, hall above, clock lantern on the roof
+      arcade(pier);
+      gb.cbox(0, 0.3, -0.04, 0.92, 0.36, 0.78, pal.brick, 0, 0.02);
+      hallWindows(0.41, 0.13);
+      gb.hip(0, 0.66, -0.04, 0.92, 0.78, 0.26, pal.slate, 0.05);
+      gb.cbox(0, 0.86, -0.04, 0.15, 0.15, 0.15, '#e9e2d4', 0, 0.01);
+      gb.glow(1.2, 1.1, 0.8, 1.02); gb.cyl(0, 0.935, 0.036, 0.045, 0.045, 0.01, 12, '#efe8da', 0, Math.PI / 2); gb.noGlow();
+      gb.roof(0, 1.01, -0.04, 0.18, 0.18, 0.15, 0, pal.slate);
+    }
     const goods = ['#b8402f', '#d98a32', '#7aa34a', '#d9c050'];
     for (let i = 0; i < 3; i++) {
       const x = -0.25 + i * 0.25;
@@ -1287,12 +1388,12 @@ MODELS.market = (c, L) => {
 
 MODELS.bakery = (c, L) => {
   const { gb, rng, pal } = c;
-  const H = [0.34, 0.52, 0.62][Math.min(L, 2)];
+  const T = tallOf(c, L), H = [T ? 0.56 : 0.34, 0.52 + T * 0.26, 0.62][Math.min(L, 2)];
   // the back door at the left end, the oven at the right under its stack
-  const body = { z: -0.07, w: [0.64, 0.76, 0.88][Math.min(L, 2)], d: [0.52, 0.58, 0.64][Math.min(L, 2)], h: H, floors: L ? 2 : 1, nFront: 3, timber: pal.timber };
+  const body = { z: -0.07, w: [0.64, 0.76, 0.88][Math.min(L, 2)], d: [0.52, 0.58, 0.64][Math.min(L, 2)], h: H, floors: (L ? 2 : 1) + T, nFront: 3, timber: pal.timber };
   const P = backPlan(c, body, { side: -1, yard: true });
   house(c, {
-    ...body, wall: pal.forced || rng.chance(0.5) ? pal.wall : '#e2cfa8', roof: pal.thatched ? pal.thatch : pal.tile, roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.26, alongZ: false,
+    ...body, wall: pal.forced || rng.chance(0.5) ? pal.wall : '#e2cfa8', roof: pal.thatched ? pal.thatch : pal.tile, roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.26,
     shopWindow: true, doorX: 0, lit: 0.85, backClear: P.clear, bareSide: c.corner,
   });
   chimney(c, 0.2, 0.1, H + 0.36, -0.24, 'work', '#8f4f3a');
@@ -1337,8 +1438,9 @@ function breadOven(c, x, zb, brick) {
 MODELS.tavern = (c, L) => {
   const { gb, rng, pal } = c;
   if (L === 0) {
+    const T = tallOf(c, L, 1);
     house(c, {
-      z: -0.09, w: 0.74, d: 0.56, h: 0.58, floors: 2, wall: pal.wall, roof: pal.thatched ? pal.thatch : pal.tile,
+      z: -0.09, w: 0.74, d: 0.56, h: 0.58 + T * 0.28, floors: 2 + T, wall: pal.wall, roof: pal.thatched ? pal.thatch : pal.tile,
       roofType: pal.thatched ? 'thatch' : 'gable', rh: 0.3, timber: true, chimney: true, lit: 0.95, plinth: STONE, bareSide: c.corner,
     });
   } else if (L >= 2) {
@@ -1415,12 +1517,45 @@ export const ownPick = (c, list, salt = 0) => new RNG(((c.variant || 0) ^ (0x9e3
 // `bare` floors) left bare for the shopfront. Its stack stands on the ridge
 // (one built up the outside of a gable wall would stand off the plot).
 // `back` plans the back of it (see backPlan), which the shop draws when it
-// has set out its front (shopBack).
+// has set out its front (shopBack). Returns that plan (or the body's outline)
+// with the house as it was drawn (P.r: its roof, top...).
 function shopBody(c, o, bare = 1, back = null) {
   const p = c.pal.chimneyPos || (c.pal.extChimney ? 'outside' : c.pal.chimneys > 1 ? 'ends' : 'side');
-  const P = back ? backPlan(c, { nFront: 3, ...o }, back) : null;
-  house(c, { nFront: 3, doorX: 0, lit: 0.9, chimneyPos: p === 'outside' ? 'side' : p, bareSide: c.corner, ...o, shopWindow: true, bareFront: bare, noDoor: true, backClear: P && P.clear, backBars: back && back.bars });
+  const P = back ? backPlan(c, { nFront: 3, ...o }, back) : { x0: o.x || 0, zb: (o.z || 0) - o.d / 2, w: o.w, d: o.d, h: o.h, floors: o.floors || 1, fh: o.h / (o.floors || 1) };
+  P.r = house(c, { nFront: 3, doorX: 0, lit: 0.9, chimneyPos: p === 'outside' ? 'side' : p, bareSide: c.corner, ...o, shopWindow: true, bareFront: bare, noDoor: true, backClear: back && P.clear, backBars: back && back.bars });
   return P;
+}
+
+// A storey more, for a shop whose form has one (F.tall), below level `max`.
+const tallOf = (c, L, max = 2) => (c.form && c.form.tall && L < max ? 1 : 0);
+
+// The shop's name put up a second way, as its form has it (F.sign): a
+// blade sign standing out from the wall at the first floor, the name
+// painted in a band along the front over the shop, or a board along the
+// eaves. P: the body (shopBody), sf: its shopfront (for the colours); s: the
+// end of the front the blade goes (away from the hanging sign).
+function shopSign(c, P, sf, s = -1) {
+  const { gb } = c, kind = c.form && c.form.sign;
+  if (!kind || !P || P.floors < 2) return;
+  const fz = P.zb + P.d, x0 = P.x0, fascia = sf.fascia || '#2a2a30', letter = sf.letter || '#e0c070';
+  if (kind === 'blade') {
+    const x = x0 + s * (P.w / 2 - 0.035), y = P.fh + 0.03, bh = Math.min(0.2, P.fh * 0.8);
+    gb.box(x, y + bh - 0.02, fz + 0.04, 0.008, 0.008, 0.08, IRON_D);
+    gb.box(x, y + 0.01, fz + 0.04, 0.008, 0.008, 0.08, IRON_D);
+    gb.box(x, y, fz + 0.075, 0.016, bh, 0.07, fascia);
+    gb.glow(1.8, 1.4, 0.6, 3.1);
+    for (const e of [-1, 1]) gb.box(x + e * 0.009, y + 0.02, fz + 0.075, 0.003, bh - 0.04, 0.03, letter);
+    gb.noGlow();
+  } else if (kind === 'band') {
+    const y = P.fh + 0.012, bw = Math.min(P.w - 0.08, 0.6);
+    gb.box(x0, y, fz + 0.004, bw, 0.04, 0.008, fascia);
+    gb.box(x0, y + 0.012, fz + 0.009, bw * 0.78, 0.016, 0.004, letter);
+  } else if (kind === 'eaves') {
+    const y = P.h + 0.01, bw = Math.min(P.w * 0.62, 0.42);
+    for (const e of [-1, 1]) gb.box(x0 + e * bw * 0.4, y - 0.02, fz - 0.02, 0.01, 0.05, 0.01, IRON_D);
+    gb.box(x0, y + 0.02, fz - 0.02, bw, 0.065, 0.012, fascia);
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(x0, y + 0.035, fz - 0.012, bw * 0.8, 0.03, 0.004, letter); gb.noGlow();
+  }
 }
 
 // ----------------------------------------------------------- corner shops
@@ -1797,7 +1932,11 @@ function shopfront(c, x, z, w, h, o = {}) {
   const { gb, rng, pal } = c;
   const trim = o.trim || '#e3dccd', fascia = o.fascia || rng.pick(FASCIA), riser = o.riser || shade(fascia, 1.3);
   const dx = x + (o.doorX || 0), dw = o.doorW || 0.085, top = h - 0.06;
-  const a = x - w / 2 + 0.024, b = x + w / 2 - 0.024, gap = dw / 2 + 0.018;
+  // its style, the shop's own (forms.js): plain; pilasters with consoles under
+  // the fascia's ends; transom lights over the windows; the door set back in
+  // a lobby between the windows' glazed returns
+  const st = o.style || (c.form && c.form.shopfront) || 'plain', recess = st === 'recessed' && !o.noDoor ? 0.035 : 0;
+  const a = x - w / 2 + 0.024, b = x + w / 2 - 0.024, gap = dw / 2 + 0.018 + (recess ? 0.006 : 0);
   const spans = o.noDoor ? [[a, b]] : [[a, dx - gap], [dx + gap, b]].filter(([s, e]) => e - s > 0.05);
   const panes = [];
   for (const [s, e] of spans) {
@@ -1810,15 +1949,30 @@ function shopfront(c, x, z, w, h, o = {}) {
     const n = Math.max(1, Math.round(sw / 0.075));
     for (let i = 1; i < n; i++) gb.box(s + (i * sw) / n, 0.05, z + 0.013, 0.007, top - 0.05, 0.006, trim);
     gb.box(m, top - 0.04, z + 0.013, sw, 0.007, 0.006, trim);
+    if (st === 'transom') {
+      const ty = 0.05 + (top - 0.05) * 0.68;
+      gb.box(m, ty, z + 0.014, sw, 0.01, 0.008, trim);
+      for (let i = 1; i < n * 2; i += 2) gb.box(s + (i * sw) / (n * 2), ty, z + 0.013, 0.005, top - 0.04 - ty, 0.006, trim);
+    }
     panes.push({ m, w: sw, z: z + 0.016 });
   }
-  for (const sd of [-1, 1]) gb.box(x + sd * (w / 2 - 0.012), 0, z + 0.01, 0.026, h, 0.026, trim);
+  const pw = st === 'pilasters' ? 0.036 : 0.026;
+  for (const sd of [-1, 1]) gb.box(x + sd * (w / 2 - pw / 2), 0, z + 0.01, pw, h, pw, trim);
+  if (st === 'pilasters') for (const sd of [-1, 1]) gb.cbox(x + sd * (w / 2 - 0.018), top - 0.012, z + 0.03, 0.03, 0.085, 0.04, shade(trim, 0.92), 0, 0.006);
+  if (recess) {
+    // the lobby: its glazed returns and tiled floor
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.1);
+    for (const sd of [-1, 1]) gb.box(dx + sd * (gap - 0.004), 0.05, z - recess / 2 + 0.006, 0.008, top - 0.05, recess, GLASS);
+    gb.noGlow();
+    gb.box(dx, 0.001, z - recess / 2 + 0.01, gap * 2, 0.006, recess + 0.01, '#d8d0bc');
+    gb.box(dx, top - 0.01, z - recess / 2 + 0.006, gap * 2 + 0.01, 0.012, recess + 0.012, trim);
+  }
   gb.box(x, top, z + 0.012, w, 0.06, 0.03, fascia);
-  gb.box(x, h, z + 0.016, w + 0.03, 0.014, 0.04, shade(trim, 0.9));
+  gb.box(x, h, z + 0.016, w + 0.03, st === 'pilasters' ? 0.02 : 0.014, st === 'pilasters' ? 0.05 : 0.04, shade(trim, 0.9));
   if (o.lit) gb.glow(1.8, 1.4, 0.6, 3.1);
   gb.box(x, top + 0.016, z + 0.028, w * 0.6, 0.026, 0.006, o.letter || '#e0c070');
   gb.noGlow();
-  if (!o.noDoor) door(c, dx, z, dw, Math.min(0.17, top), o.door || pal.door);
+  if (!o.noDoor) door(c, dx, z - recess, dw, Math.min(0.17, top), o.door || pal.door);
   return { panes, top, fascia, letter: o.letter || '#e0c070' };
 }
 
@@ -2113,16 +2267,17 @@ export function tubPlant(c, x, z, palm = false) {
 // lamp.
 MODELS.grocer = (c, L) => {
   const { rng, pal } = c;
-  const W = [0.62, 0.74, 0.84][L], D = [0.46, 0.54, 0.58][L], H = [0.36, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  const T = tallOf(c, L), W = [0.62, 0.74, 0.84][L], D = [0.46, 0.54, 0.58][L], H = [T ? 0.58 : 0.36, 0.54 + T * 0.27, 0.8][L], fz = [0.1, 0.12, 0.14][L];
   const thatch = !L && pal.thatched;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall,
+    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1 + T, wall: pal.wall,
     roof: thatch ? pal.thatch : L === 2 ? pal.slate : pal.roof, roofType: thatch ? 'thatch' : L === 2 ? 'hip' : 'gable', rh: L === 2 ? 0.26 : 0.27,
     chimney: true, timber: L < 2 && pal.timber,
   }, 1, { hoist: true });
   const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: rng.pick(['#2f4a2a', '#3a4a2a', '#2a3a2a']), lit: L >= 1 });
   const awn = rng.pick(['#4f7a45', '#3f6a3a', '#6a8a2a']);
   awning(c, 0, sf.top - 0.004, fz, W - 0.02, awn);
+  shopSign(c, P, sf);
   const pz = fz + 0.21;
   produce(c, -W * 0.26, pz, W * 0.34);
   produce(c, W * 0.26, pz, W * 0.34);
@@ -2147,11 +2302,11 @@ MODELS.grocer = (c, L) => {
 // hung along a second rail over the fascia.
 MODELS.butcher = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = [0.64, 0.74, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.5, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  const T = tallOf(c, L), W = [0.64, 0.74, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.5, 0.54, 0.8][L] + T * 0.26, fz = [0.1, 0.12, 0.14][L];
   // brick under a tiled roof (slate at the top), unless the town chose a style
   const own = !pal.forced;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? pal.brick : pal.wall,
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L === 2 ? 3 : 2) + T, wall: own ? pal.brick : pal.wall,
     roof: L === 2 ? pal.slate : own ? pal.tile : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber,
   }, 1, { stack: true });
   const tile = '#ece8de', sh = 0.26, sw = W - 0.04;
@@ -2170,6 +2325,7 @@ MODELS.butcher = (c, L) => {
   gb.cyl(sw / 2 + 0.01, sf.top - 0.004, z + 0.036, 0.011, 0.011, W - 0.02, 8, rng.pick(['#2f5a8a', '#3a4a7a']), 0, 0, Math.PI / 2);
   if (L === 2) meatRail(c, 0, sh + 0.085, z + 0.03, W - 0.1, true);
   hangSign(c, sw / 2 - 0.02, sh + 0.05, z, 'board', '#7a2a2a');
+  shopSign(c, P, sf);
   gb.cyl(sw / 2 - 0.014, sh - 0.045, z + 0.1, 0.018, 0.018, 0.004, 8, GOLD, 0, 0, Math.PI / 2);
   choppingBlock(c, -W * 0.22, fz + 0.24);
   crate(c, W * 0.12, fz + 0.26, 0.9, L ? '#e8e4dc' : '#94714a');
@@ -2188,10 +2344,10 @@ MODELS.butcher = (c, L) => {
 // gilded boot over the door.
 MODELS.cobbler = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = L ? 0.68 : 0.52, D = L ? 0.52 : 0.44, H = L ? 0.54 : 0.34, fz = L ? 0.12 : 0.1;
+  const T = tallOf(c, L), W = L ? 0.68 : 0.52, D = L ? 0.52 : 0.44, H = L ? 0.54 + T * 0.26 : T ? 0.56 : 0.34, fz = L ? 0.12 : 0.1;
   const thatch = !L && pal.thatched;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1, wall: pal.wall, roof: thatch ? pal.thatch : pal.roof, roofType: thatch ? 'thatch' : 'gable',
+    z: fz - D / 2, w: W, d: D, h: H, floors: L + 1 + T, wall: pal.wall, roof: thatch ? pal.thatch : pal.roof, roofType: thatch ? 'thatch' : 'gable',
     rh: L ? 0.3 : 0.28, chimney: true, timber: pal.timber, nFront: L ? 3 : 2, alongZ: true,
   }, 1, { wide: true });
   const sw = W - 0.04, dx = L ? 0 : sw / 2 - 0.07;
@@ -2205,6 +2361,7 @@ MODELS.cobbler = (c, L) => {
     }
   }
   hangSign(c, dx + (L ? 0.1 : -0.075), 0.31, fz, 'boot', L ? GOLD : '#2a2420');
+  shopSign(c, P, sf);
   bench(c, -W * 0.2, fz + 0.2, Math.PI);
   const ly = c.gy(-W * 0.2, fz + 0.2);
   gb.box(-W * 0.2 - 0.04, ly + 0.05, fz + 0.2, 0.016, 0.03, 0.016, '#6e5034');
@@ -2228,13 +2385,14 @@ MODELS.cobbler = (c, L) => {
 // the ridge.
 MODELS.draper = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = [0.6, 0.76, 0.86][L], D = [0.5, 0.56, 0.58][L], H = [0.54, 0.8, 0.84][L], fz = [0.1, 0.12, 0.14][L];
+  const T = tallOf(c, L, 1), W = [0.6, 0.76, 0.86][L], D = [0.5, 0.56, 0.58][L], H = [0.54 + T * 0.27, 0.8, 0.84][L], fz = [0.1, 0.12, 0.14][L];
   const trim = '#e3dccd';
   // painted stucco under slate (stone at the top), dormers in the roof
   const own = !pal.forced;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : ownPick(c, PAINTED, 3)) : pal.wall, roof: own ? pal.slate : pal.roof,
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L ? 3 : 2) + T, wall: own ? (L === 2 ? pal.stoneWall : ownPick(c, PAINTED, 3)) : pal.wall, roof: own ? pal.slate : pal.roof,
     roofType: L === 1 ? 'hip' : 'gable', rh: L === 2 ? 0.3 : 0.26, chimney: true, timber: !own && pal.timber, dormers: L === 2 ? 3 : 2, plinth: L === 2 ? STONE : null,
+    oriel: L !== 2, balcony: L !== 2,
   }, L === 2 ? 2 : 1, { hoist: true });
   const sw = W - 0.04, fascia = rng.pick(['#2a2a4a', '#3a1f2a', '#1f3a3a', '#3b2f2a']);
   const sf = shopfront(c, 0, fz, sw, 0.26, { fascia, lit: L >= 1, doorW: L === 2 ? 0.11 : 0.085 });
@@ -2256,11 +2414,13 @@ MODELS.draper = (c, L) => {
     gb.box(0, y0 + fh - 0.06, fz + 0.012, W - 0.02, 0.05, 0.03, fascia);
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, y0 + fh - 0.048, fz + 0.028, W * 0.6, 0.024, 0.006, '#e0c070'); gb.noGlow();
     // a flag on the ridge
-    gb.box(0, H + 0.28, fz - D / 2, 0.01, 0.24, 0.01, IRON_D);
-    gb.box(0.05, H + 0.44, fz - D / 2, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
+    const ft = P.r.top - 0.02;
+    gb.box(0, ft, fz - D / 2, 0.01, 0.24, 0.01, IRON_D);
+    gb.box(0.05, ft + 0.16, fz - D / 2, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#7a3a5a']));
     lamp(c, -W / 2 + 0.01, 0.42, 0.3); lamp(c, W / 2 - 0.01, 0.42, 0.3);
   }
   hangSign(c, (L ? sw / 2 : sw / 2 - 0.02) - 0.01, 0.3, fz, 'shears', GOLD);
+  if (L < 2) shopSign(c, P, sf);
   clothStand(c, -W * 0.24, fz + 0.24);
   if (L < 2) dummy(c, W * 0.2, fz + 0.24, rng.pick(PAINTED));
   if (L === 1) clothStand(c, W * 0.24 + 0.06, fz + 0.29);
@@ -2287,9 +2447,9 @@ MODELS.ironmonger = (c, L) => {
   const { gb, rng, pal } = c;
   const own = !pal.forced;
   // tarred weatherboards, with an open-fronted store at the side at first
-  const W = L ? 0.84 : 0.56, D = L ? 0.58 : 0.52, H = L ? 0.8 : 0.54, fz = L ? 0.14 : 0.11, bx = L ? 0 : -0.13;
+  const T = tallOf(c, L, 1), W = L ? 0.84 : 0.56, D = L ? 0.58 : 0.52, H = L ? 0.8 : 0.54 + T * 0.27, fz = L ? 0.14 : 0.11, bx = L ? 0 : -0.13;
   const P = shopBody(c, {
-    x: bx, z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: own ? ownPick(c, ['#4f5a52', '#5a5048', '#46525a'], 5) : pal.wall,
+    x: bx, z: fz - D / 2, w: W, d: D, h: H, floors: (L ? 3 : 2) + T, wall: own ? ownPick(c, ['#4f5a52', '#5a5048', '#46525a'], 5) : pal.wall,
     roof: own ? pal.slate : pal.roof, roofType: 'gable', rh: 0.26, chimney: true, timber: !own && pal.timber, siding: own, plinth: L ? STONE : null,
   }, 1, { hoist: L >= 1, yard: true });
   const sw = W - 0.04, dx = L ? 0 : -sw / 2 + 0.08;
@@ -2322,6 +2482,7 @@ MODELS.ironmonger = (c, L) => {
     else pail(c, x, ry - 0.06, rz, 0.85);
   }
   hangSign(c, bx + dx + 0.1, 0.32, fz, 'key', GOLD);
+  shopSign(c, P, sf, 1);
   if (L) ladder(c, W / 2 - 0.04, fz + 0.06, 0.4, 0, 0.18);
   const pz = fz + 0.24;
   tinBath(c, bx - W * 0.12, pz, 0.2);
@@ -2347,11 +2508,11 @@ MODELS.ironmonger = (c, L) => {
 // storeys of stone, with a penny weighing machine on the pavement.
 MODELS.chemist = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = [0.58, 0.72, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.52, 0.54, 0.8][L], fz = [0.1, 0.12, 0.14][L];
+  const T = tallOf(c, L), W = [0.58, 0.72, 0.84][L], D = [0.48, 0.54, 0.58][L], H = [0.52, 0.54, 0.8][L] + T * 0.26, fz = [0.1, 0.12, 0.14][L];
   // cream stucco under a hipped slate roof (stone at the top)
   const own = !pal.forced;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall: own ? (L === 2 ? pal.stoneWall : STUCCO) : pal.wall, roof: own ? pal.slate : pal.roof,
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L === 2 ? 3 : 2) + T, wall: own ? (L === 2 ? pal.stoneWall : STUCCO) : pal.wall, roof: own ? pal.slate : pal.roof,
     roofType: 'hip', rh: 0.24, chimney: true, timber: !own && pal.timber, plinth: L ? STONE : null,
   }, 1, { wide: true });
   const sw = W - 0.04, k0 = rng.int(0, 3);
@@ -2361,6 +2522,7 @@ MODELS.chemist = (c, L) => {
     carboy(c, p.m, 0.05, p.z + 0.032, k0 + i, L ? 1.3 : 1);
   });
   hangSign(c, sw / 2 - 0.03, 0.31, fz, 'mortar', GOLD);
+  shopSign(c, P, sf);
   for (const s of [-1, 1]) { const x = s * 0.09, z = fz + 0.12; gb.cyl(x, c.gy(x, z), z, 0.02, 0.016, 0.03, 7, '#a8603a'); flowers(c, x, z, 3, 0.012); }
   if (L === 2) { weighingMachine(c, -W * 0.3, fz + 0.26); lamp(c, W / 2 - 0.01, 0.42, 0.3); }
   else if (L) bench(c, -W * 0.24, fz + 0.26, Math.PI);
@@ -2379,15 +2541,16 @@ MODELS.chemist = (c, L) => {
 // shop and a barrow of second-hand books out front.
 MODELS.stationer = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = L ? 0.76 : 0.6, D = L ? 0.54 : 0.5, H = L ? 0.8 : 0.54, fz = L ? 0.12 : 0.1;
+  const T = tallOf(c, L, 1), W = L ? 0.76 : 0.6, D = L ? 0.54 : 0.5, H = L ? 0.8 : 0.54 + T * 0.27, fz = L ? 0.12 : 0.1;
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.wall, roof: L ? pal.slate : pal.forced ? pal.roof : pal.tile, roofType: 'halfhip', rh: 0.3,
-    chimney: true, timber: pal.timber, nFront: L ? 3 : 2, dormers: 2,
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L ? 3 : 2) + T, wall: pal.wall, roof: L ? pal.slate : pal.forced ? pal.roof : pal.tile, roofType: 'halfhip', rh: 0.3,
+    chimney: true, timber: pal.timber, nFront: L ? 3 : 2, dormers: 2, oriel: !L, balcony: !L,
   }, 1, {});
   const sw = W - 0.04;
   const sf = shopfront(c, 0, fz, sw, 0.26, { fascia: rng.pick(['#2a3a4a', '#3b2f2a', '#4a2a2a', '#2f3e2a']), lit: L >= 1 });
   for (const p of sf.panes) for (const y of [0.05, 0.1]) bookShelf(c, p.m - p.w / 2 + 0.006, p.m + p.w / 2 - 0.006, y, p.z + 0.01);
   hangSign(c, sw / 2 - 0.02, 0.31, fz, 'book', rng.pick(['#8a2f2f', '#2f5a8a', '#2f6a4a']));
+  if (!L) shopSign(c, P, sf);
   newsBoard(c, -W * 0.18, fz + 0.2, 0.2);
   pillarBox(c, W / 2 - 0.06, fz + 0.27);
   if (L) {
@@ -2408,7 +2571,7 @@ MODELS.stationer = (c, L) => {
   // round the back: skylights in the roof over the bindery and bundles of
   // paper by the back door
   shopBack(c, P, { fascia: sf.fascia, letter: sf.letter });
-  roofLights(c, 0, H, fz - D / 2, D + P.jetty * 2, 0.3 * pal.pitch, L ? [-0.16, 0, 0.16] : [-0.09, 0.09]);
+  if (['halfhip', 'gable'].includes(P.r.roofType) && !P.r.alongZ) roofLights(c, 0, H, fz - D / 2, D + P.jetty * 2, P.r.rh, L ? [-0.16, 0, 0.16] : [-0.09, 0.09]);
   for (const p of backSpots(c, P, 2)) paperBundles(c, p.x, p.z, 3);
 };
 
@@ -2419,10 +2582,10 @@ MODELS.stationer = (c, L) => {
 // in tubs.
 MODELS.coffeehouse = (c, L) => {
   const { gb, rng, pal } = c;
-  const W = [0.66, 0.76, 0.86][L], D = [0.5, 0.54, 0.5][L], H = [0.54, 0.56, 0.82][L], fz = [0.1, 0.11, 0.06][L];
+  const T = tallOf(c, L), W = [0.66, 0.76, 0.86][L], D = [0.5, 0.54, 0.5][L], H = [0.54, 0.56, 0.82][L] + T * 0.27, fz = [0.1, 0.11, 0.06][L];
   const wall = pal.forced ? pal.wall : L === 2 ? STUCCO : ownPick(c, PAINTED, 8);
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L === 2 ? 3 : 2, wall, roof: L ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26,
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L === 2 ? 3 : 2) + T, wall, roof: L ? pal.slate : pal.roof, roofType: L === 2 ? 'hip' : 'gable', rh: 0.26,
     chimney: true, timber: !L && pal.timber,
   }, 1, {});
   const sw = W - 0.04, pastel = ownPick(c, ['#c87a8a', '#7a9ac8', '#8ab08a', '#c8a050'], 9);
@@ -2433,6 +2596,7 @@ MODELS.coffeehouse = (c, L) => {
     for (const p of sf.panes) for (let i = 0; i < 2; i++) gb.cyl(p.m + (i - 0.5) * p.w * 0.45, 0.05, p.z + 0.02, 0.018, 0.012, 0.03, 8, i ? '#e8d8c0' : '#8a5a3a');
     if (L) awning(c, 0, sf.top - 0.004, fz, W - 0.02, pastel);
     else hangSign(c, sw / 2 - 0.03, 0.31, fz, 'pot', GOLD);
+    shopSign(c, P, sf);
   } else {
     // the winter garden: a glasshouse across the front with its doors in
     // the middle, and a canopy over them
@@ -2472,37 +2636,99 @@ MODELS.coffeehouse = (c, L) => {
   backSpots(c, P, 3).forEach((p, i) => (i === 1 ? sack(c, p.x, p.z, '#9a7a4a') : churn(c, p.x, p.z)));
 };
 
-// A savings bank: a solid stone block under a hipped slate roof, rusticated
-// below with tall windows, a pedimented door case and railings along the
-// pavement. The Town Bank is three storeys behind a balustrade, with a
-// portico of four columns and lamps at the gate.
+// A savings bank: a solid stone block, rusticated below with tall windows,
+// railings along the pavement; in one of its plans: under a hipped slate
+// roof with a pedimented door case and the name in a gable over it; a temple
+// front of four columns the height of the building under a pediment; a dome
+// over the banking hall behind a parapet; or an Italian palazzo, a low roof
+// on a deep cornice and arched windows. The Town Bank is three storeys: behind
+// a balustrade with a portico of four columns; a rotunda on its corner under
+// a dome; a mansard with a clock in a pediment; or a giant colonnade across
+// the front under an attic.
 MODELS.bank = (c, L) => {
   const { gb, pal } = c;
+  const F = c.form, plan = planOf(c, 4);
   const wall = pal.stoneWall, trim = '#ece6da';
   const W = L ? 0.86 : 0.76, D = L ? 0.56 : 0.54, H = L ? 0.84 : 0.58, floors = L ? 3 : 2, fz = L ? 0.11 : 0.1, fh = H / floors;
+  const roofType = L ? ['flat', 'parapet', 'mansard', 'parapet'][plan] : ['hip', 'parapet', 'parapet', 'hip'][plan];
   const body = { z: fz - D / 2, w: W, d: D, h: H, floors, nFront: L ? 5 : 3, fancy: false }, P = backPlan(c, body, { sign: false });
   house(c, {
-    ...body, wall, roof: pal.slate, roofType: L ? 'flat' : 'hip', rh: 0.2, doorX: 0,
+    ...body, wall, roof: pal.slate, roofType, rh: !L && plan === 3 ? 0.12 : L && plan === 2 ? 0.3 : 0.2, dormers: L && plan === 2 ? 4 : 0, doorX: 0,
     noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear, backBars: true, bareSide: c.corner,
   });
   // rusticated stone on the ground floor, tall windows either side of the door
   for (let y = 0.05; y < fh - 0.02; y += 0.045) gb.box(0, y, fz + 0.002, W, 0.006, 0.006, shade(wall, 0.84));
   const wx = L ? [0.22, 0.36] : [0.24];
+  const arched = c.arched;
+  if (!L && plan === 3) c.arched = true;
   for (const s of [-1, 1]) for (const x of wx) win(c, s * x, 0.06, fz + 0.004, 0.075, 0.15, 'f', 0.8);
-  if (L) {
-    portico(c, 0, fz, 0.36, fh + 0.01, 4, pal.slate, trim);
-    // a balustrade round the roof, urns on the corners, the roof low behind it
-    gb.hip(0, H + 0.045, fz - D / 2, W - 0.12, D - 0.12, 0.13, pal.slate, 0);
+  c.arched = arched;
+  const name = (y, w) => {
+    gb.box(0, y, fz + 0.012, w, 0.04, 0.016, '#2a2a30');
+    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, y + 0.011, fz + 0.022, w * 0.8, 0.02, 0.006, GOLD); gb.noGlow();
+  };
+  const balustrade = (y) => {
     const bal = (x, z, len, alongZ) => {
-      gb.box(x, H + 0.04, z, alongZ ? 0.03 : len, 0.012, alongZ ? len : 0.03, trim);
-      gb.box(x, H + 0.09, z, alongZ ? 0.034 : len + 0.004, 0.014, alongZ ? len + 0.004 : 0.034, trim);
+      gb.box(x, y, z, alongZ ? 0.03 : len, 0.012, alongZ ? len : 0.03, trim);
+      gb.box(x, y + 0.05, z, alongZ ? 0.034 : len + 0.004, 0.014, alongZ ? len + 0.004 : 0.034, trim);
       const n = Math.round(len / 0.03);
-      for (let i = 0; i < n; i++) { const u = -len / 2 + (i + 0.5) * (len / n); gb.cyl(alongZ ? x : x + u, H + 0.052, alongZ ? z + u : z, 0.006, 0.007, 0.038, 5, trim); }
+      for (let i = 0; i < n; i++) { const u = -len / 2 + (i + 0.5) * (len / n); gb.cyl(alongZ ? x : x + u, y + 0.012, alongZ ? z + u : z, 0.006, 0.007, 0.038, 5, trim); }
     };
     const zf = fz - 0.01, zb = fz - D + 0.01;
     bal(0, zf, W, false); bal(0, zb, W, false);
     for (const s of [-1, 1]) bal(s * (W / 2 - 0.01), fz - D / 2, D - 0.02, true);
-    for (const s of [-1, 1]) for (const z of [zf, zb]) { gb.cyl(s * (W / 2 - 0.01), H + 0.104, z, 0.012, 0.018, 0.03, 7, trim); gb.sphere(s * (W / 2 - 0.01), H + 0.14, z, 0.014, trim, 0); }
+    for (const s of [-1, 1]) for (const z of [zf, zb]) { gb.cyl(s * (W / 2 - 0.01), y + 0.064, z, 0.012, 0.018, 0.03, 7, trim); gb.sphere(s * (W / 2 - 0.01), y + 0.1, z, 0.014, trim, 0); }
+  };
+  if (L) {
+    if (plan === 1) {
+      // a rotunda on the corner, under a dome
+      const s = c.corner & 1 ? -1 : c.corner & 2 ? 1 : F.side;
+      turret(c, 'dome', s * (W / 2 - 0.06), fz - 0.06, 0, H + 0.1, 0.11, fh, wall, '#5f8f7e', 0.8);
+      portico(c, 0, fz, 0.3, fh + 0.01, 4, pal.slate, trim);
+    } else if (plan === 2) {
+      // a clock in a pediment over the portico, a mansard behind
+      portico(c, 0, fz, 0.36, fh + 0.01, 4, pal.slate, trim);
+      gb.cbox(0, H - 0.04, fz - 0.03, 0.3, 0.14, 0.06, wall, 0, 0.008);
+      gb.gable(0, H + 0.1, fz - 0.03, 0.32, 0.07, 0.08, wall, trim, 0.015, true);
+      wallClock(c, 0, H + 0.03, fz + 0.002, 0.045);
+    } else if (plan === 3) {
+      // a giant colonnade across the front, an attic over it
+      for (let i = 0; i < 6; i++) gb.cyl(-W / 2 + 0.06 + (i * (W - 0.12)) / 5, fh, fz + 0.05, 0.02, 0.023, fh * 2 - 0.02, 8, trim);
+      gb.box(0, fh - 0.01, fz + 0.04, W + 0.02, 0.02, 0.09, trim);
+      gb.box(0, H - 0.04, fz + 0.04, W + 0.02, 0.05, 0.09, trim);
+      gb.cbox(0, H + 0.01, fz - D / 2 + 0.02, W - 0.04, 0.12, D - 0.06, wall, 0, 0.006);
+      gb.box(0, H + 0.13, fz - D / 2 + 0.02, W, 0.025, D - 0.02, trim);
+      gb.hip(0, H + 0.155, fz - D / 2 + 0.02, W - 0.12, D - 0.14, 0.1, pal.slate, 0);
+      portico(c, 0, fz + 0.06, 0.2, fh - 0.03, 2, pal.slate, trim);
+    } else {
+      portico(c, 0, fz, 0.36, fh + 0.01, 4, pal.slate, trim);
+      // a balustrade round the roof, urns on the corners, the roof low behind it
+      gb.hip(0, H + 0.045, fz - D / 2, W - 0.12, D - 0.12, 0.13, pal.slate, 0);
+      balustrade(H + 0.04);
+    }
+    if (plan === 1) balustrade(H + 0.07);
+    // the name in gilt letters along the first floor
+    if (plan !== 3) name(fh - 0.045, W * 0.62);
+  } else if (plan === 1) {
+    // a temple front: four columns the height of the bank, a pediment
+    portico(c, 0, fz, 0.46, H - 0.04, 4, pal.slate, trim);
+    gb.gable(0, H + 0.05, fz + 0.07, 0.5, 0.03, 0.1, trim, trim, 0.01, true);
+    name(fh + 0.02, 0.3);
+  } else if (plan === 2) {
+    // the banking hall's dome over the parapet, a door case under a pediment
+    gb.cyl(0, H + 0.04, fz - D / 2 - 0.02, 0.15, 0.16, 0.08, 10, wall);
+    gb.sphere(0, H + 0.12, fz - D / 2 - 0.02, 0.15, '#5f8f7e', 1, 0.8);
+    gb.cyl(0, H + 0.24, fz - D / 2 - 0.02, 0.02, 0.025, 0.06, 6, trim);
+    for (const s of [-1, 1]) gb.box(s * 0.08, 0, fz + 0.01, 0.026, 0.26, 0.026, trim);
+    gb.box(0, 0.26, fz + 0.012, 0.22, 0.025, 0.035, trim);
+    gb.gable(0, 0.285, fz + 0.012, 0.22, 0.035, 0.06, trim, trim, 0.01, true);
+    name(fh + 0.03, 0.32);
+  } else if (plan === 3) {
+    // a palazzo: a deep cornice on brackets under the low roof
+    gb.box(0, H - 0.035, fz - D / 2, W + 0.08, 0.04, D + 0.08, trim);
+    for (let i = 0; i < 9; i++) gb.box(-W / 2 + 0.02 + (i * (W - 0.04)) / 8, H - 0.06, fz + 0.025, 0.014, 0.03, 0.03, trim);
+    portico(c, 0, fz, 0.2, 0.22, 2, pal.slate, trim);
+    name(fh + 0.03, 0.3);
   } else {
     portico(c, 0, fz, 0.2, 0.22, 2, pal.slate, trim);
     gb.cbox(0, H - 0.03, fz - 0.11, 0.34, 0.12, 0.22, wall, 0, 0.006);
@@ -2511,11 +2737,6 @@ MODELS.bank = (c, L) => {
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, H + 0.014, fz + 0.007, 0.2, 0.02, 0.006, GOLD); gb.noGlow();
   }
   door(c, 0, fz, L ? 0.12 : 0.1, L ? 0.2 : 0.19, '#3a2f28');
-  if (L) {
-    // the name in gilt letters along the first floor
-    gb.box(0, fh - 0.045, fz + 0.012, W * 0.62, 0.04, 0.016, '#2a2a30');
-    gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh - 0.034, fz + 0.022, W * 0.5, 0.02, 0.006, GOLD); gb.noGlow();
-  }
   frontage(c, -W / 2 - 0.02, W / 2 + 0.02, fz + 0.3, [0], 'railings');
   lamp(c, -0.11, fz + 0.32, 0.3); lamp(c, 0.11, fz + 0.32, 0.3);
   // on a street corner the banking hall shows down the side street too:
@@ -2565,9 +2786,9 @@ export function wallClock(c, x, y, z, r = 0.04) {
 // pediment, a telegraph pole on the roof and the red mail van outside.
 MODELS.postoffice = (c, L) => {
   const { gb, pal } = c;
-  const W = L ? 0.86 : 0.66, D = L ? 0.56 : 0.52, H = L ? 0.84 : 0.54, fz = L ? 0.11 : 0.11, red = '#a8282a';
+  const T = tallOf(c, L, 1), W = L ? 0.86 : 0.66, D = L ? 0.56 : 0.52, H = L ? 0.84 : 0.54 + T * 0.27, fz = L ? 0.11 : 0.11, red = '#a8282a';
   const P = shopBody(c, {
-    z: fz - D / 2, w: W, d: D, h: H, floors: L ? 3 : 2, wall: pal.forced ? pal.wall : L ? pal.stoneWall : '#efe9dc', roof: pal.slate, roofType: L ? 'hip' : 'gable',
+    z: fz - D / 2, w: W, d: D, h: H, floors: (L ? 3 : 2) + T, wall: pal.forced ? pal.wall : L ? pal.stoneWall : '#efe9dc', roof: pal.slate, roofType: L ? 'hip' : 'gable',
     rh: 0.24, chimney: true, plinth: L ? STONE : null, timber: !L && pal.timber, nFront: L ? 4 : 2,
   }, 1, {});
   const sf = shopfront(c, 0, fz, W - 0.04, 0.26, { fascia: red, riser: '#6a1a1c', letter: '#ece6d6', lit: true, door: red, doorW: L ? 0.11 : 0.085 });
@@ -2597,6 +2818,7 @@ MODELS.postoffice = (c, L) => {
   }
   pillarBox(c, W / 2 - 0.05, fz + 0.29);
   lamp(c, -W / 2 + 0.01, 0.43, 0.28);
+  if (!L) shopSign(c, P, sf);
   cornerShop(c, 'postoffice', L, { x0: 0, w: W, fz, d: D }, { fascia: red, riser: '#6a1a1c', letter: '#ece6d6', lit: true });
   // round the back: the red loading doors for the mail under a canopy, and
   // mail sacks waiting for the van
@@ -2607,25 +2829,39 @@ MODELS.postoffice = (c, L) => {
   for (const p of backSpots(c, P, 3)) { sack(c, p.x, p.z, '#d8d4c8'); gb.box(p.x + 0.012, c.gy(p.x, p.z) + 0.05, p.z - 0.02, 0.012, 0.016, 0.003, red); }
 };
 
-// Counting House: a Georgian front of brick five windows wide, dead
-// symmetrical under a hipped roof, a door case with a fanlight, brass
-// plates by the door and railings along the area. Chambers is three
-// storeys of brick banded with stone, with a gabled centre bay of arched
-// windows over a porch; the Office Building five storeys of stone, flat
-// topped behind a cornice, with a lift house and a flag on the roof.
+// Counting House: a Georgian front of brick five windows wide, symmetrical,
+// a door case with a fanlight, brass plates by the door and railings along
+// the area; under a hipped roof, a mansard with a balcony, or behind a
+// parapet with a pedimented middle (or, in stone, a Dutch gable over it).
+// Chambers is three storeys of brick banded with stone: a gabled centre bay
+// of arched windows over a porch; two gabled bays with oriels; a round tower
+// on a corner under a cone; or a mansard with a clock in a pediment. The
+// Office Building is five storeys (six, for some) flat topped behind a
+// cornice: giant pilasters and a lift house; a domed corner; a mansard over
+// the top floor; the top floor set back under a clock tower; oriels up every
+// floor; or a shaped gable over the middle. Stone, brick or white faience.
 MODELS.offices = (c, L) => {
   const { gb, rng, pal } = c;
-  const trim = '#ece6da';
+  const F = c.form, trim = '#ece6da';
   const plates = (x, z, n) => { for (let i = 0; i < n; i++) gb.box(x, 0.06 + i * 0.026, z + 0.004, 0.024, 0.018, 0.004, GOLD); };
   if (L === 0) {
+    const plan = planOf(c, 4);
     const W = 0.78, D = 0.52, H = 0.56, fz = 0.08, fh = H / 2;
-    const wall = pal.forced ? pal.wall : pal.brick;
+    const wall = pal.forced ? pal.wall : plan === 3 ? pal.stoneWall : pal.brick;
+    const roofType = ['hip', 'mansard', 'parapet', 'gable'][plan];
     const body = { z: fz - D / 2, w: W, d: D, h: H, floors: 2, nFront: 5, fancy: false }, P = backPlan(c, body, { sign: false });
-    house(c, { ...body, wall, roof: pal.slate, roofType: 'hip', rh: 0.22, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
+    house(c, { ...body, wall, roof: pal.slate, roofType, rh: plan === 1 ? 0.3 : 0.22, dormers: plan === 1 ? 3 : 0, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
     // the clerks' way in at the back, its brass plates polished
     shopBack(c, P, { door: '#2a2a30' });
     for (let i = 0; i < 2; i++) gb.box(P.x0 + P.door - P.side * 0.07, 0.07 + i * 0.026, P.zb - 0.004, 0.024, 0.018, 0.004, GOLD);
     for (let i = 0; i < 5; i++) if (i !== 2) win(c, -W / 2 + (i + 0.5) * (W / 5), fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
+    if (plan === 1) balcony(c, 'iron', 0, fh, fz, 0.42);
+    else if (plan === 2) {
+      // the middle three bays under a pediment over the parapet
+      gb.cbox(0, 0, fz + 0.012, 0.48, H + 0.02, 0.024, wall, 0, 0.004);
+      for (const u of [-0.16, 0, 0.16]) win(c, u, fh + fh * 0.38, fz + 0.024, 0.075, 0.11, 'f', 0.8);
+      gb.gable(0, H + 0.06, fz + 0.012, 0.52, 0.04, 0.12, trim, trim, 0.01, true);
+    } else if (plan === 3) wallGable(c, F.gable === 'plain' ? 'dutch' : F.gable, 0, fz, 0.34, H, 0.24, 0.26, wall, pal.slate, trim, 0.8);
     // the door case: pilasters, a cornice and a fanlight
     for (const s of [-1, 1]) gb.box(s * 0.065, 0, fz + 0.008, 0.02, 0.22, 0.02, trim);
     gb.box(0, 0.22, fz + 0.01, 0.16, 0.022, 0.03, trim);
@@ -2637,41 +2873,66 @@ MODELS.offices = (c, L) => {
     gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(0, 0.25, fz + 0.1, 0.03, 0.04, 0.03, '#ffe2a0'); gb.noGlow();
     c.addGlow(0, 0.27, fz + 0.1);
   } else if (L === 1) {
+    const plan = planOf(c, 4);
     const W = 0.82, D = 0.54, H = 0.84, fz = 0.09, fh = H / 3;
     const wall = pal.forced ? pal.wall : pal.brick, band = pal.style === 'stone' ? shade(pal.wall, 1.15) : STONE;
+    const roofType = ['gable', 'gable', 'parapet', 'mansard'][plan];
     const body = { z: fz - D / 2, w: W, d: D, h: H, floors: 3, nFront: 2, fancy: false }, P = backPlan(c, body, { sign: false, escape: true });
-    house(c, { ...body, wall, roof: pal.slate, roofType: 'gable', rh: 0.34, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
+    house(c, { ...body, wall, roof: pal.slate, roofType, rh: plan === 3 ? 0.32 : 0.34, dormers: plan === 3 ? 3 : 0, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.8, backClear: P.clear });
     shopBack(c, P, { door: '#2a2a30' });
     fireEscape(c, P);
     for (const s of [-1, 1]) win(c, s * W / 4, fh * 0.38, fz, 0.075, 0.11, 'f', 0.8);
     for (let k = 1; k < 3; k++) gb.box(0, k * fh - 0.012, fz + 0.002, W + 0.006, 0.018, 0.008, band);
-    // the gabled centre bay, its windows arched, a porch at its foot
-    const bw = 0.26, bz = fz + 0.03;
-    footing(c, 0, bz, bw, 0.06);
-    gb.cbox(0, 0, bz, bw, H, 0.06, wall, 0, 0.008);
-    gb.gable(0, H, bz - 0.02, bw, 0.1, 0.22, wall, pal.slate, 0.025, true, 0.025);
     const arched = c.arched; c.arched = true;
-    for (let k = 1; k < 3; k++) for (const s of [-1, 1]) win(c, s * 0.055, k * fh + fh * 0.3, bz + 0.03, 0.06, 0.13, 'f', 0.85);
-    win(c, 0, H + 0.04, bz + 0.03, 0.05, 0.09, 'f', 0.6);
+    if (plan === 1) {
+      // two gabled bays, an oriel in each over the ground floor
+      for (const s of [-1, 1]) {
+        wallGable(c, 'plain', s * W / 4, fz, 0.3, H, 0.22, 0.27, wall, pal.slate, trim, 0.7);
+        tallBay(c, s * W / 4, fz, fh, 3, wall, pal.slate, 0.85, true, 3, 0.16);
+      }
+    } else if (plan === 2) {
+      // a round tower on a front corner under a cone, the parapet over the rest
+      const s = c.corner & 1 ? -1 : c.corner & 2 ? 1 : F.side;
+      turret(c, 'round', s * (W / 2 - 0.04), fz - 0.03, 0, H + 0.12, 0.1, fh, wall, pal.slate, 0.85);
+      for (let k = 1; k < 3; k++) for (const u of [-0.12, 0.12]) win(c, u - s * 0.06, k * fh + fh * 0.3, fz, 0.06, 0.13, 'f', 0.85);
+    } else if (plan === 3) {
+      // a clock in a pediment over the middle of the mansard
+      gb.cbox(0, H - 0.02, fz - 0.03, 0.26, 0.16, 0.06, wall, 0, 0.006);
+      gb.gable(0, H + 0.14, fz - 0.03, 0.28, 0.07, 0.08, wall, trim, 0.015, true);
+      wallClock(c, 0, H + 0.06, fz + 0.002, 0.045);
+      for (let k = 1; k < 3; k++) for (const s of [-1, 1]) win(c, s * 0.055, k * fh + fh * 0.3, fz, 0.06, 0.13, 'f', 0.85);
+    } else {
+      // the gabled centre bay, its windows arched
+      const bw = 0.26, bz = fz + 0.03;
+      footing(c, 0, bz, bw, 0.06);
+      gb.cbox(0, 0, bz, bw, H, 0.06, wall, 0, 0.008);
+      gb.gable(0, H, bz - 0.02, bw, 0.1, 0.22, wall, pal.slate, 0.025, true, 0.025);
+      for (let k = 1; k < 3; k++) for (const s of [-1, 1]) win(c, s * 0.055, k * fh + fh * 0.3, bz + 0.03, 0.06, 0.13, 'f', 0.85);
+      win(c, 0, H + 0.04, bz + 0.03, 0.05, 0.09, 'f', 0.6);
+      // iron cresting along the ridge
+      for (let i = 0; i < 9; i++) gb.box(-W / 2 + 0.06 + i * ((W - 0.12) / 8), H + 0.34, fz - D / 2, 0.006, 0.04, 0.006, IRON_D);
+    }
     c.arched = arched;
+    const bz = plan === 0 ? fz + 0.03 : fz;
     for (const s of [-1, 1]) gb.box(s * 0.06, 0, bz + 0.07, 0.014, 0.21, 0.014, trim);
     gb.gable(0, 0.21, bz + 0.06, 0.16, 0.08, 0.06, trim, pal.slate, 0.015);
-    door(c, 0, bz + 0.03, 0.09, 0.18, rng.pick(['#2f3e2a', '#2a2a30', '#4a2a2a']));
-    plates(0.1, bz + 0.03, 4);
-    // iron cresting along the ridge
-    for (let i = 0; i < 9; i++) gb.box(-W / 2 + 0.06 + i * ((W - 0.12) / 8), H + 0.34, fz - D / 2, 0.006, 0.04, 0.006, IRON_D);
+    door(c, 0, bz, 0.09, 0.18, rng.pick(['#2f3e2a', '#2a2a30', '#4a2a2a']));
+    plates(0.1, bz, 4);
     frontage(c, -W / 2, W / 2, fz + 0.2, [0], 'railings');
     lamp(c, -0.16, fz + 0.22, 0.28); lamp(c, 0.16, fz + 0.22, 0.28);
   } else {
-    const W = 0.84, D = 0.56, floors = 5, fh = 0.25, H = floors * fh, fz = 0.1;
-    const wall = pal.forced ? pal.wall : pal.stoneWall;
-    const body = { z: fz - D / 2, w: W, d: D, h: H, floors, nFront: 4, fancy: false }, P = backPlan(c, body, { sign: false, escape: true });
-    house(c, { ...body, wall, roof: pal.slate, roofType: 'flat', rh: 0.2, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.85, backClear: P.clear });
+    const plan = planOf(c, 6);
+    const W = 0.84, D = 0.56, fh = 0.25, fz = 0.1;
+    const floors = 5 + (plan === 2 || plan === 4 ? F.tall : 0), H = floors * fh;
+    const mat = pal.forced ? 0 : F.a < 0.5 ? 0 : F.a < 0.8 ? 1 : 2;
+    const wall = pal.forced ? pal.wall : [pal.stoneWall, pal.brick, '#e8e2d2'][mat];
+    const roofType = plan === 2 ? 'mansard' : plan === 5 ? 'gable' : 'flat';
+    const body = { z: fz - D / 2, w: W, d: D, h: plan === 3 ? H - fh : H, floors: plan === 3 ? floors - 1 : floors, nFront: 4, fancy: false }, P = backPlan(c, body, { sign: false, escape: true });
+    house(c, { ...body, wall, roof: pal.slate, roofType, rh: plan === 2 ? 0.3 : 0.26, dormers: plan === 2 ? 4 : 0, doorX: 0, noDoor: true, bareFront: true, chimney: true, chimneyPos: 'ends', plinth: STONE, lit: 0.85, backClear: P.clear });
     shopBack(c, P, { door: '#2a2a30' });
     fireEscape(c, P);
-    // a giant order of pilasters up the front, a cornice, the name over the door
-    for (const s of [-1, 0, 1]) gb.box(s * (W / 2 - 0.012), fh, fz + 0.008, s ? 0.03 : 0.024, H - fh - 0.04, 0.02, shade(wall, 1.12));
-    gb.box(0, H - 0.05, fz + 0.012, W + 0.04, 0.05, 0.04, trim);
+    const top = body.h;
+    // the ground floor: a cornice over it, the door case and the name
     gb.box(0, fh - 0.02, fz + 0.01, W, 0.02, 0.03, trim);
     for (const s of [-1, 1]) for (const x of [0.16, 0.32]) win(c, s * x, 0.07, fz, 0.1, 0.13, 'f', 0.85);
     gb.cbox(0, -0.02, fz + 0.05, 0.22, 0.04, 0.1, STONE, 0, 0.008);
@@ -2681,11 +2942,40 @@ MODELS.offices = (c, L) => {
     gb.box(0, fh * 1.1, fz + 0.012, 0.3, 0.04, 0.016, '#2a2a30');
     gb.glow(1.8, 1.4, 0.6, 3.1); gb.box(0, fh * 1.1 + 0.01, fz + 0.022, 0.24, 0.02, 0.006, GOLD); gb.noGlow();
     plates(0.1, fz + 0.02, 5);
-    // the lift house and a flag on the roof
-    gb.cbox(-0.18, H + 0.04, fz - D / 2 - 0.06, 0.18, 0.13, 0.16, wall, 0, 0.008);
-    gb.box(-0.18, H + 0.17, fz - D / 2 - 0.06, 0.2, 0.02, 0.18, trim);
-    gb.box(0.25, H + 0.04, fz - 0.06, 0.01, 0.26, 0.01, IRON_D);
-    gb.box(0.3, H + 0.24, fz - 0.06, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#2f6a4a']));
+    if (plan === 0 || plan === 3) {
+      // a giant order of pilasters up the front, a cornice
+      for (const s of [-1, 0, 1]) gb.box(s * (W / 2 - 0.012), fh, fz + 0.008, s ? 0.03 : 0.024, top - fh - 0.04, 0.02, shade(wall, 1.12));
+      gb.box(0, top - 0.05, fz + 0.012, W + 0.04, 0.05, 0.04, trim);
+    }
+    if (plan === 0) {
+      // the lift house and a flag on the roof
+      gb.cbox(-0.18, H + 0.04, fz - D / 2 - 0.06, 0.18, 0.13, 0.16, wall, 0, 0.008);
+      gb.box(-0.18, H + 0.17, fz - D / 2 - 0.06, 0.2, 0.02, 0.18, trim);
+      gb.box(0.25, H + 0.04, fz - 0.06, 0.01, 0.26, 0.01, IRON_D);
+      gb.box(0.3, H + 0.24, fz - 0.06, 0.09, 0.055, 0.004, rng.pick(['#a8473a', '#3f6a8f', '#2f6a4a']));
+    } else if (plan === 1) {
+      // a domed corner, a storey over the cornice
+      const s = c.corner & 1 ? -1 : c.corner & 2 ? 1 : F.side;
+      gb.box(0, H - 0.04, fz - D / 2, W + 0.04, 0.04, D + 0.04, trim);
+      turret(c, 'dome', s * (W / 2 - 0.06), fz - 0.06, 0, H + fh * 0.8, 0.1, fh, wall, '#5f8f7e', 0.85);
+    } else if (plan === 3) {
+      // the top floor set back, a clock tower over the door
+      gb.cbox(0, top + 0.04, fz - D / 2 - 0.03, W - 0.16, fh, D - 0.2, wall, 0, 0.008);
+      for (const u of [-0.24, -0.08, 0.08, 0.24]) win(c, u, top + 0.1, fz - 0.13, 0.07, 0.1, 'f', 0.85);
+      gb.box(0, top + 0.04 + fh, fz - D / 2 - 0.03, W - 0.12, 0.03, D - 0.16, trim);
+      gb.cbox(0, top, fz - 0.06, 0.18, fh + 0.24, 0.12, wall, 0, 0.008);
+      wallClock(c, 0, top + fh * 0.6, fz + 0.002, 0.05);
+      gb.roof(0, top + fh + 0.24, fz - 0.06, 0.2, 0.14, 0.14, 0.04, '#5f8f7e');
+    } else if (plan === 4) {
+      // oriels up every floor over the ground, a heavy cornice
+      for (const x of [-0.24, 0.24]) tallBay(c, x, fz, fh, floors, wall, pal.slate, 0.85, true, floors, 0.18);
+      gb.box(0, H - 0.05, fz - D / 2 + 0.01, W + 0.06, 0.05, D + 0.06, trim);
+    } else if (plan === 5) {
+      wallGable(c, F.gable === 'plain' ? 'stepped' : F.gable, 0, fz, 0.36, H, 0.3, 0.28, wall, pal.slate, trim, 0.85);
+      for (let k = 1; k < floors; k++) gb.box(0, k * fh - 0.01, fz + 0.004, W, 0.014, 0.01, trim);
+    } else {
+      gb.box(0, H - 0.03, fz - D / 2, W + 0.04, 0.03, D + 0.04, trim);
+    }
     lamp(c, -W / 2 + 0.02, 0.43, 0.3); lamp(c, W / 2 - 0.02, 0.43, 0.3);
   }
 };
@@ -3754,9 +4044,18 @@ export function frontage(c, x0, x1, z, gaps, kind) {
   seg(a, x1);
 }
 
+// A row of houses, in one of its plans: one long roof along the row
+// (dormers in it from the Terraced Houses up); a gable to the street over
+// every house; a mansard with a dormer for each house; Georgian, a flat roof
+// behind a parapet, fanlights over the doors and balconies along the first
+// floor; or every house its own height under its own roof. The door cases
+// are the row's own (hoods, canopies, porches, fanlights).
 MODELS.terrace = (c, L) => {
   const { gb, rng, pal } = c;
-  const f = rowFrame(c);
+  const f = rowFrame(c), F = c.form;
+  let plan = planOf(c, 5);
+  // cottages: a long roof, gables, or each its own
+  if (L === 0 && (plan === 2 || plan === 3)) plan = plan === 2 ? 1 : 4;
   const n = L === 0 ? 3 : 4;
   const floors = L + 1;
   const fh = L === 0 ? 0.33 : 0.27;
@@ -3765,42 +4064,77 @@ MODELS.terrace = (c, L) => {
   const z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2;
   const brick = L === 1 && (pal.style === 'brick' || rng.chance(0.45));
   const thatch = L === 0 && pal.thatched;
-  const roof = thatch ? pal.thatch : L === 2 ? pal.slate : pal.roof;
+  const roof = thatch ? pal.thatch : L === 2 ? pal.slate : pal.roof, trim = '#e3dccd';
   const walls = [];
   for (let i = 0; i < n; i++) {
     walls.push(pal.forced ? shade(pal.wall, rng.float(0.92, 1.06)) : brick ? shade(pal.brick, rng.float(0.92, 1.06)) : L === 2 ? (rng.chance(0.35) ? rng.pick(PAINTED) : '#ebe4d6') : rng.pick(PAINTED));
   }
-  footing(c, 0, z0, W, D);
   const uw = W / n;
+  // every house its own height (a little either way) under its own roof
+  const lift = (i) => (plan === 4 ? [0, 0.05, -0.025, 0.035][(i + (F.plan >> 3)) % 4] * (L ? 1.4 : 1) : 0);
+  footing(c, 0, z0, W, D);
   const doors = [];
+  const kind = plan === 3 ? 'fanlight' : !F.porch || F.porch === 'veranda' || F.porch === 'portico' ? (L ? 'hood' : 'canopy') : F.porch;
   for (let i = 0; i < n; i++) {
-    const ux = -W / 2 + (i + 0.5) * uw;
-    gb.cbox(ux, 0, z0, uw + 0.003, h, D, walls[i], 0, 0.008);
+    const ux = -W / 2 + (i + 0.5) * uw, hi = h + lift(i);
+    gb.cbox(ux, 0, z0, uw + 0.003, hi, D, walls[i], 0, 0.008);
     const flip = i % 2 === 1;   // doors mirror in pairs
     const dx = ux + (flip ? 1 : -1) * uw * 0.24, wx = ux + (flip ? -1 : 1) * uw * 0.14;
     doors.push(dx);
-    door(c, dx, fz, 0.085, Math.min(0.17, fh * 0.6), L === 2 ? rng.pick(ACCENT) : rng.pick(DOORS));
-    if (L === 1 && rng.chance(0.6)) bay(c, wx, fz, 0.15, walls[i], roof);
+    const dh = Math.min(0.17, fh * 0.6);
+    door(c, dx, fz, 0.085, dh, L === 2 ? rng.pick(ACCENT) : rng.pick(DOORS));
+    if ((L >= 1 || F.a < 0.5) && kind) porchOf(c, kind === 'portico' ? 'pediment' : kind, dx, fz, dh, walls[i], roof, uw, fh * 0.85);
+    if (L === 1 && (plan === 1 || plan === 4) && F.b < 0.7) tallBay(c, wx, fz, fh, 2, walls[i], roof, 0.75, false, 2, 0.12);
+    else if (L === 1 && rng.chance(0.6)) bay(c, wx, fz, 0.15, walls[i], roof);
     else win(c, wx, fh * 0.34, fz, 0.1, 0.1, 'f');
     for (let k = 1; k < floors; k++) for (const sx of [-1, 1]) win(c, ux + sx * uw * 0.2, k * fh + fh * 0.34, fz, 0.075, 0.1, 'f');
     for (let k = 0; k < floors; k++) win(c, ux, k * fh + fh * 0.36, z0 - D / 2, 0.075, 0.09, 'b');
+    if (plan === 3 && L === 2) balcony(c, 'iron', ux, fh, fz, uw * 0.62);
   }
   for (const sx of [-1, 1]) for (let k = 0; k < floors; k++) win(c, sx * W / 2, k * fh + fh * 0.36, z0, 0.07, 0.09, sx > 0 ? 'r' : 'l');
-  if (L === 2) {
+  if (L === 2 && plan !== 3) {
     gb.box(0, h - 0.035, z0, W + 0.02, 0.035, D + 0.02, '#e3dccd');
     gb.box(0, fh - 0.01, fz + 0.004, W, 0.016, 0.012, '#e3dccd');
   }
   const rh = L === 0 ? 0.27 : 0.24;
-  if (thatch) thatchRoof(c, 0, h, z0, W + 0.02, D, rh, walls[0], roof, false);
-  else gb.gable(0, h, z0, W + 0.02, D, rh, walls[0], roof, 0.05, false, 0.035);
-  for (let i = 1; i < n; i++) chimney(c, -W / 2 + i * uw, h - 0.05, h + rh + 0.07, z0, 'home', brick ? shade(pal.brick, 0.88) : STONE);
-  if (L >= 1) {
+  const stack = (x, top) => chimney(c, x, top - 0.12, top, z0, 'home', brick ? shade(pal.brick, 0.88) : STONE);
+  if (plan === 2) {
+    // a mansard along the row, a dormer for each house
+    gb.push(0, 0, z0);
+    const M = mansardRoof(c, W + 0.02, D, h, 0.3, roof, trim);
+    mansardDormers(c, n, W, D, h, M, walls[0], roof, 0.75);
+    gb.pop();
+    for (let i = 1; i < n; i++) stack(-W / 2 + i * uw, M.top + 0.06);
+  } else if (plan === 3) {
+    // Georgian: a flat roof behind a parapet
+    gb.push(0, 0, z0);
+    parapetRoof(c, W + 0.02, D, h, walls[0], roof, trim);
+    gb.pop();
+    for (let i = 1; i < n; i++) stack(-W / 2 + i * uw, h + 0.17);
+  } else if (plan === 4) {
+    // each house its own roof, at its own height
     for (let i = 0; i < n; i++) {
-      if (L === 1 && !rng.chance(0.5)) continue;
-      const x = -W / 2 + (i + 0.5) * uw, dz = z0 + (D / 2) * 0.42, dy = h + rh * 0.1;
-      gb.cbox(x, dy, dz, 0.1, 0.12, 0.12, walls[i], 0, 0.012);
-      gb.gable(x, dy + 0.12, dz, 0.1, 0.13, 0.07, walls[i], roof, 0.025, true, 0.022);
-      win(c, x, dy + 0.025, dz + 0.06, 0.05, 0.065, 'f');
+      const ux = -W / 2 + (i + 0.5) * uw, hi = h + lift(i), r2 = rh * (1 + lift(i) * 1.5);
+      if (thatch) thatchRoof(c, ux, hi, z0, uw + 0.012, D, r2, walls[i], roof, false);
+      else gb.gable(ux, hi, z0, uw + 0.012, D, r2, walls[i], roof, 0.04, false, 0.03);
+      if (i) stack(-W / 2 + i * uw, Math.max(hi + r2, h + lift(i - 1) + rh * (1 + lift(i - 1) * 1.5)) + 0.06);
+    }
+  } else {
+    if (thatch) thatchRoof(c, 0, h, z0, W + 0.02, D, rh, walls[0], roof, false);
+    else gb.gable(0, h, z0, W + 0.02, D, rh, walls[0], roof, 0.05, false, 0.035);
+    for (let i = 1; i < n; i++) chimney(c, -W / 2 + i * uw, h - 0.05, h + rh + 0.07, z0, 'home', brick ? shade(pal.brick, 0.88) : STONE);
+    if (plan === 1) {
+      // a gable to the street over every house
+      const g = L === 0 || pal.style === 'timber' ? 'plain' : F.gable;
+      for (let i = 0; i < n; i++) wallGable(c, g, -W / 2 + (i + 0.5) * uw, fz, uw * 0.72, h, rh * 0.95, D * 0.48, walls[i], roof, trim, 0.75);
+    } else if (L >= 1) {
+      for (let i = 0; i < n; i++) {
+        if (L === 1 && !rng.chance(0.5)) continue;
+        const x = -W / 2 + (i + 0.5) * uw, dz = z0 + (D / 2) * 0.42, dy = h + rh * 0.1;
+        gb.cbox(x, dy, dz, 0.1, 0.12, 0.12, walls[i], 0, 0.012);
+        gb.gable(x, dy + 0.12, dz, 0.1, 0.13, 0.07, walls[i], roof, 0.025, true, 0.022);
+        win(c, x, dy + 0.025, dz + 0.06, 0.05, 0.065, 'f');
+      }
     }
   }
   // front gardens, divided between the houses
@@ -4999,17 +5333,48 @@ MODELS.library = (c, L) => {
 };
 
 
+// A country mansion on a double plot, in one of its plans: a centre block
+// and wings with a portico; a forecourt, the wings coming forward with
+// pediments on their ends and a cupola on the centre; Tudor, a long range
+// with gables to the drive and a porch tower; a château, mansards with round
+// towers at the ends of the centre. A formal garden in front.
 MODELS.mansion = (c, L) => {
   const { gb, pal } = c;
-  const f = rowFrame(c);
+  const f = rowFrame(c), F = c.form, plan = planOf(c, 4);
   const W = f.len - 0.14;
   const wall = pal.stoneHouse || L ? pal.stoneWall : pal.wall, roof = pal.slate, trim = '#ece6da';
   const z0 = -f.dep / 2 + 0.32;
-  // centre block with two wings and a portico, formal garden in front
-  house(c, { x: 0, z: z0, w: 0.7, d: 0.5, h: L ? 0.9 : 0.62, floors: L ? 3 : 2, wall, roof, roofType: 'hip', rh: 0.3, plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3, chimney: true });
-  for (const s of [-1, 1]) house(c, { x: s * (W / 2 - 0.26), z: z0 + 0.04, w: 0.44, d: 0.42, h: L ? 0.62 : 0.46, floors: 2, wall, roof, roofType: 'hip', rh: 0.22, noDoor: true, plinth: STONE, nFront: 2, chimney: true });
-  for (let i = 0; i < 4; i++) gb.cyl(-0.15 + i * 0.1, 0.02, z0 + 0.32, 0.016, 0.019, 0.36, 8, trim);
-  gb.gable(0, 0.38, z0 + 0.3, 0.4, 0.14, 0.09, trim, roof, 0.02);
+  const H = L ? 0.9 : 0.62, floors = L ? 3 : 2;
+  if (plan === 1) {
+    // a forecourt between wings that come forward, pediments on their ends
+    const r = house(c, { x: 0, z: z0 - 0.02, w: 0.74, d: 0.44, h: H, floors, wall, roof, roofType: 'hip', roofLock: true, rh: 0.26, plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3, chimney: true, chimneyPos: 'ends', form: { turret: null, crest: null, front: 'eaves', bay: null } });
+    gb.push(0, 0, z0 - 0.02); crest(c, 'cupola', r.top, 0, 0, wall, roof); gb.pop();
+    for (const s of [-1, 1]) {
+      const wx = s * (W / 2 - 0.2), wd = 0.56;
+      house(c, { x: wx, z: z0 + 0.38 - wd / 2, w: 0.36, d: wd, h: L ? 0.66 : 0.5, floors: 2, wall, roof, roofType: 'hip', alongZ: true, rh: 0.2, noDoor: true, plinth: STONE, nFront: 2, chimney: true, form: false });
+      gb.gable(wx, (L ? 0.66 : 0.5) + 0.01, z0 + 0.37, 0.38, 0.04, 0.1, trim, trim, 0.012, true);
+    }
+    gravel(c, 0, z0 + 0.28, 0.6, 0.18);
+  } else if (plan === 2) {
+    // Tudor: a long range with gables to the drive, a porch tower in the middle
+    house(c, { x: 0, z: z0, w: W - 0.1, d: 0.42, h: H, floors, wall, roof, roofType: 'gable', roofLock: true, rh: 0.3, plinth: STONE, noDoor: true, nFront: 8, chimney: true, chimneyPos: 'ends', timber: !L && pal.timber, form: { turret: null, front: 'eaves', dormer: null, bay: null, balcony: null } });
+    const g = pal.style === 'timber' || (!L && pal.timber) ? 'plain' : F.gable === 'plain' ? 'stepped' : F.gable;
+    for (const x of [-0.62, -0.32, 0.32, 0.62]) wallGable(c, g, x, z0 + 0.21, 0.24, H, 0.24, 0.24, wall, roof, trim, 0.85);
+    house(c, { x: 0, z: z0 + 0.24, w: 0.2, d: 0.2, h: H + 0.26, floors: floors + 1, wall, roof, roofType: 'gable', alongZ: true, rh: 0.2, doorX: 0, doorW: 0.1, nFront: 1, chimney: false, plinth: STONE, form: false });
+    for (const s of [-1, 1]) tallBay(c, s * 0.15, z0 + 0.21, H / floors, floors, wall, roof, 0.85, false, floors, 0.12);
+  } else if (plan === 3) {
+    // a château: mansards, round towers at the ends of the centre block
+    house(c, { x: 0, z: z0, w: 0.72, d: 0.5, h: H, floors, wall, roof, roofType: 'mansard', rh: 0.34, dormers: 4, plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3, chimney: true, chimneyPos: 'ends', form: false });
+    for (const s of [-1, 1]) turret(c, 'round', s * 0.36, z0 + 0.2, 0, H + 0.2, 0.09, H / floors, wall, roof, 0.85);
+    for (const s of [-1, 1]) house(c, { x: s * (W / 2 - 0.24), z: z0 + 0.04, w: 0.4, d: 0.42, h: L ? 0.62 : 0.46, floors: 2, wall, roof, roofType: 'mansard', rh: 0.24, dormers: 2, noDoor: true, plinth: STONE, nFront: 2, chimney: true, form: false });
+    porchOf(c, 'portico', 0, z0 + 0.25, 0.2, wall, roof, 0.72, 0.3);
+  } else {
+    // centre block with two wings and a portico
+    house(c, { x: 0, z: z0, w: 0.7, d: 0.5, h: H, floors, wall, roof, roofType: 'hip', rh: 0.3, plinth: STONE, doorX: 0, doorW: 0.12, nFront: 3, chimney: true, form: { porch: null, turret: null } });
+    for (const s of [-1, 1]) house(c, { x: s * (W / 2 - 0.26), z: z0 + 0.04, w: 0.44, d: 0.42, h: L ? 0.62 : 0.46, floors: 2, wall, roof, roofType: 'hip', rh: 0.22, noDoor: true, plinth: STONE, nFront: 2, chimney: true });
+    for (let i = 0; i < 4; i++) gb.cyl(-0.15 + i * 0.1, 0.02, z0 + 0.32, 0.016, 0.019, 0.36, 8, trim);
+    gb.gable(0, 0.38, z0 + 0.3, 0.4, 0.14, 0.09, trim, roof, 0.02);
+  }
   const gz = f.dep / 2 - 0.2;
   gb.box(0, c.gy(0, gz) - 0.006, gz, 0.12, 0.012, 0.3, '#cdbf9e');
   for (const s of [-1, 1]) { hedge(c, s * 0.42, gz, 0.5, 0.05); flowers(c, s * 0.25, gz - 0.06, 6, 0.06); smallTree(c, s * (W / 2 - 0.08), gz, 0.9); }
@@ -5018,23 +5383,58 @@ MODELS.mansion = (c, L) => {
   if (f.turned) gb.pop();
 };
 
+// Apartments on a double plot, in one of their plans: stacked balconies
+// either side of the doors; bays up every floor under a parapet; a mansard
+// over a pedimented middle; domed turrets on the front corners with long
+// balconies between; or the middle set back between two end blocks, round a
+// court with its own doors.
 MODELS.apartments = (c, L) => {
   const { gb, rng, pal } = c;
-  const f = rowFrame(c);
-  const W = f.len - 0.12, D = 0.62, z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2;
-  const floors = L ? 6 : 4, h = floors * 0.25;
+  const f = rowFrame(c), F = c.form, plan = planOf(c, 5);
+  const W = f.len - 0.12, D = 0.62, z0 = -f.dep / 2 + D / 2 + 0.06, fz = z0 + D / 2, fh = 0.25;
+  const floors = L ? 6 : 4, h = floors * fh;
   const wall = pal.style === 'brick' || (!pal.forced && rng.chance(0.5)) ? pal.brick : pal.stoneWall, trim = '#e3dccd';
-  house(c, { x: 0, z: z0, w: W, d: D, h, floors, wall, roof: pal.slate, roofType: L ? 'flat' : 'hip', rh: 0.26, plinth: STONE_D, doorX: 0, doorW: 0.14, nFront: Math.round(W / 0.16), fancy: false, door: '#3a2f28' });
-  for (let k = 1; k < floors; k++) gb.box(0, k * 0.25 - 0.008, z0, W + 0.02, 0.014, D + 0.02, trim);
-  // stacked balconies either side of the entrance
-  for (let k = 1; k < floors; k++) for (const s of [-1, 1]) {
-    const x = s * W * 0.28, y = k * 0.25;
-    gb.box(x, y, fz + 0.035, 0.24, 0.012, 0.07, trim);
-    gb.box(x, y + 0.012, fz + 0.068, 0.24, 0.045, 0.006, '#2f2f33');
+  const roofType = [L ? 'flat' : 'hip', 'parapet', 'mansard', 'parapet', L ? 'parapet' : 'hip'][plan];
+  const nF = Math.round(W / 0.16);
+  if (plan === 4) {
+    // the middle set back between the end blocks: a court with a fountain
+    const ew = 0.5, mw = W - 2 * ew + 0.04;
+    house(c, { x: 0, z: z0 - 0.12, w: mw, d: D - 0.24, h, floors, wall, roof: pal.slate, roofType, rh: 0.24, plinth: STONE_D, doorX: 0, doorW: 0.14, nFront: Math.round(mw / 0.16), fancy: false, door: '#3a2f28' });
+    for (const s of [-1, 1]) house(c, { x: s * (W / 2 - ew / 2), z: z0, w: ew, d: D, h, floors, wall, roof: pal.slate, roofType, rh: 0.26, plinth: STONE_D, noDoor: true, nFront: 3, fancy: false });
+    for (let k = 1; k < floors; k++) gb.box(0, k * fh - 0.008, z0, W + 0.02, 0.014, D + 0.02, trim);
+    const cz = fz - 0.12;
+    gravel(c, 0, cz, mw - 0.06, 0.2);
+    gb.cyl(0, c.gy(0, cz) - 0.01, cz, 0.07, 0.08, 0.04, 10, STONE);
+    gb.cyl(0, c.gy(0, cz) + 0.025, cz, 0.06, 0.06, 0.004, 10, '#3f7f9f');
+    c.fountain = [0, c.gy(0, cz) + 0.06, cz];
+  } else {
+    house(c, { x: 0, z: z0, w: W, d: D, h, floors, wall, roof: pal.slate, roofType, rh: 0.26, dormers: plan === 2 ? Math.round(W / 0.2) : 0, plinth: STONE_D, doorX: 0, doorW: 0.14, nFront: nF, fancy: false, door: '#3a2f28' });
+    for (let k = 1; k < floors; k++) gb.box(0, k * fh - 0.008, z0, W + 0.02, 0.014, D + 0.02, trim);
   }
-  gb.gable(0, 0.3, fz + 0.04, 0.26, 0.1, 0.08, trim, pal.slate, 0.02);
-  if (L) { for (const x of [-W * 0.3, 0, W * 0.3]) { gb.cbox(x, h + 0.04, z0, 0.16, 0.12, 0.14, wall, 0, 0.01); } gb.box(0, h + 0.045, z0, W + 0.03, 0.03, D + 0.03, trim); }
-  for (const x of [-W * 0.42, W * 0.42]) chimney(c, x, h - 0.1, h + (L ? 0.3 : 0.38), z0 - 0.12, 'home', STONE);
+  if (plan === 1) {
+    for (const x of [-0.66, -0.3, 0.3, 0.66]) tallBay(c, x * (W / 1.88), fz, fh, floors, wall, pal.slate, 0.8, false, floors, 0.16);
+  } else if (plan === 2) {
+    // a pedimented middle, brought forward and carried up over the cornice
+    const pw = 0.5;
+    gb.cbox(0, 0, fz + 0.02, pw, h + 0.04, 0.05, wall, 0, 0.006);
+    for (let k = 1; k < floors; k++) for (const u of [-0.16, 0, 0.16]) win(c, u, k * fh + fh * 0.36, fz + 0.046, 0.06, 0.1, 'f', 0.8);
+    gb.box(0, h + 0.04, fz + 0.02, pw + 0.03, 0.02, 0.07, trim);
+    gb.gable(0, h + 0.06, fz + 0.02, pw + 0.03, 0.06, 0.12, trim, trim, 0.01, true);
+  } else if (plan === 3) {
+    for (const s of [-1, 1]) turret(c, 'dome', s * (W / 2 - 0.05), fz - 0.04, 0, h + fh * 0.8, 0.09, fh, wall, pal.slate, 0.8);
+    for (const k of [1, floors - 1]) balcony(c, 'iron', 0, k * fh, fz, W - 0.4);
+  } else if (plan === 0) {
+    // stacked balconies either side of the entrance
+    for (let k = 1; k < floors; k++) for (const s of [-1, 1]) {
+      const x = s * W * 0.28, y = k * fh;
+      gb.box(x, y, fz + 0.035, 0.24, 0.012, 0.07, trim);
+      gb.box(x, y + 0.012, fz + 0.068, 0.24, 0.045, 0.006, '#2f2f33');
+    }
+  }
+  if (plan !== 4) gb.gable(0, 0.3, fz + 0.04, 0.26, 0.1, 0.08, trim, pal.slate, 0.02);
+  if (L && roofType === 'flat') { for (const x of [-W * 0.3, 0, W * 0.3]) { gb.cbox(x, h + 0.04, z0, 0.16, 0.12, 0.14, wall, 0, 0.01); } gb.box(0, h + 0.045, z0, W + 0.03, 0.03, D + 0.03, trim); }
+  const st = roofType === 'mansard' ? h + 0.36 : roofType === 'parapet' ? h + 0.18 : h + (L ? 0.3 : 0.38);
+  for (const x of [-W * 0.42, W * 0.42]) chimney(c, x, h - 0.1, st, z0 - 0.12, 'home', STONE);
   lamp(c, -0.2, fz + 0.18, 0.3); lamp(c, 0.2, fz + 0.18, 0.3);
   if (f.turned) gb.pop();
 };

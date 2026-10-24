@@ -81,6 +81,9 @@ export function formOf(variant, pal) {
     balcony: weighted(r, S.balcony),
     turret: weighted(r, S.turret),
     crest: weighted(r, [[null, 3], ['cupola', 2], ['finials', 2], ['vane', 2]]),
+    // a shop's: its shopfront, and the second way it puts up its name
+    shopfront: weighted(r, [['plain', 3], ['pilasters', 2], ['transom', 2], ['recessed', 2]]),
+    sign: weighted(r, [[null, 3], ['blade', 2], ['band', 2], ['eaves', 2]]),
     // the model's own choices: which of its plans, a storey more, which side
     // a wing or lean-to goes, and two more for whatever else it varies
     plan: r.int(0, 59),
@@ -337,7 +340,9 @@ export function balcony(c, kind, x, y, z, w) {
   }
   gb.box(x, y, z + 0.028, w, 0.012, 0.056, shade(STONE, 1.15));
   gb.box(x, y + 0.048, z + 0.054, w, 0.006, 0.006, IRON);
-  const n = Math.max(3, Math.round(w / 0.022));
+  // a long one reads as a run of ironwork: a lattice panel between fewer posts
+  if (w > 0.4) gb.box(x, y + 0.02, z + 0.054, w, 0.016, 0.003, IRON);
+  const n = Math.max(3, Math.round(w / (w > 0.4 ? 0.07 : 0.022)));
   for (let i = 0; i <= n; i++) gb.box(x - w / 2 + (i * w) / n, y + 0.012, z + 0.054, 0.004, 0.036, 0.004, IRON);
   for (const s of [-1, 1]) gb.box(x + s * w / 2, y + 0.012, z + 0.028, 0.004, 0.036, 0.052, IRON);
 }
