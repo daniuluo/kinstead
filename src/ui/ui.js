@@ -3,6 +3,7 @@
 import { CONFIG, DRESSINGS, ROAD_LEVELS, SEASONS, titleFor, seasonOf, TITLES, TREE_COST, TERRAFORM_COST, streetPart, lookPart } from '../config.js';
 import { BUILDINGS, CATEGORIES, SERVICES, TRANSIT, RAIL_COST, unlockOf, TECHS, STYLE_TECH, servicesOf, BRANCHES, MERGES, techForLevel, CAPABILITIES, growsInto, plotName, parkOrigin, visitOf, KINDS, kindOf, ESTATE_TYPES, PRODUCE, produceOf, FARM_JOIN, sellsText, choosesProduce, CIVIC_QUARTER, CIVIC_TYPES } from '../defs.js';
 import { isOpen, capOf, isExpanded, sizeK, sizeKFor, scaledLevel, householdCap, civicQuarter, buildingCenter } from '../world/world.js';
+import { TURN_MAX, NUDGE } from '../world/pose.js';
 import { thumb } from './thumbs.js';
 import { computeIssues } from './issues.js';
 import { BlockedIcons, workingHTML, needsNoteHTML, buryHTML, townRoadTiles } from './working.js';
@@ -238,7 +239,7 @@ export class UI {
     if (cat === 'roads') {
       for (const L of [1, 2, 3]) {
         const d = ROAD_LEVELS[L];
-        cards.push(card(`road:${L}`, ['🟫', '🪨', '⬛'][L - 1], d.name, `${d.cost} / tile`, pop < d.unlock ? d.unlock : 0, () => this.game.input.setTool({ kind: 'road', level: L }), 'Drag to build. Drawing over a lesser road upgrades it.'));
+        cards.push(card(`road:${L}`, ['🟫', '🪨', '⬛'][L - 1], d.name, `${d.cost} / tile`, pop < d.unlock ? d.unlock : 0, () => this.game.input.setTool({ kind: 'road', level: L }), 'Drag to build, along the grid or at 45° for a diagonal street. Drawing over a lesser road upgrades it.'));
       }
       cards.push(card('roadsel', '<span class="ms">highlight_alt</span>', 'Select roads', '', 0, () => this.game.input.setTool(roadSelTool()), 'Pick whole stretches of road, then upgrade, downgrade or take them all up at once.'));
     } else if (cat === 'terrain') {
@@ -314,10 +315,10 @@ export class UI {
     const h = $('toolHint');
     let msg = '';
     switch (t.kind) {
-      case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · drawing over roads upgrades them · right-click to stop`; break;
+      case 'road': msg = `Drag to lay ${ROAD_LEVELS[t.level].name.toLowerCase()} · ${t.grid ? 'along the grid only (Tab: diagonals too)' : 'drag at 45° for a diagonal street (Tab: grid only)'} · drawing over roads upgrades them · right-click to stop`; break;
       case 'rail': msg = 'Drag to lay track · trains need a loop · track can cross roads · right-click to stop'; break;
       case 'roadsel': msg = `Click a road to pick its stretch · Shift-click adds · drag to pick a ${t.box ? 'box' : 'line'} (Tab: ${t.box ? 'line' : 'box'}) · Backspace undoes · right-click clears`; break;
-      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name}${KINDS[t.type] ? ` (${t.flavor ? KINDS[t.type][t.flavor].name.toLowerCase() : 'its kind by its seed'}: choose above)` : ''} · builders will put it up · Tab flips the entrance · right-click to stop`; break;
+      case 'build': msg = `Click to place a ${BUILDINGS[t.type].levels[0].name}${KINDS[t.type] ? ` (${t.flavor ? KINDS[t.type][t.flavor].name.toLowerCase() : 'its kind by its seed'}: choose above)` : ''} · builders will put it up · Tab flips the entrance · Z / C turn it · right-click to stop`; break;
       case 'move': {
         const b = this.world.buildings.get(t.id);
         msg = b ? `Click a new plot for the ${BUILDINGS[b.type].levels[b.level].name} · it is taken down, carted over and rebuilt · Tab flips the entrance · right-click to cancel` : '';
@@ -713,6 +714,16 @@ export class UI {
         h += '</div></div>';
       }
     }
+    // turned and nudged on its plot (see world/pose.js)
+    if (!b.con && !b.spare) {
+      const p = b.pose || { a: 0, x: 0, z: 0 }, deg = Math.round((p.a * 180) / Math.PI);
+      const btn = (op, icon, title, off) => `<button class="btn" data-act="pose" data-op="${op}" title="${title}" ${off ? 'disabled' : ''}><span class="ms">${icon}</span></button>`;
+      h += `<div class="sec"><h5>On its plot</h5><div class="note">${b.pose ? `Turned ${deg ? `${Math.abs(deg)}° ${deg > 0 ? 'anticlockwise' : 'clockwise'}` : 'square'}${p.x || p.z ? ', nudged' : ''}, as you placed it.` : b.curve ? 'Turned to sit square to the curve of the street.' : b.diag ? 'Turned to face the diagonal street.' : 'Square to its street.'} It stays on its plot, a little smaller if it has to.</div><div class="actions">`
+        + btn('ccw', 'rotate_left', 'Turn it anticlockwise', p.a >= TURN_MAX - 1e-6) + btn('cw', 'rotate_right', 'Turn it clockwise', p.a <= -TURN_MAX + 1e-6)
+        + btn('left', 'arrow_back', 'Nudge it left, as seen from the street', p.x <= -NUDGE + 1e-6) + btn('right', 'arrow_forward', 'Nudge it right, as seen from the street', p.x >= NUDGE - 1e-6)
+        + btn('fwd', 'arrow_downward', 'Nudge it towards the street', p.z >= NUDGE - 1e-6) + btn('back', 'arrow_upward', 'Nudge it back from the street', p.z <= -NUDGE + 1e-6)
+        + `<button class="btn" data-act="pose" data-op="square" ${b.pose ? '' : 'disabled'} title="Square it up to its street again">Square up</button></div></div>`;
+    }
     h += `<div class="actions">`;
     if (!b.con) h += w.hasTech('relocation')
       ? `<button class="btn" data-act="move" title="Builders take it down, cart the materials over and rebuild it">↔ Move · ${fmt(w.moveCost(b))}</button>`
@@ -801,7 +812,7 @@ export class UI {
       h += `<div class="head"><div class="big">${['', '🟫', '🪨', '⬛'][L]}</div><div><h3>${d.name}</h3><div class="sub">${w.terrain.isWater(x, z) ? 'Bridge' : 'Road'} · upkeep ${d.upkeep}/day</div></div></div>`;
       const lane = !!w.blvd[w.idx(x, z)], dv = w.dress[w.idx(x, z)];
       const chip = (D) => (D ? `<span class="chip"><span class="ms">${D.icon}</span> ${D.name}</span>` : '');
-      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${lane ? '<span class="chip"><span class="ms">add_road</span> Boulevard</span>' : ''}${chip(DRESSINGS[lookPart(dv)])}${chip(DRESSINGS[streetPart(dv)])}</div>`;
+      h += `<div class="chips">${w.connected[w.idx(x, z)] ? '<span class="chip ok">Connected</span>' : '<span class="chip no">Not connected to the entrance</span>'}${lane ? '<span class="chip"><span class="ms">add_road</span> Boulevard</span>' : ''}${w.diag[w.idx(x, z)] & 15 ? '<span class="chip"><span class="ms">north_east</span> Diagonal</span>' : ''}${chip(DRESSINGS[lookPart(dv)])}${chip(DRESSINGS[streetPart(dv)])}</div>`;
       if (lane) h += boulevardHTML(this.game, x, z);
       h += buryHTML(this.game, x, z);
       if (L < 3) {
@@ -861,6 +872,18 @@ export class UI {
         break;
       }
       case 'move': g.input.setTool({ kind: 'move', id: sel.id }); break;
+      case 'pose': {
+        const pb = w.buildings.get(sel.id);
+        if (!pb) break;
+        const p = pb.pose ? { ...pb.pose } : { a: 0, x: 0, z: 0 }, turn = Math.PI / 12, step = 0.05;
+        const next = { ccw: { a: p.a + turn }, cw: { a: p.a - turn }, left: { x: p.x - step }, right: { x: p.x + step }, fwd: { z: p.z + step }, back: { z: p.z - step } }[data.op];
+        const q = next ? { ...p, ...next } : null;
+        g.cmd({ t: 'pose', id: pb.id, pose: q ? [Math.max(-TURN_MAX, Math.min(TURN_MAX, q.a)), Math.max(-NUDGE, Math.min(NUDGE, q.x)), Math.max(-NUDGE, Math.min(NUDGE, q.z))] : null }, (r) => {
+          if (!r.ok && r.reason) this.toast(r.reason, 'bad');
+          this.renderInspector(true);
+        });
+        break;
+      }
       case 'paths': { const pb = w.buildings.get(sel.id); if (pb) showPathMap(this, pb); break; }
       case 'kind': {
         const kb = w.buildings.get(sel.id), K = kb && KINDS[kb.type];

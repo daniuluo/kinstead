@@ -9,6 +9,7 @@ import { dressSpots } from '../world/roadDress.js';
 import { boulevardSpots } from '../world/boulevard.js';
 import { BUILDINGS, produceOf } from '../defs.js';
 import { streetPart } from '../config.js';
+import { spillTile, shapeAt } from '../world/roadShape.js';
 
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }
 
@@ -330,14 +331,18 @@ export class NatureView {
         const avg = t.tileAvg(x, z);
         if (avg < 0.2 || avg > 2.4) continue;
         const n = Math.floor(hash2(x, z, 41) * 3);
+        // (not on a diagonal street spilling over the tile's corner)
+        const sp = w.diagN ? spillTile(w, x, z) : null, road = (px, pz) => !!sp && !!shapeAt(sp, px, pz, 0);
         for (let k = 0; k < n; k++) {
           const px = x + hash2(x, z, 50 + k), pz = z + hash2(x, z, 60 + k);
+          if (road(px, pz)) continue;
           put('tuft', px, t.heightAt(px, pz), pz, 0.8 + hash2(x, z, 70 + k) * 0.6, hash2(x, z, 80 + k) * 6, mixC(TUFT[s], TUFT[n], sw));
         }
         if (hash2(x, z, 43) < 0.18 * flowering) {
           const fc = BLOOMS[Math.floor(hash2(x, z, 44) * BLOOMS.length)];
           for (let k = 0; k < 3; k++) {
             const px = x + 0.15 + hash2(x, z, 90 + k) * 0.7, pz = z + 0.15 + hash2(x, z, 95 + k) * 0.7;
+            if (road(px, pz)) continue;
             put('bloom', px, t.heightAt(px, pz), pz, 1, 0, fc);
           }
         }

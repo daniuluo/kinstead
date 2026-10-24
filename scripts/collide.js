@@ -15,7 +15,10 @@
 // across its busiest part first.
 // Usage: node scripts/collide.js [towns=all] [days=2] [--verbose] [--probe=id,x,z]
 //   towns: starter ids, comma-separated ('all': every starter but the heavy
-//   Metropolis; 'scale': a big town grown by the demo bot)
+//   Metropolis, and 'diagonal'; 'scale': a big town grown by the demo bot;
+//   'diagonal': the market town with diagonal streets laid out of it, lined
+//   with buildings turned to face them; 'freeform': the market town with
+//   every building turned and nudged on its plot)
 //   --probe: the solid parts of building id over point (x, z), its door, and
 //   the way villagers walk in to it
 
@@ -24,6 +27,9 @@ import { GeoBuilder } from '../src/render/geo.js';
 import { buildModel, workArea } from '../src/render/buildings.js';
 import { STARTERS, loadStarter } from '../src/world/starters.js';
 import { World, fw, fd, isOpen, doorPoint } from '../src/world/world.js';
+import { facingAngle, strokeTiles } from '../src/world/diagonal.js';
+import { surfaceAt, CORNERS } from '../src/world/roadShape.js';
+import { TURN_MAX, NUDGE } from '../src/world/pose.js';
 import { plotPath } from '../src/sim/plotNav.js';
 import { growDemoTown } from '../src/world/demo.js';
 import { PathFinder } from '../src/sim/path.js';
@@ -100,7 +106,7 @@ class Solids {
     const target = b.con ? buildModel(up ? { ...b, type: b.con.toType || b.type, level: b.con.to, look: b.con.look !== undefined ? b.con.look : b.look, flavor: b.con.flavor !== undefined ? b.con.flavor : b.flavor } : b, { ground }) : null;
     const model = b.con ? (up ? buildModel(b, { ground }) : target) : buildModel(b, { ground });
     const jit = model.jitter;
-    const th = (b.rot * Math.PI) / 2 + jit.yaw, co = Math.cos(th), si = Math.sin(th);
+    const th = facingAngle(b) + jit.yaw, co = Math.cos(th), si = Math.sin(th);
     const cx = b.x + fw(b) / 2 + jit.ox, cz = b.z + fd(b) / 2 + jit.oz;
     const toW = (x, z) => [cx + x * co + z * si, cz - x * si + z * co];
     // as WorldView.addBuilding / _addSite
@@ -311,6 +317,8 @@ function sweepGrounds(game, S, F) {
 
 // Every part of every model inside its own plot (or its frontage, or the land
 // it took on), but for what reaches out on purpose (a pier over the water).
+// A building facing a diagonal street stands turned on its plot, and may use
+// the verge of the two road tiles the street links beside it, never the road.
 function sweepPlots(game, S, F) {
   const w = game.world, DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
   for (const B of w.buildings.values()) {
@@ -319,9 +327,11 @@ function sweepPlots(game, S, F) {
     if (dx > 0) e.x1 += f; if (dx < 0) e.x0 += f; if (dz > 0) e.z1 += f; if (dz < 0) e.z0 += f;
     const X0 = B.x - e.x0, Z0 = B.z - e.z0, X1 = B.x + fw(B) + e.x1, Z1 = B.z + fd(B) + e.z1;
     let worst = 0, ex = null;
+    const verge = B.diag ? w._diagPair(B, B.diag - 1) : [];
     for (const p of S.byB.get(B.id) || []) {
       if (p.y1 - p.y0 < 0.01 && p.y1 < B.baseY + 0.03) continue;   // flat on the ground (a path, a shadow)
       for (const [x, z] of p.h) {
+        if (verge.some(([vx, vz]) => vx === Math.floor(x) && vz === Math.floor(z)) && !surfaceAt(w, x, z)) continue;
         const out = Math.max(X0 - x, x - X1, Z0 - z, z - Z1);
         if (out > worst) { worst = out; ex = [x, z]; }
       }
@@ -517,9 +527,48 @@ function play(label, w) {
   return F.serious;
 }
 
+// A few diagonal streets out of a town, lined with homes and shops turned to
+// face them (see world/diagonal.js), for the 'diagonal' town.
+function diagonalStreets(w) {
+  w.setSandbox({ ...w.sandbox, infiniteMoney: true, unlockAll: true });
+  const kinds = ['house', 'bakery', 'house', 'grocer', 'house', 'tavern', 'house', 'coffeehouse', 'playground', 'house', 'garden'];
+  let laid = 0, n = 0, t = 0;
+  for (let z = 2; z < w.N - 2 && laid < 4; z++) for (let x = 2; x < w.N - 2 && laid < 4; x++) {
+    if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)] || (x * 7 + z * 3) % 5) continue;
+    for (const [dx, dz] of CORNERS) {
+      const tiles = strokeTiles({ x, z }, { x: x + dx * 8, z: z + dz * 8 });
+      if (!tiles.every(([tx, tz]) => w.inBounds(tx, tz)) || !w.checkStroke(tiles, 2).slice(1).every(c => c.ok && !c.noop)) continue;
+      if (!w.placeRoads(tiles, 1 + (laid % 3), { stroke: true }).placed) continue;
+      laid++;
+      for (let i = 1; i < tiles.length - 1; i++) for (const [hx, hz] of [[tiles[i + 1][0], tiles[i][1]], [tiles[i][0], tiles[i + 1][1]]]) {
+        if (w.placeBuilding(kinds[n % kinds.length], hx, hz, { instant: true, variant: 1000 + n * 7919 + t * 31 + Number(process.env.COLLIDE_SEED || 0) * 104729 }).ok) n++;
+        t++;
+      }
+      break;
+    }
+  }
+  console.log(`     (${laid} diagonal streets, ${n} buildings facing them)`);
+}
+
 let failed = 0;
-const towns = which.includes('all') ? STARTERS.filter(d => !d.heavy).map(d => d.id) : which;
+const towns = which.includes('all') ? [...STARTERS.filter(d => !d.heavy).map(d => d.id), 'diagonal', 'freeform'] : which;
 for (const id of towns) {
+  if (id === 'freeform') {
+    const w = loadStarter('market', { name: 'Askew' });
+    // every building turned up to 45 degrees either way and nudged (see world/pose.js)
+    let n = 0, seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
+    for (const b of w.buildings.values()) if (w.setPose(b.id, [(rnd() * 2 - 1) * TURN_MAX, (rnd() * 2 - 1) * NUDGE, (rnd() * 2 - 1) * NUDGE]).ok && b.pose) n++;
+    console.log(`     (${n} buildings turned and nudged)`);
+    failed += play('market town, every building askew', w) ? 1 : 0;
+    continue;
+  }
+  if (id === 'diagonal') {
+    const w = loadStarter('market', { name: 'Slantham' });
+    diagonalStreets(w);
+    failed += play('market town with diagonal streets', w) ? 1 : 0;
+    continue;
+  }
   if (id === 'scale') {
     const w = World.createNew({ N: 64, seed: 77, name: 'Botton' });
     growDemoTown(w, 77, 2);

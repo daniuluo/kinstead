@@ -20,7 +20,7 @@ const CELL = 0.125, ARC = 8;
 // flags, promenades with cobbles (the others are grass)
 const FILL = { btram: ['#9d978b', '#938d81', '#a49e92'], bprom: ['#a49a88', '#978d7c', '#aba291', '#8e8574'] };
 const STATUES = ['figure', 'rider', 'column', 'obelisk', 'urn', 'angel'];
-import { HALF, BAND, SIDES, roadTile, cornerFrame, shapeAt, linked } from '../world/roadShape.js';
+import { HALF, BAND, SIDES, CORNERS, roadTile, spillTile, shapeOf, cornerFrame, shapeAt, fieldAt, linked, diagRun } from '../world/roadShape.js';
 import { bridgeDeckY, RAMP, isOpen } from '../world/world.js';
 import { plainLamp, dressSpots, poleCorner } from '../world/roadDress.js';
 import { medianSegs, medianPoints, boulevardSpots } from '../world/boulevard.js';
@@ -139,8 +139,15 @@ export class RoadsView {
     const w = this.world, t = w.terrain, N = w.N;
     const pos = [], col = [];
     const c = new THREE.Color();
+    // (only a road tile beside a bridge has a ramp up to it)
+    const rampy = new Uint8Array(N * N);
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!w.roads[z * N + x] || t.isWater(x, z)) continue;
+      for (const [dx, dz] of SIDES) if (w.roadAt(x + dx, z + dz) && t.isWater(x + dx, z + dz)) rampy[z * N + x] = 1;
+    }
     const height = (x, z) => {
-      if (w.rampHeight(x, z) != null) return null;
+      const tx = Math.floor(x), tz = Math.floor(z);
+      if (tx >= 0 && tz >= 0 && tx < N && tz < N && rampy[tz * N + tx] && w.rampHeight(x, z) != null) return null;
       return t.heightAt(x, z) + 0.018;
     };
     // one four-sided cell (corners in order round it) in one colour (kerb:
@@ -255,10 +262,83 @@ export class RoadsView {
         for (let j = 0; j + 1 < A.length; j++) cell([A[j], A[j + 1], B[j + 1], B[j]], L, kb && (j === 0 || j === A.length - 2));
       }
     };
+    // a tile a diagonal touches (see roadShape.js) is laid from the field,
+    // in cells an eighth of a tile across, as the grid's are, in the same
+    // colours. The field is a distance, so a cell whose corners are all
+    // further than its half-diagonal off the road (or onto it) is wholly off
+    // (or on). Where the road's edge crosses a cell it is cut in two along
+    // the diagonal the edge runs nearer, each half clipped to the roadway and
+    // to the band of edging stones along its edge (where the field is within
+    // BAND of it); where the edge curves within it (the field isn't flat
+    // across it), it is split in four first.
+    const G = 16, gs = 1 / G, F = new Float32Array((G + 1) * (G + 1)), kc = new THREE.Color(), REACH = 0.09;
+    const clip = (poly, t, above) => {
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const ia = above ? a[2] >= t : a[2] <= t, ib = above ? b[2] >= t : b[2] <= t;
+        if (ia) out.push(a);
+        if (ia !== ib) { const k = (t - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, t]); }
+      }
+      return out;
+    };
+    const fan = (poly, color) => {
+      if (poly.length < 3) return;
+      const h = poly.map(([px, pz]) => height(px, pz));
+      if (h.some(v => v == null)) return;
+      for (let i = 1; i + 1 < poly.length; i++) {
+        const a = poly[0], b = poly[i], d = poly[i + 1];
+        // keep the faces pointing up whichever way round they run
+        const turn = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]);
+        const vs = turn < 0 ? [[a, h[0]], [b, h[i]], [d, h[i + 1]]] : [[a, h[0]], [d, h[i + 1]], [b, h[i]]];
+        for (const [p, y] of vs) { pos.push(p[0], y, p[1]); col.push(color.r, color.g, color.b); }
+      }
+    };
+    // one cell (corners i0, j0 to i1, j1 in sixteenths) clipped from the samples in F
+    const clipCell = (x, z, i0, j0, i1, j1, kb) => {
+      const f00 = at(i0, j0), f10 = at(i1, j0), f01 = at(i0, j1), f11 = at(i1, j1);
+      if (f00 > 0 && f10 > 0 && f01 > 0 && f11 > 0) return;
+      const x0 = x + i0 * gs, z0 = z + j0 * gs, x1 = x + i1 * gs, z1 = z + j1 * gs;
+      const halves = Math.abs(f00 - f11) < Math.abs(f10 - f01)
+        ? [[[x0, z0, f00], [x1, z0, f10], [x1, z1, f11]], [[x0, z0, f00], [x1, z1, f11], [x0, z1, f01]]]
+        : [[[x0, z0, f00], [x1, z0, f10], [x0, z1, f01]], [[x1, z0, f10], [x1, z1, f11], [x0, z1, f01]]];
+      for (const t of halves) {
+        fan(clip(t, -kb, false), c);
+        if (kb) fan(clip(clip(t, 0, false), -kb, true), kc);
+      }
+    };
+    const at = (i, j) => F[j * (G + 1) + i];
+    const fieldTile = (s) => {
+      const { x, z, prims } = s, put = (i, j) => { F[j * (G + 1) + i] = fieldAt(prims, x + i * gs, z + j * gs)[0]; };
+      for (let j = 0; j <= G; j += 2) for (let i = 0; i <= G; i += 2) put(i, j);
+      for (let J = 0; J < G; J += 2) for (let I = 0; I < G; I += 2) {
+        const c00 = at(I, J), c20 = at(I + 2, J), c02 = at(I, J + 2), c22 = at(I + 2, J + 2);
+        if (Math.min(c00, c20, c02, c22) > REACH) continue;
+        const L = s.L || fieldAt(prims, x + (I + 1) * gs, z + (J + 1) * gs)[1];
+        if (!L) continue;
+        const kb = KERB[L] ? BAND : 0, n = hash2(x * G + I + 1, z * G + J + 1, 3) - 0.5;
+        const solid = () => cell([[x + I * gs, z + J * gs], [x + I * gs, z + (J + 2) * gs], [x + (I + 2) * gs, z + (J + 2) * gs], [x + (I + 2) * gs, z + J * gs]], L, 0);
+        if (Math.max(c00, c20, c02, c22) < -kb - REACH) { solid(); continue; }
+        put(I + 1, J); put(I, J + 1); put(I + 1, J + 1); put(I + 2, J + 1); put(I + 1, J + 2);
+        let lo = 9, hi = -9;
+        for (let j = J; j <= J + 2; j++) for (let i = I; i <= I + 2; i++) { const f = at(i, j); if (f < lo) lo = f; if (f > hi) hi = f; }
+        if (lo > 0) continue;
+        if (hi <= -kb) { solid(); continue; }
+        c.copy(SURF[L]).multiplyScalar(1 + n * (L === 2 ? 0.16 : 0.08));
+        if (kb) kc.copy(KERB[L]).multiplyScalar(1 + n * 0.08);
+        // flat across the cell (a straight edge): one cell; curving: four
+        const flat = Math.abs(at(I + 1, J) - (c00 + c20) / 2) < 0.002 && Math.abs(at(I + 1, J + 2) - (c02 + c22) / 2) < 0.002
+          && Math.abs(at(I, J + 1) - (c00 + c02) / 2) < 0.002 && Math.abs(at(I + 2, J + 1) - (c20 + c22) / 2) < 0.002
+          && Math.abs(at(I + 1, J + 1) - (c00 + c20 + c02 + c22) / 4) < 0.002;
+        if (flat) { clipCell(x, z, I, J, I + 2, J + 2, kb); continue; }
+        for (let j = J; j < J + 2; j++) for (let i = I; i < I + 2; i++) clipCell(x, z, i, j, i + 1, j + 1, kb);
+      }
+    };
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      const s = roadTile(w, x, z);
+      const s = w.roads[z * N + x] ? roadTile(w, x, z) : w.diagN ? spillTile(w, x, z) : null;
       if (!s) continue;
       med = w.blvd ? w.blvd[z * N + x] : 0;
+      if (s.sdf) { fieldTile(s); continue; }
       if (s.bend >= 0) { bend(s); continue; }
       for (let k = 0; k < 4; k++) if (s.fillets.includes(k)) fillet(s, k); else quarter(s, k);
     }
@@ -278,7 +358,12 @@ export class RoadsView {
   _powerLines(gb) {
     const w = this.world, t = w.terrain, N = w.N;
     const up = (x, z) => !(w.buried && w.buried[w.idx(x, z)]);
-    const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && ((x + z) & 1) === 0 && up(x, z);
+    // a diagonal (see roadShape.js diagRun): a pole on every other tile by x,
+    // on its verge off to one side, wired to the next one two tiles down it;
+    // none where diagonals meet anything
+    const onDiag = (x, z) => !!w.diagN && w.inBounds(x, z) && !!(w.diag[w.idx(x, z)] & 15);
+    const run = (x, z) => (onDiag(x, z) ? diagRun(roadTile(w, x, z)) : -1);
+    const has = (x, z) => w.roadAt(x, z) && !t.isWater(x, z) && up(x, z) && (onDiag(x, z) ? run(x, z) >= 0 && (x & 1) === 0 : ((x + z) & 1) === 0);
     // a pole stands in the verge by the tile's south-east corner (on a
     // boulevard, by the lane's outer verge), tucked further into the corner
     // where the road curves round it
@@ -286,6 +371,13 @@ export class RoadsView {
     const at = (x, z) => {
       const key = z * N + x;
       if (spots.has(key)) return spots.get(key);
+      const r = run(x, z);
+      if (r >= 0) {
+        const [sx, sz] = CORNERS[1 - r], k = 0.3 / Math.SQRT2;
+        const p = [x + 0.5 + sx * k, t.heightAt(x + 0.5 + sx * k, z + 0.5 + sz * k) + H - 0.05, z + 0.5 + sz * k];
+        spots.set(key, p);
+        return p;
+      }
       const s = roadTile(w, x, z), [sx, sz] = poleCorner(w, x, z);
       const on = (px, pz) => s && (shapeAt(s, px, pz, 0) || shapeAt(s, px - sx * 0.035, pz) || shapeAt(s, px, pz - sz * 0.035) || shapeAt(s, px - sx * 0.025, pz - sz * 0.025));
       let k = 0.31;
@@ -300,7 +392,17 @@ export class RoadsView {
       const g = py - H + 0.05;
       gb.cyl(px, g - 0.02, pz, 0.011, 0.015, H + 0.02, 6, '#5e4630');
       this.poles++;
-      gb.box(px, g + H - 0.06, pz, 0.15, 0.013, 0.015, '#5e4630', Math.PI / 4);
+      const r = run(x, z);
+      gb.box(px, g + H - 0.06, pz, 0.15, 0.013, 0.015, '#5e4630', r >= 0 ? 0 : Math.PI / 4);
+      if (r >= 0) {
+        const [dx, dz] = CORNERS[r === 0 ? 2 : 1];
+        if (!has(x + 2 * dx, z + 2 * dz) || run(x + 2 * dx, z + 2 * dz) !== r || run(x + dx, z + dz) !== r || !up(x + dx, z + dz)) continue;
+        const [qx, qy, qz] = at(x + 2 * dx, z + 2 * dz);
+        const flat = Math.hypot(qx - px, qz - pz), len = Math.hypot(flat, qy - py), mx = (px + qx) / 2, my = (py + qy) / 2 - 0.02, mz = (pz + qz) / 2;
+        const ry = Math.atan2(qx - px, qz - pz), ox = Math.cos(ry) * 0.045, oz = -Math.sin(ry) * 0.045;
+        for (const s of [-1, 1]) gb.boxC(mx + ox * s, my, mz + oz * s, 0.005, 0.005, len, '#2a2622', -Math.atan2(qy - py, flat), ry);
+        continue;
+      }
       for (const [dx, dz] of [[2, 0], [0, 2]]) {
         if (!has(x + dx, z + dz) || !linked(w, x, z, dx ? 1 : 2) || !linked(w, x + dx / 2, z + dz / 2, dx ? 1 : 2) || !up(x + dx / 2, z + dz / 2)) continue;
         const [qx, qy, qz] = at(x + dx, z + dz);
@@ -515,7 +617,7 @@ export class RoadsView {
     const shapes = new Map();
     const onRoad = (px, pz) => {
       const key = Math.floor(pz) * N + Math.floor(px);
-      if (!shapes.has(key)) shapes.set(key, roadTile(w, Math.floor(px), Math.floor(pz)));
+      if (!shapes.has(key)) shapes.set(key, shapeOf(w, Math.floor(px), Math.floor(pz)));
       const s = shapes.get(key);
       return s ? shapeAt(s, px, pz, 0) : 0;
     };

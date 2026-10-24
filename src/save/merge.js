@@ -20,6 +20,8 @@ import { RNG, makeNoise2D, fbm, hash2, smoothstep, clamp, lerp } from '../util/r
 import { firstName } from '../util/names.js';
 import { Sim } from '../sim/sim.js';
 import { starterSave } from '../world/starters.js';
+import { turnDiag, linkStroke, tidyDiag, diagCapable } from '../world/diagonal.js';
+import { linksOf, CORNERS } from '../world/roadShape.js';
 
 // Largest merged map. Two big valleys side by side are trimmed of empty
 // countryside at their outer edges to fit (never of buildings).
@@ -224,6 +226,8 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
       s, idx: recs.length, id: s.id(b.id), type: b.type, level: b.level, x, z, w, d, rot: ((b.rot || 0) + 3 * s.k) % 4,
       variant: b.variant, built: b.built, flavor: b.flavor || null, look: b.look || null, con,
       spare: b.spare ? (s.k % 2 ? { w: b.spare.d, d: b.spare.w } : { ...b.spare }) : null,
+      // (a turn on its plot is from the way it faces, so it turns with its town)
+      pose: b.pose ? { ...b.pose } : null,
       leases: (b.leases || []).map(l => ({ ...l, with: s.id(l.with), side: rotSide(l.side, s.k) })),
       value: s.w.buildValue(b), slope0: footSlope(s.w.terrain, b.x, b.z, fw(b), fd(b)), x0: x, z0: z,
     });
@@ -272,8 +276,9 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
 
   // ---- roads and track (the other town's buildings win over them)
   const roads = new Uint8Array(N * N), rails = new Uint8Array(N * N);
-  // buried power lines and street dressings go with their street
-  const buried = new Uint8Array(N * N), dress = new Uint8Array(N * N);
+  // buried power lines, street dressings and diagonal links go with their
+  // street (the links turned with their town)
+  const buried = new Uint8Array(N * N), dress = new Uint8Array(N * N), diag = new Uint8Array(N * N);
   const roadSeeds = [], dryWay = new Uint8Array(N * N);
   for (const s of [A, B]) {
     const sN = s.N;
@@ -289,6 +294,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
       const k = z * sN + x;
       if (v && s.w.buried && s.w.buried[k]) buried[i] = 1;
       if (v && s.w.dress && s.w.dress[k] && !dress[i]) dress[i] = s.w.dress[k];
+      if (v && s.w.diag && s.w.diag[k]) diag[i] = turnDiag(s.w.diag[k], s.k);
       // remember which streets and tracks ran on dry ground (not bridges)
       if (!s.w.terrain.isWater(x, z)) dryWay[i] = 1;
       roadSeeds.push(i, s.tag);
@@ -358,6 +364,8 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   w.rails.set(rails);
   w.buried.set(buried);
   w.dress.set(dress);
+  w.diag.set(diag);
+  tidyDiag(w);
   for (let i = 0; i < N * N; i++) {
     if (!roads[i] && !rails[i]) continue;
     const x = i % N, z = (i / N) | 0;
@@ -396,6 +404,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   for (const b of w.buildings.values()) w._clearTreesNear(b.x, b.z, fw(b), fd(b), 0.22);
 
   // ---- one road network, with a road out to the edge of the map
+  clearCorners(w);
   pickEntry(w, [A, B].map(s => s.tile(s.w.entry.x, s.w.entry.z)), rep);
   w.updateRoadNetwork();
   joinRoads(w, rep);
@@ -763,7 +772,7 @@ function blendTerrain({ N, own, grp, hOf, seam, rep, SRC, ways, dryWay }) {
 
 // ------------------------------------------------------------ buildings
 function restore(w, r) {
-  w.restoreBuilding({ id: r.id, type: r.type, level: r.level, x: r.x, z: r.z, variant: r.variant, rot: r.rot, built: r.built, w: r.w, d: r.d, flavor: r.flavor, con: r.con, look: r.look, spare: r.spare });
+  w.restoreBuilding({ id: r.id, type: r.type, level: r.level, x: r.x, z: r.z, variant: r.variant, rot: r.rot, built: r.built, w: r.w, d: r.d, flavor: r.flavor, con: r.con, look: r.look, spare: r.spare, pose: r.pose });
 }
 
 function unplace(w, r) {
@@ -836,7 +845,9 @@ function pickEntry(w, cands, rep) {
   for (let i = 0; i < N * N; i++) if (w.roads[i]) starts.push(i);
   const path = starts.length ? cheapestPath(w, starts, (i) => edge(i % N, (i / N) | 0)) : null;
   if (path) {
-    for (const i of path) if (!w.roads[i]) { w.roads[i] = 1; w._clearTrees(i % N, (i / N) | 0); rep.entryLaid++; }
+    const fresh = new Set();
+    for (const i of path) if (!w.roads[i]) { w.roads[i] = 1; fresh.add(i); w._clearTrees(i % N, (i / N) | 0); rep.entryLaid++; }
+    laid(w, path, fresh);
     const e = path[path.length - 1];
     w.entry = { x: e % N, z: (e / N) | 0 };
   } else {
@@ -881,6 +892,33 @@ function cheapestPath(w, starts, goal, maxCost = Infinity, lenient = false) {
   return null;
 }
 
+// A diagonal of one town may now pass the corner of a building of the other
+// that can't turn to face it: that link goes (both tiles stay road).
+function clearCorners(w) {
+  const N = w.N, D = w.diag;
+  let n = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (!(D[i] & 15)) continue;
+    const x = i % N, z = (i / N) | 0;
+    for (let k = 0; k < 4; k++) {
+      const [dx, dz] = CORNERS[k];
+      if (!(D[i] & (1 << k)) || !w.inBounds(x + dx, z + dz)) continue;
+      if (![[x + dx, z], [x, z + dz]].some(([ox, oz]) => { const b = w.buildingOn(ox, oz); return b && !diagCapable(b); })) continue;
+      D[i] &= ~(1 << k);
+      D[(z + dz) * N + x + dx] &= ~(1 << ((k + 2) & 3));
+      n++;
+    }
+  }
+  if (n) tidyDiag(w);
+}
+
+// A road just laid along a path of tiles (each next to the last) joins the
+// streets it runs into, even a diagonal's tile cut off from the road beside.
+function laid(w, path, fresh) {
+  const N = w.N;
+  linkStroke(w, path.map(i => [i % N, (i / N) | 0]), fresh);
+}
+
 function roadPieces(w) {
   const N = w.N, comp = new Int32Array(N * N).fill(-1), pieces = [];
   for (let s = 0; s < N * N; s++) {
@@ -889,11 +927,10 @@ function roadPieces(w) {
     comp[s] = id;
     for (let q = 0; q < tiles.length; q++) {
       const i = tiles[q], x = i % N, z = (i / N) | 0;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, nz = z + dz;
-        if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+      // along the grid (not where a diagonal passes by, cut off) and diagonally
+      for (const [nx, nz] of linksOf(w, x, z)) {
         const ni = nz * N + nx;
-        if (w.roads[ni] && comp[ni] < 0) { comp[ni] = id; tiles.push(ni); }
+        if (comp[ni] < 0) { comp[ni] = id; tiles.push(ni); }
       }
     }
     pieces.push(tiles);
@@ -929,10 +966,12 @@ function joinRoads(w, rep) {
     if (!path) break;
     const hit = comp[path[path.length - 1]];
     const lvl = Math.max(1, Math.min(w.roads[path[0]] || 1, w.roads[path[path.length - 1]] || 1));
+    const fresh = new Set();
     for (const i of path) {
-      if (!w.roads[i]) { w.roads[i] = lvl; w._clearTrees(i % N, (i / N) | 0); rep.roadsLaid++; }
+      if (!w.roads[i]) { w.roads[i] = lvl; fresh.add(i); w._clearTrees(i % N, (i / N) | 0); rep.roadsLaid++; }
       if (!inMain[i]) { inMain[i] = 1; net.push(i); }
     }
+    laid(w, path, fresh);
     for (const i of pieces[hit]) if (!inMain[i]) { inMain[i] = 1; net.push(i); }
     left.delete(hit);
     rep.joined++;
@@ -954,7 +993,9 @@ function laneTo(w, r, rep) {
   for (const [x, z] of side) if (w.inBounds(x, z)) ring.add(w.idx(x, z));
   const path = cheapestPath(w, net, (i) => ring.has(i), 18);
   if (!path) return false;
-  for (const i of path) if (!w.roads[i]) { w.roads[i] = 1; w._clearTrees(i % N, (i / N) | 0); rep.roadsLaid++; }
+  const fresh = new Set();
+  for (const i of path) if (!w.roads[i]) { w.roads[i] = 1; fresh.add(i); w._clearTrees(i % N, (i / N) | 0); rep.roadsLaid++; }
+  laid(w, path, fresh);
   w.updateRoadNetwork();
   return true;
 }

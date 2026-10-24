@@ -1,12 +1,19 @@
 // Breadth-first pathfinding over the road and rail grids, with a small cache.
-// In a town with boulevards (world.blvd), roads are searched by cost
-// instead, so traffic keeps to its side: a lane runs one way, with the
-// median on its left (everyone keeps right), and going the wrong way along
-// it, or across the median, costs more than going round.
+// In a town with boulevards (world.blvd) or diagonal streets (world.diag),
+// roads are searched by cost instead: a step along the grid costs 2 and one
+// across a corner 3 (about as much further as it is), and traffic keeps to
+// its side of a boulevard: a lane runs one way, with the median on its left
+// (everyone keeps right), and going the wrong way along it, or across the
+// median, costs more than going round. A road cut off from a diagonal
+// passing by (see diagonal.js) is never stepped onto from it.
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // the world.blvd bit for each of DIRS, and for the side to the left of it
 const BIT = [2, 8, 4, 1], LEFT = [1, 4, 2, 8], RIGHT = [4, 1, 8, 2];
+// world.diag: the cut bit for the side each of DIRS crosses, and on the far
+// side; the diagonal links (roadShape.js CORNERS: NE, SE, SW, NW)
+const CUT = [32, 128, 64, 16], CUT_BACK = [128, 32, 16, 64];
+const CORNERS = [[1, -1], [1, 1], [-1, 1], [-1, -1]];
 const TURN = 6;   // segments in a walker's quarter-circle turn
 
 export class PathFinder {
@@ -35,7 +42,7 @@ export class PathFinder {
     const hit = this.cache.get(key);
     if (hit !== undefined) return hit;
     if (tag === 'r') {
-      if (this.lanes === null) this.lanes = !!(w.blvd && w.blvd.some(Boolean));
+      if (this.lanes === null) this.lanes = !!(w.blvd && w.blvd.some(Boolean)) || w.diagN > 0;
       if (this.lanes) return this._keep(this._lanes(grid, s, g), key);
     }
     const stamp = ++this.stamp;
@@ -71,34 +78,47 @@ export class PathFinder {
   }
 
   // The cheapest way along the roads from tile s to tile g when there are
-  // boulevards: a step costs 1, 2 across a median, 3 the wrong way along a
-  // lane (with its median on the right). Dial's algorithm: a ring of four
-  // buckets by cost, as no step costs more than 3.
+  // boulevards or diagonals: a step costs 2 (3 across a corner), 4 across a
+  // median, 6 the wrong way along a lane (with its median on the right).
+  // Dial's algorithm: a ring of eight buckets by cost, as no step costs more
+  // than 6.
   _lanes(grid, s, g) {
-    const w = this.world, N = w.N, B = w.blvd, prev = this.prev, seen = this.seen;
+    const w = this.world, N = w.N, B = w.blvd, D = w.diag, prev = this.prev, seen = this.seen;
     if (!this.dist || this.dist.length !== N * N) { this.dist = new Int32Array(N * N); this.done = new Uint32Array(N * N); }
     const dist = this.dist, done = this.done, stamp = ++this.stamp;
-    const bk = [[s], [], [], []];
+    const bk = [[s], [], [], [], [], [], [], []];
     seen[s] = stamp; dist[s] = 0; prev[s] = -1;
     let left = 1;
     for (let d = 0; left > 0; d++) {
-      const b = bk[d & 3];
+      const b = bk[d & 7];
       while (b.length) {
         const i = b.pop();
         left--;
         if (dist[i] !== d || done[i] === stamp) continue;
         done[i] = stamp;
         if (i === g) return this._trace(g);
-        const x = i % N, z = (i / N) | 0, m = B[i];
+        const x = i % N, z = (i / N) | 0, m = B[i], c = D[i];
         for (let k = 0; k < 4; k++) {
           const nx = x + DIRS[k][0], nz = z + DIRS[k][1];
           if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
           const ni = nz * N + nx;
-          if (!grid[ni] || done[ni] === stamp) continue;
-          const nd = d + (m & BIT[k] ? 2 : (m & RIGHT[k]) && !(m & LEFT[k]) ? 3 : 1);
+          if (!grid[ni] || done[ni] === stamp || (c & CUT[k]) || (D[ni] & CUT_BACK[k])) continue;
+          const nd = d + (m & BIT[k] ? 4 : (m & RIGHT[k]) && !(m & LEFT[k]) ? 6 : 2);
           if (seen[ni] === stamp && dist[ni] <= nd) continue;
           seen[ni] = stamp; dist[ni] = nd; prev[ni] = i;
-          bk[nd & 3].push(ni);
+          bk[nd & 7].push(ni);
+          left++;
+        }
+        if (c & 15) for (let k = 0; k < 4; k++) {
+          if (!(c & (1 << k))) continue;
+          const nx = x + CORNERS[k][0], nz = z + CORNERS[k][1];
+          if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+          const ni = nz * N + nx;
+          if (!grid[ni] || done[ni] === stamp || !(D[ni] & (1 << ((k + 2) & 3)))) continue;
+          const nd = d + 3;
+          if (seen[ni] === stamp && dist[ni] <= nd) continue;
+          seen[ni] = stamp; dist[ni] = nd; prev[ni] = i;
+          bk[nd & 7].push(ni);
           left++;
         }
       }
@@ -111,6 +131,8 @@ export class PathFinder {
 // round(x, z), if given, says whether a turn on that tile may follow the
 // road's curve: a quarter circle round the inside tile corner (as the road
 // surface is laid), tighter on the inside lane and wider on the outside.
+// A step across a corner (a diagonal street) runs straight from centre to
+// centre; turns onto and off it are mitred.
 export function tilePolyline(tiles, offset = 0, start = null, end = null, round = null) {
   const pts = [];
   if (start) pts.push([start.x, start.z]);
@@ -120,8 +142,27 @@ export function tilePolyline(tiles, offset = 0, start = null, end = null, round 
     const cx = x + 0.5, cz = z + 0.5;
     if (offset === 0 || n === 1) { pts.push([cx, cz]); continue; }
     const prev = i > 0 ? tiles[i - 1] : null, next = i < n - 1 ? tiles[i + 1] : null;
-    const d1 = prev ? [x - prev[0], z - prev[1]] : [next[0] - x, next[1] - z];
-    const d2 = next ? [next[0] - x, next[1] - z] : d1;
+    let d1 = prev ? [x - prev[0], z - prev[1]] : [next[0] - x, next[1] - z];
+    let d2 = next ? [next[0] - x, next[1] - z] : d1;
+    if (d1[0] && d1[1] || d2[0] && d2[1]) {
+      // a diagonal: unit directions, and the right-hand offsets of both
+      // meeting at a mitre; a sharper turn than a right angle is cut across
+      // (a mitre would reach off the road), and one back on itself goes round
+      const l1 = Math.hypot(d1[0], d1[1]), l2 = Math.hypot(d2[0], d2[1]);
+      d1 = [d1[0] / l1, d1[1] / l1]; d2 = [d2[0] / l2, d2[1] / l2];
+      const r1 = [-d1[1], d1[0]], r2 = [-d2[1], d2[0]], dot = r1[0] * r2[0] + r1[1] * r2[1];
+      if (dot < -0.99) {
+        pts.push([cx + (r1[0] + d1[0]) * offset, cz + (r1[1] + d1[1]) * offset]);
+        pts.push([cx + (r2[0] + d1[0]) * offset, cz + (r2[1] + d1[1]) * offset]);
+      } else if (dot < -1e-6) {
+        pts.push([cx + r1[0] * offset, cz + r1[1] * offset]);
+        pts.push([cx + r2[0] * offset, cz + r2[1] * offset]);
+      } else {
+        const k = offset / (1 + dot);
+        pts.push([cx + (r1[0] + r2[0]) * k, cz + (r1[1] + r2[1]) * k]);
+      }
+      continue;
+    }
     // right-hand normal of direction (dx,dz) is (-dz, dx)
     const r1 = [-d1[1], d1[0]], r2 = [-d2[1], d2[0]];
     if (d1[0] === d2[0] && d1[1] === d2[1]) pts.push([cx + r1[0] * offset, cz + r1[1] * offset]);

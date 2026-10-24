@@ -12,6 +12,7 @@ import { BUILDINGS } from '../defs.js';
 import { serialize, deserialize } from '../save/saves.js';
 import { fw, fd, spareOf, setFloor } from '../world/world.js';
 import { cleanText, cleanColor, hasKey } from '../util/text.js';
+import { cleanPose, poseRec } from '../world/pose.js';
 
 // Bump when the messages change in a way older pages can't read.
 export const PROTOCOL = 2;
@@ -25,10 +26,11 @@ function conRec(c) {
 }
 
 // One building as [id, type, level, x, z, variant, rot, built, w, d, flavor,
-// con, leases, look, access, spare] — the save's record plus the entrance in use.
+// con, leases, look, access, spare, pose] — the save's record plus the
+// entrance in use.
 export function buildingRec(b) {
   return [b.id, b.type, b.level, b.x, b.z, b.variant, b.rot, b.built, fw(b), fd(b), b.flavor || null,
-    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null];
+    b.con ? conRec(b.con) : null, b.leases && b.leases.length ? b.leases : null, b.look || null, b.access ? [b.access.x, b.access.z] : null, b.spare ? [b.spare.w, b.spare.d, ...(b.spare.sx != null ? [b.spare.sx, b.spare.sz] : [])] : null, poseRec(b)];
 }
 
 // One villager: the save's record plus their school place.
@@ -105,6 +107,7 @@ export class Tracker {
     this.rails = w.rails.slice();
     this.buried = w.buried.slice();
     this.dress = w.dress.slice();
+    this.diag = w.diag.slice();
     this.fields = w.fields.slice();
     this.H = heights(w);
     this.trees = new Map([...treeTiles(w)].map(([t, a]) => [t, a.join()]));
@@ -159,6 +162,9 @@ export class Tracker {
     if (bu) d.bu = bu;
     const ds = gridDiff(this.dress, w.dress);
     if (ds) d.ds = ds;
+    // diagonal streets' links
+    const dg = gridDiff(this.diag, w.diag);
+    if (dg) d.dg = dg;
     const fl = gridDiff(this.fields, w.fields);
     if (fl) d.fl = fl;
     if (this.hDirty) {
@@ -252,7 +258,7 @@ export function applyDelta(game, d) {
 
   // 3. roads, track and the lie of the land
   const grid = (arr, list) => { for (let i = 0; i < list.length; i += 2) arr[list[i]] = list[i + 1]; return list.length > 0; };
-  const roads = d.rd ? grid(w.roads, d.rd) : false;
+  const roads = (d.rd ? grid(w.roads, d.rd) : false) | (d.dg ? grid(w.diag, d.dg) : false);
   const rails = d.rl ? grid(w.rails, d.rl) : false;
   // power lines laid underground
   if (d.bu && grid(w.buried, d.bu)) w.emit('lines');
@@ -278,13 +284,13 @@ export function applyDelta(game, d) {
   const added = [], changed = [], refit = [], done = [];
   let railLinks = rails;
   for (const rec of d.b || []) {
-    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc, sp] = rec;
-    const spare = spareOf(sp, bw, bd);
+    const [id, type, level, x, z, variant, rot, built, bw, bd, flavor, con, leases, look, acc, sp, ps] = rec;
+    const spare = spareOf(sp, bw, bd), pose = spare ? null : cleanPose(ps);
     if (!hasKey(BUILDINGS, type)) continue;
     const def = BUILDINGS[type];
     let b = w.buildings.get(id);
     if (!b) {
-      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare });
+      w.restoreBuilding({ id, type, level, x, z, variant, rot, built, w: bw, d: bd, flavor, con, leases, look, spare, pose });
       b = w.buildings.get(id);
       if (!b) continue;
       b.access = acc ? { x: acc[0], z: acc[1] } : null;
@@ -296,7 +302,7 @@ export function applyDelta(game, d) {
     const moved = b.x !== x || b.z !== z || fw(b) !== bw || fd(b) !== bd;
     const prev = b.con;
     const looks = moved || b.type !== type || b.level !== level || (b.look || null) !== look || (b.flavor || null) !== flavor
-      || b.variant !== variant || b.rot !== rot || conLook(prev) !== conLook(con)
+      || b.variant !== variant || b.rot !== rot || conLook(prev) !== conLook(con) || JSON.stringify(b.pose || null) !== JSON.stringify(pose)
       || JSON.stringify(b.spare || null) !== JSON.stringify(spare || null);
     if (moved) {
       setFootprint(w, b, -1);
@@ -310,6 +316,7 @@ export function applyDelta(game, d) {
     if (spared) simDirty = true;
     Object.assign(b, { type, level, variant, rot, built, flavor, look });
     if (spare) b.spare = spare; else delete b.spare;
+    if (pose) b.pose = pose; else delete b.pose;
     // the floor, once the plot and the part the building stands on are known
     if (moved || spared) plotHeights(w, b);
     // keep the same site object while it is the same job, so builders keep their place in the queue

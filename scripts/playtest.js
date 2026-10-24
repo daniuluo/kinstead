@@ -25,6 +25,8 @@ import { growDemoTown } from '../src/world/demo.js';
 import { roadRun, applyRoadEdit } from '../src/world/roadEdit.js';
 import { applyDress } from '../src/world/roadDress.js';
 import { boulevardTiles } from '../src/world/boulevard.js';
+import { strokeTiles } from '../src/world/diagonal.js';
+import { CORNERS } from '../src/world/roadShape.js';
 import { DRESSINGS } from '../src/config.js';
 import { makeAudit } from './audit.js';
 
@@ -240,6 +242,36 @@ function botDay() {
   // the busy modes make boulevards: a second road laid beside a straight
   // stretch, given a look, and now and then a lane tile taken up again
   if (MODE !== 'economy' && rng.chance(0.4)) boulevard();
+  // and diagonal streets out of town, with homes facing them
+  if (MODE !== 'economy' && rng.chance(0.3)) diagonal();
+  // and buildings turned and nudged on their plots, or squared up again
+  if (MODE !== 'economy' && rng.chance(0.4)) {
+    const b = rng.pick([...w.buildings.values()]);
+    if (b && w.setPose(b.id, rng.chance(0.2) ? null : [rng.float(-0.785, 0.785), rng.float(-0.2, 0.2), rng.float(-0.2, 0.2)]).ok && b.pose) counts.posed = (counts.posed || 0) + 1;
+  }
+}
+
+function diagonal() {
+  // a tile taken up now and then (the homes beside turn back to the grid)
+  if (w.diagN && rng.chance(0.2)) {
+    const on = [];
+    for (let i = 0; i < w.diag.length; i++) if ((w.diag[i] & 15) && w.roads[i]) on.push(i);
+    const i = rng.pick(on);
+    if (w.removeRoad(i % N, (i / N) | 0) === true) counts.diagGone = (counts.diagGone || 0) + 1;
+    return;
+  }
+  for (let t = 0; t < 60; t++) {
+    const x = rng.int(1, N - 2), z = rng.int(1, N - 2), [dx, dz] = rng.pick(CORNERS), len = rng.int(4, 8);
+    if (!w.roadAt(x, z) || !w.connected[w.idx(x, z)]) continue;
+    const tiles = strokeTiles({ x, z }, { x: x + dx * len, z: z + dz * len });
+    if (!tiles.every(([tx, tz]) => w.inBounds(tx, tz)) || !w.checkStroke(tiles, 1).slice(1).every(c => c.ok && !c.noop)) continue;
+    if (!w.placeRoads(tiles, rng.pick([1, 2, 3]), { stroke: true }).placed) continue;
+    counts.diagonals = (counts.diagonals || 0) + 1;
+    for (let i = 1; i < tiles.length - 1; i++) for (const [hx, hz] of [[tiles[i + 1][0], tiles[i][1]], [tiles[i][0], tiles[i + 1][1]]]) {
+      if (rng.chance(0.5) && w.placeBuilding(rng.pick(['house', 'house', 'bakery', 'grocer']), hx, hz, { ignoreUnlock: true }).ok) counts.facing = (counts.facing || 0) + 1;
+    }
+    return;
+  }
 }
 
 function boulevard() {

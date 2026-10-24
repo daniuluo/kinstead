@@ -15,7 +15,7 @@
 // and where a building stands forward into the verge.
 
 import { CONFIG, DRESSINGS, dressRefund, streetPart, lookPart, withDress } from '../config.js';
-import { HALF, SIDES, roadTile, linked } from './roadShape.js';
+import { HALF, SIDES, CORNERS, roadTile, linked, diagRun } from './roadShape.js';
 import { doorPoint } from './world.js';
 import { hash2 } from '../util/rng.js';
 
@@ -46,6 +46,14 @@ export function plainLamp(w, x, z) {
   const L = w.roadAt(x, z);
   if (L < 2 || w.railAt(x, z) || w.terrain.isWater(x, z)) return null;
   if (w.dress && keyOf(w.dress[w.idx(x, z)]) === 'lamps') return null;
+  // a straight run of diagonal street: on the verge across from its power
+  // poles (see RoadsView._powerLines), between the buildings facing it
+  if (w.diagN && (w.diag[w.idx(x, z)] & 15)) {
+    const r = diagRun(roadTile(w, x, z));
+    if (r < 0 || hash2(x, z, 91) >= 0.4) return null;
+    const [cx, cz] = CORNERS[3 - r], k = 0.31 / Math.SQRT2;
+    return { x: x + 0.5 + cx * k, z: z + 0.5 + cz * k };
+  }
   const n = linked(w, x, z, 0), e = linked(w, x, z, 1), s = linked(w, x, z, 2), wv = linked(w, x, z, 3);
   const ns = n && s && !e && !wv, ew = e && wv && !n && !s;
   if (!(ns || ew) || hash2(x, z, 91) >= 0.4) return null;
@@ -78,6 +86,7 @@ export function planDress(w, list, kind, look = false) {
     if (!s) block(t, 'Bridges stay plain');
     else if (s.bridge.some(Boolean)) block(t, 'The ramps up to a bridge stay plain');
     else if (w.rails[i]) block(t, 'Not across a level crossing');
+    else if (s.diag.some(Boolean)) block(t, 'Diagonal streets stay plain');
     else if (!D) { if (!from) block(t, 'Nothing to take away'); }
     else if (from === kind) block(t, `Already a ${D.name.toLowerCase()}`);
     else if (D.blvd && !w.blvd[i]) block(t, 'Only on boulevards (two roads side by side)');

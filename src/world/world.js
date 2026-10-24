@@ -6,6 +6,9 @@ import { BUILDINGS, unlockOf, RAIL_COST, workNeeded, TECHS, STYLE_TECH, MERGES, 
 const STYLE_TECH_OF = (look) => STYLE_TECH[look] || null;
 import { generateTerrain } from './terrain.js';
 import { findBoulevards, dressFits } from './boulevard.js';
+import { SIDES, CORNERS, CUT, spillsOf, diagLinked, roadTile, cornerFrame } from './roadShape.js';
+import { tidyDiag, linkStroke, isStroke, cornerTo, diagCapable, facingCorner, sideTo } from './diagonal.js';
+import { cleanPose } from './pose.js';
 import { newTownId } from '../util/text.js';
 import { RNG, hash2, makeNoise2D, fbm } from '../util/rng.js';
 
@@ -203,6 +206,8 @@ export class World {
     this.buried = new Uint8Array(N * N);   // 1: the power line along this street is underground
     this.dress = new Uint8Array(N * N);    // how the street is dressed, and a boulevard lane's look (see packDress in config.js)
     this.blvd = new Uint8Array(N * N);     // boulevards: the sides of each tile with a median across them (from the roads, never saved; see boulevard.js)
+    this.diag = new Uint8Array(N * N);     // diagonal streets: links across tile corners, and roads beside them cut off (see diagonal.js)
+    this.diagN = 0;                        // how many diagonal links there are (kept by tidyDiag)
     this.fields = new Int32Array(N * N).fill(-1);   // the farm a tile is a field of (-1: none)
     this.fieldTiles = new Map();           // farm id → its field tiles (kept by _countFields)
     this.lines = [];
@@ -361,7 +366,19 @@ export class World {
       }
     }
     if (!reason && maxH - minH > (Math.max(W, D) === 1 ? 0.9 : 1.1)) reason = 'Too steep here';
-    const access = reason ? [] : this.findAccess(x, z, W, D);
+    let access = reason ? [] : this.findAccess(x, z, W, D);
+    // a diagonal passing a corner of the plot: only a one-tile building, which
+    // turns to face it (its way in one of the two tiles the diagonal links)
+    if (!reason && this.diagN) {
+      let sp = 0;
+      for (let dz = 0; dz < D; dz++) for (let dx = 0; dx < W; dx++) sp |= spillsOf(this, x + dx, z + dz);
+      if (sp && !diagCapable({ type, w: W, d: D, size: Math.max(W, D) })) reason = 'A diagonal street passes the corner of this plot: only a one-tile building can stand here';
+      else if (sp) {
+        const pair = this._diagPair({ x, z }, facingCorner(sp, access.length ? access[0].rot : 0));
+        const near = access.filter(a => pair.some(([px, pz]) => px === a.x && pz === a.z));
+        if (near.length) access = near;
+      }
+    }
     if (!reason && !def.park && !access.length) reason = 'Needs a road next to it';
     if (!reason && def.needsWater) {
       const ring = [];
@@ -412,7 +429,7 @@ export class World {
     const w = o.w ?? def.size, d = o.d ?? def.size;
     const variant = o.variant ?? ((Math.random() * 1e9) | 0);
     const pick = chk.access.length ? chk.access[(o.accessIndex || 0) % chk.access.length] : null;
-    return {
+    const b = {
       id: this.newId(), type, level: o.level || 0, x, z, size: Math.max(w, d), w, d, flavor: o.flavor || null, look: o.look || null,
       rot: pick ? pick.rot : variant % 4,
       variant,
@@ -425,6 +442,10 @@ export class World {
       happiness: o.happiness ?? 60, factors: o.factors ?? null,
       con: null,
     };
+    // turned or nudged on its plot (see pose.js): as asked, or as it stood
+    const p = cleanPose(o.pose || (o.yaw ? [o.yaw, 0, 0] : null));
+    if (p) b.pose = p;
+    return b;
   }
 
   // A building comes forward into the street when every tile along its
@@ -507,8 +528,20 @@ export class World {
   _updateFronts(except = null) {
     const refit = [];
     for (const b of this.buildings.values()) {
-      const f = this._frontOf(b), r = spareRect(b), own = r ? this._frontOf(b, r) : undefined, cn = this._cornerOf(b), sd = this._sidesOf(b);
-      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0)) {
+      // a building with a diagonal past its plot's corner faces it, turned
+      // 45 degrees (b.diag: 1 + the corner), its way to the street one of the
+      // two road tiles the diagonal links; it never comes forward, and gives
+      // up any garden land it bought or sold (the plots no longer line up)
+      const dq = this._diagOf(b), dg = dq + 1;
+      if (dg && dg !== (b.diag || 0)) {
+        if (b.leases && b.leases.length) this._dissolveLeases(b);
+        this._diagAccess(b, dq);
+      }
+      const f = dg ? 0 : this._frontOf(b), r = dg ? null : spareRect(b), own = r ? this._frontOf(b, r) : undefined;
+      const cn = dg ? 0 : this._cornerOf(b), sd = dg ? this._diagSides(b, dq) : this._sidesOf(b), cv = dg ? 0 : this._curveOf(b);
+      if (f !== (b.front || 0) || own !== b.ownFront || cn !== (b.corner || 0) || sd !== (b.sides || 0) || dg !== (b.diag || 0) || cv !== (b.curve || 0)) {
+        if (dg) b.diag = dg; else delete b.diag;
+        if (cv) b.curve = cv; else delete b.curve;
         if (sd) b.sides = sd; else delete b.sides;
         b.front = f;
         if (own === undefined) delete b.ownFront; else b.ownFront = own;
@@ -517,6 +550,67 @@ export class World {
       }
     }
     for (const b of refit) this.emit('building:refit', b);
+  }
+
+  // A one-tile building facing the outside of a bend in the street turns to
+  // sit square to its curve: towards the corner the bend turns round (b.curve,
+  // radians from facing straight out of its plot; 0 for none). See pose.js.
+  _curveOf(b) {
+    if (!b.access || !diagCapable(b) || b.spare) return 0;
+    const { x: ax, z: az } = b.access, [fx, fz] = DIRS[b.rot];
+    if (b.x + fx !== ax || b.z + fz !== az) return 0;
+    const s = roadTile(this, ax, az);
+    if (!s || s.bend < 0 || s.arms[sideTo(ax, az, b.x, b.z)]) return 0;
+    const K = cornerFrame(ax, az, s.bend);
+    let rel = Math.atan2(K.Kx - b.x - 0.5, K.Kz - b.z - 0.5) - (b.rot * Math.PI) / 2;
+    while (rel > Math.PI) rel -= 2 * Math.PI;
+    while (rel < -Math.PI) rel += 2 * Math.PI;
+    return Math.abs(rel) < 0.7 ? Math.round(rel * 1000) / 1000 : 0;
+  }
+
+  // Turn and nudge a building on its plot (pose: [turn, across, forward], see
+  // pose.js); null squares it to its street again.
+  setPose(id, pose) {
+    const b = this.buildings.get(id);
+    if (!b) return { ok: false, reason: 'That building is gone' };
+    if (b.spare) return { ok: false, reason: 'Build it across its whole plot first' };
+    const p = pose == null ? null : cleanPose(pose);
+    if (JSON.stringify(p) === JSON.stringify(b.pose || null)) return { ok: true, building: b };
+    if (p) b.pose = p; else delete b.pose;
+    this.emit('building:refit', b);
+    return { ok: true, building: b };
+  }
+
+  // The corner a building faces a diagonal across (see above), or -1.
+  _diagOf(b) {
+    if (!this.diagN || !diagCapable(b)) return -1;
+    return facingCorner(spillsOf(this, b.x, b.z), b.rot);
+  }
+
+  // The two road tiles a diagonal past corner q of b's plot links.
+  _diagPair(b, q) {
+    const [ax, az] = SIDES[q], [bx, bz] = SIDES[(q + 1) & 3];
+    return [[b.x + ax, b.z + az], [b.x + bx, b.z + bz]];
+  }
+
+  // Point a building facing a diagonal at one of its two road tiles (one
+  // joined to the way out of town, if either is).
+  _diagAccess(b, q) {
+    const pair = this._diagPair(b, q).filter(([x, z]) => this.roadAt(x, z));
+    if (!pair.length) return;
+    const conn = ([x, z]) => !!this.connected[this.idx(x, z)];
+    const keep = pair.find(([x, z]) => b.access && b.access.x === x && b.access.z === z && (conn([x, z]) || !pair.some(conn)));
+    const [x, z] = keep || pair.find(conn) || pair[0];
+    b.access = { x, z };
+    b.connected = conn([x, z]);
+  }
+
+  // The other sides of a building facing a diagonal with a diagonal along
+  // them too (b.sides: 1 its left, 2 its right, 4 its back, as seen from the
+  // street): the ones passing the plot's other corners.
+  _diagSides(b, q) {
+    const sp = spillsOf(this, b.x, b.z);
+    return (sp & (1 << ((q + 1) & 3)) ? 1 : 0) | (sp & (1 << ((q + 3) & 3)) ? 2 : 0) | (sp & (1 << ((q + 2) & 3)) ? 4 : 0);
   }
 
   _occupy(b) {
@@ -638,7 +732,7 @@ export class World {
   tryEncroach(b) {
     const LAND = 0.25;
     if (!this.hasTech('surveying')) return [];
-    if (!b || !BUILDINGS[b.type].spacious || b.con || fw(b) !== 1 || fd(b) !== 1) return [];
+    if (!b || !BUILDINGS[b.type].spacious || b.con || fw(b) !== 1 || fd(b) !== 1 || b.diag) return [];
     b.leases ||= [];
     const ext = this._ext(b);
     const sold = [];
@@ -650,7 +744,7 @@ export class World {
       const perp = side[0] === 'x' ? 'z' : 'x';
       if (ext[perp + '0'] > 0 || ext[perp + '1'] > 0) continue;
       const o = this.buildingOn(b.x + dx, b.z + dz);
-      if (!o || o.type !== 'house' || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
+      if (!o || o.type !== 'house' || o.con || fw(o) !== 1 || fd(o) !== 1 || o.diag) continue;
       const oe = this._ext(o);
       // a seller gives up one strip at most, and keeps its street side
       if (oe.x0 < 0 || oe.x1 < 0 || oe.z0 < 0 || oe.z1 < 0) continue;
@@ -702,7 +796,7 @@ export class World {
   expandOptions(b) {
     const out = [];
     const def = BUILDINGS[b.type];
-    if (!b || !this.hasTech('surveying') || this._dryHome(b)) return out;
+    if (!b || !this.hasTech('surveying') || this._dryHome(b) || b.diag) return out;
     // a 2×2 park, or a 3×3 one, can grow onto the land round one of its
     // corners into grounds a size bigger (Public Parks); so can the seat of
     // government at its top level (Capital City)
@@ -755,6 +849,8 @@ export class World {
     DIRS.forEach(([dx, dz], k) => {
       const x = b.x + dx, z = b.z + dz;
       if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return;
+      // (a plot a diagonal street passes takes nothing bigger than one tile)
+      if (this.diagN && spillsOf(this, x, z)) return;
       const lo = Math.min(this.terrain.tileMin(x, z), this.terrain.tileMin(b.x, b.z)), hi = Math.max(this.terrain.tileMax(x, z), this.terrain.tileMax(b.x, b.z));
       if (hi - lo > 1.1) return;
       const o = this.buildingOn(x, z);
@@ -786,6 +882,8 @@ export class World {
     const def = BUILDINGS[b.type], taken = [];
     for (const [x, z] of tiles) {
       if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return null;
+      // (nor where a diagonal street passes the plot's corner: see diagonal.js)
+      if (this.diagN && spillsOf(this, x, z)) return null;
       const o = this.buildingOn(x, z);
       if (!o) continue;
       if (!(absorb && (def.park || def.seat) && isSmallPark(o) && !(o.leases || []).length)) return null;
@@ -850,6 +948,7 @@ export class World {
       spare.sx = sign(lx); spare.sz = sign(lz);
     }
     b.spare = spare;
+    delete b.pose;   // (a turn was for the plot it had: square on the bigger one)
     setFloor(this.terrain, b);
     this._updateFronts(b);
     this._clearTreesNear(b.x, b.z, b.w, b.d, 0.22);
@@ -899,7 +998,7 @@ export class World {
     if (!chk.ok) return { ok: false, reason: chk.reason };
     const nb = this._record(b.type, x, z, chk, {
       w: fw(b), d: fd(b), level: b.level, variant: b.variant, flavor: b.flavor, look: b.look, accessIndex: opts.accessIndex,
-      happiness: b.happiness, factors: b.factors,
+      happiness: b.happiness, factors: b.factors, pose: b.pose,
     });
     if (b.spare) nb.spare = { ...b.spare };
     this._occupy(nb);
@@ -926,10 +1025,10 @@ export class World {
   mergeOptions(b) {
     const out = this._farmJoins(b);
     if (!this.hasTech('joining')) return out;
-    if (!b || b.con || fw(b) !== 1 || fd(b) !== 1) return out;
+    if (!b || b.con || fw(b) !== 1 || fd(b) !== 1 || b.diag) return out;
     for (const [dx, dz] of DIRS) {
       const o = this.buildingOn(b.x + dx, b.z + dz);
-      if (!o || o.con || fw(o) !== 1 || fd(o) !== 1) continue;
+      if (!o || o.con || fw(o) !== 1 || fd(o) !== 1 || o.diag) continue;
       const m = mergeResult(b, o, (type, level) => this.hasTech(techForLevel(type, level)) && this.unlockPop >= unlockOf(type, level));
       if (!m || !this.hasTech(BUILDINGS[m.type].tech)) continue;
       // people who won't fit in what the two become
@@ -986,7 +1085,7 @@ export class World {
       const inX = dx >= 0 && dx < fw(b), inZ = dz >= 0 && dz < fd(b);
       if (inX === inZ) continue;   // the plot itself, and its corners
       const o = this.buildingOn(b.x + dx, b.z + dz);
-      if (!o || o === b || o.con || seen.has(o.id)) continue;
+      if (!o || o === b || o.con || seen.has(o.id) || o.diag || b.diag) continue;
       seen.add(o.id);
       const farm = farmSide ? b : o, house = farmSide ? o : b;
       if (!J.from.includes(farm.type) || !J.with.includes(house.type) || fw(house) !== 1 || fd(house) !== 1) continue;
@@ -1031,6 +1130,8 @@ export class World {
     };
     const spare = spareOf(rec.spare, w, d);
     if (spare) { b.spare = spare; setFloor(this.terrain, b); }
+    const pose = spare ? null : cleanPose(rec.pose);
+    if (pose) b.pose = pose;
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) this.buildingAt[this.idx(rec.x + dx, rec.z + dz)] = b.id;
     if (Array.isArray(rec.leases) && rec.leases.length) {
       b.leases = rec.leases.map(l => ({ ...l }));
@@ -1334,19 +1435,78 @@ export class World {
     return { ok: true, cost, water };
   }
 
-  placeRoads(tiles, level) {
+  // What laying a drag of road would do, tile by tile (as checkRoad). A step
+  // across a corner is a diagonal (see diagonal.js), whose band passes over
+  // the corners of the two tiles beside it, so only a building that can turn
+  // to face it may stand there. A tile whose step in is refused isn't laid
+  // (or, already road, isn't linked): { ok, reason, cost, noop, step }.
+  checkStroke(tiles, level) {
+    const out = tiles.map(([x, z]) => ({ ...this.checkRoad(x, z, level), step: true }));
+    for (let n = 1; n < tiles.length; n++) {
+      const [ax, az] = tiles[n - 1], [bx, bz] = tiles[n];
+      if (cornerTo(ax, az, bx, bz) < 0) continue;
+      const why = this._diagBlock(ax, az, bx, bz);
+      if (!why) continue;
+      out[n].step = false;
+      if (out[n].ok && !out[n].noop) Object.assign(out[n], { ok: false, reason: why });
+    }
+    return out;
+  }
+
+  // Why a diagonal can't run from tile a to tile b (across their shared
+  // corner), or null.
+  _diagBlock(ax, az, bx, bz) {
+    const t = this.terrain;
+    if (!this.inBounds(ax, az) || !this.inBounds(bx, bz)) return 'Out of bounds';
+    if (t.isWater(ax, az) || t.isWater(bx, bz)) return 'Bridges run along the grid, not diagonally';
+    for (const [x, z] of [[bx, az], [ax, bz]]) {
+      const o = this.buildingOn(x, z);
+      if (o && !diagCapable(o)) return `The ${BUILDINGS[o.type].levels[o.level].name.toLowerCase()} on the corner is in the way`;
+      if (this.fields[this.idx(x, z)] >= 0) return 'Farm fields are in the way: take them out of the farm first';
+    }
+    return null;
+  }
+
+  // Lay road on these tiles at this level (a lesser road is upgraded). With
+  // opts.stroke the tiles are a drag, in order, and are linked as it runs:
+  // diagonally where it steps across a corner (see diagonal.js).
+  placeRoads(tiles, level, opts = {}) {
+    const stroke = !!opts.stroke && isStroke(tiles);
+    const plan = stroke ? this.checkStroke(tiles, level) : null;
     let placed = 0, spent = 0, failed = null;
-    for (const [x, z] of tiles) {
-      const c = this.checkRoad(x, z, level);
+    const fresh = new Set();
+    for (let n = 0; n < tiles.length; n++) {
+      const [x, z] = tiles[n];
+      const c = plan ? plan[n] : this.checkRoad(x, z, level);
       if (!c.ok) { failed ||= c.reason; continue; }
       if (c.noop) continue;
       if (this.money < c.cost) { failed = 'Not enough money'; break; }
       this.money -= c.cost; spent += c.cost; placed++;
+      if (!this.roads[this.idx(x, z)]) fresh.add(this.idx(x, z));
       this.roads[this.idx(x, z)] = level;
       this._clearTrees(x, z);
     }
-    if (placed) { this._boulevards(true); this.updateRoadNetwork(); this.emit('trees'); }
-    return { placed, spent, failed };
+    let linked = 0;
+    if (stroke) {
+      const before = this.diag.slice();
+      // link each run of steps that weren't refused
+      let from = 0;
+      for (let n = 1; n <= tiles.length; n++) {
+        if (n < tiles.length && plan[n].step) continue;
+        if (n - from > 1) linkStroke(this, tiles.slice(from, n), fresh);
+        from = n;
+      }
+      tidyDiag(this);
+      for (let i = 0; i < before.length; i++) if (before[i] !== this.diag[i]) linked++;
+      // trees in the way where a diagonal passes the corners beside it
+      for (let n = 1; n < tiles.length; n++) {
+        const [ax, az] = tiles[n - 1], [bx, bz] = tiles[n], k = cornerTo(ax, az, bx, bz);
+        if (k < 0 || !diagLinked(this, ax, az, k)) continue;
+        this._clearTreesNear(Math.max(ax, bx) - 0.4, Math.max(az, bz) - 0.4, 0.8, 0.8, 0);
+      }
+    }
+    if (placed || linked) { this._boulevards(true); this.updateRoadNetwork(); this.emit('trees'); }
+    return { placed, spent, failed, linked };
   }
 
   removeRoad(x, z) {
@@ -1354,6 +1514,7 @@ export class World {
     if (!L) return false;
     if (x === this.entry.x && z === this.entry.z) return 'The road to the outside world must stay';
     this.roads[this.idx(x, z)] = 0;
+    this.diag[this.idx(x, z)] = 0;
     this.money += roadRefund(L, 0, this.terrain.isWater(x, z)) + dressRefundAll(this.dress[this.idx(x, z)]);
     this.buried[this.idx(x, z)] = 0;
     this.dress[this.idx(x, z)] = 0;
@@ -1369,6 +1530,7 @@ export class World {
   // where a second road was laid alongside. pay: a quarter of its price
   // back (when the player changed the roads; loads and guests just tidy up).
   _boulevards(pay = false) {
+    tidyDiag(this);   // (the roads have changed: the diagonals first)
     this.blvd = findBoulevards(this, this.roads, this.blvd);
     let back = 0, gone = false;
     for (let i = 0; i < this.dress.length; i++) {
@@ -1421,18 +1583,30 @@ export class World {
     const q = [];
     const e = this.idx(this.entry.x, this.entry.z);
     if (this.roads[e]) { this.connected[e] = 1; q.push(e); }
+    const D = this.diag;
     while (q.length) {
       const i = q.pop();
       const x = i % N, z = (i / N) | 0;
-      for (const [dx, dz] of DIRS) {
-        const nx = x + dx, nz = z + dz;
+      for (let k = 0; k < 4; k++) {
+        const nx = x + SIDES[k][0], nz = z + SIDES[k][1];
         if (!this.inBounds(nx, nz)) continue;
         const ni = nz * N + nx;
-        if (this.roads[ni] && !this.connected[ni]) { this.connected[ni] = 1; q.push(ni); }
+        // (not where a diagonal passes by, cut off from it)
+        if (this.roads[ni] && !this.connected[ni] && !(D[i] & (CUT << k)) && !(D[ni] & (CUT << ((k + 2) & 3)))) { this.connected[ni] = 1; q.push(ni); }
+      }
+      if (D[i] & 15) for (let k = 0; k < 4; k++) {
+        if (!(D[i] & (1 << k))) continue;
+        const nx = x + CORNERS[k][0], nz = z + CORNERS[k][1];
+        if (!this.inBounds(nx, nz)) continue;
+        const ni = nz * N + nx;
+        if (this.roads[ni] && !this.connected[ni] && (D[ni] & (1 << ((k + 2) & 3)))) { this.connected[ni] = 1; q.push(ni); }
       }
     }
     for (const b of this.buildings.values()) {
-      const acc = this.findAccess(b.x, b.z, fw(b), fd(b));
+      let acc = this.findAccess(b.x, b.z, fw(b), fd(b));
+      // facing a diagonal: one of the two road tiles it links
+      const dq = this._diagOf(b);
+      if (dq >= 0) { const pair = this._diagPair(b, dq); acc = acc.filter(a => pair.some(([x, z]) => x === a.x && z === a.z)); }
       const keep = b.access && acc.find(a => a.x === b.access.x && a.z === b.access.z && (a.conn || !acc[0].conn));
       const pick = keep || acc[0] || null;
       b.access = pick ? { x: pick.x, z: pick.z } : null;
@@ -1811,6 +1985,8 @@ export const RAMP = 0.5;
 // Point on the shared edge between a building's footprint and its access road.
 export function doorPoint(b) {
   if (!b.access) return { x: b.x + fw(b) / 2, z: b.z + fd(b) / 2 };
+  // facing a diagonal: just short of the street, towards the corner it passes
+  if (b.diag) { const [cx, cz] = CORNERS[b.diag - 1]; return { x: b.x + 0.5 + cx * 0.26, z: b.z + 0.5 + cz * 0.26 }; }
   const ax = b.access.x, az = b.access.z;
   const cx = Math.min(Math.max(ax, b.x), b.x + fw(b) - 1);
   const cz = Math.min(Math.max(az, b.z), b.z + fd(b) - 1);

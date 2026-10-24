@@ -12,6 +12,7 @@ import { PARK_SEASON_STEPS } from './parks.js';
 import { siteGeo, bodyBox } from './construction.js';
 import { Rain } from './rain.js';
 import { fw, fd } from '../world/world.js';
+import { facingAngle } from '../world/diagonal.js';
 import { BUILDINGS } from '../defs.js';
 
 const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
@@ -125,7 +126,7 @@ export class WorldView {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.position.set(b.x + (b.w ?? b.size) / 2 + model.jitter.ox, b.baseY, b.z + (b.d ?? b.size) / 2 + model.jitter.oz);
-    mesh.rotation.y = (b.rot * Math.PI) / 2 + model.jitter.yaw;
+    mesh.rotation.y = facingAngle(b) + model.jitter.yaw;
     mesh.userData.buildingId = b.id;
     let spin = null;
     if (model.spin) {
@@ -151,6 +152,7 @@ export class WorldView {
     b.work = workArea(b);
     b.spots = model.spots && model.spots.length ? model.spots.map(p => { const v = toWorld({ x: p.x, y: 0, z: p.z }); return [v.x, v.z]; }) : null;
     b.door = this._doorOf(model, mesh, b);
+    b.foot = model.foot;   // all it stands on, in world space (see world/pose.js)
     b.open = !!model.open;   // open-air: villagers wander in it rather than going in
     this.items.set(b.id, item);
     if (animate) {
@@ -174,7 +176,7 @@ export class WorldView {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.position.set(b.x + fw(b) / 2 + jit.ox, b.baseY, b.z + fd(b) / 2 + jit.oz);
-    mesh.rotation.y = (b.rot * Math.PI) / 2 + jit.yaw;
+    mesh.rotation.y = facingAngle(b) + jit.yaw;
     mesh.userData.buildingId = b.id;
     this.group.add(mesh);
     const th = mesh.rotation.y, co = Math.cos(th), si = Math.sin(th), cx = mesh.position.x, cz = mesh.position.z;
@@ -190,6 +192,7 @@ export class WorldView {
     b.spots = null;
     mesh.updateMatrixWorld(true);
     b.door = this._doorOf(old || target, mesh, b);
+    b.foot = target.foot;
     b.open = !!(old || target).open;
     this.items.set(b.id, item);
     this._refreshSite(item);

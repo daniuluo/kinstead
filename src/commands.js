@@ -10,6 +10,8 @@ import { BUILDINGS, TECHS, TRANSIT, PRODUCE, KINDS } from './defs.js';
 import { STYLES } from './render/buildings.js';
 import { ROAD_OPS, applyRoadEdit } from './world/roadEdit.js';
 import { applyDress } from './world/roadDress.js';
+import { isStroke } from './world/diagonal.js';
+import { TURN_MAX, NUDGE } from './world/pose.js';
 import { DRESSINGS } from './config.js';
 import { cleanText, hasKey } from './util/text.js';
 
@@ -19,6 +21,7 @@ const SANDBOX = ['infiniteMoney', 'unlockAll', 'freeUpgrades', 'instantBuild'];
 
 const int = (v, lo = -1e9, hi = 1e9) => Number.isInteger(v) && v >= lo && v <= hi;
 const opt = (v, lo, hi) => v == null || int(v, lo, hi);
+const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo - 1e-9 && v <= hi + 1e-9;
 const tile = (w, c) => int(c.x, 0, w.N - 1) && int(c.z, 0, w.N - 1);
 const tiles = (w, list, max = 4096) => Array.isArray(list) && list.length > 0 && list.length <= max
   && list.every(p => Array.isArray(p) && p.length === 2 && int(p[0], 0, w.N - 1) && int(p[1], 0, w.N - 1));
@@ -38,12 +41,20 @@ export const VISITOR_REASON = "You're a visitor in this town: you can look aroun
 export const COMMANDS = {
   place: {
     check: (w, c) => hasKey(BUILDINGS, c.type) && !BUILDINGS[c.type].hidden && int(c.x) && int(c.z) && opt(c.variant, 0, 2 ** 31) && opt(c.accessIndex, 0, 1e6)
-      && (c.flavor == null || (hasKey(KINDS, c.type) && hasKey(KINDS[c.type], c.flavor))),
-    run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0, flavor: c.flavor ?? undefined }),
+      && (c.flavor == null || (hasKey(KINDS, c.type) && hasKey(KINDS[c.type], c.flavor))) && (c.yaw == null || num(c.yaw, -TURN_MAX, TURN_MAX)),
+    run: (g, c) => g.world.placeBuilding(c.type, c.x, c.z, { variant: c.variant ?? undefined, accessIndex: c.accessIndex ?? 0, flavor: c.flavor ?? undefined, yaw: c.yaw ?? undefined }),
   },
+  // turn and nudge a building on its plot ([turn, across, forward]; null
+  // squares it to its street again: see world/pose.js)
+  pose: {
+    check: (w, c) => int(c.id) && (c.pose === null || (Array.isArray(c.pose) && c.pose.length === 3 && num(c.pose[0], -TURN_MAX, TURN_MAX) && num(c.pose[1], -NUDGE, NUDGE) && num(c.pose[2], -NUDGE, NUDGE))),
+    run: (g, c) => g.world.setPose(c.id, c.pose),
+  },
+  // lay road on tiles; a drag (stroke: true) lists them in order, each next
+  // to the last, and links them as it runs, diagonally across corners
   roads: {
-    check: (w, c) => int(c.level, 1, 3) && tiles(w, c.tiles),
-    run: (g, c) => g.world.placeRoads(c.tiles, c.level),
+    check: (w, c) => int(c.level, 1, 3) && tiles(w, c.tiles) && (c.stroke == null || (typeof c.stroke === 'boolean' && (!c.stroke || isStroke(c.tiles)))),
+    run: (g, c) => g.world.placeRoads(c.tiles, c.level, { stroke: !!c.stroke }),
   },
   rails: {
     check: (w, c) => tiles(w, c.tiles),
@@ -190,7 +201,7 @@ export function runCommand(game, cmd, from = null) {
 // Results travel back to a guest as plain data: building and line objects
 // become ids (the guest looks them up in its own copy of the town, which has
 // already been updated by the time the result arrives).
-const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n', 'refund', 'skipped'];
+const PLAIN = ['ok', 'reason', 'instant', 'kind', 'placed', 'spent', 'failed', 'cost', 'what', 'n', 'refund', 'skipped', 'linked'];
 export function packResult(r) {
   if (!r || typeof r !== 'object') return { ok: !!r };
   const out = {};

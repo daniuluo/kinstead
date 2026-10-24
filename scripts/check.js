@@ -2039,6 +2039,248 @@ const placePair = (tw, ta, tb) => {
   ok(!missing.length, 'no calls to missing methods' + (missing.length ? ': ' + missing.join(', ') : ''));
 }
 
+// 3j. diagonal streets: a drag at 45 degrees lays a street corner to corner,
+// linked across the tiles' shared corners and cut off from the roads it
+// brushes past; it meets the grid in junctions and corners and other
+// diagonals in crossings and turns, all laid from one field that agrees at
+// every tile edge; the network, villagers and coaches follow it; one-tile
+// buildings beside it turn to face it and nothing bigger may stand there;
+// boulevards, dressings and bridges keep to the grid; it saves, loads and
+// tidies itself; a town without any saves as it always did
+{
+  const { strokeTiles, tidyDiag, turnDiag, facingAngle } = await import('../src/world/diagonal.js');
+  const { roadTile, shapeOf, shapeAt, surfaceAt, fieldAt, linksOf, diagLinked, spillsOf, linked, HALF, CUT } = await import('../src/world/roadShape.js');
+  const { tilePolyline } = await import('../src/sim/path.js');
+  const { roadRun } = await import('../src/world/roadEdit.js');
+  const { planDress, plainLamp } = await import('../src/world/roadDress.js');
+  const { RoadsView } = await import('../src/render/roadsView.js');
+  const { runCommand } = await import('../src/commands.js');
+  const { doorPoint } = await import('../src/world/world.js');
+  const { DIAG_BOX } = await import('../src/render/buildings.js');
+  const key = (l) => l.map(([x, z]) => `${x},${z}`).join(' ');
+  ok(key(strokeTiles({ x: 0, z: 0 }, { x: 3, z: 3 })) === '0,0 1,1 2,2 3,3', 'a drag at 45 degrees runs diagonally');
+  ok(key(strokeTiles({ x: 0, z: 0 }, { x: 5, z: 3 })) === '0,0 1,1 2,2 3,3 4,3 5,3', 'nearer 45 degrees than the grid it runs diagonally as far as it goes, then straight on');
+  ok(key(strokeTiles({ x: 0, z: 0 }, { x: 6, z: 2 })) === '0,0 1,0 2,0 3,0 4,0 5,0 6,0 6,1 6,2' && key(strokeTiles({ x: 0, z: 0 }, { x: 3, z: 3 }, false)) === '0,0 1,0 2,0 3,0 3,1 3,2 3,3', 'nearer the grid, or with the tool on the grid only, it turns one corner as before');
+
+  const tw = World.createNew({ N: 64, seed: 77, name: 'Slantwick' });
+  tw.money = 1e6;
+  let o = null;
+  for (let z = 1; z < tw.N - 28 && !o; z++) for (let x = 1; x < tw.N - 28 && !o; x++) {
+    let free = true;
+    for (let dz = -1; dz < 27 && free; dz++) for (let dx = -1; dx < 27 && free; dx++) {
+      const X = x + dx, Z = z + dz;
+      if (tw.terrain.isWater(X, Z) || tw.roadAt(X, Z) || tw.railAt(X, Z) || tw.buildingOn(X, Z)) free = false;
+    }
+    if (free) o = { x, z };
+  }
+  ok(!!o, 'found a free patch for the diagonal checks');
+  const P = (x, z) => [o.x + x, o.z + z], T = (x, z) => ({ x: o.x + x, z: o.z + z });
+  for (let z = -1; z <= 27; z++) for (let x = -1; x <= 27; x++) tw.terrain.setCh(o.x + x, o.z + z, 0.5);
+  for (let z = -1; z <= 26; z++) for (let x = -1; x <= 26; x++) tw._clearTrees(o.x + x, o.z + z);
+  tw.setSandbox({ unlockAll: true });
+  const lay = (a, b, L, diag = true) => tw.placeRoads(strokeTiles(T(...a), T(...b), diag), L, { stroke: true });
+  // a paved street along row 12, and a cobbled diagonal from (2, 4) down across it to (18, 20)
+  lay([0, 12], [14, 12], 3);
+  const r1 = lay([2, 4], [18, 20], 2);
+  ok(r1.placed === 16 && r1.linked > 0 && tw.diagN === 16, `a diagonal is laid tile by tile, linked across each corner (${r1.placed} laid, ${tw.diagN} links)`);
+  let both = true;
+  for (let i = 0; i < 16; i++) both &&= diagLinked(tw, ...P(2 + i, 4 + i), 1) && diagLinked(tw, ...P(3 + i, 5 + i), 3);
+  ok(both, 'every link runs both ways');
+  const st = roadTile(tw, ...P(5, 7));
+  ok(st.sdf && st.arms.every(a => !a) && !st.diag[0] && !st.diag[2] && st.diag[1] === HALF[2] && st.diag[3] === HALF[2] && linksOf(tw, ...P(5, 7)).every(l => l[2]), 'a tile on the diagonal runs corner to corner, with no arm along the grid');
+  tw.placeRoads([P(6, 7)], 1);
+  ok(tw.roadAt(...P(6, 7)) && !linked(tw, ...P(6, 7), 3) && !linked(tw, ...P(6, 7), 2) && roadTile(tw, ...P(6, 7)).arms.every(a => !a) && spillsOf(tw, ...P(6, 7)) === 4, 'a road laid beside it is cut off from it: the diagonal passes its corner by');
+  tw.placeRoads(strokeTiles(T(6, 6), T(6, 7), false), 1, { stroke: true });
+  ok(linked(tw, ...P(6, 6), 2) && !linked(tw, ...P(6, 7), 3), 'a street drawn between two tiles joins them');
+  const jn = roadTile(tw, ...P(10, 12));
+  ok(jn.arms[1] === HALF[3] && jn.arms[3] === HALF[3] && jn.diag[3] === HALF[2] && jn.diag[1] === HALF[2] && !jn.arms[0] && !jn.arms[2], 'where it crosses the paved street, the street runs on and the diagonal crosses it');
+  ok(!linked(tw, ...P(9, 11), 2) && !linked(tw, ...P(11, 13), 0) && linked(tw, ...P(9, 12), 1) && spillsOf(tw, ...P(9, 12)) === 1 && spillsOf(tw, ...P(11, 12)) === 4, 'and the street beside the crossing keeps to itself, the diagonal spilling over its corners');
+  ok(surfaceAt(tw, o.x + 5.5, o.z + 7.5) > 0 && surfaceAt(tw, o.x + 6, o.z + 8) > 0 && surfaceAt(tw, o.x + 6.04, o.z + 7.96) > 0 && surfaceAt(tw, o.x + 5.9, o.z + 7.1) === 0, 'its road runs along the middle and over the corner into the tiles beside, with verge either side');
+  // a dirt diagonal crossing it on a tile; at its end a turn back the other
+  // way, which runs on diagonally and then turns onto the grid
+  lay([11, 19], [17, 13], 1);
+  lay([18, 20], [22, 13], 3);
+  const x6 = roadTile(tw, ...P(14, 16));
+  ok(x6.diag.every(Boolean) && x6.arms.every(a => !a), 'two diagonals cross on a tile');
+  const v = roadTile(tw, ...P(18, 20)), c = roadTile(tw, ...P(22, 16));
+  ok(v.diag[3] && v.diag[0] && !v.diag[1] && !v.arms.some(Boolean) && c.diag[2] && c.arms[0] && !c.arms[2], 'one turns back the other way, and turns again onto the grid');
+  // every tile edge a diagonal touches: both tiles lay the same road there
+  let edges = 0, clash = 0, worst = 0;
+  for (let z = -1; z < 25; z++) for (let x = -1; x < 25; x++) {
+    const [ax, az] = P(x, z);
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      const a = shapeOf(tw, ax, az), b = shapeOf(tw, ax + dx, az + dz);
+      if (!a || !b || !(a.sdf || b.sdf)) continue;
+      edges++;
+      for (let t = 0.01; t < 1; t += 0.02) {
+        const px = dx ? ax + 1 : ax + t, pz = dx ? az + t : az + 1;
+        if (a.sdf && b.sdf) {
+          // (near the road's edge, where it shows)
+          const fa = fieldAt(a.prims, px, pz)[0], fb = fieldAt(b.prims, px, pz)[0];
+          if (Math.min(Math.abs(fa), Math.abs(fb)) < 0.06) worst = Math.max(worst, Math.abs(fa - fb));
+        }
+        if (!!shapeAt(a, px, pz, 0) !== !!shapeAt(b, px, pz, 0)) {
+          const f = (a.sdf ? fieldAt(a.prims, px, pz) : fieldAt(b.prims, px, pz))[0];
+          if (Math.abs(f) > 0.004) clash++;
+        }
+      }
+    }
+  }
+  ok(edges > 40 && clash === 0 && worst < 0.002, `the road meets itself at every tile edge a diagonal touches (${edges} edges, at most ${worst.toFixed(4)} apart)`);
+  let bent = 0;
+  for (let s = 3; s <= 7; s += 0.01) for (const e of [HALF[2] - 0.004, HALF[2] + 0.004]) {
+    const px = o.x + s + e / Math.SQRT2 + 0.5, pz = o.z + 2 + s - e / Math.SQRT2 + 0.5;
+    if (!!surfaceAt(tw, px, pz) !== (e < HALF[2])) bent++;
+  }
+  ok(bent === 0, 'and its edges run straight, tile after tile');
+  // the network
+  tw.entry = { x: o.x, z: o.z + 12 };
+  tw.updateRoadNetwork();
+  ok([P(2, 4), P(22, 13), P(11, 19), P(17, 13)].every(p => tw.connected[tw.idx(...p)]) && !tw.connected[tw.idx(...P(6, 7))], 'the diagonals join the town, but not the road cut off beside one');
+  const pf = new PathFinder(tw);
+  const way = pf.road(...P(2, 4), ...P(18, 20));
+  ok(way && way.length === 17, `the way along it runs straight down the diagonal (${way && way.length} tiles)`);
+  const way2 = pf.road(...P(2, 4), ...P(0, 12)), way3 = pf.road(...P(11, 19), ...P(22, 13));
+  const stepOk = (p) => p.every((t, i) => !i || linksOf(tw, ...p[i - 1]).some(([x, z]) => x === t[0] && z === t[1]));
+  ok(way2 && way3 && stepOk(way2) && stepOk(way3) && way2.length === 19, `round its corners, only ever by a link (${way2 && way2.length}, ${way3 && way3.length} tiles)`);
+  const onRoad = (pts) => pts.every(([x, z]) => surfaceAt(tw, x, z) > 0);
+  ok([way2, way3].every(p => onRoad(tilePolyline(p, 0.08)) && onRoad(tilePolyline(p, -0.08))) && onRoad(tilePolyline(way2, 0.17)), 'villagers either side of the way, and coaches on a cobbled one, keep to the road, corners and all');
+  // buildings
+  const h1 = tw.placeBuilding('house', ...P(4, 5), { instant: true }).building;
+  const h2 = tw.placeBuilding('house', ...P(3, 6), { instant: true }).building;
+  const acc = (b) => `${b.access.x - o.x},${b.access.z - o.z}`;
+  ok(h1 && h2 && h1.diag === 3 && h2.diag === 1 && ['3,5', '4,6'].includes(acc(h1)) && ['3,5', '4,6'].includes(acc(h2)), 'a house either side of it turns to face it, its way in from the diagonal');
+  const dp = doorPoint(h1);
+  ok(surfaceAt(tw, dp.x, dp.z) === 0 && Math.hypot(dp.x - (o.x + 4), dp.z - (o.z + 6)) < 0.45 && h1.connected, 'its door step is at the pavement by the corner the street passes');
+  // the model fits between the street and the plots behind
+  const fit = {}, m = buildModel(h1, { fit });
+  m.geo.computeBoundingBox();
+  const bb = m.geo.boundingBox, th = facingAngle(h1), co = Math.cos(th), si = Math.sin(th), hx = h1.x + 0.5, hz = h1.z + 0.5;
+  const foot = [[bb.min.x, bb.min.z], [bb.max.x, bb.min.z], [bb.min.x, bb.max.z], [bb.max.x, bb.max.z]].map(([lx, lz]) => [hx + lx * co + lz * si, hz - lx * si + lz * co]);
+  const mine = new Set([`${h1.x},${h1.z}`, `${h1.x - 1},${h1.z}`, `${h1.x},${h1.z + 1}`]);
+  ok(bb.max.z <= DIAG_BOX.z1 + 0.02 && foot.every(([x, z]) => mine.has(`${Math.floor(x)},${Math.floor(z)}`) && !surfaceAt(tw, x, z)) && m.door && m.door.dz > 0.9, `turned 45 degrees, the house stands on its own plot and the verges beside it, off the road, its door to the street (shrunk to ${fit.k.toFixed(2)})`);
+  ok(!tw.checkBuild('plaza', ...P(8, 8)).ok && /diagonal/.test(tw.checkBuild('plaza', ...P(8, 8)).reason), 'nothing bigger than one tile may stand where a diagonal passes its corner');
+  ok(tw.placeBuilding('plaza', ...P(6, 0), { instant: true }).ok, 'a square beside where a diagonal will try to go');
+  const sk = tw.checkStroke(strokeTiles(T(9, 0), T(6, 3)), 2);
+  ok(!sk[2].ok && /corner/.test(sk[2].reason), 'nor may a diagonal pass the corner of anything bigger');
+  ok(!tw.expandOptions(h1).length && !tw.mergeOptions(h1).length, 'a house facing a diagonal neither grows onto the plot beside it nor joins its neighbour');
+  tw.removeRoad(...P(4, 6));
+  ok(!h1.diag && h1.access && h1.access.x === o.x + 3, 'with the diagonal gone it faces the street along the grid again');
+  lay([3, 5], [5, 7], 2);
+  ok(h1.diag === 3, 'and turns back when it is laid again');
+  // bridges, boulevards and dressings keep to the grid
+  for (let z = 22; z <= 25; z++) for (let x = 22; x <= 25; x++) tw.terrain.setCh(o.x + x, o.z + z, -0.4);
+  ok(tw.terrain.isWater(...P(23, 23)) && /grid/.test(tw.checkStroke(strokeTiles(T(21, 21), T(23, 23)), 1)[1].reason || ''), 'a diagonal does not cross water: bridges run along the grid');
+  lay([0, 20], [4, 24], 2);
+  lay([1, 20], [5, 24], 2);
+  ok([0, 1, 2, 3, 4].every(i => !tw.blvd[tw.idx(...P(i, 20 + i))] && !tw.blvd[tw.idx(...P(1 + i, 20 + i))]) && linksOf(tw, ...P(2, 21)).every(l => l[2]), 'two diagonals side by side stay two streets, not a boulevard');
+  const pd = planDress(tw, [P(5, 7)], 1);
+  ok(pd.n === 0 && /plain/.test(pd.blocked[0].reason), 'street dressings keep off diagonals');
+  const lamps = [];
+  for (let i = 0; i < 16; i++) { const [x, z] = P(2 + i, 4 + i), l = plainLamp(tw, x, z); if (l) lamps.push([l, x + 0.5, z + 0.5]); }
+  ok(lamps.length && lamps.every(([l, cx, cz]) => !surfaceAt(tw, l.x, l.z) && surfaceAt(tw, l.x + (cx - l.x) * 0.4, l.z + (cz - l.z) * 0.4)), `a cobbled diagonal has street lamps at the edge of its verge (${lamps.length})`);
+  ok(roadRun(tw, ...P(5, 7)).length === 8, 'picking a stretch of it follows the diagonal to the junction');
+  // water and the rest come along the streets
+  const well = tw.placeBuilding('well', ...P(8, 9), { instant: true }).building;
+  const tg = { world: tw, speed: 0, _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); } };
+  const sim = new Sim(tg);
+  sim.recompute();
+  ok(well && well.diag && well.connected && sim.coverage.water[tw.idx(...P(14, 16))] === 1 && sim.coverage.water[tw.idx(...P(20, 18))] === 1, 'a well facing the diagonal feeds the mains along it');
+  // it draws
+  const rv = new RoadsView(tw, { add() {}, remove() {} });
+  const pos = rv.surface.geometry.attributes.position.array;
+  let nan = false, near = 0;
+  for (let i = 0; i < pos.length; i += 3) { if (!Number.isFinite(pos[i]) || !Number.isFinite(pos[i + 1])) nan = true; if (Math.abs(pos[i] - (o.x + 6)) < 0.2 && Math.abs(pos[i + 2] - (o.z + 8)) < 0.2) near++; }
+  ok(!nan && near > 6, `the road surface is laid across the corners (${pos.length / 9} triangles)`);
+  // commands, saves, turning
+  const cg = { world: tw, demo: false };
+  ok(runCommand(cg, { t: 'roads', tiles: [P(1, 1), P(3, 3)], level: 1, stroke: true }).reason === "That action isn't valid" && runCommand(cg, { t: 'roads', tiles: [P(0, 0), P(1, 1)], level: 1, stroke: true }).placed === 2 && diagLinked(tw, ...P(0, 0), 1), 'a drag sent as a command is checked step by step, and links what it lays');
+  const saved = serialize(tw), back = deserialize(JSON.parse(JSON.stringify(saved)));
+  ok(typeof saved.diag === 'string' && back.diagN === tw.diagN && back.diag.every((d, i) => d === tw.diag[i]) && back.buildings.get(h1.id).diag === 3 && !JSON.stringify(saved.buildings).includes('diag'), 'diagonals save and load, and the houses work out again which way to face');
+  ok(!('diag' in serialize(w)), 'a town without diagonals saves just as before');
+  const junk = JSON.parse(JSON.stringify(saved));
+  const raw = Buffer.from(junk.diag, 'base64');
+  for (let i = 0; i < raw.length; i += 7) raw[i] = 255;
+  junk.diag = raw.toString('base64');
+  const jw = deserialize(junk), d2 = jw.diag.slice();
+  tidyDiag(jw);
+  ok(jw.diag.every((d, i) => d === d2[i]) && jw.diag.every((d, i) => !d || jw.roads[i]) && [...jw.diag].every((d, i) => [0, 1, 2, 3].every(k => !(d & (1 << k)) || diagLinked(jw, i % jw.N, (i / jw.N) | 0, k))), 'a damaged save is tidied as it loads: links only between roads, both ways');
+  ok(turnDiag(1, 1) === 2 && turnDiag(8 | (CUT << 3), 1) === (1 | CUT) && turnDiag(0x5a, 4) === 0x5a && turnDiag(turnDiag(0x36, 1), 3) === 0x36, 'a turned town turns its diagonals with it');
+}
+
+// 3k. freeform: a building can be turned to any angle on its plot (up to 45
+// degrees either way from facing its street) and nudged on it; whatever the
+// turn, its model stays on its plot (and the verge it may come forward
+// into), its door turns with it, and its real footprint is a polygon in
+// world space. One beside the outside of a bend in the street squares itself
+// to the curve. Poses are placed, changed and squared up by commands, saved,
+// and checked
+{
+  const { cleanPose, poseRec, TURN_MAX, NUDGE } = await import('../src/world/pose.js');
+  const { facingAngle } = await import('../src/world/diagonal.js');
+  const { strokeTiles } = await import('../src/world/diagonal.js');
+  const { surfaceAt } = await import('../src/world/roadShape.js');
+  const { runCommand } = await import('../src/commands.js');
+  ok(cleanPose([0.3, 0.1, -0.05]).a === 0.3 && cleanPose([9, 9, -9]).a === Math.round(TURN_MAX * 1000) / 1000 && cleanPose([9, 9, -9]).x === NUDGE && cleanPose([0, 0, 0]) === null && cleanPose(['x', 0, 0]) === null && cleanPose(null) === null, 'a pose is kept within its limits, and none at all is no pose');
+  // every one-tile building, turned and nudged, on a plain plot and coming forward into the street
+  const turns = [-TURN_MAX, -0.35, 0.2, TURN_MAX], nudges = [[0, 0], [NUDGE, -NUDGE], [-0.1, 0.15]];
+  let tried = 0, worst = 0, at = '', doors = 0, wrongDoor = 0;
+  for (const [type, def] of Object.entries(BUILDINGS)) {
+    if (def.size !== 1 || def.merged || def.needsRail || def.fields || def.needsWater) continue;
+    for (const [i, a] of turns.entries()) {
+      const [x, z] = nudges[i % nudges.length], rot = i % 4, front = i % 2 ? 0.16 : 0;
+      const b = { type, level: def.levels.length - 1, variant: 11 + i, size: 1, w: 1, d: 1, x: 10, z: 10, baseY: 0.5, minY: 0.5, rot, front, pose: cleanPose([a, x, z]) };
+      const m = buildModel(b);
+      tried++;
+      // its footprint in the plot's own frame (turned back by its facing)
+      const th = (rot * Math.PI) / 2, co = Math.cos(th), si = Math.sin(th);
+      for (const [wx, wz] of m.foot) {
+        const dx = wx - 10.5, dz = wz - 10.5, lx = dx * co - dz * si, lz = dx * si + dz * co;
+        const out = Math.max(Math.abs(lx) - 0.5, -lz - 0.5, lz - 0.5 - front);
+        if (out > worst) { worst = out; at = `${type} L${b.level} turned ${a.toFixed(2)}`; }
+      }
+      if (m.door) {
+        doors++;
+        const ft = facingAngle(b) + b.pose.a, c2 = Math.cos(ft), s2 = Math.sin(ft);
+        const wdx = m.door.dx * c2 + m.door.dz * s2, wdz = -m.door.dx * s2 + m.door.dz * c2;
+        if (wdx * Math.sin(ft) + wdz * Math.cos(ft) < 0.7) wrongDoor++;
+      }
+    }
+  }
+  ok(tried > 150 && worst < 0.003, `turned and nudged, every one-tile building stays on its plot and the verge it comes forward into (${tried} tried, at most ${worst.toFixed(4)} over${worst > 0.003 ? ': ' + at : ''})`);
+  ok(doors > 100 && !wrongDoor, `and its door turns with it (${doors} doors)`);
+  // in a town: placed turned, turned again, squared up; saved
+  const tw = World.createNew({ N: 48, seed: 61, name: 'Turnham' });
+  tw.money = 1e6;
+  tw.setSandbox({ unlockAll: true });
+  for (const b of [...tw.buildings.values()]) tw.demolishBuilding(b.id);
+  for (let z = 0; z < 48; z++) for (let x = 0; x < 48; x++) { tw.terrain.setCh(x, z, 0.5); tw._clearTrees(x, z); }
+  for (let z = 0; z < 48; z++) for (let x = 0; x < 48; x++) if (tw.roadAt(x, z) && !(x === tw.entry.x && z === tw.entry.z)) tw.removeRoad(x, z);
+  // an L street: along row 10, turning north up column 14
+  tw.placeRoads(strokeTiles({ x: 4, z: 10 }, { x: 14, z: 10 }, false), 2, { stroke: true });
+  tw.placeRoads(strokeTiles({ x: 14, z: 10 }, { x: 14, z: 4 }, false), 2, { stroke: true });
+  const cg = { world: tw, demo: false };
+  const pr = runCommand(cg, { t: 'place', type: 'house', x: 8, z: 11, yaw: 0.5 });
+  const hb = pr.building;
+  ok(pr.ok && hb.pose && hb.pose.a === 0.5 && !runCommand(cg, { t: 'place', type: 'house', x: 9, z: 11, yaw: 1.2 }).ok, 'a building can be placed turned (and no further than 45 degrees)');
+  let refits = 0;
+  tw.on('building:refit', (b) => { if (b === hb) refits++; });
+  ok(runCommand(cg, { t: 'pose', id: hb.id, pose: [-0.3, 0.12, -0.08] }).ok && hb.pose.a === -0.3 && hb.pose.x === 0.12 && hb.pose.z === -0.08 && refits === 1, 'turned and nudged again, it is rebuilt where it now stands');
+  ok(!runCommand(cg, { t: 'pose', id: hb.id, pose: [0, 0.5, 0] }).ok && !runCommand(cg, { t: 'pose', id: hb.id, pose: [0, 0] }).ok, 'a nudge off its plot, or a pose that makes no sense, is refused');
+  const saved = serialize(tw), back = deserialize(JSON.parse(JSON.stringify(saved)));
+  ok(JSON.stringify(back.buildings.get(hb.id).pose) === JSON.stringify(hb.pose) && JSON.stringify(poseRec(hb)) === JSON.stringify([-0.3, 0.12, -0.08]), 'its pose is saved and loaded');
+  const plain = JSON.parse(JSON.stringify(saved));
+  for (const rec of plain.buildings) rec.length = Math.min(rec.length, 15);
+  ok(!deserialize(plain).buildings.get(hb.id).pose && saved.buildings.filter(r => r.length > 15).length === 1, 'only a building with a pose saves one, and older saves load square');
+  ok(runCommand(cg, { t: 'pose', id: hb.id, pose: null }).ok && !hb.pose, 'squared up, it faces its street again');
+  // the outside of the bend: squared to its curve, on its plot and off the road
+  const bh = tw.placeBuilding('house', 14, 11, { instant: true }).building, bm = buildModel(bh);
+  ok(Math.abs(Math.abs(bh.curve) - 0.322) < 0.002 && !bm.foot.some(([x, z]) => surfaceAt(tw, x, z)) && bm.foot.every(([x, z]) => x > 13.99 && x < 15.01 && z > 10.83 && z < 12.01), `a house on the outside of a bend turns to sit square to the curve (${(bh.curve * 180 / Math.PI).toFixed(1)} degrees), on its plot and off the road`);
+  ok(!JSON.stringify(serialize(tw).buildings).includes('0.322') && deserialize(JSON.parse(JSON.stringify(serialize(tw)))).buildings.get(bh.id).curve === bh.curve, 'its turn comes from the street, so it is never saved, and a load works it out again');
+  tw.placeRoads(strokeTiles({ x: 14, z: 10 }, { x: 18, z: 10 }, false), 2, { stroke: true });
+  ok(!bh.curve, 'with the bend now a junction, it faces the street square again');
+}
+
 // 4. save round-trip
 const data = serialize(w);
 const json = JSON.stringify(data);

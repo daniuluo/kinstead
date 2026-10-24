@@ -100,13 +100,14 @@ function differences(a, b) {
   for (const x of A.buildings.values()) {
     const y = B.buildings.get(x.id);
     if (!y) { add(`building ${x.id} (${x.type}) missing`); continue; }
-    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.look || null, o.flavor || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
+    const k = (o) => JSON.stringify([o.type, o.level, o.x, o.z, fw(o), fd(o), o.rot, o.diag || 0, o.pose || null, o.curve || 0, o.look || null, o.flavor || null, o.variant, o.access, !!o.connected, o.front || 0, o.leases && o.leases.length ? o.leases : null,
       o.con ? [o.con.kind, o.con.to, o.con.toType, o.con.wait || null] : null]);
     if (k(x) !== k(y)) add(`building ${x.id} differs: ${k(x)} vs ${k(y)}`);
     else if (x.con && Math.abs(x.con.done - y.con.done) > 0.02) add(`site ${x.id} progress ${x.con.done} vs ${y.con.done}`);
   }
   for (let i = 0; i < A.roads.length; i++) {
     if (A.roads[i] !== B.roads[i]) { add(`road at ${i}`); break; }
+    if (A.diag[i] !== B.diag[i]) { add(`diagonal at ${i}: ${A.diag[i]} vs ${B.diag[i]}`); break; }
     if (A.rails[i] !== B.rails[i]) { add(`rail at ${i}`); break; }
     if (A.treeCount[i] !== B.treeCount[i]) { add(`trees at ${i}: ${A.treeCount[i]} vs ${B.treeCount[i]}`); break; }
     if (A.buildingAt[i] !== B.buildingAt[i]) { add(`plot at ${i}: ${A.buildingAt[i]} vs ${B.buildingAt[i]}`); break; }
@@ -368,6 +369,37 @@ let ended = null;
       await until(() => pair[1].every(([x, z]) => !gw().roadAt(x, z)));
       ok(rm.ok && gw().blvd.every((v, i) => v === hw.blvd[i]) && pair[0].every(([x, z]) => !lookPart(gw().dress[gw().idx(x, z)]) && !gw().blvd[gw().idx(x, z)]), 'taking one road up again ends the boulevard and its look for everyone');
     } else ok(false, 'no room for a boulevard');
+  }
+  // a guest drags a diagonal street out of the town and puts a house beside
+  // it: everyone has the same links, and sees the house turned to face it
+  {
+    const { strokeTiles } = await import('../src/world/diagonal.js');
+    const { CORNERS } = await import('../src/world/roadShape.js');
+    let line = null;
+    for (let z = 2; z < hw.N - 8 && !line; z++) for (let x = 2; x < hw.N - 8 && !line; x++) {
+      if (!hw.connected[hw.idx(x, z)]) continue;
+      for (let k = 0; k < 4 && !line; k++) {
+        const tiles = strokeTiles({ x, z }, { x: x + CORNERS[k][0] * 5, z: z + CORNERS[k][1] * 5 });
+        if (tiles.every(([tx, tz]) => hw.inBounds(tx, tz)) && hw.checkStroke(tiles, 1).slice(1).every(c => c.ok && !c.noop)) line = tiles;
+      }
+    }
+    if (line) {
+      const lr = await ask(guest, { t: 'roads', tiles: line, level: 1, stroke: true });
+      await until(() => line.every(([x, z]) => gw().roadAt(x, z)) && gw().diag.every((v, i) => v === hw.diag[i]));
+      ok(lr.placed === 5 && hw.diagN === gw().diagN && hw.diagN >= 5 && gw().diag.every((v, i) => v === hw.diag[i]), `a guest drags a diagonal street, and everyone has it linked corner to corner (${hw.diagN} links)`);
+      let house = null;
+      for (const n of [2, 3]) for (const [x, z] of [[line[n + 1][0], line[n][1]], [line[n][0], line[n + 1][1]]]) {
+        if (house || !hw.checkBuild('house', x, z, { ignoreMoney: true }).ok) continue;
+        const r = await ask(guest, { t: 'place', type: 'house', x, z });
+        if (r.ok) house = r.building;
+      }
+      await until(() => house && gw().buildings.has(house.id) && hw.buildings.get(house.id).diag && gw().buildings.get(house.id).diag);
+      ok(house && hw.buildings.get(house.id).diag && gw().buildings.get(house.id).diag === hw.buildings.get(house.id).diag, 'a house the guest puts beside it faces it for everyone');
+      // and turns it a little more, and nudges it, on its plot
+      const pr = house && await ask(guest, { t: 'pose', id: house.id, pose: [0.3, -0.1, 0.05] });
+      await until(() => house && JSON.stringify(gw().buildings.get(house.id).pose || null) === JSON.stringify(hw.buildings.get(house.id).pose || null) && hw.buildings.get(house.id).pose);
+      ok(pr && pr.ok && JSON.stringify(hw.buildings.get(house.id).pose) === '{"a":0.3,"x":-0.1,"z":0.05}' && JSON.stringify(gw().buildings.get(house.id).pose) === JSON.stringify(hw.buildings.get(house.id).pose), 'the guest turns and nudges it on its plot, and everyone sees it so');
+    } else ok(false, 'no room for a diagonal street');
   }
   // a coach line between two stops
   const stops = [];
