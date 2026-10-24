@@ -996,7 +996,19 @@ export const BUILDINGS = {
       { name: 'Gondola Terminal', cost: 700, upkeep: 7, unlock: 80 },
     ],
   },
+  // Where gondola lines meet: a deck four times the size, with a berth for
+  // each of up to four lines (hub), so their cabins never cross in it.
+  gondolahub: {
+    name: 'Gondola Interchange', cat: 'transit', size: 2, stop: 'gondola', hub: 4, unlock: 80, tech: 'cablecars', icon: '🚡',
+    desc: 'A big gondola station where up to four lines meet, each calling at a berth of its own so their cabins never cross. A plain station takes one line.',
+    levels: [
+      { name: 'Gondola Interchange', cost: 1300, upkeep: 10 },
+    ],
+  },
 };
+
+// Is building b a stop of transit mode ('coach', 'rail' or 'gondola')?
+export const stopOf = (b, mode) => !!b && !!BUILDINGS[b.type] && BUILDINGS[b.type].stop === mode;
 
 // maxVehicles: how many a line can run; vehicle(s), stop, lineName and icon:
 // what the menus and messages call them

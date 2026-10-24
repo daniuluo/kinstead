@@ -526,6 +526,7 @@ export class Agents {
     for (const o of this._vehiclesNear(wk.x, wk.z)) {
       if (Math.abs(o.y - wk.y) > 0.15) continue;
       const v = o.owner, on = v.state !== 'dwell' && !v.wait ? 0.3 : 0;
+      if (!on && wk.hold > CAR_PATIENCE) continue;   // (one stuck in a jam a good while: they go round it)
       const mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2, cx = o.x + o.hx * mid, cz = o.z + o.hz * mid;
       const inBox = (x, z) => { const rx = x - cx, rz = z - cz, u = rx * o.hx + rz * o.hz; return u > -half - BODY_D / 2 && u < half + BODY_D / 2 + on && Math.abs(rx * o.hz - rz * o.hx) < o.w; };
       if (inBox(wk.x, wk.z)) continue;   // (in it already: out the way they're going)
@@ -555,9 +556,10 @@ export class Agents {
     return this._vmap.get(Math.floor(x) * 65536 + Math.floor(z)) || [];
   }
 
-  // A free seat on one of a gondola station's benches (stop.seats), or null.
-  _freeSeat(stop) {
-    const free = (stop.seats || []).filter(s => { const o = this._seated.get(s); return !o || !this.walkers.has(o) || o.seatOf !== s; });
+  // A free seat on one of a gondola station's benches (stop.seats), or null;
+  // near: at an interchange, one by this berth ([x, z]) of its deck.
+  _freeSeat(stop, near = null) {
+    const free = (stop.seats || []).filter(s => { const o = this._seated.get(s); return (!o || !this.walkers.has(o) || o.seatOf !== s) && (!near || Math.hypot(s.x - near[0], s.z - near[1]) < 0.6); });
     return free.length ? free[(Math.random() * free.length) | 0] : null;
   }
 
@@ -723,7 +725,9 @@ export class Agents {
     const tiles = this.game.paths.road(stop.access.x, stop.access.z, B.access.x, B.access.z);
     if (!tiles) { r.at = r.home; return 0; }
     const wk = this._walk(r, stop, B, tiles, null, () => this._arrive(r, B.id));
-    const from = rode ? [rode.x, rode.z] : at ? seatAt(at, 0) : null;
+    // (from their seat in the cabin; or, not quite in it yet when it set
+    // off, from the cabin where it stands now)
+    const from = rode && rode.mode === 'ride' ? [rode.x, rode.z] : at ? seatAt(at, 0) : null;
     if (!stop.stair || !stop.deck || !from) return 0;
     const down = stop.stair.slice().reverse();
     wk.pts.unshift(from, ...down.map(p => [p.x, p.z]));
@@ -733,23 +737,25 @@ export class Agents {
     return 0.12 / (CONFIG.WALK_SPEED * wk.speedK);
   }
 
-  // Passenger waiting at a stop (visible, standing around). At a gondola
-  // station (whose model gives its way up, stop.stair, and its deck), up the
-  // stairs or the lift first, to wait on the deck clear of the cabins'
-  // way through (transit.deckSpots); they board only once up there (onDeck).
-  waitAt(r, stop) {
+  // Passenger waiting at a stop for line (visible, standing around). At a
+  // gondola station (whose model gives its way up, stop.stair, and its
+  // deck), up the stairs or the lift first, to wait on the deck clear of the
+  // cabins' way through (transit.deckSpots), at an interchange by the berth
+  // where line calls; they board only once up there (onDeck).
+  waitAt(r, stop, line = null) {
     if (stop.stair && stop.deck && r.walk) {
       // a seat on one of its benches if there's one free (taken from the
-      // front), or somewhere to stand, facing the middle where the cabins
-      // come in
-      const wk = r.walk, d = stop.deck, seat = this._freeSeat(stop);
+      // front), or somewhere to stand, facing the middle (or the berth)
+      // where the cabins come in
+      const at = line && this.game.transit.berthPoint ? this.game.transit.berthPoint(stop, line) : null;
+      const wk = r.walk, d = stop.deck, seat = this._freeSeat(stop, at), [fx, fz] = at || [d.x, d.z];
       let end;
       if (seat) {
         this._seated.set(seat, wk);
         wk.seatOf = seat;
         end = [[seat.x + Math.sin(seat.h) * 0.06, seat.z + Math.cos(seat.h) * 0.06], [seat.x, seat.z]];
       } else {
-        const spots = this.game.transit.deckSpots(stop);
+        const spots = this.game.transit.deckSpots(stop, line);
         end = [spots && spots.length ? spots[(Math.random() * spots.length) | 0] : [d.x, d.z]];
       }
       Object.assign(wk, {
@@ -758,14 +764,14 @@ export class Agents {
         onArrive: () => {
           wk.mode = 'wait';
           if (seat && wk.seatOf === seat) { wk.sit = true; wk.standY = wk.y = seat.y; wk.heading = seat.h; }
-          else { wk.standY = wk.y = d.y; wk.heading = Math.atan2(d.x - wk.x, d.z - wk.z); }
+          else { wk.standY = wk.y = d.y; wk.heading = Math.atan2(fx - wk.x, fz - wk.z); }
         },
       });
       r.loc = 'wait';
       return;
     }
     const p = doorPoint(stop);
-    const cx = stop.x + 0.5, cz = stop.z + 0.5;
+    const cx = stop.x + fw(stop) / 2, cz = stop.z + fd(stop) / 2;
     const wk = r.walk || this._makeWalker(r.lk, [[p.x, p.z]], null);
     wk.r = r;
     r.walk = wk;
@@ -806,8 +812,8 @@ export class Agents {
     const p = seatAt(at, at.seat), y = wk.sit ? wk.standY - G_DECK_SEAT : wk.standY;   // (up off a bench to the deck)
     this._unseat(wk);
     Object.assign(wk, {
-      pts: [[wk.x, wk.z], p], ys: [y, y], seg: 0, t: 0, mode: 'path', doorIn: 0, doorOut: 0, floorIn: null, floorOut: null,
-      onArrive: () => { wk.mode = 'ride'; wk.cabin = at.v; wk.seat = at.seat; },
+      pts: [[wk.x, wk.z], p], ys: [y, y], seg: 0, t: 0, mode: 'path', doorIn: 0, doorOut: 0, floorIn: null, floorOut: null, boarding: true,
+      onArrive: () => { wk.mode = 'ride'; wk.boarding = false; wk.cabin = at.v; wk.seat = at.seat; },
     });
     return Math.hypot(p[0] - wk.x, p[1] - wk.z) / (CONFIG.WALK_SPEED * wk.speedK) + 0.25;
   }
@@ -922,7 +928,9 @@ export class Agents {
         // way (or, somewhere narrow, anyone ahead), not for ever, though; and
         // not into a vehicle's way, for as long as it takes
         const limit = inside(wk) ? Infinity : wk.narrow ? HOLD_NARROW : HOLD, people = wk.hold < limit;
-        const gap = wk.inView === false ? Infinity : this._ahead(wk, people);   // (nobody sees those out of view)
+        // (nobody sees those out of view; one getting into a cabin goes
+        // straight in, as it waits only so long)
+        const gap = wk.inView === false || wk.boarding ? Infinity : this._ahead(wk, people);
         if (gap < rem) { rem = Math.max(0, gap); if (rem === 0) wk.hold += dt * speed; }
         else if (people) wk.hold = 0;
         else if ((wk.hold += dt * speed) > limit + 1) wk.hold = 0;
@@ -1165,6 +1173,9 @@ const BODY_D = 0.064, CELL = 0.25, SIDE_IN = 0.02, SIDE_OUT = 0.03;
 // how long one villager takes to clear a doorway (a body's width at the slow
 // pace through a door), so the next one out waits that long
 const DOOR_GAP = 1.1;
+// how long a villager waits at the kerb for a vehicle standing in a queue
+// across their way before going round it (one on the move, as long as it takes)
+const CAR_PATIENCE = 30;
 // how long a villager waits behind someone before walking on regardless: on
 // a street, and somewhere narrow (a doorway's queue keeps moving, if slowly)
 const HOLD = 6, HOLD_NARROW = 25;

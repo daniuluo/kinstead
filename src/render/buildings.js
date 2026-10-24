@@ -4177,6 +4177,77 @@ MODELS.gondola = (c, L) => {
   c.deck = { x: 0, y: DECK, z: 0 };
 };
 
+// A gondola interchange, where lines meet: the station four times over, a
+// deck on stilts with a berth in each quarter of it for a line of its own
+// (c.berths: where each is and the headings its cables leave on), under one
+// roof with a drive over each berth, so the lines' cabins never cross on it.
+// A booking hall in brick under the deck, the way up as at a station (to the
+// deck's front), a lantern and a flag on the roof. c.stair, c.deck, c.seats
+// and c.stand as at a station.
+MODELS.gondolahub = (c) => {
+  const { gb, pal } = c;
+  const lift = c.lift || 0;
+  const DECK = 0.78 + lift, EAVE = 1.3 + lift, D = 0.85;
+  const post = '#4c5a60', floor = STONE, beam = shade(post, 0.85);
+  if (!c.berths) c.berths = [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].map(([x, z]) => ({ x, z, cables: [] }));
+  // (short of the plot's edge, as a 2×2 plot is nudged further)
+  footing(c, 0, 0, 1.78, 1.78);
+  gb.box(0, 0, 0, 1.78, 0.02, 1.78, '#c9c1b0');
+  // the booking hall under the back of the deck
+  gb.cbox(0, 0, -0.3, 1.1, 0.5, 0.66, pal.brick, 0, 0.014);
+  gb.box(0, 0.5, -0.3, 1.14, 0.035, 0.7, STONE);
+  for (const x of [-0.36, 0.36]) win(c, x, 0.14, 0.03, 0.09, 0.2, 'f', 0.85);
+  for (const z of [-0.45, -0.15]) { win(c, -0.55, 0.14, z, 0.09, 0.2, 'l', 0.85); win(c, 0.55, 0.14, z, 0.09, 0.2, 'r', 0.85); }
+  door(c, 0, 0.03, 0.12, 0.24, pal.door);
+  gb.box(0, 0.3, 0.035, 0.26, 0.05, 0.01, '#2f4858');
+  // the stilts, round the edge and up to the eaves (not in the middle of the
+  // front, where the way up may come), braced below the deck in bays
+  const sw = lift > 1.5 ? 0.065 : 0.05;
+  for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) if ((sx || sz) && !(sx === 0 && sz === 1)) gb.box(sx * D, 0, sz * D, sw, EAVE, sw, post);
+  const bays = Math.max(1, Math.ceil((DECK - 0.1) / 0.8)), rise = (DECK - 0.1) / bays, len = Math.hypot(D, rise), a = Math.atan2(rise, D);
+  for (let j = 0; j < bays; j++) {
+    const y = 0.03 + rise * (j + 0.5);
+    for (const h of [-1, 1]) for (const s of [-1, 1]) {
+      gb.boxC(h * D / 2, y, -D, len, 0.022, 0.018, beam, 0, 0, s * a);
+      for (const sx of [-1, 1]) gb.boxC(sx * D, y, h * D / 2, 0.018, 0.022, len, beam, s * a);
+    }
+  }
+  // the deck and its edge beams
+  gb.box(0, DECK - 0.05, 0, 2 * D + 0.04, 0.05, 2 * D + 0.04, floor);
+  for (const s of [-1, 1]) {
+    gb.box(0, DECK - 0.09, s * D, 2 * D, 0.04, 0.03, beam);
+    gb.box(s * D, DECK - 0.09, 0, 0.03, 0.04, 2 * D, beam);
+  }
+  gondolaWayUp(c, true, DECK, D, post, floor);
+  gondolaDeck(c, true, DECK, D, post);
+  // the roof over it all, on the stilts and the drives' columns: a drive
+  // over each berth, a hip roof with a lantern and a flag
+  for (const s of [-1, 1]) {
+    gb.box(0, EAVE - 0.05, s * D, 2 * D + 0.04, 0.05, 0.03, beam);
+    gb.box(s * D, EAVE - 0.05, 0, 0.03, 0.05, 2 * D + 0.04, beam);
+  }
+  gb.box(0, EAVE - 0.05, 0, 2 * D, 0.04, 0.03, beam);
+  gb.box(0, EAVE - 0.05, 0, 0.03, 0.04, 2 * D, beam);
+  for (const B of c.berths) {
+    if (lift >= 0.5) gb.box(B.x, DECK - 0.05, B.z, 0.06, 0.38, 0.06, '#4f565b');
+    gb.box(B.x, DECK + 0.33, B.z, 0.22, 0.11, 0.22, '#5a5f63');
+    gb.box(B.x, DECK + 0.44, B.z, 0.06, EAVE - DECK - 0.44, 0.06, '#5a5f63');
+  }
+  gb.hip(0, EAVE, 0, 1.86, 1.86, 0.34, pal.slate, 0.06);
+  gb.box(0, EAVE + 0.24, 0, 0.18, 0.1, 0.18, '#e9e2d4');
+  gb.glow(WARM[0], WARM[1], WARM[2], 1.3);
+  for (const [fx, fz] of [[0, 0.091], [0, -0.091], [0.091, 0], [-0.091, 0]]) gb.box(fx, EAVE + 0.26, fz, fz ? 0.1 : 0.006, 0.06, fz ? 0.006 : 0.1, GLASS);
+  gb.noGlow();
+  gb.hip(0, EAVE + 0.34, 0, 0.18, 0.18, 0.09, pal.slate, 0.02);
+  gb.box(0, EAVE + 0.43, 0, 0.012, 0.2, 0.012, '#2f2c2a');
+  gb.box(0.05, EAVE + 0.56, 0, 0.09, 0.055, 0.005, pal.awning);
+  // the name board under the deck, with the gondola's roundel
+  gb.box(0.3, DECK - 0.18, D + 0.018, 0.4, 0.09, 0.012, '#2f4858');
+  gb.cyl(0.15, DECK - 0.135, D + 0.026, 0.032, 0.032, 0.006, 10, '#e8e0d0', 0, Math.PI / 2);
+  gb.box(0.34, DECK - 0.14, D + 0.026, 0.2, 0.012, 0.004, '#e8e0d0');
+  c.deck = { x: 0, y: DECK, z: 0 };
+};
+
 // A gondola station's deck made welcoming to those waiting: railings round
 // its edge (open where the cabins come and go, and where the stairs or the
 // lift come up), benches along its quiet sides facing in, flower boxes on
@@ -4187,20 +4258,22 @@ MODELS.gondola = (c, L) => {
 // a cabin 0.16 across). c.seats: the places on the benches (x, y, z in this
 // frame, and h the way a villager sitting there faces); c.stand: places
 // clear of all of it to stand and wait (transit.js keeps those clear of the
-// cabins' way too).
+// cabins' way too). At an interchange the same about each of its berths
+// (c.berths), the deck its whole plot wide.
 function gondolaDeck(c, L, DECK, D, post) {
   const { gb, rng } = c;
-  const WAY = 0.14 + 0.08 + 0.03;
-  const inWay = (x, z) => (c.cables || []).some(k => {
-    const ux = Math.sin(k), uz = Math.cos(k);
-    return Math.abs(z * ux - x * uz) < WAY && x * ux + z * uz > -WAY;
-  });
+  const WAY = 0.14 + 0.08 + 0.03, hub = !!c.berths;
+  const berths = c.berths || [{ x: 0, z: 0, cables: c.cables || [] }];
+  const inWay = (x, z) => berths.some(B => B.cables.some(k => {
+    const ux = Math.sin(k), uz = Math.cos(k), rx = x - B.x, rz = z - B.z;
+    return Math.abs(rz * ux - rx * uz) < WAY && rx * ux + rz * uz > -WAY;
+  }));
   // where the way up comes on to the deck, at its edge
   const e = c.stair && c.stair[c.stair.length - 1];
   const gate = e && (Math.abs(e.x) > Math.abs(e.z) ? [Math.sign(e.x) * D, e.z] : [e.x, Math.sign(e.z) * D]);
   const atGate = (x, z) => gate && Math.hypot(x - gate[0], z - gate[1]) < 0.1;
   // railings: the deck's edge in short lengths, a post at each end
-  const RH = 0.085, n = 10, len = (2 * D) / n;
+  const RH = 0.085, n = Math.round(D * 30), len = (2 * D) / n;
   const quiet = [];
   for (const [nx, nz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
     for (let i = 0; i < n; i++) {
@@ -4225,15 +4298,15 @@ function gondolaDeck(c, L, DECK, D, post) {
   // terminal), the two places on each where a villager sits
   c.seats = [];
   const spots = [];
-  for (const [nx, nz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) for (const u of [0, -0.13, 0.13, -0.18, 0.18]) spots.push([nx, nz, u]);
+  for (const [nx, nz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) for (const u of hub ? [-0.5, 0.5, -0.3, 0.3, -0.68, 0.68, 0] : [0, -0.13, 0.13, -0.18, 0.18]) spots.push([nx, nz, u]);
   const placed = [];
   for (const [nx, nz, u] of spots) {
-    if (placed.length >= (L ? 3 : 2)) break;
+    if (placed.length >= (hub ? 8 : L ? 3 : 2)) break;
     const bx = nx ? nx * (D - 0.04) : u, bz = nz ? nz * (D - 0.04) : u, ry = Math.atan2(-nx, -nz);
     const ax = nz ? 1 : 0, az = nx ? 1 : 0;   // along the bench
     const ends = [-0.1, 0.1].map(k => [bx + ax * k, bz + az * k]);
     const feet = [bx - nx * 0.04, bz - nz * 0.04];   // (where a sitter's feet reach)
-    if ([...ends, feet, [bx, bz]].some(([x, z]) => inWay(x, z) || atGate(x, z) || Math.hypot(x, z) < 0.12)) continue;
+    if ([...ends, feet, [bx, bz]].some(([x, z]) => inWay(x, z) || atGate(x, z) || berths.some(B => Math.hypot(x - B.x, z - B.z) < 0.12))) continue;
     if (placed.some(([px, pz]) => Math.hypot(px - bx, pz - bz) < 0.22)) continue;
     placed.push([bx, bz, ry, nx, nz]);
     bench(c, bx, bz, ry, DECK);
@@ -4251,11 +4324,11 @@ function gondolaDeck(c, L, DECK, D, post) {
   // lamps in the two quietest corners
   const corners = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sx, sz]) => [sx * (D - 0.04), sz * (D - 0.04)])
     .filter(([x, z]) => !inWay(x, z) && !atGate(x, z) && !placed.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 0.12));
-  for (const [x, z] of corners.slice(0, 2)) lamp(c, x, z, 0.2, DECK);
-  const lamps = corners.slice(0, 2);
-  // a clock on each side of the drive, over everyone's heads
-  for (const [fx, fz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-    const cx = fx * 0.112, cz = fz * 0.112, ry = Math.atan2(fx, fz);
+  const lamps = corners.slice(0, hub ? 4 : 2);
+  for (const [x, z] of lamps) lamp(c, x, z, 0.2, DECK);
+  // a clock on each side of the drive (each berth's), over everyone's heads
+  for (const B of berths) for (const [fx, fz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const cx = B.x + fx * 0.112, cz = B.z + fz * 0.112, ry = Math.atan2(fx, fz);
     gb.push(cx, DECK + 0.385, cz, ry);
     gb.cyl(0, 0, 0, 0.034, 0.034, 0.006, 12, '#2f2c2a', 0, Math.PI / 2);
     gb.cyl(0, 0, 0.004, 0.028, 0.028, 0.004, 12, '#f1ece0', 0, Math.PI / 2);
@@ -4284,10 +4357,10 @@ function gondolaDeck(c, L, DECK, D, post) {
     return Math.hypot(x - ax - ex * t, z - az - ez * t);
   };
   c.stand = [];
-  for (let k = 0; k < 16; k++) {
+  for (const B of berths) for (let k = 0; k < 16; k++) {
     const a = (k * Math.PI) / 8;
     for (const r of [0.22, 0.17, 0.12]) {
-      const x = Math.sin(a) * r, z = Math.cos(a) * r;
+      const x = B.x + Math.sin(a) * r, z = B.z + Math.cos(a) * r;
       if (Math.abs(x) > D - 0.06 || Math.abs(z) > D - 0.06 || r < 0.1) continue;
       if (placed.some(([bx, bz, , nx, nz]) => seg(x, z, [bx - (nz ? 0.1 : 0) - nx * 0.05, bz - (nx ? 0.1 : 0) - nz * 0.05], [bx + (nz ? 0.1 : 0) - nx * 0.05, bz + (nx ? 0.1 : 0) - nz * 0.05]) < 0.075)) continue;
       if (lamps.some(([lx, lz]) => Math.hypot(x - lx, z - lz) < 0.06) || (board && Math.hypot(x - board[0], z - board[1]) < 0.08)) continue;
@@ -4310,9 +4383,12 @@ function gondolaDeck(c, L, DECK, D, post) {
 // foot, a bench under the deck.
 function gondolaWayUp(c, L, DECK, D, post, floor) {
   const { gb } = c;
-  const S = D + 0.08, W = 0.1, RISE = 0.02, TREAD = 0.03;
+  const S = D + 0.08, W = 0.1, RISE = 0.02, TREAD = 0.03, F = c.Ez;   // (F: the front of the plot)
   // how far a heading in this frame is from the nearest the cables leave on
+  // (at an interchange, how far a point is from the cables leaving its berths)
+  const rays = c.berths ? c.berths.flatMap(B => B.cables.map(k => [B.x, B.z, Math.sin(k), Math.cos(k)])) : null, by = rays ? 0.05 : 0.2;
   const clear = (x, z) => {
+    if (rays) return Math.min(9, ...rays.map(([bx, bz, ux, uz]) => { const t = Math.max(0, (x - bx) * ux + (z - bz) * uz); return Math.hypot(x - bx - ux * t, z - bz - uz * t); }));
     if (!c.cables || !c.cables.length) return Math.PI;
     const a = Math.atan2(x, z);
     return Math.min(...c.cables.map(k => Math.abs(Math.atan2(Math.sin(a - k), Math.cos(a - k)))));
@@ -4321,7 +4397,7 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
     // the lift: in the middle of the front strip, or near the front of a
     // side strip; [x, z, and the way in to the deck from it]
     const spots = [[0, S - 0.04, 0, -1], [S, 0.14, -1, 0], [-S, 0.14, 1, 0]];
-    const [lx, lz, ix, iz] = spots.reduce((a, b) => (clear(b[0], b[1]) > clear(a[0], a[1]) + 0.2 ? b : a));
+    const [lx, lz, ix, iz] = spots.reduce((a, b) => (clear(b[0], b[1]) > clear(a[0], a[1]) + by ? b : a));
     const w = 0.1, h = DECK + 0.17, front = iz !== 0;
     gb.box(lx, 0, lz, w + 0.012, h, w + 0.012, '#4f565b');
     gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
@@ -4339,13 +4415,13 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
       gb.box(lx + ix * (w / 2 + 0.008), DECK, lz, 0.006, 0.15, 0.07, '#2f2c2a');
     }
     c.stair = [
-      { x: lx, y: 0.02, z: 0.5 },
+      { x: lx, y: 0.02, z: F },
       { x: lx, y: 0.02, z: lz + w / 2 + 0.05 },
       { x: lx, y: 0.02, z: lz },
       { x: lx, y: DECK, z: lz },
       { x: lx + ix * 0.15, y: DECK, z: lz + iz * 0.15 },
     ];
-    lamp(c, lx + (lx > 0 ? -0.1 : 0.1), 0.45, 0.3);
+    lamp(c, lx + (lx > 0 ? -0.1 : 0.1), F - 0.05, 0.3);
     return;
   }
   // the stairs: up a side strip from the street end, on round the back (and
@@ -4353,8 +4429,8 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
   // first along the front from one corner and on round the far side, so the
   // top can come to the deck on any of its four sides
   const ways = [
-    ...[1, -1].map(sx => [[sx * S, 0.42], [sx * S, -S], [-sx * S, -S], [-sx * S, S]]),
-    ...[1, -1].map(sx => [[-sx * 0.42, S], [sx * S, S], [sx * S, -S], [-sx * S, -S]]),
+    ...[1, -1].map(sx => [[sx * S, F - 0.08], [sx * S, -S], [-sx * S, -S], [-sx * S, S]]),
+    ...[1, -1].map(sx => [[-sx * (F - 0.08), S], [sx * S, S], [sx * S, -S], [-sx * S, -S]]),
   ];
   const N = Math.ceil(DECK / RISE), rise = DECK / N;
   // the treads along a way ([x, z, height, heading] each), the corners it
@@ -4373,7 +4449,7 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
   };
   const opts = ways.map(layout).filter(Boolean);
   if (!opts.length) return;
-  const best = opts.reduce((a, b) => (clear(b.top[0], b.top[1]) > clear(a.top[0], a.top[1]) + 0.2 ? b : a));
+  const best = opts.reduce((a, b) => (clear(b.top[0], b.top[1]) > clear(a.top[0], a.top[1]) + by ? b : a));
   const { treads, lands, top } = best;
   for (const [x, z, h, hd] of treads) {
     gb.push(x, 0, z, hd);
@@ -4408,7 +4484,7 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
   // the way a villager climbs it: from the street to its foot, up each
   // flight, across each landing, over the top landing and in on to the deck
   const [fx, fz] = best.P[0];
-  const way = [{ x: fx, y: 0.02, z: 0.5 }, { x: fx, y: 0.02, z: fz + 0.04 }];
+  const way = [{ x: fx, y: 0.02, z: F }, { x: fx, y: 0.02, z: fz + 0.04 }];
   for (const [k, r] of runs.entries()) {
     const [ax, az, ah] = r.a, [bx, bz, bh] = r.b, ux = Math.sin(r.hd), uz = Math.cos(r.hd);
     if (k) { const l = lands[k - 1]; way.push({ x: l[0], y: l[2], z: l[1] }); }
@@ -4423,8 +4499,8 @@ function gondolaWayUp(c, L, DECK, D, post, floor) {
   // (a street lamp by its foot: beside it on the front, or along the side
   // strip when the stairs start along the front)
   if (Math.abs(fz - S) < 1e-6) lamp(c, fx, S - 0.14, 0.3);
-  else lamp(c, fx - Math.sign(fx) * 0.1, 0.45, 0.3);
-  bench(c, -Math.sign(fx) * 0.2, 0.24, 0);
+  else lamp(c, fx - Math.sign(fx) * 0.1, F - 0.05, 0.3);
+  bench(c, -Math.sign(fx) * 0.2, F - 0.26, 0);
 }
 
 // A faint per-building colour cast, so neighbours never look copy-pasted.
@@ -7758,6 +7834,8 @@ export function buildModel(b, opts = {}) {
     season: opts.season ?? 1, seasonW: opts.seasonW || 0,
     lift: b.lift || 0,   // a gondola station standing taller (worked out by transit.js)
     cables: b.cables ? b.cables.map(a => a - th) : null,   // the headings its cables leave on, in this frame (transit.js)
+    // an interchange's berths: where each is and the headings its cables leave on, in this frame (transit.js)
+    berths: b.berths ? b.berths.map(B => { const dx = B.x - b.x - fw(b) / 2, dz = B.z - b.z - fd(b) / 2; return { x: dx * co - dz * si, z: dx * si + dz * co, cables: B.cables.map(a => a - th) }; }) : null,
     railK: b.rail ? ((b.rail.dir - b.rot + 4) % 4) : 2,
     // ground height (relative to the current frame) under local point (x, z)
     gy(x, z) {

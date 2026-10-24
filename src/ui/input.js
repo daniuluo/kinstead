@@ -1,7 +1,7 @@
 // Mouse / keyboard / touch: camera control and all the building tools.
 
 import * as THREE from 'three';
-import { BUILDINGS, TRANSIT } from '../defs.js';
+import { BUILDINGS, TRANSIT, stopOf } from '../defs.js';
 import { fw, fd, capOf, floorHeight } from '../world/world.js';
 import { ROAD_LEVELS } from '../config.js';
 import { buildModel } from '../render/buildings.js';
@@ -303,8 +303,7 @@ export class Input {
   _lineClick(e) {
     const t = this.tool;
     const b = this.pickBuilding(e) || (() => { const tl = this.pickTile(e); return tl ? this.world.buildingOn(tl.x, tl.z) : null; })();
-    const want = TRANSIT[t.mode].stopType;
-    if (!b || b.type !== want) { this.ui.toast(`Click a ${TRANSIT[t.mode].stop}`, 'bad'); return; }
+    if (!stopOf(b, t.mode)) { this.ui.toast(`Click a ${TRANSIT[t.mode].stop}`, 'bad'); return; }
     if (t.stops[t.stops.length - 1] === b.id) return;
     if (t.stops.length >= 2 && t.stops[0] === b.id) { this.finishLine(); return; }
     t.stops.push(b.id);
@@ -523,11 +522,10 @@ export class Input {
       tiles.push({ x: h.x, z: h.z, color: c.ok ? OK : BAD, alpha: 0.35 });
       tip = c.ok ? null : `<span class="bad">${c.reason}</span>`;
     } else if (t.kind === 'line') {
-      const want = TRANSIT[t.mode].stopType;
       for (const b of w.buildings.values()) {
-        if (b.type !== want) continue;
+        if (!stopOf(b, t.mode)) continue;
         const chosen = t.stops.indexOf(b.id);
-        tiles.push({ x: b.x, z: b.z, color: chosen >= 0 ? OK : GOLD, alpha: chosen >= 0 ? 0.5 : 0.3 });
+        for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) tiles.push({ x: b.x + dx, z: b.z + dz, color: chosen >= 0 ? OK : GOLD, alpha: chosen >= 0 ? 0.5 : 0.3 });
       }
     }
     // nothing is picked out while the interface is hidden

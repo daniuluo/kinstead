@@ -500,6 +500,25 @@ function gondolas(game) {
       for (const s of st) if (s) w.removeBuilding(s.id, 0);
     }
   }
+  // and an interchange where two more lines meet, out from berths of their
+  // own to a station each
+  const hubs = [];
+  for (let z = 2; z < w.N - 3; z++) for (let x = 2; x < w.N - 3; x++) if (w.checkBuild('gondolahub', x, z).ok) hubs.push([x, z]);
+  for (let k = 0; k < 30 && hubs.length; k++) {
+    const [hx, hz] = hubs.splice((rng() * hubs.length) | 0, 1)[0];
+    const r = w.placeBuilding('gondolahub', hx, hz, { instant: true });
+    if (!r.ok || !r.building.access) { if (r.ok) w.removeBuilding(r.building.id, 0); continue; }
+    const H = r.building, ends = open.filter(([x, z]) => { const L = Math.hypot(x - hx - 0.5, z - hz - 0.5); return L >= 8 && L <= 20; });
+    const mine = [];
+    for (let t = 0; t < 40 && mine.length < 2 && ends.length; t++) {
+      const s = station(ends[(rng() * ends.length) | 0]);
+      const lr = s ? game.transit.createLine('gondola', [H.id, s.id]) : { ok: false };
+      if (lr.ok) mine.push({ line: lr.line, s }); else if (s) w.removeBuilding(s.id, 0);
+    }
+    if (mine.length === 2) { for (const m of mine) { game.transit.setVehicles(m.line.id, 6); made.push(m.line); } break; }
+    for (const m of mine) { game.transit.deleteLine(m.line.id); w.removeBuilding(m.s.id, 0); }
+    w.removeBuilding(H.id, 0);
+  }
   game.transit.rebuild();
   // each line, how long its spans are and the pylons holding them up
   return made.map(l => {
@@ -591,9 +610,9 @@ function play(label, w) {
       let skip = null, where = wk.mode;
       if (wk.mode === 'path') {
         const n = wk.pts.length;
-        // the step through the wall to the inside, in or out (from the
-        // doorway itself, a whisker short of it, on)
-        const near = (p) => Math.hypot(wk.x - p[0], wk.z - p[1]) < 0.01;
+        // the step through the wall to the inside, in or out (from a body's
+        // width short of the doorway itself, on)
+        const near = (p) => Math.hypot(wk.x - p[0], wk.z - p[1]) < 0.03;
         if (wk.doorIn && (wk.seg >= n - 2 || near(wk.pts[n - 2]))) continue;
         if (wk.doorOut && (wk.seg === 0 || near(wk.pts[1]))) continue;
         where = wk.doorIn && wk.seg >= n - wk.doorIn - 2 ? 'going in a door' : wk.doorOut && wk.seg < wk.doorOut ? 'coming out of a door' : 'on the street';
@@ -607,7 +626,7 @@ function play(label, w) {
       } else if (wk.mode === 'wait') where = 'waiting at a stop';
       const h = S.hit(wk.x, wk.z, y, 0.015, skip);
       // (on a gondola station's own way up or down, into its lift is the way)
-      if (h && onWay && h.p.b.type === 'gondola') continue;
+      if (h && onWay && BUILDINGS[h.p.b.type].stop === 'gondola') continue;
       if (!h || !once(wk, h.p.b)) continue;
       const serious = h.kind === 'wall' && (wk.mode !== 'wander' || where.startsWith('working'));
       if (TRACE === h.p.b.id) console.log(`  hit #${TRACE}: ${where} at ${at(wk.x, wk.z)}, ${(y - h.p.b.baseY).toFixed(3)} over its floor; seg ${wk.seg} of ${wk.pts.length - 1}, doorIn ${wk.doorIn}, t ${wk.t.toFixed(2)}; part ${(h.p.y0 - h.p.b.baseY).toFixed(3)}–${(h.p.y1 - h.p.b.baseY).toFixed(3)} area ${h.p.a.toFixed(4)}; way ${wk.pts.slice(-5).map(([x, z]) => at(x, z)).join(' → ')}${wk.ys ? ' (with heights)' : ''}`);

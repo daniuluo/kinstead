@@ -3,7 +3,7 @@
 // carts trundling from farms and workshops to the shops.
 
 import * as THREE from 'three';
-import { BUILDINGS, TRANSIT, LINE_COLORS } from '../defs.js';
+import { BUILDINGS, TRANSIT, LINE_COLORS, stopOf } from '../defs.js';
 import { CONFIG } from '../config.js';
 import { GeoBuilder } from '../render/geo.js';
 import { MAT } from '../render/materials.js';
@@ -187,6 +187,8 @@ const BODY = { coach: [0.33, 0.21, 0.105], cart: [0.3, 0.17, 0.09], rail: [0.25,
 // long one waits before it looks for a ring of them stuck (see _ring); how
 // far through a junction it claims its way (_through); how far it backs up
 const GAP = 0.05, GAP_FOOT = 0.04, RING_WAIT = 3, THROUGH = 2.5, BACK = 0.35;
+// how long a goods cart stuck in such a ring waits before it finds another way
+const CART_GIVE_UP = 30;
 let serial = 0;
 const CAR_SPACING = 0.56;   // distance between train car centres along the track
 const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
@@ -197,6 +199,9 @@ const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // than G_MAXH tall, and hold the cable G_GROUND above the ground and G_ROOF
 // above the roofs it passes over, so the cabins clear them; between them
 // it sags a little (sagOf a span's length).
+// An interchange's berths: the middle of each quarter of its deck, from the
+// middle of its plot (see berthPoint)
+const HUB_BERTHS = [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]];
 // (how far apart two lines' cables must hang: their cabins clear of each other)
 const CABLES_APART = 2 * 0.14 + CABIN.W + 0.06;
 const G_OFF = 0.14, G_CABLE = 1.05, G_HANG = 0.27, G_LIFT = 3.5, G_SPAN = 6, G_MAXH = 6, G_GROUND = 1.05, G_ROOF = 0.42;
@@ -233,8 +238,7 @@ export class Transit {
 
   // ----------------------------------------------------------- line admin
   stopsOfMode(mode) {
-    const type = TRANSIT[mode].stopType;
-    return [...this.world.buildings.values()].filter(b => b.type === type);
+    return [...this.world.buildings.values()].filter(b => stopOf(b, mode));
   }
 
   createLine(mode, stops) {
@@ -247,11 +251,17 @@ export class Transit {
     const used = new Set(w.lines.map(l => l.color));
     const color = LINE_COLORS.find(c => !used.has(c)) || LINE_COLORS[w.lines.length % LINE_COLORS.length];
     const n = w.lines.filter(l => l.mode === mode).length + 1;
+    // a plain gondola station takes one line, an interchange one at each berth
+    if (mode === 'gondola') for (const id of new Set(stops)) {
+      const b = w.buildings.get(id), hub = b && BUILDINGS[b.type].hub;
+      const there = w.lines.filter(l => l.mode === 'gondola' && l.stops.includes(id));
+      if (b && there.length >= (hub || 1)) return { ok: false, reason: hub ? `The ${BUILDINGS[b.type].levels[b.level].name} has a berth for ${hub} lines, and every one is taken` : `${there[0].name} calls at that gondola station already: where lines meet, build a ${BUILDINGS.gondolahub.levels[0].name}` };
+    }
     const line = { id: w.newId(), mode, name: `${cfg.lineName} ${n}`, color, stops: stops.slice(), vehicles: 1 };
     const route = this._route(line);
     if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : mode === 'gondola' ? 'Pick gondola stations' : 'Stops are not connected by road' };
     if (route.blocked) return { ok: false, reason: blockedReason(route.blocked) };
-    const along = mode === 'gondola' ? this._alongCable(stops.map(id => w.buildings.get(id))) || this._crossCable(route, line) : null;
+    const along = mode === 'gondola' ? this._alongCable(stops.map(id => w.buildings.get(id)), line) || this._crossCable(route, line) || this._overStation(route, line) : null;
     if (along) return { ok: false, reason: along };
     w.money -= cfg.vehicleCost;
     w.lines.push(line);
@@ -263,14 +273,13 @@ export class Transit {
   // cable running along another line's, or back along one of its own? Two
   // cables can't hang in one place, nor their cabins pass through each
   // other: why not, or null.
-  _alongCable(stops) {
-    const span = (a, b) => ({ a: [a.x + 0.5, a.z + 0.5], b: [b.x + 0.5, b.z + 0.5] });
-    const mine = [], theirs = [];
-    for (let i = 0; i < stops.length - 1; i++) mine.push(span(stops[i], stops[i + 1]));
+  _alongCable(stops, line) {
+    const mine = [], theirs = [], P = this._ends(line, stops);
+    for (let i = 0; i < stops.length - 1; i++) mine.push({ a: P[i], b: P[i + 1] });
     for (const l of this.world.lines) {
       if (l.mode !== 'gondola') continue;
-      const bs = l.stops.map(id => this.world.buildings.get(id)).filter(Boolean);
-      for (let i = 0; i < bs.length - 1; i++) theirs.push({ ...span(bs[i], bs[i + 1]), line: l });
+      const bs = l.stops.map(id => this.world.buildings.get(id)).filter(Boolean), Q = this._ends(l, bs);
+      for (let i = 0; i < bs.length - 1; i++) theirs.push({ a: Q[i], b: Q[i + 1], line: l });
     }
     // (q within a few degrees of p's way, and near enough beside it for
     // their cabins to meet over more than half a tile, not counting where
@@ -298,10 +307,11 @@ export class Transit {
 
   // Would a new gondola line's route cross another line's, or its own,
   // with too little height between them for one cabin to pass over another?
-  // (Not where two lines meet at a station they share.) Why not, or null.
+  // (Its own, not where it comes in to one of its stations, round the wheel
+  // or across.) Why not, or null.
   _crossCable(route, line) {
-    const w = this.world, mine = new Set(line.stops);
-    const near = (x, z, stops) => stops.some(id => { const b = w.buildings.get(id); return b && mine.has(id) && Math.hypot(b.x + 0.5 - x, b.z + 0.5 - z) < 0.75; });
+    const w = this.world, ends = this._ends(line, line.stops.map(id => w.buildings.get(id)).filter(Boolean));
+    const near = (x, z) => ends.some(([ex, ez]) => Math.hypot(ex - x, ez - z) < 0.75);
     const meet = (A, B, self) => {
       for (let i = 0; i < A.pts.length - 1; i++) {
         const [ax, az] = A.pts[i], [bx, bz] = A.pts[i + 1], dx = bx - ax, dz = bz - az;
@@ -313,7 +323,7 @@ export class Transit {
           const t = ((cx - ax) * fz - (cz - az) * fx) / den, u = ((cx - ax) * dz - (cz - az) * dx) / den;
           if (t < 0 || t > 1 || u < 0 || u > 1) continue;
           const x = ax + dx * t, z = az + dz * t;
-          if (near(x, z, B.stops)) continue;
+          if (self && near(x, z)) continue;
           const ya = A.ys[i] + (A.ys[i + 1] - A.ys[i]) * t, yb = B.ys[j] + (B.ys[j + 1] - B.ys[j]) * u;
           if (Math.abs(ya - yb) < CABIN.H + 0.2) return true;
         }
@@ -322,9 +332,24 @@ export class Transit {
     };
     for (const l of w.lines) {
       const R = l.mode === 'gondola' && (this.routes.get(l.id) || this._route(l));
-      if (R && meet(route, { ...R, stops: l.stops }, false)) return `Its cable would cross ${l.name}'s with no room for a cabin to pass over: pick other stations`;
+      if (R && meet(route, R, false)) return `Its cable would cross ${l.name}'s with no room for a cabin to pass over: pick other stations`;
     }
-    if (meet(route, { ...route, stops: line.stops }, true)) return "Its cable would cross itself: pick stations that don't";
+    if (meet(route, route, true)) return "Its cable would cross itself: pick stations that don't";
+    return null;
+  }
+
+  // Would a new gondola line's cable pass over another line's station (whose
+  // roof and wheel stand in its cabins' way, and which may rise for its own
+  // line)? Why not, or null.
+  _overStation(route, line) {
+    const w = this.world, mine = new Set(line.stops);
+    for (let i = 0; i + 1 < route.pts.length; i++) {
+      const [ax, az] = route.pts[i], [bx, bz] = route.pts[i + 1], L = Math.hypot(bx - ax, bz - az) || 1e-6, nx = -(bz - az) / L, nz = (bx - ax) / L;
+      for (let u = 0; u <= L; u += 0.2) for (const o of [-0.1, 0, 0.1]) {
+        const x = ax + ((bx - ax) * u) / L + nx * o, z = az + ((bz - az) * u) / L + nz * o, b = w.inBounds(Math.floor(x), Math.floor(z)) && w.buildingOn(Math.floor(x), Math.floor(z));
+        if (b && !mine.has(b.id) && stopOf(b, 'gondola')) return `Its cable would pass over the ${BUILDINGS[b.type].levels[b.level].name} of another line: pick other stations`;
+      }
+    }
     return null;
   }
 
@@ -363,7 +388,7 @@ export class Transit {
     const w = this.world, paths = this.game.paths;
     const stops = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
     if (stops.length < 2) return null;
-    if (line.mode === 'gondola') return stops.every(b => b.type === 'gondola') ? this._cableRoute(stops, lifts) : null;
+    if (line.mode === 'gondola') return stops.every(b => stopOf(b, 'gondola')) ? this._cableRoute(stops, lifts, this._ends(line, stops)) : null;
     const stopTiles = stops.map(b => this._stopTile(b, line.mode));
     if (stopTiles.some(t => !t)) return null;
     let tiles = [];
@@ -383,8 +408,17 @@ export class Transit {
     }
     const rail = line.mode === 'rail';
     // (where it turns back, at the end of the line, it swings right across
-    // the road: one at a time there, as in a junction, see _knot)
-    if (!rail) for (let i = 1; i < tiles.length - 1; i++) if (tiles[i - 1][0] === tiles[i + 1][0] && tiles[i - 1][1] === tiles[i + 1][1]) this._turns.add(this.world.idx(tiles[i][0], tiles[i][1]));
+    // the road and out over the tiles either side: one at a time there, as
+    // in a junction, see _knot)
+    // (the route a loop, its last tile its first: the turn there too)
+    const T = tiles.length;
+    if (!rail) for (let i = 0; i < T - 1; i++) {
+      const prev = i ? tiles[i - 1] : tiles[0][0] === tiles[T - 1][0] && tiles[0][1] === tiles[T - 1][1] && T > 2 ? tiles[T - 2] : null;
+      if (!prev) continue;
+      const [px, pz] = prev, [x, z] = tiles[i];
+      if (px !== tiles[i + 1][0] || pz !== tiles[i + 1][1]) continue;
+      for (const [tx, tz] of [[x, z], [px, pz], [2 * x - px, 2 * z - pz]]) if (this.world.inBounds(tx, tz) && this.world.roadAt(tx, tz)) this._turns.add(this.world.idx(tx, tz));
+    }
     let pts = tilePolyline(tiles, rail ? 0 : LANE, null, null, this._curve);
     pts = smoothPolyline(pts, rail ? 0.5 : 0.3, rail ? 6 : 4);
     const cum = [0];
@@ -407,6 +441,42 @@ export class Transit {
       from = best;
     }
     return { pts, cum, length, marks, mode: line.mode };
+  }
+
+  // Where a gondola line's cable ends at each of its stations (stops,
+  // buildings): the middle of a plain one, its own berth at an interchange.
+  _ends(line, stops) { return stops.map(b => this.berthPoint(b, line) || [b.x + fw(b) / 2, b.z + fd(b) / 2]); }
+
+  // At an interchange (def.hub), the middle of the berth a gondola line calls
+  // at ([x, z]), or null (a plain station, or no berth free for it). The
+  // lines through it take a berth each in turn, the oldest first, each the
+  // one facing most the way it goes on to its stations either side.
+  berthPoint(b, line) {
+    const def = b && BUILDINGS[b.type];
+    if (!def || !def.hub) return null;
+    const w = this.world, cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
+    const lines = w.lines.filter(l => l.mode === 'gondola' && l.stops.includes(b.id));
+    if (!lines.includes(line)) lines.push(line);
+    lines.sort((p, q) => p.id - q.id);
+    const free = HUB_BERTHS.map((_, k) => k);
+    for (const l of lines) {
+      if (!free.length) break;
+      let dx = 0, dz = 0;
+      l.stops.forEach((id, i) => {
+        if (id !== b.id) return;
+        for (const j of [i - 1, i + 1]) {
+          const o = w.buildings.get(l.stops[j]);
+          if (!o || o === b) continue;
+          const ox = o.x + fw(o) / 2 - cx, oz = o.z + fd(o) / 2 - cz, L = Math.hypot(ox, oz) || 1;
+          dx += ox / L; dz += oz / L;
+        }
+      });
+      let k = free[0], best = -Infinity;
+      for (const f of free) { const s = HUB_BERTHS[f][0] * dx + HUB_BERTHS[f][1] * dz; if (s > best + 1e-9) { best = s; k = f; } }
+      if (l === line) return [cx + HUB_BERTHS[k][0], cz + HUB_BERTHS[k][1]];
+      free.splice(free.indexOf(k), 1);
+    }
+    return null;
   }
 
   // A closed route through every station (in order) that a train can drive
@@ -478,9 +548,10 @@ export class Transit {
   // rise as far as G_LIFT, and the route says how far each must (lifts);
   // with them they are held there. blocked: what the cable still can't
   // clear, if anything.
-  _cableRoute(stops, lifts = null) {
+  // ends: where the cable ends at each station (_ends).
+  _cableRoute(stops, lifts = null, ends = null) {
     const n = stops.length;
-    const P = stops.map(b => [b.x + 0.5, b.z + 0.5]);
+    const P = ends || stops.map(b => [b.x + fw(b) / 2, b.z + fd(b) / 2]);
     // a station's height, shared by the spans either side of it (and by
     // every visit to it, should a line come back through it)
     const ref = new Map();
@@ -643,7 +714,7 @@ export class Transit {
   _lift(lifts) {
     let changed = false;
     for (const b of this.world.buildings.values()) {
-      if (b.type !== 'gondola') continue;
+      if (!stopOf(b, 'gondola')) continue;
       const k = lifts.get(b.id) || 0;
       if (k === (b.lift || 0)) continue;
       if (k) b.lift = k; else delete b.lift;
@@ -656,24 +727,34 @@ export class Transit {
   // The headings each gondola station's cables leave it on, to the next
   // station along each of its lines and back (b.cables, worked out afresh,
   // never saved), so its way up stands clear of the cabins coming and
-  // going; redrawing those that change.
+  // going; at an interchange, each berth's (b.berths: where each is, in the
+  // world, and its cables' headings), so its benches and railings stand
+  // clear of them too. Redrawing those that change.
   _exits() {
     const w = this.world, out = new Map();
     for (const line of w.lines) {
       if (line.mode !== 'gondola') continue;
-      const st = line.stops.map(id => w.buildings.get(id)).filter(Boolean);
+      const st = line.stops.map(id => w.buildings.get(id)).filter(Boolean), P = this._ends(line, st);
       for (let i = 0; i + 1 < st.length; i++) {
-        const a = st[i], b = st[i + 1], h = Math.atan2(b.x - a.x, b.z - a.z);
-        for (const [s, k] of [[a, h], [b, h + Math.PI]]) {
-          const l = out.get(s.id) || [];
+        const h = Math.atan2(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]);
+        for (const [s, p, k] of [[st[i], P[i], h], [st[i + 1], P[i + 1], h + Math.PI]]) {
+          const key = BUILDINGS[s.type].hub ? `${s.id}:${p[0]},${p[1]}` : s.id, l = out.get(key) || [];
           const r = Math.round(Math.atan2(Math.sin(k), Math.cos(k)) * 100) / 100;
           if (!l.includes(r)) l.push(r);
-          out.set(s.id, l);
+          out.set(key, l);
         }
       }
     }
     for (const b of w.buildings.values()) {
-      if (b.type !== 'gondola') continue;
+      if (!stopOf(b, 'gondola')) continue;
+      if (BUILDINGS[b.type].hub) {
+        const cx = b.x + fw(b) / 2, cz = b.z + fd(b) / 2;
+        const berths = HUB_BERTHS.map(([ox, oz]) => ({ x: cx + ox, z: cz + oz, cables: (out.get(`${b.id}:${cx + ox},${cz + oz}`) || []).sort((p, q) => p - q) }));
+        if (JSON.stringify(berths) === JSON.stringify(b.berths || null)) continue;
+        b.berths = berths;
+        w.emit('building:refit', b);
+        continue;
+      }
       const l = (out.get(b.id) || []).sort((x, y) => x - y);
       if (l.join() === (b.cables || []).join()) continue;
       if (l.length) b.cables = l; else delete b.cables;
@@ -964,7 +1045,7 @@ export class Transit {
     const list = this.waiting.get(plan.board.id) || [];
     list.push({ r, plan, dest: destId, since: this.world.day * 24 + this.world.hours });
     this.waiting.set(plan.board.id, list);
-    this.game.agents.waitAt(r, plan.board);
+    this.game.agents.waitAt(r, plan.board, plan.line);
   }
 
   _giveUp(q) {
@@ -991,19 +1072,21 @@ export class Transit {
   // How high a gondola cabin's floor stands (its riders stand on it).
   cabinFloor(v) { return v.meshes[0].position.y - G_HANG + 0.006; }
 
-  // Where on a gondola station's deck a villager waits: round its middle,
-  // clear of the way the cabins of every line through it pass (world
-  // [x, z] spots, at the deck's height).
-  deckSpots(stop) {
+  // Where on a gondola station's deck a villager waits: round its middle (at
+  // an interchange, round the berth of line, the one they wait for), clear
+  // of the way the cabins of every line through it pass (world [x, z] spots,
+  // at the deck's height).
+  deckSpots(stop, line = null) {
     const d = stop.deck;
     if (!d) return null;
+    const bp = line && this.berthPoint(stop, line), [mx, mz] = bp || [d.x, d.z];
     const segs = [];
-    for (const line of this.world.lines) {
-      const r = line.mode === 'gondola' && line.stops.includes(stop.id) ? this.routes.get(line.id) : null;
+    for (const l of this.world.lines) {
+      const r = l.mode === 'gondola' && l.stops.includes(stop.id) ? this.routes.get(l.id) : null;
       if (!r) continue;
       for (let i = 0; i + 1 < r.pts.length; i++) {
         const a = r.pts[i], b = r.pts[i + 1];
-        if (Math.hypot((a[0] + b[0]) / 2 - d.x, (a[1] + b[1]) / 2 - d.z) < 0.7) segs.push([a, b]);
+        if (Math.hypot((a[0] + b[0]) / 2 - mx, (a[1] + b[1]) / 2 - mz) < 0.7) segs.push([a, b]);
       }
     }
     const away = (x, z, [a, b]) => {
@@ -1014,8 +1097,8 @@ export class Transit {
     // (the places the station's model leaves clear of its benches and
     // lamps, or failing those, round its middle)
     const all = [];
-    const cand = stop.stand && stop.stand.length ? stop.stand.map(p => [p.x, p.z]) : [];
-    if (!cand.length) for (let k = 0; k < 16; k++) for (const rad of [0.22, 0.17]) cand.push([d.x + Math.sin((k * Math.PI) / 8) * rad, d.z + Math.cos((k * Math.PI) / 8) * rad]);
+    const cand = stop.stand && stop.stand.length ? stop.stand.map(p => [p.x, p.z]).filter(([x, z]) => !bp || Math.hypot(x - mx, z - mz) < 0.42) : [];
+    if (!cand.length) for (let k = 0; k < 16; k++) for (const rad of [0.22, 0.17]) cand.push([mx + Math.sin((k * Math.PI) / 8) * rad, mz + Math.cos((k * Math.PI) / 8) * rad]);
     for (const [x, z] of cand) all.push([x, z, Math.min(Infinity, ...segs.map(sg => away(x, z, sg)))]);
     // (on a busy deck, where nowhere is quite clear, the spots furthest from
     // the cabins' way)
@@ -1266,6 +1349,9 @@ export class Transit {
       if (!this._knot(tx, tz)) { if (tiles.length) { out = d; break; } if (d > reach) break; continue; }
       const k = w.idx(tx, tz);
       let t = tiles[tiles.length - 1];
+      // (back into one it passed through already, as round a turning place
+      // just beyond a junction: the way back is claimed when it gets there)
+      if (t && t.k !== k && tiles.some(o => o.k === k)) break;
       if (!t || t.k !== k) tiles.push(t = { k, d, h0: q.heading, bend: this._knot(tx, tz) === 2, cells: new Map() });
       t.h1 = q.heading;
       // (all it will stand on, its front there: corners, sides and middle)
@@ -1332,12 +1418,13 @@ export class Transit {
   // each a whisker into the other's way)? 1 if so: they squeeze by, as close
   // as they can without touching; 3 if they still can't and v is the
   // youngest of them: it backs up a little (see _clear), to let the others
-  // by; 2 if even that doesn't do and v is the oldest: it goes on regardless.
+  // by; a cart in one a good while finds another way (CART_GIVE_UP); 2 if
+  // even that doesn't do and v is the oldest: it goes on regardless.
   _ring(v) {
     if (v.wait < RING_WAIT) return 0;
     let u = v.by, oldest = v, youngest = v;
     for (let k = 0; u && u.wait >= RING_WAIT && k < 16; k++) {
-      if (u === v) return v.wait <= RING_WAIT * 4 ? 1 : youngest === v ? 3 : oldest === v && v.wait > RING_WAIT * 8 ? 2 : 1;
+      if (u === v) return v.wait <= RING_WAIT * 4 ? 1 : youngest === v ? 3 : oldest === v && v.wait > RING_WAIT * 16 ? 2 : 1;
       if (u.n < oldest.n) oldest = u;
       if (u.n > youngest.n) youngest = u;
       u = u.by;
@@ -1384,7 +1471,8 @@ export class Transit {
     const give = ring ? -0.015 : 0.01;
     let room = Infinity, by = null, why = '';
     for (const o of this.bodies) {
-      if (o.owner === v || o.air !== air || (air && Math.abs(o.y - py) > 0.25) || ring === 2) continue;
+      // (going on regardless, still not into the back of one going its way)
+      if (o.owner === v || o.air !== air || (air && Math.abs(o.y - py) > 0.25) || (ring === 2 && o.hx * hx + o.hz * hz < 0.7)) continue;
       const rx = o.x - px, rz = o.z - pz;
       if (Math.abs(rx) + Math.abs(rz) > look + f + 1) continue;
       const c = o.hx * hx + o.hz * hz, sn = o.hx * hz - o.hz * hx, mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2;
@@ -1423,7 +1511,11 @@ export class Transit {
     // a junction or a turning place just ahead that another is in, or about
     // to go into: wait short of it (standing clear of another's back swinging
     // round as it turns there), or claim the way through it
-    if (!air && route && ring !== 2) {
+    // (in a ring, one in the junction already, waiting only for its turn
+    // at the rest of it, goes on through and out, its way clear of the
+    // others' bodies: the ring is of claims, not of bodies)
+    const inside = this._knot(Math.floor(px + hx * f), Math.floor(pz + hz * f));
+    if (!air && route && ring !== 2 && !(ring && inside && /junction/.test(v.why || ''))) {
       const r = this._through(v, route, s0 + f, look + 0.15, t);
       if (r && r.room < room) { room = r.room; by = r.by; why = r.why; }
     }
@@ -1496,7 +1588,7 @@ export class Transit {
         for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
         // (not on top of another vehicle: it waits till the road there is clear)
         const p0 = pts[0];
-        if (this.bodies && this.bodies.some(o => !o.air && Math.hypot(o.x - p0[0], o.z - p0[1]) < 0.6)) { this.cartPlan.push(c); continue; }
+        if (this.bodies && this.bodies.some(o => !o.air && Math.hypot(o.x - p0[0], o.z - p0[1]) < 0.8)) { this.cartPlan.push(c); continue; }
         const cargo = CARGO[A.type] || 'crates';
         const mesh = new THREE.Mesh(this._geo('cart' + cargo, () => cartModel(cargo)), MAT.building);
         mesh.castShadow = true;
@@ -1512,6 +1604,9 @@ export class Transit {
       const c = this.carts[i];
       const step = c.placed ? this._clear(c, c.mesh, 'cart', dt * speed * CONFIG.CART_SPEED, dt * speed, c.route, c.s) : dt * speed * CONFIG.CART_SPEED;
       c.s += step;
+      // (stuck a good while in a ring of vehicles each waiting for the next:
+      // it finds another way, and is there)
+      if (c.placed && c.wait > CART_GIVE_UP && this._ring(c)) c.s = c.route.length;
       c.gait += step * GAIT_PER_TILE;
       if (c.s >= c.route.length) {
         this.group.remove(c.mesh);
