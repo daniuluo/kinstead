@@ -13,6 +13,7 @@
 import { seatStyle } from '../defs.js';
 import { shade } from './geo.js';
 import { house, footing, lamp, bench, bush, win, door, gatePiers, stainedGlass, roseWindow, ownPick, coach } from './buildings.js';
+import { planOf, tower } from './forms.js';
 import { parkTree, bed, blooms, fountain, monument, plinth, topiaryShape, turf } from './parks.js';
 
 export const CIVIC_MODELS = {};
@@ -351,48 +352,69 @@ function floodlight(c, x, z) {
 //     skyline and at last a chariot.
 // From the City Hall a fountain stands in the forecourt; the Civic Palace
 // has statues either side of the steps.
+// Within its style each hall has its own plan (planOf): the clock tower
+// over the middle or standing up at one end of the front, the hall under a
+// mansard; the Gothic tower before the middle or at one end; wings hipped,
+// or with pedimented gables (or steep Gothic gables) to the street; a
+// cupola, a lantern or a clock turret on the little halls' roofs.
 C.townhall = (c, L) => {
   const { gb, pal } = c;
   const style = styleOf(c, 'townhall', L), goth = style === 'gothic', clas = style === 'classical';
+  const plan = planOf(c, 3), side = c.form ? c.form.side : 1;
   const wall = goth ? (L ? ownPick(c, [pal.stoneWall, pal.brick, '#b9ab92'], 5) : pal.wall) : clas ? (L ? ASHLAR : pal.wall) : L >= 3 ? pal.stoneWall : pal.wall;
   const floors = L >= 3 ? 3 : 2;
   const H = L >= 3 ? 0.96 + (L - 3) * 0.08 : 0.66 + L * 0.06;
   const W = 1.2 + (L >= 2 ? 0.2 : 0), D = 0.8, tz = -0.3, fz = tz + D / 2;
-  const roofT = goth ? 'gable' : clas && L >= 2 ? 'flat' : 'hip', rh = goth ? 0.48 + L * 0.03 : clas ? 0.22 : L >= 3 ? 0.4 : 0.34;
+  const roofT = goth ? 'gable' : clas && L >= 2 ? 'flat' : style === 'tower' && plan === 2 && L >= 1 ? 'mansard' : 'hip', rh = goth ? 0.48 + L * 0.03 : clas ? 0.22 : L >= 3 ? 0.4 : 0.34;
   const rise = rh * pal.pitch;
   const timbered = L < 3 && pal.timber && !clas && (L < 1 || !goth);
   c.shutters = '#3f5466';
   if (goth || clas) c.arched = true;
   // the Gothic tower stands before the front, the door at its foot (drawn
   // first: the door villagers use)
-  const gw = 0.24 + 0.02 * L, gz = fz + gw / 2 - 0.05;
-  if (goth && L >= 1) { footing(c, 0, gz, gw, gw); door(c, 0, gz + gw / 2, 0.1, 0.19, '#4e3424'); }
+  const gw = 0.24 + 0.02 * L, gz = fz + gw / 2 - 0.05, gx = goth && plan === 1 ? side * (W / 2 - gw / 2 - 0.08) : 0;
+  if (goth && L >= 1) { footing(c, gx, gz, gw, gw); door(c, gx, gz + gw / 2, 0.1, 0.19, '#4e3424'); }
   house(c, {
-    z: tz, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: roofT, rh, plinth: STONE, doorX: 0,
-    doorW: 0.15, lit: 0.85, nFront: L >= 3 ? 7 : 6, chimney: L < 4 && !clas && !(goth && L >= 2), timber: timbered, noDoor: goth && L >= 1,
+    z: tz, w: W, d: D, h: H, floors, wall, roof: pal.slate, roofType: roofT, rh, plinth: STONE, doorX: 0, dormers: roofT === 'mansard' ? 5 : undefined,
+    doorW: 0.15, lit: 0.85, nFront: L >= 3 ? 7 : 6, chimney: L < 4 && !clas && !(goth && L >= 2), timber: timbered, noDoor: goth && L >= 1, form: false,
   });
   if (L >= 1) {
+    // the wings: hipped, or (plan 2) with gables to the street, pedimented
+    const gabled = goth || plan === 2;
     for (const sx of [-1, 1]) {
       house(c, {
-        x: sx * 0.76, z: -0.22, w: 0.36, d: 0.66, h: H * 0.75, floors, wall, roof: pal.slate, roofType: goth ? 'gable' : 'hip', alongZ: goth, rh: goth ? 0.36 : 0.22,
-        plinth: STONE, noDoor: true, lit: 0.85,
+        x: sx * 0.76, z: -0.22, w: 0.36, d: 0.66, h: H * 0.75, floors, wall, roof: pal.slate, roofType: gabled ? 'gable' : 'hip', alongZ: gabled, rh: goth ? 0.36 : gabled ? 0.26 : 0.22,
+        plinth: STONE, noDoor: true, lit: 0.85, form: false,
       });
       if (goth) gb.cone(sx * 0.76, H * 0.75 + 0.36 * pal.pitch, 0.11, 0.02, 0.12, 4, pal.slate, Math.PI / 4);
+      else if (gabled) gb.gable(sx * 0.76, H * 0.75 + 0.005, 0.11, 0.38, 0.03, 0.26 * pal.pitch, TRIM, TRIM, 0.01, true);
     }
   }
   if (style === 'tower') {
     if (L >= 4) clockTower(c, 0, H, tz, 0.32, H + 1.0, 4, wall, pal.slate);
-    else clockTower(c, 0, H, tz, 0.3, H + 0.55 + Math.min(L, 2) * 0.12 + (L >= 3 ? 0.1 : 0), L, wall, pal.slate);
+    else if (plan === 1) {
+      // the clock tower standing up from the ground at one end of the front
+      const tw = 0.28, tx = side * (W / 2 - tw / 2 - 0.06);
+      footing(c, tx, fz - tw / 2 + 0.04, tw, tw);
+      clockTower(c, tx, 0, fz - tw / 2 + 0.04, tw, H + 0.6 + Math.min(L, 2) * 0.12 + (L >= 3 ? 0.1 : 0), L, wall, pal.slate);
+    } else clockTower(c, 0, H, tz, 0.3, H + 0.55 + Math.min(L, 2) * 0.12 + (L >= 3 ? 0.1 : 0), L, wall, pal.slate);
   } else if (style === 'dome') {
     // (the drum stands up out of the roof, so the windows round it show)
     if (L >= 2) bigDome(c, 0, H + rise * (L >= 4 ? 0.3 : 0.45), tz, [0.21, 0.26, 0.3][L - 2], L, wall);
+    else if (plan === 1) tower(c, 'lantern', 0, tz, L ? 0.2 : 0.16, H + rise + 0.06, wall, COPPER, { clock: true });
     else cupola(c, 0, H + rise, tz, L ? 0.095 : 0.075, L ? COPPER : LEAD, wall);
   } else if (goth) {
     if (L >= 1) {
-      gothicTower(c, 0, 0, gz, gw, H + 0.3 + 0.14 * L, L, wall, pal.slate);
-      gb.arch(0, 0.19, gz + gw / 2 - 0.004, 0.06, 0.012, 8, shade(wall, 0.8));
-      win(c, 0, 0.36, gz + gw / 2, 0.06, 0.14, 'f', 0.8);
+      gothicTower(c, gx, 0, gz, gw, H + 0.3 + 0.14 * L, L, wall, pal.slate);
+      gb.arch(gx, 0.19, gz + gw / 2 - 0.004, 0.06, 0.012, 8, shade(wall, 0.8));
+      win(c, gx, 0.36, gz + gw / 2, 0.06, 0.14, 'f', 0.8);
       if (L >= 2) gothicTrim(c, 0, tz, W, D, H, rise, 4, wall, pal.slate);
+      if (gx) fleche(c, 0, H + rise, tz);
+    } else if (plan === 1) {
+      // a bell-cote on the front gable instead of the flèche
+      for (const s2 of [-1, 1]) gb.box(s2 * 0.04, H + rise * 0.7, fz - 0.03, 0.03, 0.2, 0.05, wall);
+      gb.cyl(0, H + rise * 0.7 + 0.06, fz - 0.03, 0.02, 0.03, 0.05, 7, BRONZE);
+      gb.gable(0, H + rise * 0.7 + 0.2, fz - 0.03, 0.13, 0.07, 0.06, wall, pal.slate, 0.015, true);
     } else fleche(c, 0, H + rise, tz);
   } else {
     // the temple front
@@ -410,10 +432,13 @@ C.townhall = (c, L) => {
         for (const s of [-1, 1]) gb.box(s * 0.1, 0, fz + 0.012, 0.03, 0.2, 0.02, TRIM);
         gb.gable(0, 0.2, fz + 0.02, 0.26, 0.03, 0.07, TRIM, TRIM, 0.01, true);
       }
-      const by = H + rise * 0.55;
-      for (const s of [-1, 1]) gb.box(s * 0.05, by - 0.06, fz - 0.16, 0.03, 0.2, 0.05, wall);
-      gb.gable(0, by + 0.14, fz - 0.16, 0.14, 0.06, 0.06, wall, pal.slate, 0.015, true);
-      gb.cyl(0, by + 0.04, fz - 0.16, 0.02, 0.03, 0.04, 8, BRONZE);
+      if (plan === 1) cupola(c, 0, H + rise, tz, 0.08, LEAD, wall);
+      else {
+        const by = H + rise * 0.55;
+        for (const s of [-1, 1]) gb.box(s * 0.05, by - 0.06, fz - 0.16, 0.03, 0.2, 0.05, wall);
+        gb.gable(0, by + 0.14, fz - 0.16, 0.14, 0.06, 0.06, wall, pal.slate, 0.015, true);
+        gb.cyl(0, by + 0.04, fz - 0.16, 0.02, 0.03, 0.04, 8, BRONZE);
+      }
     }
   }
   if (L >= 2 && (style === 'tower' || style === 'dome')) {
@@ -803,10 +828,20 @@ C.lawcourts = (c, L) => {
   gb.box(0, H - 0.03, tz, W + 0.03, 0.03, D + 0.03, TRIM);
   const apex = templeFront(c, 0, fz, 0.56, H - 0.02, 6, 2, roof);
   justice(c, 0, apex - 0.01, fz + 0.1, 1.2);
+  // (its own plan: a dome over the hall behind the portico, or the
+  // pavilions' gables to the street under pediments)
+  const plan = planOf(c, 3);
+  if (plan === 1) {
+    gb.cyl(0, H + 0.1, tz - 0.06, 0.2, 0.21, 0.12, 12, wall);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; gb.glow(WARM[0], WARM[1], WARM[2], 1.1); gb.box(Math.sin(a) * 0.205, H + 0.13, tz - 0.06 + Math.cos(a) * 0.205, 0.04, 0.06, 0.01, GLASS, a); gb.noGlow(); }
+    gb.sphere(0, H + 0.22, tz - 0.06, 0.2, COPPER, 1, 0.8);
+    gb.cyl(0, H + 0.38, tz - 0.06, 0.025, 0.03, 0.06, 8, TRIM);
+  }
   // a courtroom pavilion either side, lit by a lantern in its roof
   for (const s of [-1, 1]) {
     const x = s * 0.7;
-    house(c, { x, z: -0.3, w: 0.36, d: 0.66, h: H - 0.08, floors: 2, wall, roof, roofType: 'hip', rh: 0.18, plinth: STONE, fancy: false, noDoor: true, lit: 0.75, nFront: 1, chimney: false });
+    house(c, { x, z: -0.3, w: 0.36, d: 0.66, h: H - 0.08, floors: 2, wall, roof, roofType: plan === 2 ? 'gable' : 'hip', alongZ: plan === 2, rh: 0.18, plinth: STONE, fancy: false, noDoor: true, lit: 0.75, nFront: 1, chimney: false });
+    if (plan === 2) { gb.gable(x, H - 0.075, 0.035, 0.4, 0.03, 0.18, TRIM, TRIM, 0.01, true); continue; }
     gb.box(x, H - 0.11, -0.3, 0.39, 0.03, 0.69, TRIM);
     gb.cbox(x, H - 0.08 + 0.14, -0.3, 0.12, 0.08, 0.12, TRIM, 0, 0.006);
     gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
@@ -849,8 +884,11 @@ C.museum = (c, L) => {
       gb.cbox(tx, 0, tzz, tw, th, tw, buff, 0, 0.01);
       for (let k = 1; k <= 7; k++) gb.box(tx, (k * th) / 8, tzz, tw + 0.01, 0.018, tw + 0.01, band);
       for (const wy of [0.14, 0.78]) win(c, tx, wy, tzz + tw / 2, 0.05, 0.12, 'f', 0.75);
-      gb.cone(tx, th, tzz, tw * 0.74, 0.34, 4, roof, Math.PI / 4);
-      gb.box(tx, th + 0.32, tzz, 0.008, 0.07, 0.008, GOLD);
+      if (planOf(c, 2)) { gb.cyl(tx, th, tzz, tw * 0.5, tw * 0.55, 0.05, 8, buff); gb.sphere(tx, th + 0.05, tzz, tw * 0.5, COPPER, 1, 1.1); gb.box(tx, th + 0.05 + tw * 0.5, tzz, 0.008, 0.07, 0.008, GOLD); }
+      else {
+        gb.cone(tx, th, tzz, tw * 0.74, 0.34, 4, roof, Math.PI / 4);
+        gb.box(tx, th + 0.32, tzz, 0.008, 0.07, 0.008, GOLD);
+      }
     }
     // the picture galleries either side, lit from glass roofs
     for (const s of [-1, 1]) {
@@ -872,9 +910,17 @@ C.museum = (c, L) => {
   door(c, 0, fz, 0.16, 0.26, '#3a2f28');
   house(c, { z: tz, w: W, d: D, h: H, floors: 2, wall, roof, roofType: 'flat', plinth: STONE, fancy: false, noDoor: true, lit: 0.75, nFront: 7, chimney: false });
   gb.box(0, H - 0.03, tz, W + 0.03, 0.03, D + 0.03, TRIM);
-  // the galleries' glass roof behind the front
-  gb.gable(0, H + 0.045, tz - 0.06, 0.96, 0.5, 0.12, wall, roof, 0.03);
-  skylight(c, 0, H + 0.045, tz - 0.06, 0.8, 0.5, 0.12, false, 6, 0.03);
+  // the galleries' glass roof behind the front, or (its own plan) a dome
+  // over the great hall between glazed galleries
+  if (planOf(c, 2) === 1) {
+    for (const s of [-1, 1]) { gb.gable(s * 0.42, H + 0.045, tz - 0.06, 0.4, 0.5, 0.1, wall, roof, 0.03); skylight(c, s * 0.42, H + 0.045, tz - 0.06, 0.34, 0.5, 0.1, false, 3, 0.03); }
+    gb.cyl(0, H + 0.04, tz - 0.06, 0.2, 0.21, 0.14, 12, wall);
+    gb.sphere(0, H + 0.18, tz - 0.06, 0.2, LEAD, 1, 0.85);
+    gb.cyl(0, H + 0.34, tz - 0.06, 0.03, 0.035, 0.06, 8, TRIM);
+  } else {
+    gb.gable(0, H + 0.045, tz - 0.06, 0.96, 0.5, 0.12, wall, roof, 0.03);
+    skylight(c, 0, H + 0.045, tz - 0.06, 0.8, 0.5, 0.12, false, 6, 0.03);
+  }
   balustrade(c, 0, H + 0.045, fz - 0.015, W - 0.02, false, TRIM, 6);
   templeFront(c, 0, fz, 0.86, H - 0.02, 8, 3, roof);
   for (const s of [-1, 1]) banner(c, s * 0.56, H - 0.1, fz, 0.1, 0.36, ownPick(c, ['#8a2a2a', '#2a4a7a', '#2f5a3a', '#7a5a2a'], 8 + s));
@@ -924,10 +970,11 @@ C.operahouse = (c, L) => {
     for (const s of [-1, 1]) { gb.cbox(s * (W / 2 - 0.08), H + 0.03, fz - 0.05, 0.14, 0.07, 0.1, wall, 0, 0.006); skyFigure(c, s * (W / 2 - 0.08), H + 0.1, fz - 0.05, 1.6, GOLD); }
     gb.hip(0, H + 0.03, tz, W - 0.1, D - 0.1, 0.1, COPPER, 0);
     // the auditorium's squat dome, a gilded crown on top
-    gb.cyl(0, H, -0.5, 0.42, 0.44, 0.12, 18, wall);
-    gb.sphere(0, H + 0.12, -0.5, 0.42, COPPER, 1, 0.42);
-    gb.cyl(0, H + 0.28, -0.5, 0.06, 0.07, 0.06, 10, GOLD);
-    gb.sphere(0, H + 0.36, -0.5, 0.035, GOLD, 0);
+    const tall = planOf(c, 2) === 1, dk = tall ? 0.75 : 0.42;
+    gb.cyl(0, H, -0.5, 0.42, 0.44, tall ? 0.18 : 0.12, 18, wall);
+    gb.sphere(0, H + (tall ? 0.18 : 0.12), -0.5, 0.42, tall ? LEAD : COPPER, 1, dk);
+    gb.cyl(0, H + (tall ? 0.18 : 0.12) + 0.42 * dk - 0.02, -0.5, 0.06, 0.07, 0.06, 10, GOLD);
+    gb.sphere(0, H + (tall ? 0.18 : 0.12) + 0.42 * dk + 0.06, -0.5, 0.035, GOLD, 0);
     // the stage house, Apollo raising his lyre on the gable
     const sz = -0.78, sh = H + 0.42;
     footing(c, 0, sz, 1.0, 0.3);
@@ -967,7 +1014,8 @@ C.operahouse = (c, L) => {
   // the Venetian window over the door, and a pediment on the roofline
   win(c, 0, fh + 0.05, fz, 0.08, 0.27, 'f', 1);
   for (const s of [-1, 1]) win(c, s * 0.075, fh + 0.05, fz, 0.04, 0.17, 'f', 1);
-  gb.gable(0, H - 0.01, fz - 0.03, 0.56, 0.08, 0.13, wall, roof, 0.02, true);
+  if (planOf(c, 2)) { gb.cbox(0, H + 0.08, tz, 0.16, 0.1, 0.16, wall, 0, 0.008); gb.cyl(0, H + 0.18, tz, 0.07, 0.08, 0.06, 8, TRIM); gb.sphere(0, H + 0.24, tz, 0.075, LEAD, 1, 0.9); gb.box(0, H + 0.31, tz, 0.008, 0.06, 0.008, GOLD); }
+  else gb.gable(0, H - 0.01, fz - 0.03, 0.56, 0.08, 0.13, wall, roof, 0.02, true);
   // the carriage porch on four columns, a balustrade on top
   for (const sx of [-1, 1]) for (const zz of [fz + 0.06, fz + 0.34]) gb.cyl(sx * 0.17, 0.02, zz, 0.016, 0.019, 0.27, 8, TRIM);
   gb.cbox(0, 0.29, fz + 0.2, 0.42, 0.035, 0.38, TRIM, 0, 0.006);

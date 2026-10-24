@@ -2988,8 +2988,16 @@ MODELS.offices = (c, L) => {
 function farmstead(c, L, home) {
   const { gb, rng, pal } = c;
   const P = produceOf({ flavor: c.flavor }), stock = P.kind === 'livestock';
+  const F = c.form;
+  // the farm's own ways (forms.js): its barn (a gable barn with doors in
+  // its end, a gambrel Dutch barn, or a long barn with a cart entry in its
+  // side), an oast house beside it or not, its silo (concrete, timber
+  // staves under a cone, or a brick tower), its mill (a tower mill or a
+  // post mill), and which end of the yard the barn stands
+  const barnKind = planOf(c, 3), oast = F.b > 0.62 && !home, siloKind = planOf(c, 3, 1), postMill = F.a > 0.5;
   const barnCol = rng.pick(['#8f3e2c', '#83402e', '#7a5a3c', '#9a4a34']);
-  const barnX = home ? 0.44 : -0.32, barnW = home ? 0.66 : 0.72, bz = 0.5, bf = bz + 0.25;
+  const flip = !home && F.side > 0 ? -1 : 1;
+  const barnX = (home ? 0.44 : -0.32) * flip, barnW = home ? 0.66 : 0.72, bz = 0.5, bf = bz + 0.25;
   if (home) {
     house(c, {
       x: -0.5, z: 0.5, w: 0.6, d: 0.44, h: L >= 3 ? 0.52 : 0.32, floors: L >= 3 ? 2 : 1, wall: L >= 3 ? pal.stoneWall : pal.wall,
@@ -2998,18 +3006,46 @@ function farmstead(c, L, home) {
     });
   }
   footing(c, barnX, bz, barnW, 0.5);
-  gb.cbox(barnX, 0, bz, barnW, 0.4, 0.5, barnCol, 0, 0.02);
-  gb.gable(barnX, 0.4, bz, barnW, 0.5, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
-  gb.box(barnX, 0, bf + 0.005, 0.24, 0.27, 0.012, '#d8ccb4');
-  gb.box(barnX, 0, bf + 0.012, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
-  gb.box(barnX, 0.0, bf + 0.018, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
-  c.doorAt ||= { x: barnX, y: 0, z: bf + 0.02, dx: 0, dz: 1 };
+  if (barnKind === 2) {
+    // a long barn, its ridge along the yard, a cart entry in its side
+    gb.cbox(barnX, 0, bz, barnW, 0.32, 0.5, barnCol, 0, 0.02);
+    gb.gable(barnX, 0.32, bz, barnW, 0.5, 0.26, barnCol, '#4e463e', 0.05, false, 0.035);
+    gb.cbox(barnX, 0, bf - 0.02, 0.26, 0.42, 0.12, barnCol, 0, 0.012);
+    gb.gable(barnX, 0.42, bf - 0.02, 0.26, 0.12, 0.12, barnCol, '#4e463e', 0.03, true, 0.025);
+    gb.box(barnX, 0, bf + 0.042, 0.2, 0.3, 0.012, shade(barnCol, 0.7));
+    gb.box(barnX, 0.15, bf + 0.05, 0.2, 0.012, 0.008, '#d8ccb4');
+    c.doorAt ||= { x: barnX, y: 0, z: bf + 0.06, dx: 0, dz: 1 };
+  } else {
+    gb.cbox(barnX, 0, bz, barnW, 0.4, 0.5, barnCol, 0, 0.02);
+    if (barnKind === 1) {
+      // a gambrel Dutch barn, a hay hood over the loft door
+      gb.push(barnX, 0, bz);
+      gambrelRoof(c, barnW, 0.5, 0.4, 0.36, barnCol, '#4e463e', true, 0.05);
+      gb.pop();
+      gb.box(barnX, 0.5, bf + 0.004, 0.12, 0.1, 0.012, shade(barnCol, 0.7));
+      gb.wedge(barnX, 0.62, bf + 0.04, 0.16, 0.1, 0.05, '#4e463e', Math.PI);
+    } else gb.gable(barnX, 0.4, bz, barnW, 0.5, 0.3, barnCol, '#4e463e', 0.05, true, 0.035);
+    gb.box(barnX, 0, bf + 0.005, 0.24, 0.27, 0.012, '#d8ccb4');
+    gb.box(barnX, 0, bf + 0.012, 0.2, 0.25, 0.012, shade(barnCol, 0.7));
+    gb.box(barnX, 0.0, bf + 0.018, 0.25, 0.012, 0.01, '#d8ccb4', 0, 0, 0.84);
+    c.doorAt ||= { x: barnX, y: 0, z: bf + 0.02, dx: 0, dz: 1 };
+  }
+  if (oast) {
+    // an oast house against the barn's end: the round kiln, its cowl
+    const ox = barnX - flip * (barnW / 2 + 0.1), oz = bz - 0.1, y = c.gy(ox, oz);
+    gb.cyl(ox, Math.min(0, y) - 0.02, oz, 0.11, 0.12, 0.38 - Math.min(0, y), 10, '#b8704a');
+    gb.cone(ox, 0.36, oz, 0.13, 0.26, 10, '#7d3b2a');
+    gb.cbox(ox, 0.6, oz, 0.05, 0.07, 0.06, '#ece6da', 0, 0.004);
+    gb.wedge(ox, 0.67, oz, 0.07, 0.08, 0.03, '#ece6da', Math.PI / 2);
+  }
   if (!home) {
     // an open cart shed beside the barn
-    const sx = 0.6, sz = 0.52, sy = c.gy(sx, sz);
-    for (const ox of [-0.18, 0.18]) for (const oz of [-0.14, 0.14]) gb.box(sx + ox, sy - 0.01, sz + oz, 0.03, 0.24, 0.03, '#4e3a2a');
-    gb.gable(sx, sy + 0.23, sz, 0.44, 0.36, 0.12, '#6e5034', pal.roof, 0.04);
-    if (L >= 1) gb.cbox(sx, sy, sz + 0.02, 0.26, 0.07, 0.12, '#6b4a2f', 0, 0.008);
+    const sx = 0.6 * flip, sz = 0.52, sy = c.gy(sx, sz);
+    if (!oast || flip > 0 === (barnX > 0)) {
+      for (const ox of [-0.18, 0.18]) for (const oz of [-0.14, 0.14]) gb.box(sx + ox, sy - 0.01, sz + oz, 0.03, 0.24, 0.03, '#4e3a2a');
+      gb.gable(sx, sy + 0.23, sz, 0.44, 0.36, 0.12, '#6e5034', pal.roof, 0.04);
+      if (L >= 1) gb.cbox(sx, sy, sz + 0.02, 0.26, 0.07, 0.12, '#6b4a2f', 0, 0.008);
+    }
   }
   // the fields behind, fenced, with a gate from the yard; an estate keeps an
   // orchard down one side
@@ -3041,21 +3077,42 @@ function farmstead(c, L, home) {
   }
   if (L >= 1) {
     // a silo, and hay in the yard
-    const sx = home ? -0.045 : 0.2, sz = home ? 0.44 : 0.4, sy = c.gy(sx, sz);
-    gb.cyl(sx, sy - 0.02, sz, 0.12, 0.13, 0.64, 12, '#b8b0a0');
-    gb.sphere(sx, sy + 0.62, sz, 0.125, '#6f7f8a', 1, 0.6);
+    const sx = (home ? -0.045 : 0.2) * flip, sz = home ? 0.44 : 0.4, sy = c.gy(sx, sz);
+    if (siloKind === 1) {
+      // timber staves bound in iron, under a cone
+      gb.cyl(sx, sy - 0.02, sz, 0.11, 0.12, 0.56, 10, '#8a6a48');
+      for (const k of [0.12, 0.28, 0.44]) gb.cyl(sx, sy + k, sz, 0.123, 0.123, 0.012, 10, IRON_D);
+      gb.cone(sx, sy + 0.54, sz, 0.14, 0.18, 10, '#4e463e');
+    } else if (siloKind === 2) {
+      // a square brick tower silo under a pyramid
+      gb.cbox(sx, sy - 0.02, sz, 0.2, 0.62, 0.2, '#9a5640', 0, 0.01);
+      gb.roof(sx, sy + 0.6, sz, 0.24, 0.24, 0.12, 0, '#4e463e');
+    } else {
+      gb.cyl(sx, sy - 0.02, sz, 0.12, 0.13, 0.64, 12, '#b8b0a0');
+      gb.sphere(sx, sy + 0.62, sz, 0.125, '#6f7f8a', 1, 0.6);
+    }
     for (let i = 0; i < 2; i++) {
-      const hx = (home ? 0.62 : 0.66) + i * 0.15, hz = 0.17, hy = c.gy(hx, hz);
+      const hx = ((home ? 0.62 : 0.66) + i * 0.15) * flip, hz = 0.17, hy = c.gy(hx, hz);
       gb.cyl(hx, hy - 0.01, hz, 0.065, 0.075, 0.08, 9, '#cfa944');
       gb.sphere(hx, hy + 0.07, hz, 0.068, '#c9a240', 1, 0.7);
     }
   }
   if (L >= 2 && !stock) {
-    // a windmill in the far corner of the fields
+    // a windmill in the far corner of the fields: a tower mill, or a post mill
     const mx = 0.8, mz = -0.8, my = c.gy(mx, mz);
-    gb.cyl(mx, my - 0.03, mz, 0.1, 0.17, 0.8, 9, '#ddd2bc');
-    gb.cone(mx, my + 0.77, mz, 0.13, 0.18, 9, '#5e4a36');
-    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(mx, my + 0.32, mz + 0.125, 0.04, 0.06, 0.02, GLASS); gb.noGlow();
+    let hubY;
+    if (postMill) {
+      gb.cyl(mx, my - 0.02, mz, 0.08, 0.1, 0.12, 6, '#8a7a62');
+      gb.box(mx, my + 0.1, mz, 0.03, 0.22, 0.03, '#4e3a2a');
+      gb.cbox(mx, my + 0.3, mz, 0.2, 0.3, 0.24, '#e3d8c2', 0, 0.01);
+      gb.gable(mx, my + 0.6, mz, 0.2, 0.24, 0.1, '#e3d8c2', '#5e4a36', 0.02, true, 0.02);
+      hubY = my + 0.5;
+    } else {
+      gb.cyl(mx, my - 0.03, mz, 0.1, 0.17, 0.8, 9, '#ddd2bc');
+      gb.cone(mx, my + 0.77, mz, 0.13, 0.18, 9, '#5e4a36');
+      hubY = my + 0.72;
+    }
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); gb.box(mx, my + 0.32, mz + (postMill ? 0.122 : 0.125), 0.04, 0.06, 0.02, GLASS); gb.noGlow();
     const blades = new GeoBuilder();
     for (let i = 0; i < 4; i++) {
       const an = (i * Math.PI) / 2;
@@ -3063,14 +3120,21 @@ function farmstead(c, L, home) {
       blades.boxC(Math.cos(an) * 0.22 + Math.cos(an + Math.PI / 2) * 0.04, Math.sin(an) * 0.22 + Math.sin(an + Math.PI / 2) * 0.04, 0, 0.27, 0.065, 0.006, '#e3d8c2', 0, 0, an);
     }
     blades.cyl(0, 0, -0.02, 0.028, 0.028, 0.05, 6, '#3a2f28', 0, Math.PI / 2);
-    c.spin = { geo: blades.build(), x: mx, y: my + 0.72, z: mz + 0.19, speed: 1.2 };
+    c.spin = { geo: blades.build(), x: mx, y: hubY, z: mz + (postMill ? 0.15 : 0.19), speed: 1.2 };
   }
   if (L >= 3) {
     // an orchard down the side of the fields, and a dovecote in the yard
     for (let i = 0; i < 4; i++) smallTree(c, -0.86, -0.8 + i * 0.26, 0.75);
-    const dx = -0.88, dz = 0.16, dy = c.gy(dx, dz);
-    gb.cyl(dx, dy - 0.02, dz, 0.06, 0.07, 0.32, 8, '#e3dccb');
-    gb.cone(dx, dy + 0.3, dz, 0.09, 0.1, 8, '#4e463e');
+    const dx = -0.88 * (home ? 1 : 1), dz = 0.16, dy = c.gy(dx, dz);
+    if (F.a < 0.5) {
+      gb.cyl(dx, dy - 0.02, dz, 0.06, 0.07, 0.32, 8, '#e3dccb');
+      gb.cone(dx, dy + 0.3, dz, 0.09, 0.1, 8, '#4e463e');
+    } else {
+      // a square dovecote on a post
+      gb.box(dx, dy, dz, 0.025, 0.24, 0.025, '#5e432c');
+      gb.cbox(dx, dy + 0.24, dz, 0.1, 0.1, 0.1, '#e3dccb', 0, 0.006);
+      gb.roof(dx, dy + 0.34, dz, 0.13, 0.13, 0.08, 0, '#4e463e');
+    }
   }
 }
 MODELS.farm = (c, L) => farmstead(c, L, false);
@@ -3110,10 +3174,10 @@ MODELS.lumber = (c, L) => {
 
 MODELS.fishery = (c, L) => {
   const { gb, rng } = c;
-  const hutCol = rng.pick(['#6f8a95', '#7f989c', '#8f7a5e', '#6f8a7a']);
+  const hutCol = c.form.b < 0.3 ? '#2f2c2a' : rng.pick(['#6f8a95', '#7f989c', '#8f7a5e', '#6f8a7a']);
   house(c, {
     x: -0.1, z: -0.16, w: L ? 0.6 : 0.48, d: L ? 0.48 : 0.4, h: L ? 0.36 : 0.28, wall: hutCol, roof: rng.pick(ROOF_SHINGLE),
-    roofType: 'gable', rh: 0.2, chimney: L >= 1, smokeKind: 'work', lit: 0.6,
+    roofType: 'gable', rh: 0.2, chimney: L >= 1, smokeKind: 'work', lit: 0.6, siding: c.form.b < 0.6,
   });
   const rx = 0.3, rz = 0.18, ry = c.gy(rx, rz);
   for (const sx of [-1, 1]) gb.box(rx + sx * 0.12, ry, rz, 0.016, 0.2, 0.016, '#4e3a2a');
@@ -3246,55 +3310,183 @@ MODELS.workshop = (c, L) => {
     chimney(c, -0.12, 0.2, 0.7, -0.06, 'heavy', STONE_D);
     c.addGlow(-0.12, 0.16, 0.06, 'forge');
   } else {
-    footing(c, 0, -0.08, 0.9, 0.7);
-    gb.cbox(0, 0, -0.08, 0.9, 0.52, 0.7, pal.brick, 0, 0.022);
-    for (let i = 0; i < 3; i++) gb.wedge(-0.3 + i * 0.3, 0.52, -0.08, 0.3, 0.72, 0.17, '#4e5357', Math.PI / 2);
-    for (let f = 0; f < 2; f++) for (let i = 0; i < 4; i++) {
-      win(c, -0.33 + i * 0.22, 0.09 + f * 0.22, 0.27, 0.11, 0.11, 'f', 0.9);
-      win(c, -0.33 + i * 0.22, 0.09 + f * 0.22, -0.43, 0.11, 0.11, 'b', 0.9);
+    // the Manufactory, in one of its plans: a brick shed under a sawtooth
+    // roof of north lights, a tall round stack; a four-storey mill with its
+    // stair tower and a square stack; a shed with a monitor roof (a raised
+    // run of windows along its ridge) and a water tank on legs; or an engine
+    // house, its gable to the street round a great arched window, an
+    // octagonal stack beside it
+    const plan = planOf(c, 4);
+    const stack = (x, z, h, kind) => {
+      if (kind === 'square') {
+        gb.cbox(x, 0, z, 0.12, h, 0.12, '#7f3f2e', 0, 0.01);
+        for (const k of [0.3, 0.6, 0.9]) if (k < h) gb.box(x, k, z, 0.135, 0.02, 0.135, '#5f3022');
+        gb.cbox(x, h, z, 0.15, 0.05, 0.15, '#5f3022', 0, 0.008);
+      } else {
+        gb.cyl(x, 0, z, 0.065, 0.085, h, kind === 'oct' ? 8 : 10, '#7f3f2e');
+        gb.cyl(x, h, z, 0.075, 0.075, 0.045, kind === 'oct' ? 8 : 10, '#5f3022');
+      }
+      c.addSmoke(x, h + 0.07, z, 'heavy');
+    };
+    if (plan === 1) {
+      // a four-storey mill, its stair tower to one end under a pyramid
+      house(c, { x: -0.06, z: -0.12, w: 0.74, d: 0.5, h: 0.9, floors: 4, wall: pal.brick, roof: pal.slate, roofType: 'hip', rh: 0.14, nFront: 5, doorX: 0, doorW: 0.13, chimney: false, fancy: false, lit: 0.9, plinth: STONE });
+      for (let f = 1; f < 4; f++) gb.box(-0.06, f * 0.225 - 0.008, -0.12, 0.76, 0.014, 0.52, '#d8ccb4');
+      gb.cbox(0.38, 0, -0.06, 0.16, 1.06, 0.16, pal.brick, 0, 0.01);
+      for (let f = 0; f < 4; f++) win(c, 0.38, f * 0.25 + 0.12, 0.02, 0.05, 0.1, 'f', 0.8);
+      gb.roof(0.38, 1.06, -0.06, 0.2, 0.2, 0.14, 0, pal.slate);
+      stack(-0.38, -0.42, 1.2, 'square');
+    } else if (plan === 2) {
+      // a shed under a monitor roof, and a water tank on legs
+      footing(c, -0.06, -0.08, 0.78, 0.7);
+      gb.cbox(-0.06, 0, -0.08, 0.78, 0.4, 0.7, pal.brick, 0, 0.02);
+      gb.gable(-0.06, 0.4, -0.08, 0.8, 0.72, 0.14, pal.brick, '#4e5357', 0.04, false, 0.03);
+      gb.cbox(-0.06, 0.48, -0.08, 0.7, 0.1, 0.22, '#5a5a5e', 0, 0.006);
+      gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
+      for (const s of [-1, 1]) gb.box(-0.06, 0.5, -0.08 + s * 0.112, 0.66, 0.06, 0.008, GLASS);
+      gb.noGlow();
+      gb.gable(-0.06, 0.58, -0.08, 0.74, 0.26, 0.06, '#5a5a5e', '#4e5357', 0.02, false, 0.02);
+      for (let i = 0; i < 4; i++) {
+        win(c, -0.38 + i * 0.21, 0.1, 0.27, 0.12, 0.16, 'f', 0.9);
+        win(c, -0.38 + i * 0.21, 0.1, -0.43, 0.12, 0.16, 'b', 0.9);
+      }
+      for (const s of [-1, 1]) win(c, -0.06 + s * 0.39, 0.1, -0.08, 0.12, 0.16, s > 0 ? 'r' : 'l', 0.9);
+      door(c, -0.06, 0.27, 0.15, 0.2, '#2f241b');
+      const tx = 0.4, tz = -0.36;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(tx + sx * 0.05, 0, tz + sz * 0.05, 0.016, 0.62, 0.016, '#3a3a3e');
+      gb.cyl(tx, 0.62, tz, 0.09, 0.09, 0.16, 10, '#6a6a70');
+      gb.cone(tx, 0.78, tz, 0.095, 0.05, 10, '#4e5357');
+      stack(0.38, 0.06, 0.9, 'round');
+    } else if (plan === 3) {
+      // an engine house: its gable to the street round a great arched window
+      house(c, { x: -0.1, z: -0.1, w: 0.52, d: 0.64, h: 0.62, floors: 2, wall: pal.brick, roof: pal.slate, roofType: 'gable', alongZ: true, rh: 0.26, nFront: 2, noDoor: true, chimney: false, fancy: false, lit: 0.9, plinth: STONE });
+      gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.arch(-0.1, 0.52, 0.222, 0.1, 0.012, 10, GLASS); gb.box(-0.1, 0.16, 0.228, 0.2, 0.36, 0.012, GLASS); gb.noGlow();
+      for (let k = -1; k <= 1; k++) gb.box(-0.1 + k * 0.065, 0.16, 0.236, 0.008, 0.36, 0.006, '#d8ccb4');
+      door(c, -0.1, 0.22, 0.12, 0.15, '#2f241b');
+      gb.cbox(0.26, 0, -0.06, 0.2, 0.3, 0.44, pal.brick, 0, 0.012);
+      gb.wedge(0.26, 0.3, -0.06, 0.48, 0.24, 0.1, '#4e5357', -Math.PI / 2);
+      win(c, 0.26, 0.08, 0.16, 0.1, 0.12, 'f', 0.9);
+      win(c, 0.36, 0.08, -0.06, 0.1, 0.12, 'r', 0.9);
+      stack(0.34, -0.38, 1.15, 'oct');
+    } else {
+      footing(c, 0, -0.08, 0.9, 0.7);
+      gb.cbox(0, 0, -0.08, 0.9, 0.52, 0.7, pal.brick, 0, 0.022);
+      // the sawtooth roof: three north lights across the shed
+      for (let i = 0; i < 3; i++) gb.wedge(-0.3 + i * 0.3, 0.52, -0.08, 0.72, 0.3, 0.17, '#4e5357', Math.PI / 2);
+      for (let f = 0; f < 2; f++) for (let i = 0; i < 4; i++) {
+        win(c, -0.33 + i * 0.22, 0.09 + f * 0.22, 0.27, 0.11, 0.11, 'f', 0.9);
+        win(c, -0.33 + i * 0.22, 0.09 + f * 0.22, -0.43, 0.11, 0.11, 'b', 0.9);
+      }
+      door(c, 0, 0.27, 0.15, 0.2, '#2f241b');
+      stack(0.34, -0.32, 1.15, 'round');
     }
-    door(c, 0, 0.27, 0.15, 0.2, '#2f241b');
-    const cx = 0.34, cz = -0.32;
-    gb.cyl(cx, 0, cz, 0.065, 0.085, 1.15, 8, '#7f3f2e');
-    gb.cyl(cx, 1.15, cz, 0.075, 0.075, 0.045, 8, '#5f3022');
-    c.addSmoke(cx, 1.22, cz, 'heavy');
     crate(c, -0.4, 0.4); crate(c, -0.31, 0.42, 0.8); barrel(c, 0.4, 0.4);
   }
 };
-
+// The village well, the water tower and the waterworks, each its own way
+// (planOf). The well: a well-head under a little roof with its windlass; a
+// pump on a stone plinth with a trough; or a well-head under a great winding
+// wheel. The water tower: a timber tank on raking legs; an iron tank on a
+// brick tower; or a round stone tower under a cone. The waterworks: the pump
+// house with an open round cistern; a covered reservoir under turf, its
+// vents and steps; or a tall Italianate water tower beside the pump house.
 MODELS.well = (c, L) => {
   const { gb, pal } = c;
+  const plan = planOf(c, 3);
   if (L === 0) {
-    footing(c, 0, 0, 0.3, 0.3);
-    gb.cyl(0, -0.02, 0, 0.14, 0.155, 0.14, 12, STONE);
-    gb.cyl(0, 0.115, 0, 0.125, 0.125, 0.004, 12, '#2f5468');
-    for (const sx of [-1, 1]) gb.box(sx * 0.13, 0.08, 0, 0.024, 0.27, 0.024, '#4e3a2a');
-    gb.gable(0, 0.34, 0, 0.36, 0.24, 0.11, '#6e4a2c', pal.thatched ? pal.thatch : pal.roof, 0.03);
-    gb.cyl(0.13, 0.28, 0, 0.013, 0.013, 0.26, 6, '#4e3a2a', 0, 0, Math.PI / 2);
-    gb.cyl(0.03, 0.19, 0, 0.024, 0.02, 0.04, 7, '#6e4a2c');
+    if (plan === 1) {
+      // a village pump on a stone plinth, its trough before it
+      footing(c, 0, -0.02, 0.24, 0.24);
+      gb.cbox(0, -0.02, -0.02, 0.22, 0.06, 0.22, STONE, 0, 0.01);
+      gb.cbox(0, 0.04, -0.06, 0.07, 0.3, 0.07, '#3f4a3a', 0, 0.006);
+      gb.boxC(0, 0.32, 0.0, 0.012, 0.012, 0.16, '#3f4a3a', -0.5);
+      gb.box(0, 0.2, -0.01, 0.025, 0.025, 0.06, '#3f4a3a');
+      gb.cbox(0, -0.01, 0.12, 0.26, 0.07, 0.1, STONE, 0, 0.008);
+      gb.box(0, 0.05, 0.12, 0.22, 0.006, 0.07, '#3f7f9f');
+    } else if (plan === 2) {
+      // a well-head under a great winding wheel
+      footing(c, 0, 0, 0.3, 0.3);
+      gb.cyl(0, -0.02, 0, 0.14, 0.155, 0.14, 12, STONE);
+      gb.cyl(0, 0.115, 0, 0.125, 0.125, 0.004, 12, '#2f5468');
+      for (const sz of [-1, 1]) gb.box(0, 0.08, sz * 0.13, 0.03, 0.34, 0.024, '#4e3a2a');
+      gb.box(0, 0.4, 0, 0.03, 0.03, 0.3, '#4e3a2a');
+      gb.cyl(0.04, 0.33, 0, 0.13, 0.13, 0.016, 12, '#6e4a2c', Math.PI / 2, Math.PI / 2);
+      gb.cyl(0.04, 0.33, 0, 0.11, 0.11, 0.02, 12, '#8a6a48', Math.PI / 2, Math.PI / 2);
+    } else {
+      footing(c, 0, 0, 0.3, 0.3);
+      gb.cyl(0, -0.02, 0, 0.14, 0.155, 0.14, 12, STONE);
+      gb.cyl(0, 0.115, 0, 0.125, 0.125, 0.004, 12, '#2f5468');
+      for (const sx of [-1, 1]) gb.box(sx * 0.13, 0.08, 0, 0.024, 0.27, 0.024, '#4e3a2a');
+      gb.gable(0, 0.34, 0, 0.36, 0.24, 0.11, '#6e4a2c', pal.thatched ? pal.thatch : pal.roof, 0.03);
+      gb.cyl(0.13, 0.28, 0, 0.013, 0.013, 0.26, 6, '#4e3a2a', 0, 0, Math.PI / 2);
+      gb.cyl(0.03, 0.19, 0, 0.024, 0.02, 0.04, 7, '#6e4a2c');
+    }
     bench(c, 0, 0.36, 0);
     flowers(c, -0.32, -0.32, 6, 0.07);
     bush(c, 0.34, -0.32);
   } else if (L >= 2) {
-    // Waterworks: brick pump house with an engine chimney and a big round cistern
-    house(c, { x: -0.18, z: -0.12, w: 0.5, d: 0.5, h: 0.4, wall: pal.brick, roof: pal.slate, roofType: 'gable', rh: 0.18, lit: 0.8, plinth: STONE, nFront: 2 });
-    chimney(c, -0.36, 0.3, 0.95, -0.3, 'heavy', '#7f3f2e');
+    // Waterworks: the brick pump house and its engine chimney
+    house(c, { x: -0.18, z: -0.12, w: 0.5, d: 0.5, h: 0.4, wall: pal.brick, roof: pal.slate, roofType: 'gable', rh: 0.18, lit: 0.8, plinth: STONE, nFront: 2, form: { turret: null } });
+    if (plan !== 2) chimney(c, -0.36, 0.3, 0.95, -0.3, 'heavy', '#7f3f2e');
     const tx = 0.27, tz = 0.12, ty = c.gy(tx, tz);
-    footing(c, tx, tz, 0.4, 0.4);
-    gb.cyl(tx, ty - 0.02, tz, 0.19, 0.2, 0.24, 16, STONE);
-    gb.cyl(tx, ty + 0.2, tz, 0.17, 0.17, 0.02, 16, '#3f7f9f');
-    gb.cyl(tx, ty + 0.21, tz, 0.2, 0.2, 0.025, 16, '#8a8275');
-    for (let k = 0; k < 4; k++) gb.box(tx - 0.2 + k * 0.13, ty + 0.235, tz + 0.2, 0.01, 0.06, 0.01, '#3a3a3e');
+    if (plan === 1) {
+      // a covered reservoir: a turfed mound, vents and a stair house
+      footing(c, tx, tz, 0.4, 0.44);
+      gb.cbox(tx, ty - 0.02, tz, 0.4, 0.12, 0.44, STONE, 0, 0.012);
+      gb.cbox(tx, ty + 0.1, tz, 0.38, 0.05, 0.42, '#6f9a45', 0, 0.03);
+      for (const u of [-0.1, 0.1]) { gb.cyl(tx + u, ty + 0.15, tz - 0.08, 0.025, 0.025, 0.07, 8, '#6a6a70'); gb.cone(tx + u, ty + 0.22, tz - 0.08, 0.035, 0.03, 8, '#4a4a4e'); }
+      gb.cbox(tx + 0.1, ty + 0.1, tz + 0.12, 0.1, 0.12, 0.1, pal.brick, 0, 0.006);
+      gb.wedge(tx + 0.1, ty + 0.22, tz + 0.12, 0.12, 0.12, 0.03, pal.slate, 0);
+    } else if (plan === 2) {
+      // a tall water tower, its tank in a brick drum under a pyramid
+      const wx = 0.28, wz = -0.2, H = 0.9;
+      footing(c, wx, wz, 0.24, 0.24);
+      gb.cbox(wx, 0, wz, 0.22, H, 0.22, pal.brick, 0, 0.012);
+      for (let k = 0; k < 3; k++) win(c, wx, 0.12 + k * 0.26, wz + 0.11, 0.04, 0.12, 'f', 0.5);
+      gb.cbox(wx, H, wz, 0.3, 0.22, 0.3, pal.brick, 0, 0.012);
+      gb.box(wx, H + 0.2, wz, 0.33, 0.025, 0.33, '#d8ccb4');
+      gb.roof(wx, H + 0.225, wz, 0.34, 0.34, 0.16, 0, pal.slate);
+      chimney(c, -0.38, 0.3, 0.8, -0.3, 'heavy', '#7f3f2e');
+      gb.cyl(tx - 0.02, ty - 0.02, tz + 0.12, 0.12, 0.13, 0.16, 12, STONE);
+      gb.cyl(tx - 0.02, ty + 0.14, tz + 0.12, 0.11, 0.11, 0.01, 12, '#3f7f9f');
+    } else {
+      footing(c, tx, tz, 0.4, 0.4);
+      gb.cyl(tx, ty - 0.02, tz, 0.19, 0.2, 0.24, 16, STONE);
+      gb.cyl(tx, ty + 0.2, tz, 0.17, 0.17, 0.02, 16, '#3f7f9f');
+      gb.cyl(tx, ty + 0.21, tz, 0.2, 0.2, 0.025, 16, '#8a8275');
+      for (let k = 0; k < 4; k++) gb.box(tx - 0.2 + k * 0.13, ty + 0.235, tz + 0.2, 0.01, 0.06, 0.01, '#3a3a3e');
+    }
   } else {
     const H = 0.66;
-    footing(c, 0, 0, 0.46, 0.46);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.19, 0, sz * 0.19, 0.032, H, 0.032, '#5e432c', 0, -sz * 0.08, sx * 0.08);
-    gb.box(0, 0.3, 0.16, 0.32, 0.022, 0.022, '#5e432c');
-    gb.box(0, 0.3, -0.16, 0.32, 0.022, 0.022, '#5e432c');
-    gb.cyl(0, H, 0, 0.23, 0.23, 0.28, 14, '#86663f');
-    for (let k = 0; k < 3; k++) gb.cyl(0, H + 0.04 + k * 0.085, 0, 0.235, 0.235, 0.013, 14, '#3f3d3a');
-    gb.cone(0, H + 0.28, 0, 0.26, 0.15, 14, pal.roof);
-    house(c, { x: -0.32, z: 0.28, w: 0.2, d: 0.18, h: 0.15, wall: pal.stoneWall, roof: pal.slate, roofType: 'gable', rh: 0.08, noDoor: true, noBack: true, lit: 0 });
+    if (plan === 1) {
+      // an iron tank on a brick tower
+      footing(c, 0, 0, 0.3, 0.3);
+      gb.cbox(0, 0, 0, 0.28, H, 0.28, pal.brick, 0, 0.012);
+      for (let k = 0; k < 2; k++) win(c, 0, 0.14 + k * 0.28, 0.14, 0.05, 0.12, 'f', 0.5);
+      for (const s of [-1, 1]) win(c, s * 0.14, 0.4, 0, 0.05, 0.12, s > 0 ? 'r' : 'l', 0.5);
+      gb.box(0, H - 0.02, 0, 0.34, 0.03, 0.34, '#d8ccb4');
+      gb.cyl(0, H + 0.01, 0, 0.22, 0.22, 0.24, 14, '#6f7f86');
+      for (let k = 0; k < 3; k++) gb.cyl(0, H + 0.05 + k * 0.08, 0, 0.224, 0.224, 0.01, 14, '#4a5560');
+      gb.cone(0, H + 0.25, 0, 0.23, 0.08, 14, '#4a5560');
+    } else if (plan === 2) {
+      // a round stone tower under a cone
+      footing(c, 0, 0, 0.36, 0.36);
+      gb.cyl(0, 0, 0, 0.15, 0.17, H + 0.18, 12, pal.stoneWall);
+      gb.glow(WARM[0], WARM[1], WARM[2], 1.2);
+      for (const a of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) gb.box(Math.sin(a) * 0.162, 0.4, Math.cos(a) * 0.162, 0.04, 0.1, 0.012, GLASS, a);
+      gb.noGlow();
+      gb.cyl(0, H + 0.18, 0, 0.19, 0.19, 0.04, 12, STONE_D);
+      gb.cone(0, H + 0.22, 0, 0.2, 0.22, 12, pal.roof);
+    } else {
+      footing(c, 0, 0, 0.46, 0.46);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.19, 0, sz * 0.19, 0.032, H, 0.032, '#5e432c', 0, -sz * 0.08, sx * 0.08);
+      gb.box(0, 0.3, 0.16, 0.32, 0.022, 0.022, '#5e432c');
+      gb.box(0, 0.3, -0.16, 0.32, 0.022, 0.022, '#5e432c');
+      gb.cyl(0, H, 0, 0.23, 0.23, 0.28, 14, '#86663f');
+      for (let k = 0; k < 3; k++) gb.cyl(0, H + 0.04 + k * 0.085, 0, 0.235, 0.235, 0.013, 14, '#3f3d3a');
+      gb.cone(0, H + 0.28, 0, 0.26, 0.15, 14, pal.roof);
+    }
+    house(c, { x: -0.32, z: 0.28, w: 0.2, d: 0.18, h: 0.15, wall: pal.stoneWall, roof: pal.slate, roofType: 'gable', rh: 0.08, noDoor: true, noBack: true, lit: 0, form: false });
   }
 };
 
@@ -3753,25 +3945,90 @@ export function goal(c, x, z, ry, net) {
 }
 
 
+// A coach stop by the road, in one of its own kinds: a timber shelter under
+// a lean-to roof; a cast-iron shelter with a glazed canopy and a timetable;
+// a gabled shelter open to the road, benches either side; a little round
+// kiosk under a pointed roof beside a canopy; or a brick waiting room with a
+// canopy along its front. A sign post and a lamp; behind, a tree, a horse
+// trough or a drinking fountain.
 MODELS.coachstop = (c) => {
   const { gb, pal } = c;
-  const z = 0.22;
-  footing(c, 0, z - 0.03, 0.5, 0.2);
-  gb.cbox(0, 0, z - 0.11, 0.46, 0.24, 0.025, pal.wood, 0, 0.006);
-  for (const sx of [-1, 1]) {
-    gb.cbox(sx * 0.22, 0, z - 0.04, 0.025, 0.24, 0.16, pal.wood, 0, 0.006);
-    gb.box(sx * 0.22, 0, z + 0.08, 0.024, 0.26, 0.024, '#3f342c');
+  const F = c.form, kind = planOf(c, 5), z = 0.22;
+  const roof = pal.thatched ? pal.thatch : pal.roof;
+  if (kind === 1) {
+    // cast iron and glass
+    footing(c, 0, z - 0.03, 0.5, 0.2);
+    gb.cbox(0, -0.01, z - 0.04, 0.5, 0.025, 0.2, '#b8b0a2', 0, 0.004);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.cyl(sx * 0.2, 0.015, z - 0.04 + sz * 0.07, 0.009, 0.011, 0.25, 6, '#2f4a3a');
+    gb.box(0, 0.26, z - 0.04, 0.52, 0.016, 0.22, '#2f4a3a');
+    gb.glow(1.4, 1.3, 1.0, 1.2); gb.hip(0, 0.276, z - 0.04, 0.5, 0.2, 0.05, '#a9c4c8', 0.01); gb.noGlow();
+    gb.box(0, 0.03, z - 0.13, 0.42, 0.18, 0.008, '#a9c4c8');
+    gb.box(-0.12, 0.12, z - 0.12, 0.1, 0.08, 0.01, '#e8e0cc');
+  } else if (kind === 2) {
+    // a gabled shelter, open to the road, a bench along each side
+    footing(c, 0, z - 0.03, 0.46, 0.22);
+    gb.cbox(0, 0, z - 0.12, 0.42, 0.24, 0.025, pal.wood, 0, 0.006);
+    for (const sx of [-1, 1]) {
+      gb.box(sx * 0.2, 0, z + 0.06, 0.024, 0.24, 0.024, '#3f342c');
+      gb.box(sx * 0.2, 0, z - 0.1, 0.024, 0.24, 0.024, '#3f342c');
+      gb.box(sx * 0.16, 0.06, z - 0.02, 0.05, 0.012, 0.16, '#7a5636');
+    }
+    gb.gable(0, 0.24, z - 0.02, 0.44, 0.26, 0.14, pal.wood, roof, 0.04, false, 0.03);
+  } else if (kind === 3) {
+    // a round kiosk under a pointed roof, a canopy beside it
+    const kx = -0.16;
+    gb.cyl(kx, 0, z - 0.04, 0.08, 0.085, 0.24, 8, '#2f4a3a');
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(kx, 0.1, z + 0.035, 0.06, 0.06, 0.012, GLASS); gb.noGlow();
+    gb.cyl(kx, 0.24, z - 0.04, 0.1, 0.1, 0.02, 8, '#d8ccb4');
+    gb.cone(kx, 0.26, z - 0.04, 0.1, 0.14, 8, roof);
+    gb.box(kx, 0.4, z - 0.04, 0.006, 0.05, 0.006, IRON_D);
+    for (const sz of [-1, 1]) gb.box(0.16, 0, z - 0.04 + sz * 0.08, 0.02, 0.22, 0.02, '#3f342c');
+    gb.box(0.08, 0.22, z - 0.04, 0.24, 0.016, 0.22, roof);
+    bench(c, 0.08, z - 0.06, 0);
+  } else if (kind === 4) {
+    // a brick waiting room, a canopy along its front
+    footing(c, 0, z - 0.08, 0.46, 0.16);
+    gb.cbox(0, 0, z - 0.1, 0.44, 0.24, 0.14, pal.brick, 0, 0.008);
+    gb.hip(0, 0.24, z - 0.1, 0.46, 0.16, 0.08, pal.slate, 0.02);
+    plainDoor(c, -0.1, z - 0.03, 0.07, 0.16, pal.door);
+    win(c, 0.1, 0.08, z - 0.03, 0.08, 0.08, 'f', 0.8);
+    for (const sx of [-1, 1]) win(c, sx * 0.22, 0.08, z - 0.1, 0.05, 0.08, sx > 0 ? 'r' : 'l', 0.8);
+    gb.box(0, 0.2, z + 0.03, 0.46, 0.012, 0.1, '#2f2f33');
+    for (const sx of [-1, 1]) gb.boxC(sx * 0.18, 0.17, z - 0.0, 0.006, 0.07, 0.006, IRON_D, 0.6);
+  } else {
+    footing(c, 0, z - 0.03, 0.5, 0.2);
+    gb.cbox(0, 0, z - 0.11, 0.46, 0.24, 0.025, pal.wood, 0, 0.006);
+    for (const sx of [-1, 1]) {
+      gb.cbox(sx * 0.22, 0, z - 0.04, 0.025, 0.24, 0.16, pal.wood, 0, 0.006);
+      gb.box(sx * 0.22, 0, z + 0.08, 0.024, 0.26, 0.024, '#3f342c');
+    }
+    gb.wedge(0, 0.24, z - 0.02, 0.54, 0.27, 0.055, roof);
   }
-  gb.wedge(0, 0.24, z - 0.02, 0.54, 0.27, 0.055, pal.thatched ? pal.thatch : pal.roof);
-  bench(c, 0, z - 0.05, 0);
+  if (kind !== 2 && kind !== 3 && kind !== 4) bench(c, 0, z - 0.05, 0);
+  // the coach company's sign on its post, and a lamp
   const px = 0.34, pz = z + 0.15, py = c.gy(px, pz);
   gb.box(px, py, pz, 0.016, 0.32, 0.016, '#2f2c2a');
   gb.cyl(px, py + 0.32, pz, 0.045, 0.045, 0.013, 10, '#c9a040', 0, Math.PI / 2);
   gb.cyl(px, py + 0.32, pz + 0.013, 0.028, 0.028, 0.004, 10, '#2f4858', 0, Math.PI / 2);
   lamp(c, -0.34, z + 0.15, 0.3);
-  smallTree(c, -0.32, -0.32, 1.15);
-  bush(c, 0.32, -0.34);
-  flowers(c, 0.05, -0.32, 6, 0.08);
+  // behind: a tree and a bed, a horse trough, or a drinking fountain
+  const back = Math.floor(F.b * 3);
+  if (back === 1) {
+    const tx = -0.2, tz = -0.3, ty = c.gy(tx, tz);
+    gb.cbox(tx, ty - 0.01, tz, 0.3, 0.07, 0.1, STONE, 0, 0.008);
+    gb.box(tx, ty + 0.055, tz, 0.26, 0.008, 0.07, '#3f7f9f');
+    smallTree(c, 0.3, -0.32, 1.0);
+  } else if (back === 2) {
+    const fx = 0, fz = -0.28, fy = c.gy(fx, fz);
+    gb.cbox(fx, fy - 0.01, fz, 0.12, 0.05, 0.12, STONE, Math.PI / 4, 0.006);
+    gb.cyl(fx, fy + 0.04, fz, 0.03, 0.04, 0.2, 6, '#b8b0a2');
+    gb.cone(fx, fy + 0.24, fz, 0.05, 0.08, 6, '#b8b0a2');
+    flowers(c, -0.3, -0.32, 6, 0.08); bush(c, 0.32, -0.34);
+  } else {
+    smallTree(c, -0.32, -0.32, 1.15);
+    bush(c, 0.32, -0.34);
+    flowers(c, 0.05, -0.32, 6, 0.08);
+  }
 };
 
 MODELS.station = (c, L) => {
@@ -3783,7 +4040,12 @@ MODELS.station = (c, L) => {
   gb.cbox(0, 0, 0.37, 0.96, 0.075, 0.22, '#b8b0a2', 0, 0.01);
   gb.box(0, 0.075, 0.468, 0.96, 0.006, 0.03, '#d9c050');
   for (const px of [-0.32, 0, 0.32]) gb.box(px, 0.075, 0.33, 0.024, 0.26, 0.024, '#3f4a56');
-  gb.wedge(0, 0.33, 0.37, 0.94, 0.28, 0.055, L ? pal.slate : '#6e5034', Math.PI);
+  // the platform canopy, its own way: a lean-to, the same with a fretted
+  // valance along its edge, or a gabled roof over the platform
+  const canopy = planOf(c, 3), cr = L ? pal.slate : '#6e5034';
+  if (canopy === 2) gb.gable(0, 0.33, 0.355, 0.9, 0.22, 0.07, '#d8ccb4', cr, 0.025, false, 0.025);
+  else gb.wedge(0, 0.33, 0.37, 0.94, 0.28, 0.055, cr, Math.PI);
+  if (canopy === 1) for (let i = 0; i < 16; i++) gb.box(-0.45 + i * 0.06, 0.3, 0.51, 0.04, 0.035, 0.006, '#e3dccd');
   bench(c, -0.16, 0.32, Math.PI); bench(c, 0.18, 0.32, Math.PI);
   lamp(c, -0.45, 0.42, 0.32); lamp(c, 0.45, 0.42, 0.32);
   house(c, {
@@ -4466,10 +4728,19 @@ MODELS.watermill = (c, L) => {
   const [sx, sz] = waterSide(c);
   const w = L ? 0.54 : 0.44, d = L ? 0.44 : 0.38, h = L ? 0.5 : 0.32;
   const hx = -sx * 0.12, hz = -sz * 0.12;
+  // the mill under a gable or a hip, or (planOf) a lucam: the hoist's gabled
+  // housing standing out from the front over the loading doors
+  const kind = planOf(c, 3);
   house(c, {
-    x: hx, z: hz, w, d, h, floors: L ? 2 : 1, wall: L ? pal.brick : pal.wall, roof: L ? pal.slate : pal.roof, roofType: 'gable',
-    rh: 0.22, timber: !L && pal.timber, nFront: 2, chimney: false, lit: 0.7, fancy: false, plinth: STONE,
+    x: hx, z: hz, w, d, h, floors: L ? 2 : 1, wall: L ? pal.brick : pal.wall, roof: L ? pal.slate : pal.roof, roofType: kind === 1 ? 'hip' : 'gable',
+    rh: kind === 2 ? 0.28 : 0.22, timber: !L && pal.timber, nFront: 2, chimney: false, lit: 0.7, fancy: false, plinth: STONE,
   });
+  if (kind === 2) {
+    const lz = hz + d / 2 + 0.05, ly = h - 0.04;
+    gb.cbox(hx, ly, lz - 0.02, 0.14, 0.18, 0.14, pal.wood, 0, 0.008);
+    gb.gable(hx, ly + 0.18, lz - 0.02, 0.15, 0.15, 0.08, pal.wood, L ? pal.slate : pal.roof, 0.015, true, 0.02);
+    gb.box(hx, ly + 0.03, lz + 0.052, 0.07, 0.11, 0.006, '#4e3828');
+  }
   // the wheel turns in the stream beside the mill
   const R = L ? 0.24 : 0.2;
   const off = (sx ? w : d) / 2 + 0.06;
@@ -4499,14 +4770,43 @@ MODELS.watermill = (c, L) => {
   void rng;
 };
 
+// A wind generator, its own kind (planOf). The Wind Generator: a smock mill
+// with four canvas sails; a round brick tower mill under a white cap; or a
+// windpump, a wheel of many blades and a tail vane on a lattice tower. The
+// Wind Turbine: three blades on a slim white mast, or two on a lattice one.
 MODELS.windgen = (c, L) => {
   const { gb, pal } = c;
-  if (L === 0) {
-    // a smock-mill tower with four canvas sails driving a dynamo
+  const kind = planOf(c, 3);
+  if (L === 0 && kind === 2) {
+    // a windpump: a lattice tower, a wheel of blades, a tail vane
+    footing(c, 0, -0.05, 0.3, 0.3);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.11, 0, -0.05 + sz * 0.11, 0.016, 0.66, 0.016, '#5a5a5e', 0, -sz * 0.12, sx * 0.12);
+    for (const y of [0.2, 0.42]) { gb.box(0, y, -0.05 + 0.09 - y * 0.08, 0.2 - y * 0.16, 0.012, 0.012, '#5a5a5e'); gb.box(0, y, -0.05 - 0.09 + y * 0.08, 0.2 - y * 0.16, 0.012, 0.012, '#5a5a5e'); }
+    gb.box(0, 0.64, -0.05, 0.08, 0.04, 0.08, '#4a4a4e');
+    gb.box(0, 0.66, -0.2, 0.012, 0.012, 0.22, '#4a4a4e');
+    gb.box(0, 0.62, -0.32, 0.006, 0.1, 0.12, '#c8423a');
+    door(c, 0, 0.13, 0.07, 0.13, '#4a4a4e');
+    const fan = new GeoBuilder();
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; fan.boxC(Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0, 0.14, 0.035, 0.006, '#d8d4cc', 0.3, 0, a); }
+    fan.cyl(0, 0, -0.01, 0.2, 0.2, 0.008, 16, '#5a5a5e', 0, Math.PI / 2);
+    fan.cyl(0, 0, 0, 0.03, 0.03, 0.03, 8, '#3a3a3e', 0, Math.PI / 2);
+    c.spin = { geo: fan.build(), x: 0, y: 0.66, z: 0.03, speed: 1.6 };
+    gb.cbox(0.3, c.gy(0.3, 0.25), 0.25, 0.16, 0.12, 0.14, '#7a6a58', 0, 0.008);
+    gb.wedge(0.3, c.gy(0.3, 0.25) + 0.12, 0.25, 0.18, 0.16, 0.04, pal.slate, 0);
+    pole(c, -0.38, 0.38);
+  } else if (L === 0) {
+    // a smock mill (or a brick tower mill) with four canvas sails driving a dynamo
     footing(c, 0, -0.05, 0.36, 0.36);
-    gb.cyl(0, 0, -0.05, 0.12, 0.17, 0.6, 8, '#a8885c');
-    for (let k = 0; k < 3; k++) gb.cyl(0, 0.15 + k * 0.17, -0.05, 0.172 - k * 0.017, 0.172 - k * 0.017, 0.012, 8, '#5e4630');
-    gb.cone(0, 0.6, -0.05, 0.15, 0.14, 8, pal.roof);
+    if (kind === 1) {
+      gb.cyl(0, 0, -0.05, 0.12, 0.16, 0.6, 12, pal.brick);
+      gb.cyl(0, 0.6, -0.05, 0.13, 0.13, 0.03, 12, '#e8e2d4');
+      gb.sphere(0, 0.62, -0.05, 0.13, '#e8e2d4', 1, 0.8);
+      gb.glow(WARM[0], WARM[1], WARM[2], 1.2); gb.box(0.135, 0.36, -0.05, 0.012, 0.07, 0.04, GLASS); gb.box(-0.135, 0.36, -0.05, 0.012, 0.07, 0.04, GLASS); gb.box(0, 0.36, -0.185, 0.04, 0.07, 0.012, GLASS); gb.noGlow();
+    } else {
+      gb.cyl(0, 0, -0.05, 0.12, 0.17, 0.6, 8, '#a8885c');
+      for (let k = 0; k < 3; k++) gb.cyl(0, 0.15 + k * 0.17, -0.05, 0.172 - k * 0.017, 0.172 - k * 0.017, 0.012, 8, '#5e4630');
+      gb.cone(0, 0.6, -0.05, 0.15, 0.14, 8, pal.roof);
+    }
     door(c, 0, 0.11, 0.07, 0.14, pal.door);
     const sails = new GeoBuilder();
     for (let k = 0; k < 4; k++) {
@@ -4520,14 +4820,18 @@ MODELS.windgen = (c, L) => {
     gb.wedge(0.3, c.gy(0.3, 0.25) + 0.12, 0.25, 0.18, 0.16, 0.04, pal.slate, 0);
     pole(c, -0.38, 0.38);
   } else {
-    // a tall wind turbine on a slim mast
+    // a tall wind turbine on a slim mast (or two blades on a lattice mast)
+    const lattice = kind === 1;
     footing(c, 0, -0.05, 0.16, 0.16);
-    gb.cbox(0, -0.02, -0.05, 0.16, 0.05, 0.16, STONE, 0, 0.01);
-    gb.cyl(0, 0.02, -0.05, 0.022, 0.04, 1.28, 8, '#e6e4de');
+    gb.cbox(0, -0.02, -0.05, lattice ? 0.24 : 0.16, 0.05, lattice ? 0.24 : 0.16, STONE, 0, 0.01);
+    if (lattice) {
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) gb.box(sx * 0.07, 0.02, -0.05 + sz * 0.07, 0.014, 1.27, 0.014, '#8a8a90', 0, -sz * 0.05, sx * 0.05);
+      for (let y = 0.25; y < 1.2; y += 0.25) { const hw = 0.07 - y * 0.05; for (const sz of [-1, 1]) gb.box(0, y, -0.05 + sz * hw, hw * 2, 0.008, 0.008, '#8a8a90'); }
+    } else gb.cyl(0, 0.02, -0.05, 0.022, 0.04, 1.28, 8, '#e6e4de');
     gb.cbox(0, 1.27, -0.09, 0.07, 0.07, 0.19, '#dcdad4', 0, 0.01);
-    const blades = new GeoBuilder();
-    for (let k = 0; k < 3; k++) {
-      const a = (k / 3) * Math.PI * 2 + Math.PI / 2;
+    const blades = new GeoBuilder(), nb = lattice ? 2 : 3;
+    for (let k = 0; k < nb; k++) {
+      const a = (k / nb) * Math.PI * 2 + Math.PI / 2;
       blades.boxC(Math.cos(a) * 0.24, Math.sin(a) * 0.24, 0, 0.46, 0.035, 0.008, '#f0eee8', 0, 0, a);
     }
     blades.sphere(0, 0, 0.01, 0.03, '#d0cec8', 1);
@@ -4543,8 +4847,9 @@ MODELS.pump = (c, L) => {
   const [sx, sz] = waterSide(c);
   const hx = -sx * 0.1, hz = -sz * 0.1;
   const w = L ? 0.56 : 0.42, d = L ? 0.44 : 0.36;
+  const kind = planOf(c, 3);
   house(c, {
-    x: hx, z: hz, w, d, h: L ? 0.44 : 0.32, wall: pal.brick, roof: pal.slate, roofType: 'gable', rh: 0.18,
+    x: hx, z: hz, w, d, h: L ? 0.44 : 0.32, wall: kind === 2 ? pal.stoneWall : pal.brick, roof: pal.slate, roofType: kind === 1 ? 'hip' : 'gable', rh: 0.18,
     nFront: 2, chimney: false, lit: 0.8, fancy: false, plinth: STONE,
   });
   const cx = hx - (sx ? 0 : w * 0.3) , cz = hz - (sz ? 0 : d * 0.3);
@@ -4554,7 +4859,13 @@ MODELS.pump = (c, L) => {
   const mx = (hx + ex) / 2 + (sx ? 0 : 0.1), mz = (hz + ez) / 2 + (sz ? 0 : 0.1);
   gb.boxC(mx, Math.max(c.gy(mx, mz), -0.1) + 0.04, mz, sx ? 0.36 : 0.04, 0.04, sx ? 0.04 : 0.36, '#4a4a4e');
   gb.cyl(ex + (sx ? 0 : 0.1), Math.min(c.gy(ex, ez), 0) - 0.12, ez + (sz ? 0 : 0.1), 0.035, 0.035, 0.2, 8, '#4a4a4e');
-  if (L) {
+  if (L && kind === 2) {
+    // a standpipe tower, tall and round under a little dome
+    const tx = (sx ? 0 : 0.3) - sx * 0.3, tz = 0.28, ty = c.gy(tx, tz);
+    gb.cyl(tx, ty - 0.02, tz, 0.07, 0.085, 0.78, 10, pal.stoneWall);
+    gb.cyl(tx, ty + 0.76, tz, 0.09, 0.09, 0.03, 10, STONE_D);
+    gb.sphere(tx, ty + 0.79, tz, 0.08, '#4a5560', 1, 0.9);
+  } else if (L) {
     // a raised tank on iron legs
     const tx = -hx * 0 + (sx ? 0 : 0.3) - sx * 0.3, tz = 0.28;
     for (const ax of [-1, 1]) for (const az of [-1, 1]) gb.box(tx + ax * 0.08, c.gy(tx, tz), tz + az * 0.08, 0.02, 0.5, 0.02, '#3a3a3e');
@@ -4568,17 +4879,24 @@ MODELS.pump = (c, L) => {
 MODELS.powerplant = (c, L) => {
   const { gb, pal } = c;
   const brick = pal.style === 'stone' ? pal.stoneWall : pal.brick;
-  // turbine hall with tall windows
+  // turbine hall with tall windows: under a gable, a hip, or a gable with a
+  // monitor of lit windows along its ridge (planOf)
+  const plan = planOf(c, 3), hh = L ? 0.72 : 0.6;
   house(c, {
-    x: -0.22, z: -0.18, w: 1.1, d: 0.66, h: L ? 0.72 : 0.6, floors: 2, wall: brick, roof: pal.slate, roofType: 'gable', rh: 0.22,
+    x: -0.22, z: -0.18, w: 1.1, d: 0.66, h: hh, floors: 2, wall: brick, roof: pal.slate, roofType: plan === 1 ? 'hip' : 'gable', rh: plan === 2 ? 0.16 : 0.22,
     fancy: false, nFront: 6, doorX: 0, doorW: 0.14, lit: 0.85, plinth: STONE_D, chimney: false,
   });
+  if (plan === 2) {
+    gb.cbox(-0.22, hh + 0.1, -0.18, 0.9, 0.1, 0.24, shade(brick, 0.9), 0, 0.006);
+    gb.glow(WARM[0], WARM[1], WARM[2], 1.3); for (const s2 of [-1, 1]) gb.box(-0.22, hh + 0.12, -0.18 + s2 * 0.122, 0.84, 0.05, 0.008, GLASS); gb.noGlow();
+    gb.gable(-0.22, hh + 0.2, -0.18, 0.94, 0.28, 0.06, brick, pal.slate, 0.02, false, 0.02);
+  }
   // boiler house and chimneys
   const bx = 0.62, bz = -0.36;
   footing(c, bx, bz, 0.5, 0.52);
   gb.cbox(bx, 0, bz, 0.5, 0.52, 0.52, shade(brick, 0.88), 0, 0.016);
   gb.hip(bx, 0.52, bz, 0.5, 0.52, 0.12, pal.slate, 0.04);
-  const stacks = L ? [[0.5, -0.66], [0.78, -0.66], [0.64, -0.12]] : [[0.62, -0.68]];
+  const stacks = plan === 1 ? (L ? [[0.48, -0.68], [0.76, -0.68]] : [[0.48, -0.68], [0.76, -0.68]]) : L ? [[0.5, -0.66], [0.78, -0.66], [0.64, -0.12]] : [[0.62, -0.68]];
   for (const [x, z] of stacks) {
     const top = L ? 1.75 : 1.5;
     gb.cyl(x, 0.3, z, 0.06, 0.085, top - 0.3, 10, '#7f3f2e');
@@ -5219,9 +5537,14 @@ MODELS.craftshouse = (c, L) => {
       tradeSign(ux + (flip ? -1 : 1) * uw * 0.42, fh + 0.04, fz);
     }
     for (const sx of [-1, 1]) for (let k = 0; k < 2; k++) win(c, sx * W / 2, k * fh + fh * 0.36, z0, 0.07, 0.09, sx > 0 ? 'r' : 'l');
-    gb.gable(0, h, z0, W + 0.02, D, rh, pal.wall, pal.slate, 0.05, false, 0.035);
+    // its roofs: one long one, a gable to the street over each house, or
+    // each house its own (planOf)
+    const plan = planOf(c, 3);
+    if (plan === 2) for (let i = 0; i < n; i++) gb.gable(-W / 2 + (i + 0.5) * uw, h, z0, uw + 0.012, D, rh * [1, 1.3, 0.85][i], pal.wall, pal.slate, 0.04, false, 0.03);
+    else gb.gable(0, h, z0, W + 0.02, D, rh, pal.wall, pal.slate, 0.05, false, 0.035);
+    if (plan === 1) for (let i = 0; i < n; i++) wallGable(c, 'plain', -W / 2 + (i + 0.5) * uw, fz, uw * 0.7, h, rh, D * 0.45, pal.wall, pal.slate, '#e3dccd', 0.8);
     // a stack on each party wall
-    for (let i = 1; i < n; i++) chimney(c, -W / 2 + i * uw, h - 0.05, h + rh + 0.07, z0, 'home', stackColor(c));
+    for (let i = 1; i < n; i++) chimney(c, -W / 2 + i * uw, h - 0.05, h + rh * (plan === 2 ? 1.3 : 1) + 0.07, z0, 'home', stackColor(c));
     // work set out on the pavement
     wheel(-W / 2 + 0.22, front - 0.08);
     crate(c, -0.12, front - 0.1); crate(c, -0.05, front - 0.08, 0.8);
@@ -6732,12 +7055,31 @@ MODELS.collegequad = (c, L) => {
 
 // ------------------------------------------------- side-branch buildings
 
+// A foundry: a casting shed, a cupola furnace glowing and stacks of iron, in
+// one of its plans: a tall gable shed with round stacks behind; a shed with a
+// monitor roof along its ridge and a square stack; or twin sheds with their
+// gables to the street, a stack between them.
 MODELS.foundry = (c, L) => {
   const { gb, pal } = c;
-  // a tall brick casting shed, a cupola furnace and stacks of iron
-  house(c, { x: -0.08, z: -0.14, w: 0.7, d: 0.52, h: L ? 0.6 : 0.48, wall: L ? '#6a4a3a' : pal.brick, roof: '#3f3f44', roofType: 'gable', rh: 0.2, nFront: 3, doorX: 0, doorW: 0.16, chimney: false, fancy: false, lit: 1 });
-  const stacks = L ? [[-0.34, -0.36], [0.3, -0.36]] : [[-0.34, -0.36]];
-  for (const [x, z] of stacks) { gb.cyl(x, 0.2, z, 0.05, 0.07, (L ? 1.3 : 1.05) - 0.2, 10, '#5e2e22'); c.addSmoke(x, L ? 1.35 : 1.1, z, 'heavy'); }
+  const plan = planOf(c, 3), wall = L ? '#6a4a3a' : pal.brick, H = L ? 0.6 : 0.48;
+  if (plan === 2) {
+    for (const x of [-0.27, 0.13]) house(c, { x, z: -0.14, w: 0.36, d: 0.56, h: H - 0.04, wall, roof: '#3f3f44', roofType: 'gable', alongZ: true, rh: 0.2, nFront: 1, doorX: 0, doorW: 0.14, noDoor: x > 0, chimney: false, fancy: false, lit: 1 });
+    gb.cbox(-0.07, 0, -0.36, 0.11, L ? 1.3 : 1.05, 0.11, '#5e2e22', 0, 0.01);
+    c.addSmoke(-0.07, L ? 1.35 : 1.1, -0.36, 'heavy');
+  } else {
+    house(c, { x: -0.08, z: -0.14, w: 0.7, d: 0.52, h: H, wall, roof: '#3f3f44', roofType: 'gable', rh: plan === 1 ? 0.14 : 0.2, nFront: 3, doorX: 0, doorW: 0.16, chimney: false, fancy: false, lit: 1 });
+    if (plan === 1) {
+      // a monitor along the ridge, its windows glowing, and a square stack
+      gb.cbox(-0.08, H + 0.08, -0.14, 0.6, 0.09, 0.2, '#4a4a4e', 0, 0.006);
+      gb.glow(2.2, 1.1, 0.35, 1.4); for (const s2 of [-1, 1]) gb.box(-0.08, H + 0.1, -0.14 + s2 * 0.102, 0.54, 0.05, 0.008, GLASS); gb.noGlow();
+      gb.gable(-0.08, H + 0.17, -0.14, 0.64, 0.24, 0.05, '#4a4a4e', '#3f3f44', 0.02, false, 0.02);
+      gb.cbox(-0.34, 0, -0.38, 0.1, L ? 1.25 : 1.0, 0.1, '#5e2e22', 0, 0.01);
+      c.addSmoke(-0.34, L ? 1.3 : 1.05, -0.38, 'heavy');
+    } else {
+      const stacks = L ? [[-0.34, -0.36], [0.3, -0.36]] : [[-0.34, -0.36]];
+      for (const [x, z] of stacks) { gb.cyl(x, 0.2, z, 0.05, 0.07, (L ? 1.3 : 1.05) - 0.2, 10, '#5e2e22'); c.addSmoke(x, L ? 1.35 : 1.1, z, 'heavy'); }
+    }
+  }
   gb.cyl(0.36, 0, 0.1, 0.1, 0.12, 0.4, 10, '#4a4a4e');
   gb.glow(2.4, 1.2, 0.3, 2.0); gb.box(0.36, 0.06, 0.2, 0.08, 0.08, 0.02, '#ff9a40'); gb.noGlow();
   c.addGlow(0.36, 0.1, 0.22, 'forge');
@@ -6765,12 +7107,21 @@ MODELS.orchard = (c, L) => {
   c.work = [-0.88, -0.88, 0.0, 0.88];
 };
 
+// A paper mill: a long mill with a water wheel, its drying lofts (louvred
+// boards along the top floor, or a louvred loft along the ridge), a hipped or
+// gabled roof, the stack at the back or a works stack standing free.
 MODELS.papermill = (c, L) => {
   const { gb, pal } = c;
-  // a long mill with a water wheel and drying lofts
-  house(c, { x: -0.04, z: -0.12, w: 0.76, d: 0.48, h: L ? 0.62 : 0.5, floors: 2, wall: L ? pal.brick : pal.wall, roof: pal.slate, roofType: 'gable', rh: 0.22, nFront: 4, doorX: 0, chimney: false, fancy: false, lit: 0.9 });
-  chimney(c, -0.3, 0.4, 0.95, -0.28, 'work', '#7f3f2e');
-  for (let i = 0; i < 4; i++) gb.box(-0.3 + i * 0.2, L ? 0.62 : 0.5, 0.13, 0.12, 0.05, 0.015, '#e8e0cc');
+  const plan = planOf(c, 3), H = L ? 0.62 : 0.5;
+  house(c, { x: -0.04, z: -0.12, w: 0.76, d: 0.48, h: H, floors: 2, wall: L ? pal.brick : pal.wall, roof: pal.slate, roofType: plan === 1 ? 'hip' : 'gable', rh: 0.22, nFront: 4, doorX: 0, chimney: false, fancy: false, lit: 0.9 });
+  if (plan === 2) {
+    // a louvred drying loft along the ridge, a works stack standing free
+    gb.cbox(-0.04, H + 0.12, -0.12, 0.6, 0.12, 0.18, pal.wood, 0, 0.006);
+    for (const s2 of [-1, 1]) for (let i = 0; i < 3; i++) gb.box(-0.04, H + 0.14 + i * 0.03, -0.12 + s2 * 0.092, 0.58, 0.008, 0.008, '#3a2f28');
+    gb.gable(-0.04, H + 0.24, -0.12, 0.64, 0.22, 0.06, pal.wood, pal.slate, 0.02, false, 0.02);
+    gb.cyl(-0.36, 0, -0.38, 0.05, 0.065, 0.95, 8, '#7f3f2e'); c.addSmoke(-0.36, 1.0, -0.38, 'work');
+  } else chimney(c, -0.3, 0.4, 0.95, -0.28, 'work', '#7f3f2e');
+  if (plan !== 2) for (let i = 0; i < 4; i++) gb.box(-0.3 + i * 0.2, H, 0.13, 0.12, 0.05, 0.015, '#e8e0cc');
   const wheel = new GeoBuilder();
   for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; wheel.boxC(Math.cos(a) * 0.15, Math.sin(a) * 0.15, 0, 0.12, 0.02, 0.07, '#6e5034', 0, 0, a + Math.PI / 2); wheel.boxC(Math.cos(a) * 0.075, Math.sin(a) * 0.075, 0, 0.15, 0.012, 0.012, '#5e432c', 0, 0, a); }
   c.spin = { geo: wheel.build(), x: 0.42, y: 0.15, z: -0.1, speed: 0.6, ry: Math.PI / 2 };
@@ -6858,6 +7209,10 @@ function weather(geo) {
 // ---------------------------------------------------------------- entry
 
 const hasExt = (b) => !!(b.ext && (b.ext.x0 || b.ext.x1 || b.ext.z0 || b.ext.z1));
+
+// The models drawn either way round (see buildModel): no spinning wheels,
+// fountains or work areas in them, and no street corner of their own.
+const MIRRORED = new Set(['builder', 'lumber', 'workshop', 'joinery', 'contractor', 'craftshouse', 'brewhouse', 'foundry', 'timberworks', 'watchhouse', 'inn', 'teagarden', 'fishmarket', 'coachinginn', 'well', 'pump', 'powerplant', 'coachstop', 'musichall', 'markethall']);
 
 // The part of the world a building may use, in its own local frame: its plot,
 // grown or shrunk by any garden land bought from or sold to a neighbour.
@@ -6955,7 +7310,13 @@ export function buildModel(b, opts = {}) {
   // as a whole has none), so taking land doesn't shift it
   const own = annex && b.spare && (def.merged ? 2 : def.size ** 2) === 1 && !opts.flat ? jitterOf({ type: b.type, variant: b.variant, size: 1 }) : null;
   const fit = own || jit;
+  // works and yards that aren't the same either way round are laid out one
+  // way or the other (their form's side), unless the plot has grown (its
+  // annex keeps to its own side)
+  const flip = MIRRORED.has(b.type) && form.side < 0 && !annex;
+  if (flip) gb.mirrorX();
   (MODELS[b.type] || PARK_MODELS[b.type] || CIVIC_MODELS[b.type])(c, b.level);
+  if (flip) gb.pop();
   let geo = gb.build();
   if (geo) { weather(geo); tint(geo, pal.tint); }
   // Never poke into the neighbours: shrink the model sideways if, after its

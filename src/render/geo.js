@@ -173,6 +173,13 @@ export class GeoBuilder {
     this.stack.push(this.M.clone().multiply(_m));
     return this;
   }
+  // Everything drawn until the matching pop() comes out mirrored left to
+  // right (its triangles turned back the right way round: see add).
+  mirrorX() {
+    _m.makeScale(-1, 1, 1);
+    this.stack.push(this.M.clone().multiply(_m));
+    return this;
+  }
   pop() { this.stack.pop(); return this; }
 
   glow(r, g, b, mode) { this.emitVal = [r, g, b, mode]; return this; }
@@ -183,6 +190,11 @@ export class GeoBuilder {
     _m2.multiplyMatrices(this.M, local);
     g.applyMatrix4(_m2);
     const n = g.attributes.position.count;
+    if (_m2.determinant() < 0) {
+      // mirrored: swap two corners of every triangle so it faces out again
+      const p = g.attributes.position.array;
+      for (let i = 0; i < p.length; i += 9) for (let k = 0; k < 3; k++) { const t = p[i + 3 + k]; p[i + 3 + k] = p[i + 6 + k]; p[i + 6 + k] = t; }
+    }
     _c.set(color);
     if (this.vary) {
       const h = Math.sin(++this._k * 12.9898 + n * 78.233) * 43758.5453;
