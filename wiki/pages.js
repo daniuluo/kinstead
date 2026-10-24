@@ -51,7 +51,9 @@ export const KEYS = [
   { show: ['W', 'A', 'S', 'D'], keys: ['w', 'a', 's', 'd'], what: 'Pan the camera (the arrow keys too)' },
   { show: ['←', '↑', '→', '↓'], keys: ['arrowleft', 'arrowup', 'arrowright', 'arrowdown'], what: 'Pan the camera' },
   { show: ['+', '−'], keys: ['+', '=', '-', '_'], what: 'Zoom in / out (or the mouse wheel)' },
-  { show: ['Q', 'E'], keys: ['q', 'e'], what: 'Turn the view a quarter turn anticlockwise / clockwise' },
+  { show: ['Shift', 'W', 'A', 'S', 'D'], keys: ['shift'], what: 'Hold Shift with W A S D (or the arrows) to turn the view (A / D) and tilt it (W lower, S higher)' },
+  { show: ['Q', 'E'], keys: ['q', 'e'], what: 'Turn the view a quarter turn anticlockwise / clockwise (from a free angle, to the next quarter turn)' },
+  { show: ['Home'], keys: ['home'], what: 'Back to the classic isometric view: the nearest of its four angles, its tilt and the flat isometric camera' },
   { show: ['T'], keys: ['t'], what: 'Switch between the isometric view and the 2D top-down map' },
   { show: ['V'], keys: ['v'], what: 'Hide the interface to see just the town (V or Esc brings it back)' },
   { show: ['1'], keys: ['1'], what: 'Select tool' },
@@ -88,6 +90,10 @@ export const SETTINGS = [
     ['Tilt-shift', 'Off · Subtle · Strong', 'The model-village look (see below).'],
     ['Sharp band', 'Narrow · Normal · Wide', 'How much of the middle stays sharp with tilt-shift on.'],
     ['Always daytime', 'On / off', "The light never goes down: the sky keeps to the day's light (from 8:00 to 16:30, drifting gently back to morning over the night), while the clock, the villagers' days, the seasons and the weather all run on as usual. No lamps or lit windows, as it's never dark."],
+  ] },
+  { group: 'Camera', rows: [
+    ['Projection', 'Isometric · Perspective', 'Isometric is the classic flat view: far things as big as near ones. Perspective sees the town like a real camera: near things bigger, far ones smaller, and a horizon when the view is tilted low. Home or the compass button goes back to isometric.'],
+    ['Field of view', '30° · 45° · 60°', 'How wide the perspective camera sees: 30° is nearly flat, 60° has the most depth (perspective only).'],
   ] },
   { group: 'Performance', rows: [
     ['Presets', 'Battery saver · Best look', 'Battery saver sets every choice below to its lightest (and turns soft contact shadows and tilt-shift off); Best look puts them back as they were at first.'],
@@ -130,7 +136,7 @@ export const PAGES = [
     sections: () => [
       { id: 'about', title: 'What Kinstead is', html: `
         <p>You lay out a village in a green valley: streets, cottages, a market, a well. Families move in from the edge of the map, find work and school places, and go about their day. As the village grows you upgrade its buildings, research new ones, join neighbours into bigger buildings, and keep everyone housed, employed, supplied and happy, until the hamlet is a market town or a cathedral city.</p>
-        <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same.</p>
+        <p>The whole town is drawn in real 3D and shown as crisp pixel art, from a classic 2:1 isometric angle that you can turn a quarter at a time, or turn and tilt freely, down to the rooftops or straight overhead, through a flat isometric or a perspective lens. Everything in it, every house, villager and tree, is made in code from a seed, so no two buildings look the same.</p>
         <p>Kinstead is free and runs in any modern browser with WebGL: there's nothing to install, and your towns are saved in your browser (or to a file).</p>` },
       { id: 'title', title: 'The title screen', html: `
         <p>Behind the title card a little demo village goes about its evening. The buttons:</p>
@@ -178,14 +184,16 @@ export const PAGES = [
       { id: 'mouse', title: 'Mouse and touch', html: `
         ${table(['Do this', 'To'], [
           ['Left-click', 'Select a building, villager or road; place what you are holding'],
-          ['Left-drag (Select tool)', 'Pan'],
-          ['Right-drag or middle-drag', 'Pan, whatever tool you hold'],
+          ['Left-drag (Select tool)', 'Pan: the ground under the pointer stays under it, at any angle'],
+          ['Right-drag', 'Pan, whatever tool you hold'],
+          ['Middle-drag, or Shift + right-drag', 'Turn the view (drag across) and tilt it (drag down to look from higher, up to look out toward the horizon)'],
           ['Drag with a road, track, field or demolish tool', 'Lay a line of road or track, or sweep a box'],
           ['Mouse wheel', 'Zoom, towards the pointer'],
           ['Right-click', 'Drop the tool you are holding, or clear a road pick'],
           ['Shift-click (Select roads)', 'Add another stretch of road to the pick'],
           ['One finger (touch)', 'Tap to select or place; drag to pan'],
-          ['Two fingers (touch)', 'Pinch to zoom'],
+          ['Two fingers (touch)', 'Pinch to zoom, drag to pan, twist to turn the view round the point between them'],
+          ['Two fingers side by side, dragged up or down together (touch)', 'Tilt the view: up toward the horizon, down to look from above'],
         ])}
         <p>On a phone the windows open across the middle at full width, the building panel sits along the bottom and the toolbar scrolls sideways.</p>` },
       { id: 'keys', title: 'Keyboard shortcuts', html: table(['Key', 'Does'], KEYS.map(e => [keyCell(e), e.what])) +
@@ -193,6 +201,12 @@ export const PAGES = [
       { id: 'views', title: 'Turning the view and the 2D map', html: `
         <p>${k('Q')} and ${k('E')} (or the turn buttons beside <b>2D</b> in the top bar) swing the camera a quarter turn around the ground at the middle of the screen, so you can see the town from all four sides. The sun stays where it is in the sky, so the shadows keep falling the same way and the far side of the town is the shaded side.</p>
         <p>${k('T')} or the <b>2D</b> button swings the camera straight down for a grid-aligned map, which turns too. Zoom with the wheel or the <b>+</b>/<b>−</b> buttons, from the whole valley right down to a single villager, near enough to see their goggles.</p>` },
+      { id: 'free', title: 'Turning and tilting freely', html: `
+        <p>The camera turns to any angle and tilts anywhere from just above the horizon (8°) to straight down. Drag with the middle mouse button, or hold ${k('Shift')} and drag with the right one: across turns the town with the pointer, down tilts the view to look from higher, up lowers it toward the horizon. On the keyboard hold ${k('Shift')} with ${k('A')} ${k('D')} to turn and ${k('W')} ${k('S')} to tilt (the arrow keys too). On a touch screen, twist two fingers to turn the town round the point between them, or drag two fingers held side by side up or down together to tilt it.</p>
+        <p>From a free angle ${k('Q')} and ${k('E')} turn to the next quarter turn that way. The 2D map (${k('T')}) remembers the angle and tilt you had and goes back to them; tilting the map down by hand leaves it where you are.</p>
+        <p>The compass button beside the turn buttons turns with the view and is faint while the view is the classic one. It, or ${k('Home')}, brings the classic view back: the nearest of the four classic angles, the 2:1 isometric tilt (26.6°), and the flat isometric camera if you were using the perspective one.</p>
+        <p>${pl('settings/camera', 'Settings → Camera')} switches to a <b>perspective</b> camera, which sees the town like a real one: near things bigger, far ones smaller, and the valley running off to a horizon when it is tilted low. Zoomed right in and tilted low it looks down the streets among the houses. The middle of the screen keeps the scale the isometric view has at the same zoom, so switching keeps what you were looking at.</p>
+        <p>Everything works at any angle: picking buildings, villagers and tiles under the pointer, zooming toward it, shadows, the haze, tilt-shift and the pixel art, which snaps to whole pixels whenever the camera stops.</p>` },
       { id: 'hide', title: 'Hiding the interface', html: `
         <p>The eye button in the top bar, or ${k('V')}, hides every panel, button and pop-up to leave just the town, for a picture or to take it in. The camera, zoom, turning and game speed still work, while clicks on the town do nothing. ${k('V')}, ${k('Esc')} or the faint <b>Show interface</b> button in the corner brings it all back.</p>` },
       { id: 'windows', title: 'Windows, overlays and the Issues panel', html: `
@@ -714,7 +728,7 @@ export const PAGES = [
   // ================================================================== options
   {
     id: 'settings', title: 'Settings', icon: 'settings', group: 'options',
-    summary: 'Display, performance, sound, pop-ups, the game and sandbox switches.',
+    summary: 'Display, the camera, performance, sound, pop-ups, the game and sandbox switches.',
     sections: () => {
       const preset = (p) => [`${p.fps ? `${p.fps} fps` : 'screen rate'}`, pct(p.resScale), p.shadows ? `${p.shadowQuality} shadows` : 'no shadows', `effects ${p.effects}`, `villagers ${p.villagers}`, p.pausedSlow ? 'slow when paused' : ''].filter(Boolean).join(' · ');
       const groupTable = (g) => table(['Setting', 'Choices', 'What it does'], g.rows.map(([a, b, c]) => [`<b>${esc(a)}</b>`, esc(b), esc(c)]));
@@ -725,6 +739,7 @@ export const PAGES = [
         sec(G('Display'), 'display', `
           <h3 id="settings/tilt-shift">Tilt-shift</h3>
           <p>Tilt-shift makes the town look like a tabletop model. The middle of the screen stays sharp (always the middle, wherever the camera goes) and the view goes soft by degrees out to every edge: a wide oval, the blur easing in with no line where it starts, growing faster up and down than across and slower below the middle than above, so the sharp area reaches further down the screen. The colours get a little lift. <b>Subtle</b> blurs up to ${fmt(TILT_SHIFT.subtle.blur * 100)}% of the screen's height, <b>Strong</b> ${fmt(TILT_SHIFT.strong.blur * 100)}%; the sharp band reaches ${pct(TILT_BAND.narrow)}, ${pct(TILT_BAND.normal)} or ${pct(TILT_BAND.wide)} of the height above and below the middle. It works in both looks, costs a fraction of a millisecond a frame, and is off by default.</p>`),
+        sec(G('Camera'), 'camera', `<p>How to turn and tilt the camera, and what the perspective camera is like: ${pl('controls/free', 'Turning and tilting freely')}.</p>`),
         sec(G('Performance'), 'performance', `
           <p>If the game runs slowly or keeps a laptop's fan going, lower these. The defaults draw as well as the game can: ${esc(preset(PERF_DEFAULTS))}. <b>Battery saver</b> sets ${esc(preset(BATTERY_SAVER))}, and turns off soft contact shadows${BATTERY_SAVER.tiltShift === 'off' ? ' and tilt-shift' : ''}. They're saved with the other settings.</p>`),
         sec(G('Sound'), 'sound'),

@@ -515,6 +515,7 @@ export class Animals {
     for (const a of this.list) {
       _v.set(a.x, this.world.terrain.heightAt(a.x, a.z) + 0.05, a.z);
       const p = this.game.renderer.worldToScreen(_v);
+      if (p.behind) continue;
       const d = Math.hypot(p.x - clientX, p.y - clientY);
       if (d < bd) { bd = d; best = a; }
     }

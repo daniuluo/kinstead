@@ -16,7 +16,9 @@ const OK = '#7fdc6a', BAD = '#ff6b5a', SOFT = '#ffffff', GOLD = '#ffd84a', WARN 
 
 // The keys that still answer with the interface hidden: the game speed and
 // the camera (W A S D and the arrows pan in update()).
-const HIDDEN_KEYS = new Set([' ', ',', '.', '/', '[', ']', 't', 'q', 'e', '+', '=', '-', '_']);
+const HIDDEN_KEYS = new Set([' ', ',', '.', '/', '[', ']', 't', 'q', 'e', 'home', '+', '=', '-', '_']);
+// how fast a drag turns (across) and tilts (up and down) the view, in radians a pixel
+const ORBIT_TURN = 0.006, ORBIT_TILT = 0.004;
 
 export class Input {
   constructor(game) {
@@ -93,13 +95,17 @@ export class Input {
     this.canvas.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
+      // two fingers: what they do is decided once they have moved a little
+      // (see onMove)
       const [a, b] = [...this.pointers.values()];
-      this.drag = { type: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      this.drag = { type: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, ang: Math.atan2(b.y - a.y, b.x - a.x), mode: null, from: [{ ...a }, { ...b }] };
       return;
     }
     const t = this.tool;
     this.mouse = { x: e.clientX, y: e.clientY };
-    if (e.button === 1 || e.button === 2) { this.drag = { type: 'pan', x: e.clientX, y: e.clientY, moved: 0, button: e.button }; return; }
+    // middle-drag, or Shift and right-drag: turn and tilt the view
+    if (e.button === 1 || (e.button === 2 && e.shiftKey)) { this.drag = { type: 'orbit', moved: 0, button: e.button }; this.game.orbitStart(); return; }
+    if (e.button === 2) { this.drag = { type: 'pan', x: e.clientX, y: e.clientY, moved: 0, button: e.button }; return; }
     if (e.button !== 0) return;
     const tile = this.pickTile(e);
     switch (t.kind) {
@@ -122,19 +128,50 @@ export class Input {
     const d = this.drag;
     if (d && d.type === 'pinch' && this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      this.game.renderer.pan(mx - d.mx, my - d.my);
-      if (d.d > 10) this.game.renderer.zoomBy(dist / d.d, mx, my);
-      Object.assign(d, { d: dist, mx, my });
+      const dist = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const R = this.game.renderer;
+      if (!d.mode) {
+        // Two fingers side by side dragged up or down together tilt the view;
+        // anything else pans, pinches to zoom and twists to turn it.
+        const [a0, b0] = d.from, ax = a.x - a0.x, ay = a.y - a0.y, bx = b.x - b0.x, by = b.y - b0.y;
+        if (Math.hypot(ax, ay) + Math.hypot(bx, by) < 16) return;
+        const side = Math.abs(b0.x - a0.x) > Math.abs(b0.y - a0.y);
+        d.mode = side && ay * by > 0 && Math.abs(ay) > 2 * Math.abs(ax) && Math.abs(by) > 2 * Math.abs(bx) ? 'tilt' : 'pinch';
+        this.game.orbitStart();
+      } else if (d.mode === 'tilt') this.game.orbit(0, (my - d.my) * ORBIT_TILT * 1.5);
+      else {
+        R.grab(d.mx, d.my, mx - d.mx, my - d.my);
+        if (d.d > 10) R.zoomBy(dist / d.d, mx, my);
+        // Fingers turning clockwise on the screen turn the town with them,
+        // once they have twisted a little (so a pinch doesn't turn it).
+        const da = d.d > 40 ? Math.atan2(Math.sin(ang - d.ang), Math.cos(ang - d.ang)) : 0;
+        d.twist = (d.twist || 0) + da;
+        if (Math.abs(d.twist) > 0.17) d.twisting = true;
+        if (d.twisting && da) this.game.orbit(da, 0, { x: mx, y: my });
+        this.game.setFollow(null);
+      }
+      Object.assign(d, { d: dist, mx, my, ang });
       return;
     }
     const dx = e.clientX - this.mouse.x, dy = e.clientY - this.mouse.y;
     this.mouse = { x: e.clientX, y: e.clientY };
+    if (d && d.type === 'orbit') {
+      d.moved += Math.abs(dx) + Math.abs(dy);
+      // (a Shift-right-click that doesn't move is still a right-click)
+      if (d.button !== 2 || d.moved > 6) {
+        // across turns the view, the town following the pointer; up and down
+        // tilts it, down to look from higher
+        this.game.orbit(-dx * ORBIT_TURN, dy * ORBIT_TILT);
+        this.canvas.style.cursor = 'move';
+      }
+      return;
+    }
     if (d && (d.type === 'pan' || d.type === 'maybePan')) {
       d.moved += Math.abs(dx) + Math.abs(dy);
       if (d.type === 'pan' || d.moved > 6) {
         if (d.type === 'maybePan') d.type = 'pan';
-        this.game.renderer.pan(dx, dy);
+        // the ground under the pointer stays under it, at any angle
+        this.game.renderer.grab(e.clientX - dx, e.clientY - dy, dx, dy);
         this.game.setFollow(null);
         this.canvas.style.cursor = 'grabbing';
       }
@@ -161,7 +198,7 @@ export class Input {
     if (!d || !this.game.world) return;
     if (d.type === 'pinch') { if (this.pointers.size < 2) this.drag = null; return; }
     this.canvas.style.cursor = '';
-    if (d.type === 'pan' && d.button === 2 && d.moved < 6) {
+    if ((d.type === 'pan' || d.type === 'orbit') && d.button === 2 && d.moved < 6) {
       // right-click: step back out of the current tool / selection
       if (this.tool.kind === 'line' && this.tool.stops.length) { this.tool.stops.pop(); this.ui.updateHint(); this.game.updateRouteOverlay(); }
       else if (this.tool.kind === 'roadsel' && this.tool.sel.size) this.pickRoads([], false);
@@ -553,6 +590,7 @@ export class Input {
       case 't': g.toggleTopDown(); break;
       case 'q': g.rotateView(-1); break;
       case 'e': g.rotateView(1); break;
+      case 'home': g.classicView(); break;
       case '+': case '=': g.renderer.zoomBy(1.3); break;
       case '-': case '_': g.renderer.zoomBy(1 / 1.3); break;
       case '1': ui.pressTool('select'); break;
@@ -598,10 +636,16 @@ export class Input {
     if (k.has('d') || k.has('arrowright')) dx -= 1;
     if (k.has('w') || k.has('arrowup')) dy += 1;
     if (k.has('s') || k.has('arrowdown')) dy -= 1;
-    if (dx || dy) {
+    const orbit = (dx || dy) && k.has('shift');
+    if (orbit) {
+      // with Shift held they turn (A D) and tilt (W lower, S higher) the view
+      if (!this.orbiting) this.game.orbitStart();
+      this.game.orbit(-dx * 1.8 * dt, -dy * 0.9 * dt);
+    } else if (dx || dy) {
       const s = 700 * dt;
       this.game.renderer.pan(dx * s, dy * s);
       this.game.setFollow(null);
     }
+    this.orbiting = orbit;
   }
 }

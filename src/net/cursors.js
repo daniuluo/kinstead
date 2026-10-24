@@ -61,7 +61,7 @@ export class RemoteCursors {
       const b = w.buildingOn(c.x, c.z);
       const y = b ? b.baseY + 0.55 : w.terrain.tileMax(c.x, c.z) + 0.12;
       const p = g.renderer.worldToScreen(this._v.set(c.x + 0.5, y, c.z + 0.5));
-      c.el.style.display = '';
+      c.el.style.display = p.behind ? 'none' : '';
       c.el.style.left = `${p.x}px`;
       c.el.style.top = `${p.y}px`;
     }

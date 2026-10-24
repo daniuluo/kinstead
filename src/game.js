@@ -36,7 +36,7 @@ export class Game {
     this.THREE = THREE;
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
-    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, v: 3, ...PERF_DEFAULTS };
+    this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, camera: 'iso', fov: 45, v: 3, ...PERF_DEFAULTS };
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}
     Object.assign(this.settings, saved);
@@ -183,6 +183,7 @@ export class Game {
     this.transit.rebuild();
     this.transit.planCarts();
     this.renderer.setBounds(world.N);
+    this.renderer.groundAt = (x, z) => world.terrain.heightAt(x, z);
     let focus = { x: world.N / 2, z: world.N / 2 };
     for (const b of world.buildings.values()) if (BUILDINGS[b.type].seat) focus = { x: b.x + fw(b) / 2, z: b.z + fd(b) / 2 };
     this.renderer.lookAt(focus.x, focus.z, true);
@@ -413,6 +414,29 @@ export class Game {
     this.renderer.rotate(dir, this._centerGround());
   }
 
+  // Turning and tilting by hand (a drag, a twist or a held key): orbitStart()
+  // when it begins, so the view turns around the ground at the middle of the
+  // screen, then orbit() as it goes (see Renderer.orbit).
+  orbitStart() {
+    if (!this.world || this.demo) return;
+    this.renderer._pivotOn(this._centerGround());
+  }
+  orbit(dTurn, dElev, at = null) {
+    if (!this.world || this.demo) return;
+    const was = this.renderer.rig.topDown;
+    this.renderer.orbit(dTurn, dElev, at);
+    if (this.renderer.rig.topDown !== was) this.ui.syncToolbar();
+  }
+
+  // Home: back to the classic isometric view, from any angle or tilt, the
+  // 2D map or the perspective camera.
+  classicView() {
+    if (!this.world || this.demo) return;
+    if (this.settings.camera === 'perspective') { this.settings.camera = 'iso'; this.applySettings(); }
+    this.renderer.classicView(this._centerGround());
+    this.ui.syncToolbar();
+  }
+
   // The ground (or water) under the middle of the screen: the point the view
   // turns and tilts around.
   _centerGround() {
@@ -420,9 +444,14 @@ export class Game {
     if (!tv) return null;
     // cast along the line of sight through the camera's target (not from the
     // pixel-snapped camera), so repeated turns don't creep
+    // (a perspective camera's from where it stands: the line behind it may
+    // run into a hill)
     const R = this.renderer, rc = this._centerRay || (this._centerRay = new THREE.Raycaster());
-    const dir = R.camera.getWorldDirection(new THREE.Vector3());
-    rc.set(R.rig.target.clone().addScaledVector(dir, -200), dir);
+    if (R.camera.isPerspectiveCamera) rc.set(R.eye, R.rig.target.clone().sub(R.eye).normalize());
+    else {
+      const dir = R.camera.getWorldDirection(new THREE.Vector3());
+      rc.set(R.rig.target.clone().addScaledVector(dir, -200), dir);
+    }
     const hit = rc.intersectObjects([tv.surface, tv.water].filter(Boolean), true)[0];
     return hit ? hit.point : null;
   }
@@ -470,10 +499,11 @@ export class Game {
     const s = this.settings;
     this.renderer.setShadows(s.shadows, SHADOW_SIZE[s.shadowQuality] || SHADOW_SIZE.high);
     const gf = this.renderer.gfx, scale = s.resScale || 1, tilt = s.tiltShift === 'off' ? null : s.tiltShift;
+    const persp = s.camera === 'perspective', fov = s.fov || 45;
     if (!this.renderer.post && (s.pixelArt || s.ao || tilt) || gf.pixelArt !== s.pixelArt || gf.pixelSize !== s.pixelSize || gf.ao !== s.ao || gf.scale !== scale
-      || gf.tilt !== tilt || gf.tiltBand !== s.tiltBand || !this._gfxInit) {
+      || gf.tilt !== tilt || gf.tiltBand !== s.tiltBand || gf.persp !== persp || gf.fov !== fov || !this._gfxInit) {
       this._gfxInit = true;
-      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale, tilt, tiltBand: s.tiltBand });
+      this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale, tilt, tiltBand: s.tiltBand, persp, fov });
     }
     this.view?.setEffects(s.effects);
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch {}
