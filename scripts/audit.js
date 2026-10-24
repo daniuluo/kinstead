@@ -8,6 +8,8 @@ import { fw, fd, isOpen, capOf, spareRect } from '../src/world/world.js';
 import { BUILDINGS } from '../src/defs.js';
 import { findBoulevards, dressFits } from '../src/world/boulevard.js';
 import { streetPart, lookPart } from '../src/config.js';
+import { tidyDiag, diagCapable } from '../src/world/diagonal.js';
+import { spillsOf } from '../src/world/roadShape.js';
 
 const DIR = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 
@@ -75,6 +77,20 @@ export function auditTown(w, problem) {
     if (now.some((v, i) => v !== w.blvd[i])) problem('the boulevards are out of date with the roads');
     const bad = w.dress.findIndex((v, i) => v && (!w.roads[i] || [streetPart(v), lookPart(v)].some(k => k && !dressFits(w, i, k))));
     if (bad >= 0) problem(`a street dressing or boulevard look at tile ${bad} doesn't suit it`);
+  }
+  // diagonal streets are in order (links only between roads, both ways, and
+  // cuts only beside them), and where one passes a plot's corner the building
+  // there can face it, and does
+  if (w.diag && w.diagN) {
+    const was = w.diag.slice(), n = w.diagN;
+    tidyDiag(w);
+    if (w.diagN !== n || w.diag.some((v, i) => v !== was[i])) problem('the diagonal streets are out of order');
+    for (const b of w.buildings.values()) {
+      let sp = 0;
+      for (let dz = 0; dz < fd(b); dz++) for (let dx = 0; dx < fw(b); dx++) sp |= spillsOf(w, b.x + dx, b.z + dz);
+      if (sp && !diagCapable(b)) problem(`${b.type} #${b.id} stands where a diagonal street passes its corner`);
+      else if (sp && !b.diag) problem(`${b.type} #${b.id} doesn't face the diagonal street past its corner`);
+    }
   }
   // nobody is over capacity
   for (const b of w.buildings.values()) {

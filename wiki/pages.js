@@ -59,7 +59,7 @@ export const KEYS = [
   ...CATEGORIES.map(c => ({ show: [c.key], keys: [c.key.toLowerCase()], what: `${esc(c.name)} menu` })),
   { show: ['8'], keys: ['8'], what: 'Terrain menu (raise, lower, level, plant trees)' },
   { show: ['X', 'Delete'], keys: ['x', 'delete'], what: 'Demolish' },
-  { show: ['Tab'], keys: ['tab'], what: "Turn a building's entrance before placing it; with Select roads, switch between picking stretches and dragging a box" },
+  { show: ['Tab'], keys: ['tab'], what: "Turn a building's entrance before placing it; with a road, switch between diagonal streets and the grid only; with Select roads, switch between picking stretches and dragging a box" },
   { show: ['Enter'], keys: ['enter'], what: 'Finish the transit line you are drawing' },
   { show: ['Backspace'], keys: ['backspace'], what: 'Take back the last stop of a new line, or the last stretch of road picked' },
   { show: ['O'], keys: ['o'], what: 'Data overlays' },
@@ -399,11 +399,20 @@ export const PAGES = [
   },
   {
     id: 'roads', title: 'Roads and streets', icon: 'add_road', group: 'town',
-    summary: 'Paths, cobbles and paved streets; bridges; picking whole stretches; dressing a street with trees, hedges or lamps; and boulevards, roads laid side by side, with their looks.',
+    summary: 'Paths, cobbles and paved streets; diagonal streets at 45 degrees; bridges; picking whole stretches; dressing a street with trees, hedges or lamps; and boulevards, roads laid side by side, with their looks.',
     sections: () => [
       { id: 'kinds', title: 'Kinds of road', html: table(['Road', '#Cost a tile', '#Upkeep a day', '#Unlocks at'], ROAD_LEVELS.filter(Boolean).map(r => [esc(r.name), money(r.cost), money(r.upkeep), r.unlock ? `${r.unlock} villagers` : 'from the start'])) +
         `<p>Drag with the road tool (${k('R')}) to lay a line; laying a better road over an old one upgrades it. Over water a road becomes a wooden bridge (${BRIDGE_MULT}× the price) with sloped approaches. Every building needs a road along its front, and the road out of the valley can't be taken up.</p>
         <p>Where a road turns a corner it sweeps round in a curve, and the inside corners of junctions are filled with a matching curve; kerbs, door paths and power poles follow along, and villagers cut the corner along it. Buildings come forward into the verge of the street in front of them. A building with a street along its side or its back, on a corner or backing onto a lane, has windows on every floor of that wall and a door on its ground floor, never a blank wall; a corner shop carries its shopfront round too.</p>` },
+      { id: 'diagonals', title: 'Diagonal streets', html: `
+        <p>Drag the road tool at about 45 degrees and the road runs <b>diagonally</b>, from tile centre to tile centre across the corner the two tiles share, as far as the drag goes that way, then straight on along the grid for the rest. A drag nearer the grid turns one corner as before; ${k('Tab')} keeps the road tool to the grid altogether (and back). Any kind of road can run diagonally, and a lesser road laid over one upgrades it as usual.</p>
+        ${list([
+          '<b>Joining</b>: drawn into a street (or out of one), a diagonal makes a junction there, its corners rounded and kerbed like any other. A diagonal crossing a street or another diagonal on a tile makes a crossroads; one that turns, back the other way or onto the grid, turns in a curve.',
+          '<b>Passing by</b>: a diagonal only brushes the corners of the tiles beside it, so it doesn\'t join a road it merely passes. To join one, draw a street from the diagonal into it.',
+          '<b>Buildings</b>: a one-tile building beside a diagonal turns 45 degrees on its plot to face it, its door on the corner the street passes, a little smaller than usual to fit between the street and the plots behind. While it faces the diagonal it neither grows onto the plot next door, joins its neighbour nor deals in garden land; take the diagonal up and it faces the grid again. Nothing bigger than one tile may stand where a diagonal passes its corner, and a diagonal can\'t be laid past the corner of anything bigger, or of farm fields.',
+          '<b>Getting about</b>: a step across a corner is only about 1.4 tiles, so villagers, carts and coaches take a diagonal when it saves going round, and it carries the water mains and joins buildings to the town like any street.',
+          '<b>On the grid only</b>: bridges, boulevards and street dressings keep to the grid. A diagonal can\'t cross water, two diagonals side by side stay two streets, and a diagonal has its plain street lamps and power poles but no trees, hedges or median.',
+        ])}` },
       { id: 'select', title: 'Whole stretches at once', html: `
         <p><b>Select roads</b> in the Roads menu (or <b>Select stretch</b> in a road's panel) picks the run of road between two junctions with a click, more runs with Shift-click, or every road in a dragged box (${k('Tab')} switches). The panel shows what upgrading every tile one level, downgrading it or taking it all up costs or pays back, what can't change and why, and who would be cut off: buildings left without a road, coach lines without a route, buildings that step back from the street. Anything cut off takes a second click. ${k('Backspace')} steps back through your picks; right-click clears them.</p>` },
       { id: 'dress', title: 'Dressing a street', html: `

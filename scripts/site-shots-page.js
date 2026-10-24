@@ -9,6 +9,8 @@ import { STARTERS } from '../src/world/starters.js';
 import { newVillage, mergeTowns, besideOffset } from '../src/save/merge.js';
 import { deserialize } from '../src/save/saves.js';
 import { fw, fd } from '../src/world/world.js';
+import { strokeTiles } from '../src/world/diagonal.js';
+import { CORNERS } from '../src/world/roadShape.js';
 
 // name, the town, the canvas size (pixel art at 2× makes the picture half
 // that), what to look at, the zoom, the time of day and the season
@@ -27,6 +29,7 @@ const SHOTS = [
   { name: 'farms', town: 'mill', W: 960, H: 600, focus: 'farm', zoom: 2.4, hours: 11, season: 1, fields: true },
   { name: 'merge', merge: ['market', 'hamlet'], W: 960, H: 600, zoom: 1.6, fit: true, hours: 10, season: 1 },
   { name: 'gondola', town: 'market', W: 960, H: 600, gondola: true, zoom: 3.2, hours: 10.5, season: 1 },
+  { name: 'diagonals', town: 'market', W: 960, H: 600, diagonal: true, zoom: 4.8, hours: 10.5, season: 1 },
 ];
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -221,6 +224,44 @@ function gondola(w, p) {
   return { x: (best.a[0] + best.b[0]) / 2 + 0.5, z: (best.a[1] + best.b[1]) / 2 + 0.5, y: (st[0].baseY + st[1].baseY) / 2 + 0.6 };
 }
 
+// A diagonal street out of the town for its picture: from a street near the
+// middle, out across open ground at 45 degrees (running up the picture),
+// lined both sides with houses and shops turned to face it, a lane crossing
+// it along the grid. Returns the middle of it.
+function diagonal(w, p) {
+  w.setSandbox({ ...w.sandbox, infiniteMoney: true, unlockAll: true });
+  const len = 9;
+  let best = null;
+  for (let z = Math.floor(p.z) - 12; z <= p.z + 12; z++) for (let x = Math.floor(p.x) - 12; x <= p.x + 12; x++) {
+    if (!w.inBounds(x, z) || !w.roadAt(x, z) || !w.connected[w.idx(x, z)]) continue;
+    for (const k of [1, 3]) {
+      const [dx, dz] = CORNERS[k], tiles = strokeTiles({ x, z }, { x: x + dx * len, z: z + dz * len });
+      if (!tiles.every(([tx, tz]) => w.inBounds(tx, tz)) || !w.checkStroke(tiles, 2).slice(1).every(c => c.ok && !c.noop)) continue;
+      // room for buildings either side of it
+      let room = 0;
+      for (let i = 1; i < len; i++) for (const [ox, oz] of [[tiles[i + 1][0], tiles[i][1]], [tiles[i][0], tiles[i + 1][1]]]) {
+        if (w.inBounds(ox, oz) && !w.buildingOn(ox, oz) && !w.roadAt(ox, oz) && !w.terrain.isWater(ox, oz) && w.terrain.slope(ox, oz) < 0.6) room++;
+      }
+      const score = room * 2 - Math.hypot(x - p.x, z - p.z);
+      if (!best || score > best.score) best = { tiles, score };
+    }
+  }
+  if (!best) return p;
+  const { tiles } = best;
+  w.placeRoads(tiles, 2, { stroke: true });
+  // a lane along the grid across it, two thirds of the way out
+  const [cx, cz] = tiles[6];
+  w.placeRoads(strokeTiles({ x: cx - 3, z: cz }, { x: cx + 3, z: cz }, false), 1, { stroke: true });
+  const kinds = ['house', 'bakery', 'house', 'house', 'grocer', 'house', 'tavern', 'house', 'house', 'coffeehouse', 'house', 'house', 'tailor', 'house', 'house', 'house'];
+  let n = 0;
+  for (let i = 0; i < len; i++) for (const [ox, oz] of [[tiles[i + 1][0], tiles[i][1]], [tiles[i][0], tiles[i + 1][1]]]) {
+    const type = BUILDINGS[kinds[n % kinds.length]] ? kinds[n % kinds.length] : 'house';
+    if (w.placeBuilding(type, ox, oz, { instant: true, variant: 1000 + n * 7919 }).ok) n++;
+  }
+  const [mx, mz] = tiles[5];
+  return { x: mx + 0.5, z: mz + 0.5 };
+}
+
 function settings(spec) {
   const g = G(), s = g.settings;
   Object.assign(s, { pixelArt: true, pixelSize: 2, ao: false, tiltShift: spec.tilt || 'off', tiltBand: 'normal', fps: 0, resScale: 1, shadows: true, shadowQuality: 'high', effects: 'full', villagers: 'all', pausedSlow: false });
@@ -305,6 +346,7 @@ async function shoot(spec) {
   let p = spec.focus ? focusOn(w, spec.focus) : centre(w);
   if (spec.fields) plough(w, p);
   if (spec.gondola) p = gondola(w, p);
+  if (spec.diagonal) p = diagonal(w, p);
   let pic;
   if (spec.lineup) {
     setDay(spec.season);

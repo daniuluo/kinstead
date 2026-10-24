@@ -17,6 +17,7 @@ import { serialize, deserialize } from '../src/save/saves.js';
 import { mergeTowns, layoutMerge, besideOffset, reportLines, MERGE_MAX_N, newVillage } from '../src/save/merge.js';
 import { BUILDINGS, TECHS, LINE_COLORS } from '../src/defs.js';
 import { auditTown } from './audit.js';
+import { linksOf } from '../src/world/roadShape.js';
 
 let failures = 0, passes = 0;
 const ok = (cond, msg) => { if (!cond) { failures++; console.error('FAIL', msg); } else passes++; };
@@ -106,9 +107,10 @@ function roadPieces(w) {
     const q = [s]; seen[s] = 1;
     for (let k = 0; k < q.length; k++) {
       const i = q[k], x = i % N, z = (i / N) | 0;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, nz = z + dz, ni = nz * N + nx;
-        if (nx >= 0 && nz >= 0 && nx < N && nz < N && w.roads[ni] && !seen[ni]) { seen[ni] = 1; q.push(ni); }
+      // (along every link: the grid, and diagonal streets corner to corner)
+      for (const [nx, nz] of linksOf(w, x, z)) {
+        const ni = nz * N + nx;
+        if (!seen[ni]) { seen[ni] = 1; q.push(ni); }
       }
     }
   }
@@ -341,6 +343,37 @@ for (const [label, a, b, arr, days] of runs) {
   for (const [label, arr] of [['a boulevard beside', { ...besideOffset(48, 48, 'right'), rot: 0 }], ['a boulevard turned 90°', { ...besideOffset(48, 48, 'left'), rot: 1 }]]) {
     const r = checkMerge(label, dA, T.b, arr);
     if (r) ok(looked(r.w) >= n0, `${label}: the boulevard and its look come through (${looked(r.w)} of ${n0} lane tiles)`);
+  }
+}
+// a diagonal street and the house facing it come through a merge, beside
+// and turned (the links turned with their town; the audit checks they still
+// run between roads, both ways)
+{
+  const { CORNERS, diagLinked } = await import('../src/world/roadShape.js');
+  const wA = deserialize(T.a), N = wA.N;
+  wA.money = 1e5;
+  let laid = null;
+  for (let z = 2; z < N - 2 && !laid; z++) for (let x = 2; x < N - 2 && !laid; x++) {
+    if (!wA.connected[wA.idx(x, z)]) continue;
+    for (let k = 0; k < 4 && !laid; k++) {
+      const tiles = [0, 1, 2, 3, 4, 5].map(i => [x + CORNERS[k][0] * i, z + CORNERS[k][1] * i]);
+      if (!tiles.every(([tx, tz]) => wA.inBounds(tx, tz)) || !wA.checkStroke(tiles, 1).slice(1).every(c => c.ok && !c.noop)) continue;
+      if (wA.placeRoads(tiles, 1, { stroke: true }).placed !== 5) continue;
+      // a house on a plot beside it (its corner by the street)
+      for (const n of [2, 3]) for (const [hx, hz] of [[tiles[n + 1][0], tiles[n][1]], [tiles[n][0], tiles[n + 1][1]]]) {
+        if (laid) continue;
+        const h = wA.placeBuilding('house', hx, hz, { instant: true, free: true });
+        if (h.ok) laid = { tiles, house: h.building };
+      }
+    }
+  }
+  const links = (w) => { let n = 0; for (let i = 0; i < w.N * w.N; i++) for (let k = 0; k < 4; k++) if (diagLinked(w, i % w.N, (i / w.N) | 0, k)) n++; return n / 2; };
+  const facing = (w) => [...w.buildings.values()].filter(b => b.diag).length;
+  ok(laid && laid.house && laid.house.diag && wA.diagN === 5, `a town with a diagonal street and a house facing it (${wA.diagN} links)`);
+  const dA = JSON.parse(JSON.stringify(serialize(wA)));
+  for (const [label, a, b, arr] of [['a diagonal beside', dA, T.b, { ...besideOffset(48, 48, 'right'), rot: 0 }], ['a diagonal turned 90°', T.b, dA, { ...besideOffset(48, 48, 'left'), rot: 1 }]]) {
+    const r = checkMerge(label, a, b, arr);
+    if (r) ok(links(r.w) >= 5 && r.w.diagN === links(r.w) && facing(r.w) >= 1, `${label}: the street comes through linked, and the house still faces it (${links(r.w)} links, ${facing(r.w)} facing)`);
   }
 }
 // something must actually have been settled across all those arrangements

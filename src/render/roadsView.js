@@ -139,8 +139,15 @@ export class RoadsView {
     const w = this.world, t = w.terrain, N = w.N;
     const pos = [], col = [];
     const c = new THREE.Color();
+    // (only a road tile beside a bridge has a ramp up to it)
+    const rampy = new Uint8Array(N * N);
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!w.roads[z * N + x] || t.isWater(x, z)) continue;
+      for (const [dx, dz] of SIDES) if (w.roadAt(x + dx, z + dz) && t.isWater(x + dx, z + dz)) rampy[z * N + x] = 1;
+    }
     const height = (x, z) => {
-      if (w.rampHeight(x, z) != null) return null;
+      const tx = Math.floor(x), tz = Math.floor(z);
+      if (tx >= 0 && tz >= 0 && tx < N && tz < N && rampy[tz * N + tx] && w.rampHeight(x, z) != null) return null;
       return t.heightAt(x, z) + 0.018;
     };
     // one four-sided cell (corners in order round it) in one colour (kerb:
@@ -255,11 +262,16 @@ export class RoadsView {
         for (let j = 0; j + 1 < A.length; j++) cell([A[j], A[j + 1], B[j + 1], B[j]], L, kb && (j === 0 || j === A.length - 2));
       }
     };
-    // a tile a diagonal touches (see roadShape.js) is laid from the field: a
-    // grid of small cells, each cut in two along the diagonal the road's edge
-    // runs nearer, each half clipped to the roadway and to the band of edging
-    // stones along its edge (where the field is within BAND of it)
-    const G = 16, gs = 1 / G, F = new Float32Array((G + 1) * (G + 1)), kc = new THREE.Color();
+    // a tile a diagonal touches (see roadShape.js) is laid from the field,
+    // in cells an eighth of a tile across, as the grid's are, in the same
+    // colours. The field is a distance, so a cell whose corners are all
+    // further than its half-diagonal off the road (or onto it) is wholly off
+    // (or on). Where the road's edge crosses a cell it is cut in two along
+    // the diagonal the edge runs nearer, each half clipped to the roadway and
+    // to the band of edging stones along its edge (where the field is within
+    // BAND of it); where the edge curves within it (the field isn't flat
+    // across it), it is split in four first.
+    const G = 16, gs = 1 / G, F = new Float32Array((G + 1) * (G + 1)), kc = new THREE.Color(), REACH = 0.09;
     const clip = (poly, t, above) => {
       const out = [];
       for (let i = 0; i < poly.length; i++) {
@@ -282,25 +294,44 @@ export class RoadsView {
         for (const [p, y] of vs) { pos.push(p[0], y, p[1]); col.push(color.r, color.g, color.b); }
       }
     };
+    // one cell (corners i0, j0 to i1, j1 in sixteenths) clipped from the samples in F
+    const clipCell = (x, z, i0, j0, i1, j1, kb) => {
+      const f00 = at(i0, j0), f10 = at(i1, j0), f01 = at(i0, j1), f11 = at(i1, j1);
+      if (f00 > 0 && f10 > 0 && f01 > 0 && f11 > 0) return;
+      const x0 = x + i0 * gs, z0 = z + j0 * gs, x1 = x + i1 * gs, z1 = z + j1 * gs;
+      const halves = Math.abs(f00 - f11) < Math.abs(f10 - f01)
+        ? [[[x0, z0, f00], [x1, z0, f10], [x1, z1, f11]], [[x0, z0, f00], [x1, z1, f11], [x0, z1, f01]]]
+        : [[[x0, z0, f00], [x1, z0, f10], [x0, z1, f01]], [[x1, z0, f10], [x1, z1, f11], [x0, z1, f01]]];
+      for (const t of halves) {
+        fan(clip(t, -kb, false), c);
+        if (kb) fan(clip(clip(t, 0, false), -kb, true), kc);
+      }
+    };
+    const at = (i, j) => F[j * (G + 1) + i];
     const fieldTile = (s) => {
-      const { x, z, prims } = s;
-      for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) F[j * (G + 1) + i] = fieldAt(prims, x + i * gs, z + j * gs)[0];
-      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
-        const f00 = F[j * (G + 1) + i], f10 = F[j * (G + 1) + i + 1], f01 = F[(j + 1) * (G + 1) + i], f11 = F[(j + 1) * (G + 1) + i + 1];
-        if (f00 > 0 && f10 > 0 && f01 > 0 && f11 > 0) continue;
-        const x0 = x + i * gs, z0 = z + j * gs, x1 = x0 + gs, z1 = z0 + gs;
-        const L = s.L || fieldAt(prims, x0 + gs / 2, z0 + gs / 2)[1];
+      const { x, z, prims } = s, put = (i, j) => { F[j * (G + 1) + i] = fieldAt(prims, x + i * gs, z + j * gs)[0]; };
+      for (let j = 0; j <= G; j += 2) for (let i = 0; i <= G; i += 2) put(i, j);
+      for (let J = 0; J < G; J += 2) for (let I = 0; I < G; I += 2) {
+        const c00 = at(I, J), c20 = at(I + 2, J), c02 = at(I, J + 2), c22 = at(I + 2, J + 2);
+        if (Math.min(c00, c20, c02, c22) > REACH) continue;
+        const L = s.L || fieldAt(prims, x + (I + 1) * gs, z + (J + 1) * gs)[1];
         if (!L) continue;
-        const kb = KERB[L] ? BAND : 0, n = hash2(x * G + i, z * G + j, 3) - 0.5;
+        const kb = KERB[L] ? BAND : 0, n = hash2(x * G + I + 1, z * G + J + 1, 3) - 0.5;
+        const solid = () => cell([[x + I * gs, z + J * gs], [x + I * gs, z + (J + 2) * gs], [x + (I + 2) * gs, z + (J + 2) * gs], [x + (I + 2) * gs, z + J * gs]], L, 0);
+        if (Math.max(c00, c20, c02, c22) < -kb - REACH) { solid(); continue; }
+        put(I + 1, J); put(I, J + 1); put(I + 1, J + 1); put(I + 2, J + 1); put(I + 1, J + 2);
+        let lo = 9, hi = -9;
+        for (let j = J; j <= J + 2; j++) for (let i = I; i <= I + 2; i++) { const f = at(i, j); if (f < lo) lo = f; if (f > hi) hi = f; }
+        if (lo > 0) continue;
+        if (hi <= -kb) { solid(); continue; }
         c.copy(SURF[L]).multiplyScalar(1 + n * (L === 2 ? 0.16 : 0.08));
         if (kb) kc.copy(KERB[L]).multiplyScalar(1 + n * 0.08);
-        const halves = Math.abs(f00 - f11) < Math.abs(f10 - f01)
-          ? [[[x0, z0, f00], [x1, z0, f10], [x1, z1, f11]], [[x0, z0, f00], [x1, z1, f11], [x0, z1, f01]]]
-          : [[[x0, z0, f00], [x1, z0, f10], [x0, z1, f01]], [[x1, z0, f10], [x1, z1, f11], [x0, z1, f01]]];
-        for (const t of halves) {
-          fan(clip(t, -kb, false), c);
-          if (kb) fan(clip(clip(t, 0, false), -kb, true), kc);
-        }
+        // flat across the cell (a straight edge): one cell; curving: four
+        const flat = Math.abs(at(I + 1, J) - (c00 + c20) / 2) < 0.002 && Math.abs(at(I + 1, J + 2) - (c02 + c22) / 2) < 0.002
+          && Math.abs(at(I, J + 1) - (c00 + c02) / 2) < 0.002 && Math.abs(at(I + 2, J + 1) - (c20 + c22) / 2) < 0.002
+          && Math.abs(at(I + 1, J + 1) - (c00 + c20 + c02 + c22) / 4) < 0.002;
+        if (flat) { clipCell(x, z, I, J, I + 2, J + 2, kb); continue; }
+        for (let j = J; j < J + 2; j++) for (let i = I; i < I + 2; i++) clipCell(x, z, i, j, i + 1, j + 1, kb);
       }
     };
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {

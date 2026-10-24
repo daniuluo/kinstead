@@ -20,8 +20,8 @@ import { RNG, makeNoise2D, fbm, hash2, smoothstep, clamp, lerp } from '../util/r
 import { firstName } from '../util/names.js';
 import { Sim } from '../sim/sim.js';
 import { starterSave } from '../world/starters.js';
-import { turnDiag, linkStroke, tidyDiag } from '../world/diagonal.js';
-import { linksOf } from '../world/roadShape.js';
+import { turnDiag, linkStroke, tidyDiag, diagCapable } from '../world/diagonal.js';
+import { linksOf, CORNERS } from '../world/roadShape.js';
 
 // Largest merged map. Two big valleys side by side are trimmed of empty
 // countryside at their outer edges to fit (never of buildings).
@@ -402,6 +402,7 @@ export function mergeWorlds(wA, wB, arr = {}, opts = {}) {
   for (const b of w.buildings.values()) w._clearTreesNear(b.x, b.z, fw(b), fd(b), 0.22);
 
   // ---- one road network, with a road out to the edge of the map
+  clearCorners(w);
   pickEntry(w, [A, B].map(s => s.tile(s.w.entry.x, s.w.entry.z)), rep);
   w.updateRoadNetwork();
   joinRoads(w, rep);
@@ -887,6 +888,26 @@ function cheapestPath(w, starts, goal, maxCost = Infinity, lenient = false) {
     }
   }
   return null;
+}
+
+// A diagonal of one town may now pass the corner of a building of the other
+// that can't turn to face it: that link goes (both tiles stay road).
+function clearCorners(w) {
+  const N = w.N, D = w.diag;
+  let n = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (!(D[i] & 15)) continue;
+    const x = i % N, z = (i / N) | 0;
+    for (let k = 0; k < 4; k++) {
+      const [dx, dz] = CORNERS[k];
+      if (!(D[i] & (1 << k)) || !w.inBounds(x + dx, z + dz)) continue;
+      if (![[x + dx, z], [x, z + dz]].some(([ox, oz]) => { const b = w.buildingOn(ox, oz); return b && !diagCapable(b); })) continue;
+      D[i] &= ~(1 << k);
+      D[(z + dz) * N + x + dx] &= ~(1 << ((k + 2) & 3));
+      n++;
+    }
+  }
+  if (n) tidyDiag(w);
 }
 
 // A road just laid along a path of tiles (each next to the last) joins the

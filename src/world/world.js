@@ -814,6 +814,8 @@ export class World {
     DIRS.forEach(([dx, dz], k) => {
       const x = b.x + dx, z = b.z + dz;
       if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return;
+      // (a plot a diagonal street passes takes nothing bigger than one tile)
+      if (this.diagN && spillsOf(this, x, z)) return;
       const lo = Math.min(this.terrain.tileMin(x, z), this.terrain.tileMin(b.x, b.z)), hi = Math.max(this.terrain.tileMax(x, z), this.terrain.tileMax(b.x, b.z));
       if (hi - lo > 1.1) return;
       const o = this.buildingOn(x, z);
@@ -845,6 +847,8 @@ export class World {
     const def = BUILDINGS[b.type], taken = [];
     for (const [x, z] of tiles) {
       if (!this.inBounds(x, z) || this.roadAt(x, z) || this.railAt(x, z) || this.terrain.isWater(x, z) || this.fields[this.idx(x, z)] >= 0) return null;
+      // (nor where a diagonal street passes the plot's corner: see diagonal.js)
+      if (this.diagN && spillsOf(this, x, z)) return null;
       const o = this.buildingOn(x, z);
       if (!o) continue;
       if (!(absorb && (def.park || def.seat) && isSmallPark(o) && !(o.leases || []).length)) return null;
@@ -1045,7 +1049,7 @@ export class World {
       const inX = dx >= 0 && dx < fw(b), inZ = dz >= 0 && dz < fd(b);
       if (inX === inZ) continue;   // the plot itself, and its corners
       const o = this.buildingOn(b.x + dx, b.z + dz);
-      if (!o || o === b || o.con || seen.has(o.id)) continue;
+      if (!o || o === b || o.con || seen.has(o.id) || o.diag || b.diag) continue;
       seen.add(o.id);
       const farm = farmSide ? b : o, house = farmSide ? o : b;
       if (!J.from.includes(farm.type) || !J.with.includes(house.type) || fw(house) !== 1 || fd(house) !== 1) continue;
