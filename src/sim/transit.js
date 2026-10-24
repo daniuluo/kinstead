@@ -9,6 +9,7 @@ import { GeoBuilder } from '../render/geo.js';
 import { MAT } from '../render/materials.js';
 import { tilePolyline, smoothPolyline } from './path.js';
 import { bridgeDeckY, isOpen, fw, fd } from '../world/world.js';
+import { curvesAt } from '../world/roadShape.js';
 
 const WARM = [1.7, 1.2, 0.55];
 
@@ -39,20 +40,20 @@ function coachModel(color) {
   const gb = new GeoBuilder();
   horse(gb, 0, COACH_HORSE.z, COACH_HORSE.color);
   gb.box(0, 0.09, 0.16, 0.014, 0.014, 0.12, '#5b4231');
-  gb.box(0, 0.06, -0.02, 0.2, 0.17, 0.34, color);
-  gb.box(0, 0.23, -0.02, 0.22, 0.025, 0.37, '#3a3a3e');
-  gb.box(0, 0.06, -0.02, 0.21, 0.025, 0.35, '#3a2a1f');
+  gb.box(0, 0.06, -0.02, 0.18, 0.17, 0.34, color);
+  gb.box(0, 0.23, -0.02, 0.2, 0.025, 0.37, '#3a3a3e');
+  gb.box(0, 0.06, -0.02, 0.19, 0.025, 0.35, '#3a2a1f');
   for (const sx of [-1, 1]) for (const z of [-0.1, 0.05]) {
     gb.glow(WARM[0], WARM[1], WARM[2], 1.15);
-    gb.box(sx * 0.101, 0.13, z, 0.006, 0.06, 0.09, '#34475b');
+    gb.box(sx * 0.091, 0.13, z, 0.006, 0.06, 0.09, '#34475b');
     gb.noGlow();
   }
   gb.box(0, 0.2, 0.15, 0.12, 0.012, 0.06, '#3a2a1f');
   gb.cyl(0, 0.212, 0.14, 0.022, 0.026, 0.05, 6, '#2f3640');
   gb.sphere(0, 0.275, 0.14, 0.02, '#f1c8a5');
   gb.cyl(0, 0.29, 0.14, 0.028, 0.028, 0.012, 8, '#2b1d14');
-  wheels(gb, 0.08, 0.11); wheels(gb, -0.12, 0.11, 0.05);
-  gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(0.11, 0.16, 0.13, 0.02, 0.03, 0.02, '#ffe2a0'); gb.noGlow();
+  wheels(gb, 0.08, 0.09); wheels(gb, -0.12, 0.09, 0.05);
+  gb.glow(2.2, 1.6, 0.8, 3.0); gb.box(0.1, 0.16, 0.13, 0.02, 0.03, 0.02, '#ffe2a0'); gb.noGlow();
   return gb.build();
 }
 
@@ -176,6 +177,17 @@ function pylon(gb, p) {
 const CABLE_MAT = new THREE.LineBasicMaterial({ color: '#26282b' });
 
 const CARGO = { farm: 'hay', lumber: 'logs', fishery: 'fish', workshop: 'crates' };
+// Coaches and carts keep this far to the right of the middle of the road,
+// clear of an oncoming one and of the villagers walking at its edge.
+const LANE = 0.13;
+// What a vehicle takes up, as a box along its heading: [ahead of its middle,
+// behind it, half its width]; a train's engine and each carriage its own.
+const BODY = { coach: [0.33, 0.21, 0.105], cart: [0.3, 0.17, 0.09], rail: [0.25, 0.25, 0.09], cabin: [0.12, 0.12, 0.08] };
+// the gap a vehicle keeps behind one ahead, and in front of a villager; how
+// long one waits before it looks for a ring of them stuck (see _ring); how
+// far through a junction it claims its way (_through); how far it backs up
+const GAP = 0.05, GAP_FOOT = 0.04, RING_WAIT = 3, THROUGH = 2.5, BACK = 0.35;
+let serial = 0;
 const CAR_SPACING = 0.56;   // distance between train car centres along the track
 const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // Gondolas: the two cables run G_OFF either side of the line, G_CABLE above a
@@ -185,6 +197,8 @@ const STEP = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 // than G_MAXH tall, and hold the cable G_GROUND above the ground and G_ROOF
 // above the roofs it passes over, so the cabins clear them; between them
 // it sags a little (sagOf a span's length).
+// (how far apart two lines' cables must hang: their cabins clear of each other)
+const CABLES_APART = 2 * 0.14 + CABIN.W + 0.06;
 const G_OFF = 0.14, G_CABLE = 1.05, G_HANG = 0.27, G_LIFT = 3.5, G_SPAN = 6, G_MAXH = 6, G_GROUND = 1.05, G_ROOF = 0.42;
 const sagOf = (len) => Math.min(0.12, len * 0.006);
 // Why a gondola line can't run (route.blocked: what is in the cable's way).
@@ -203,6 +217,12 @@ export class Transit {
     this.waiting = new Map();
     this.riders = new Map();
     this.cartPlan = [];
+    this.held = new Map();   // a bit of a junction or turning place → the vehicles with a claim on it (see _knot, _cell, _through)
+    this.wants = new Map();  // ...and the one who has waited longest for a way through it
+    this._knots = new Map(); // (what each road tile is, see _knot)
+    this._turns = new Set(); // (where a line turns back on itself)
+    this.world.on('roads', () => this._knots.clear());
+    this._curve = (x, z, outside) => curvesAt(this.world, x, z, outside);   // (round a bend in the road as it's laid, as the villagers do)
     this.dirty = true;
     this.geoCache = new Map();
     this.cables = new Map();   // gondola line id → its drawn cable, pylons and bullwheels
@@ -231,10 +251,81 @@ export class Transit {
     const route = this._route(line);
     if (!route) return { ok: false, reason: mode === 'rail' ? "Trains can't reverse: join the stations with a loop of track" : mode === 'gondola' ? 'Pick gondola stations' : 'Stops are not connected by road' };
     if (route.blocked) return { ok: false, reason: blockedReason(route.blocked) };
+    const along = mode === 'gondola' ? this._alongCable(stops.map(id => w.buildings.get(id))) || this._crossCable(route, line) : null;
+    if (along) return { ok: false, reason: along };
     w.money -= cfg.vehicleCost;
     w.lines.push(line);
     w.emit('lines');
     return { ok: true, line };
+  }
+
+  // Would a gondola line through stops (station buildings) have a span of
+  // cable running along another line's, or back along one of its own? Two
+  // cables can't hang in one place, nor their cabins pass through each
+  // other: why not, or null.
+  _alongCable(stops) {
+    const span = (a, b) => ({ a: [a.x + 0.5, a.z + 0.5], b: [b.x + 0.5, b.z + 0.5] });
+    const mine = [], theirs = [];
+    for (let i = 0; i < stops.length - 1; i++) mine.push(span(stops[i], stops[i + 1]));
+    for (const l of this.world.lines) {
+      if (l.mode !== 'gondola') continue;
+      const bs = l.stops.map(id => this.world.buildings.get(id)).filter(Boolean);
+      for (let i = 0; i < bs.length - 1; i++) theirs.push({ ...span(bs[i], bs[i + 1]), line: l });
+    }
+    // (q within a few degrees of p's way, and near enough beside it for
+    // their cabins to meet over more than half a tile, not counting where
+    // the two come in to a station they share)
+    const along = (p, q) => {
+      const ux = p.b[0] - p.a[0], uz = p.b[1] - p.a[1], L = Math.hypot(ux, uz);
+      const vx = q.b[0] - q.a[0], vz = q.b[1] - q.a[1], M = Math.hypot(vx, vz);
+      if (L < 1e-6 || M < 1e-6 || Math.abs(ux * vz - uz * vx) / (L * M) > 0.3) return false;
+      const ends = [p.a, p.b].filter(e => [q.a, q.b].some(o => Math.hypot(o[0] - e[0], o[1] - e[1]) < 0.01));
+      let close = 0;
+      for (let t = 0.125; t < L; t += 0.25) {
+        const x = p.a[0] + (ux * t) / L, z = p.a[1] + (uz * t) / L;
+        if (ends.some(e => Math.hypot(x - e[0], z - e[1]) < 0.75)) continue;
+        const k = Math.max(0, Math.min(1, ((x - q.a[0]) * vx + (z - q.a[1]) * vz) / (M * M)));
+        if (Math.hypot(x - q.a[0] - vx * k, z - q.a[1] - vz * k) < CABLES_APART) close += 0.25;
+      }
+      return close > 0.5;
+    };
+    for (let i = 0; i < mine.length; i++) {
+      for (const q of theirs) if (along(mine[i], q)) return `Its cable would run along ${q.line.name}'s: pick stations off its way`;
+      for (let j = 0; j < i; j++) if (along(mine[i], mine[j])) return "Its cable would double back over itself: pick stations that don't";
+    }
+    return null;
+  }
+
+  // Would a new gondola line's route cross another line's, or its own,
+  // with too little height between them for one cabin to pass over another?
+  // (Not where two lines meet at a station they share.) Why not, or null.
+  _crossCable(route, line) {
+    const w = this.world, mine = new Set(line.stops);
+    const near = (x, z, stops) => stops.some(id => { const b = w.buildings.get(id); return b && mine.has(id) && Math.hypot(b.x + 0.5 - x, b.z + 0.5 - z) < 0.75; });
+    const meet = (A, B, self) => {
+      for (let i = 0; i < A.pts.length - 1; i++) {
+        const [ax, az] = A.pts[i], [bx, bz] = A.pts[i + 1], dx = bx - ax, dz = bz - az;
+        for (let j = self ? i + 2 : 0; j < B.pts.length - 1; j++) {
+          const [cx, cz] = B.pts[j], [ex, ez] = B.pts[j + 1], fx = ex - cx, fz = ez - cz;
+          if (Math.max(ax, bx) < Math.min(cx, ex) || Math.min(ax, bx) > Math.max(cx, ex) || Math.max(az, bz) < Math.min(cz, ez) || Math.min(az, bz) > Math.max(cz, ez)) continue;
+          const den = dx * fz - dz * fx;
+          if (Math.abs(den) < 1e-9) continue;
+          const t = ((cx - ax) * fz - (cz - az) * fx) / den, u = ((cx - ax) * dz - (cz - az) * dx) / den;
+          if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+          const x = ax + dx * t, z = az + dz * t;
+          if (near(x, z, B.stops)) continue;
+          const ya = A.ys[i] + (A.ys[i + 1] - A.ys[i]) * t, yb = B.ys[j] + (B.ys[j + 1] - B.ys[j]) * u;
+          if (Math.abs(ya - yb) < CABIN.H + 0.2) return true;
+        }
+      }
+      return false;
+    };
+    for (const l of w.lines) {
+      const R = l.mode === 'gondola' && (this.routes.get(l.id) || this._route(l));
+      if (R && meet(route, { ...R, stops: l.stops }, false)) return `Its cable would cross ${l.name}'s with no room for a cabin to pass over: pick other stations`;
+    }
+    if (meet(route, { ...route, stops: line.stops }, true)) return "Its cable would cross itself: pick stations that don't";
+    return null;
   }
 
   deleteLine(id) {
@@ -291,7 +382,10 @@ export class Transit {
       }
     }
     const rail = line.mode === 'rail';
-    let pts = tilePolyline(tiles, rail ? 0 : 0.17);
+    // (where it turns back, at the end of the line, it swings right across
+    // the road: one at a time there, as in a junction, see _knot)
+    if (!rail) for (let i = 1; i < tiles.length - 1; i++) if (tiles[i - 1][0] === tiles[i + 1][0] && tiles[i - 1][1] === tiles[i + 1][1]) this._turns.add(this.world.idx(tiles[i][0], tiles[i][1]));
+    let pts = tilePolyline(tiles, rail ? 0 : LANE, null, null, this._curve);
     pts = smoothPolyline(pts, rail ? 0.5 : 0.3, rail ? 6 : 4);
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
@@ -679,6 +773,18 @@ export class Transit {
     return { x: a[0] + (b[0] - a[0]) * t, y, z: a[1] + (b[1] - a[1]) * t, heading: Math.atan2(b[0] - a[0], b[1] - a[1]) };
   }
 
+  // Where a coach or cart (a BODY of f ahead, b behind) stands at s along
+  // its route: its front and back (near enough its horse and its back
+  // wheels) both on the way, the body between, so round a corner it cuts in
+  // behind rather than swinging its nose out across the other lane.
+  _pose(route, s, f, b) {
+    const L = route.length, loop = !!route.marks, at = (u) => this._sample(route, loop ? u : Math.max(0, Math.min(L - 1e-3, u)));
+    const F = at(s + f * 0.9), R = at(s - b * 0.9), dx = F.x - R.x, dz = F.z - R.z;
+    if (Math.hypot(dx, dz) < 1e-4) return at(s);
+    const k = b / (f + b);
+    return { x: R.x + dx * k, z: R.z + dz * k, heading: Math.atan2(dx, dz) };
+  }
+
   // A route's path in 3D (for the overlay): along the ground, or the cable.
   routePoints(route) {
     if (route.ys) return route.pts.map(([x, z], i) => [x, route.ys[i] - 0.12, z]);
@@ -736,6 +842,7 @@ export class Transit {
     }
     this._exits();
     this.routes.clear();
+    this._turns.clear(); this._knots.clear();
     for (const line of w.lines) {
       // (a gondola line with its stations held at those heights; it doesn't
       // run while something stands in the cable's way)
@@ -784,8 +891,24 @@ export class Transit {
     }
     for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
     const legs = line.mode === 'rail' ? null : this._horseLegs(meshes[0], COACH_HORSE);
-    const v = { line, route, s, meshes, legs, gait: 0, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0, swing: s * 1.7 };
+    // (not on top of another vehicle: on along its way to where there's room)
+    if (line.mode !== 'gondola' && this.bodies) {
+      for (let k = 0; k < 40; k++) {
+        const p = this._sample(route, s);
+        if (!this.bodies.some(o => !o.air && Math.hypot(o.x - p.x, o.z - p.z) < 0.7)) break;
+        s = (s + 0.35) % route.length;
+      }
+    }
+    const v = { line, route, s, meshes, legs, gait: 0, state: 'move', dwell: 0, next: this._nextMark(route, s), passengers: [], smokeAcc: 0, swing: s * 1.7, n: ++serial, wait: 0, by: null };
     this.vehicles.push(v);
+    // where it stands from the start (so nothing else is put there before it moves)
+    const mode = line.mode;
+    for (let k = 0; k < meshes.length; k++) {
+      const p = this._sample(route, s + (mode === 'rail' ? (1 - k) * CAR_SPACING : -k * 0.6));
+      meshes[k].position.set(p.x, mode === 'gondola' ? p.y : this._height(mode, p.x, p.z), p.z);
+      meshes[k].rotation.y = p.heading;
+      if (this.bodies) this.bodies.push({ x: p.x, y: meshes[k].position.y, z: p.z, hx: Math.sin(p.heading), hz: Math.cos(p.heading), ...(([f, b, w]) => ({ f, b, w }))(mode === 'gondola' ? BODY.cabin : mode === 'rail' ? BODY.rail : BODY.coach), owner: v, air: mode === 'gondola' });
+    }
     return v;
   }
 
@@ -958,6 +1081,14 @@ export class Transit {
     const speed = this.game.speed;
     const w = this.world;
     const now = w.day * 24 + w.hours;
+    this.bodies = this._bodies();
+    this.frame = (this.frame || 0) + 1;
+    for (const [k, hs] of this.held) {
+      const keep = hs.filter(h => h.frame >= this.frame - 1);
+      if (keep.length) this.held.set(k, keep); else this.held.delete(k);
+    }
+    for (const [k, q] of this.wants) if (q.frame < this.frame - 1) this.wants.delete(k);
+    for (const o of this.bodies) if (!o.air) this._hold(o);
     // impatient passengers walk instead
     for (const [k, list] of this.waiting) {
       if (!list.length) continue;
@@ -971,6 +1102,9 @@ export class Transit {
       const rail = v.line.mode === 'rail', cable = v.line.mode === 'gondola';
       if (v.state === 'dwell') {
         v.dwell -= dt * speed;
+        // (at a stop in a junction or where it turns back, it keeps its claim
+        // on the way on through it, so nobody comes in where it will go)
+        if (!cable && !rail && speed) this._through(v, route, v.s + BODY.coach[0], 0.3, 0);
         if (v.dwell <= 0) { v.state = 'move'; v.next = (v.next + 1) % route.marks.length; }
       } else if (speed) {
         const mark = route.marks[v.next];
@@ -985,13 +1119,18 @@ export class Transit {
           if (since < 0) since += route.length;
           step *= rail ? Math.min(1, 0.25 + Math.min(dist, since) * 0.6) : Math.min(1, 0.3 + Math.min(dist, since) * 1.6);
         }
+        // no closer than a little behind whatever is ahead: another coach or
+        // a cart, a train at a crossing, a cabin waiting in the station, a
+        // villager in the way
+        step = this._clear(v, v.meshes[0], cable ? 'cabin' : rail ? 'rail' : 'coach', step, dt * speed, route, v.s + (rail ? CAR_SPACING : 0));
         if (v.legs) v.gait += Math.min(step, dist) * GAIT_PER_TILE;
         if (step >= dist) {
           v.s = mark.s;
           v.state = 'dwell';
           v.dwell = rail ? 2.6 : cable ? 1 : 1.4;
+          v.wait = 0; v.by = null;
           this._atStop(v, mark);
-        } else v.s = (v.s + step) % route.length;
+        } else v.s = ((v.s + step) % route.length + route.length) % route.length;
       }
       if (cable) {
         // a cabin hangs from the cable, swinging a little on its grip
@@ -1005,7 +1144,7 @@ export class Transit {
       // place meshes: trains are centred on their position (engine in front)
       for (let k = 0; k < v.meshes.length; k++) {
         const off = rail ? (1 - k) * CAR_SPACING : -k * 0.6;
-        const p = this._sample(route, v.s + off);
+        const p = rail ? this._sample(route, v.s + off) : this._pose(route, v.s + off, BODY.coach[0], BODY.coach[1]);
         const m = v.meshes[k];
         m.position.set(p.x, this._height(v.line.mode, p.x, p.z), p.z);
         m.rotation.y = p.heading;
@@ -1025,6 +1164,288 @@ export class Transit {
       }
     }
     this._updateCarts(dt);
+  }
+
+  // -------------------------------------------------------------- traffic
+  // Every vehicle and cart as it stands (its box, BODY): for keeping their
+  // distance from each other, and for the villagers to keep out of the way.
+  _bodies() {
+    const out = [];
+    const add = (m, k, owner, air) => {
+      const p = m.position, h = m.rotation.y;
+      out.push({ x: p.x, y: p.y, z: p.z, hx: Math.sin(h), hz: Math.cos(h), f: k[0], b: k[1], w: k[2], owner, air });
+    };
+    for (const v of this.vehicles) {
+      const mode = v.line.mode;
+      if (mode === 'gondola') add(v.meshes[0], BODY.cabin, v, true);
+      else for (const m of v.meshes) add(m, mode === 'rail' ? BODY.rail : BODY.coach, v, false);
+    }
+    for (const c of this.carts) if (c.placed) add(c.mesh, BODY.cart, c, false);
+    return out;
+  }
+
+  // Junctions, bends and turning places, a road with other than two ways on
+  // from it or two not straight across (the other lane of a wide road, road
+  // beside it all along, isn't a way on), and where a line turns back: one
+  // vehicle in one at a time, the first to come, so none meets another
+  // crossing or turning in it. 1 for a junction, 2 for a bend, 0 otherwise
+  // (kept till the roads change).
+  _knot(tx, tz) {
+    const w = this.world;
+    if (!w.inBounds(tx, tz) || !w.roadAt(tx, tz)) return 0;
+    const k = w.idx(tx, tz);
+    if (this._knots.has(k)) return this._knots.get(k);
+    const road = (x, z) => w.inBounds(x, z) && !!w.roadAt(x, z);
+    let r;
+    if ((w.diag && w.diag[k]) || this._turns.has(k)) r = 1;
+    else {
+      const on = STEP.map(([dx, dz]) => road(tx + dx, tz + dz) && !(road(tx + dx - dz, tz + dz + dx) && road(tx - dz, tz + dx) && road(tx + dx + dz, tz + dz - dx) && road(tx + dz, tz - dx)));
+      const n = on.filter(Boolean).length;
+      r = n !== 2 ? 1 : (on[0] && on[2]) || (on[1] && on[3]) ? 0 : 2;
+    }
+    this._knots.set(k, r);
+    return r;
+  }
+
+  // The quarter of a quarter of a junction tile (x, z) is in, as a key for
+  // claims on it (-1 off a junction): two vehicles may be in one junction at
+  // once, so long as their ways through it don't cross.
+  _cell(x, z) {
+    const tx = Math.floor(x), tz = Math.floor(z);
+    if (!this._knot(tx, tz)) return -1;
+    return this.world.idx(tx, tz) * 16 + Math.min(3, Math.floor((x - tx) * 4)) + Math.min(3, Math.floor((z - tz) * 4)) * 4;
+  }
+
+  // The bits of junction a vehicle's piece o stands on: it keeps its claim
+  // on them while it does.
+  _hold(o) {
+    const h = Math.atan2(o.hx, o.hz), l = o.w * 0.8;
+    for (const u of [o.f, o.f / 2, 0, -o.b / 2, -o.b]) for (const s of [-l, 0, l]) {
+      const c = this._cell(o.x + o.hx * u + o.hz * s, o.z + o.hz * u - o.hx * s);
+      if (c >= 0) this._claim(c, o.owner, h, h, null);
+    }
+  }
+
+  // A claim on bit of junction k by owner, going into its tile heading and
+  // out of it h1, straight across or not (null: as it was, or straight).
+  _claim(k, owner, heading, h1, straight) {
+    let hs = this.held.get(k);
+    if (!hs) this.held.set(k, hs = []);
+    const h = hs.find(q => q.owner === owner);
+    if (!h) hs.push({ owner, frame: this.frame, heading, h1, straight: straight ?? true });
+    else { h.frame = this.frame; if (straight != null) { h.heading = heading; h.h1 = h1; h.straight = straight; } }
+  }
+
+  // The way through the junction just ahead of a vehicle (its front at sF
+  // along route; one within reach of it): every bit of junction it will
+  // pass over (see _cell) till it's out the other side, two and a half tiles
+  // at most. If another has a claim on any of them, crossing or turning
+  // there, how far it may go (short of that tile, or of that bit if it's in
+  // the tile already) and who it waits for; otherwise it claims them all at
+  // once (so none ever stands in one tile of a wide junction waiting for
+  // another who stands in the next waiting for it). Two going straight
+  // through side by side or the opposite way, or opposite ways round a bend,
+  // don't stand in each other's way; nor does one behind going the same way
+  // (it waits behind this one anyway). And whoever has waited longest for a
+  // way through goes next (a stream of vehicles along a road doesn't keep
+  // one waiting to cross it for ever); but one in the junction already, or
+  // through this bit of it, or one waiting for this one, doesn't wait its
+  // turn.
+  _through(v, route, sF, reach, dt) {
+    const me = v.mesh || v.meshes[0], mx = Math.sin(me.rotation.y), mz = Math.cos(me.rotation.y);
+    const behind = (u) => {
+      const m = u.mesh || u.meshes[0];
+      return Math.sin(m.rotation.y) * mx + Math.cos(m.rotation.y) * mz > 0.5 && (m.position.x - me.position.x) * mx + (m.position.z - me.position.z) * mz < 0;
+    };
+    const w = this.world, loop = !!route.marks, tiles = [];
+    const rail = v.line && v.line.mode === 'rail', [f0, b0, w0] = BODY[rail ? 'rail' : v.line ? 'coach' : 'cart'], l = w0 * 0.9;
+    let out = -1;   // (how far on it's out the other side)
+    for (let d = 0; d <= THROUGH; d += 0.1) {
+      if (!loop && sF + d > route.length) break;
+      const q = this._sample(route, sF + d), tx = Math.floor(q.x), tz = Math.floor(q.z);
+      if (!this._knot(tx, tz)) { if (tiles.length) { out = d; break; } if (d > reach) break; continue; }
+      const k = w.idx(tx, tz);
+      let t = tiles[tiles.length - 1];
+      if (!t || t.k !== k) tiles.push(t = { k, d, h0: q.heading, bend: this._knot(tx, tz) === 2, cells: new Map() });
+      t.h1 = q.heading;
+      // (all it will stand on, its front there: corners, sides and middle)
+      const p = rail ? this._sample(route, sF + d - f0) : this._pose(route, sF + d - f0, f0, b0), hx = Math.sin(p.heading), hz = Math.cos(p.heading);
+      for (const u of [f0, 0, -b0]) for (const s of [-l, 0, l]) {
+        const c = this._cell(p.x + hx * u + hz * s, p.z + hz * u - hx * s);
+        if (c >= 0 && !t.cells.has(c)) t.cells.set(c, d);
+      }
+    }
+    if (!tiles.length) { v.jw = 0; return null; }
+    for (const t of tiles) t.straight = Math.abs(Math.atan2(Math.sin(t.h1 - t.h0), Math.cos(t.h1 - t.h0))) < 0.25;
+    const fresh = (h) => h.owner !== v && h.frame >= this.frame - 1;
+    const apart = (h, t) => (h.straight && t.straight && Math.abs(Math.cos(h.heading - t.h0)) > 0.95) || (t.bend && Math.cos(h.heading - t.h1 - Math.PI) > 0.9) || behind(h.owner);
+    const short = (t, d) => ({ room: Math.max(0, (t.d > 0 ? t.d : d) - 0.15) });
+    let block = null;
+    for (const t of tiles) {
+      for (const [c, d] of t.cells) {
+        if (d === 0) continue;   // (on it already)
+        const h = (this.held.get(c) || []).find(h => fresh(h) && !apart(h, t));
+        if (h) { block = { ...short(t, d), by: h.owner, why: 'a junction' }; break; }
+      }
+      if (block) break;
+    }
+    // (nor into one with no room to stand on the other side, behind one
+    // waiting there: it would stand in the way of everyone crossing)
+    if (!block && tiles[0].d > 0 && out > 0) {
+      for (let d = out + 0.05; d <= out + f0 + b0 + 0.05 && !block; d += 0.1) {
+        if (!loop && sF + d > route.length) break;
+        const q = this._sample(route, sF + d);
+        for (const o of this.bodies) {
+          const u = o.owner;
+          if (u === v || o.air || !(u.wait > 0 || u.state === 'dwell')) continue;
+          const mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2, rx = q.x - (o.x + o.hx * mid), rz = q.z - (o.z + o.hz * mid);
+          if (Math.abs(rx) + Math.abs(rz) > half + o.w + w0 + 0.1) continue;
+          if (Math.abs(rx * o.hx + rz * o.hz) < half + GAP && Math.abs(rx * o.hz - rz * o.hx) < o.w + w0) { block = { ...short(tiles[0], 0), by: u, why: 'no room past a junction' }; break; }
+        }
+      }
+    }
+    if (!block && tiles[0].d > 0) for (const t of tiles) {
+      for (const [c, d] of t.cells) {
+        const q = this.wants.get(c);
+        if (d === 0 || !q || !fresh(q) || q.jw <= (v.jw || 0) || q.owner.by === v || apart(q, t)) continue;
+        if ((this.held.get(c) || []).some(h => h.owner === v)) continue;
+        block = { ...short(t, d), by: q.owner, why: 'its turn at a junction' };
+        break;
+      }
+      if (block) break;
+    }
+    if (block) {
+      v.jw = tiles[0].d > 0 ? (v.jw || 0) + dt : 0;
+      for (const t of tiles) for (const c of t.cells.keys()) {
+        const q = this.wants.get(c);
+        if (!q || !fresh(q) || q.jw < v.jw) this.wants.set(c, { owner: v, frame: this.frame, heading: t.h0, h1: t.h1, straight: t.straight, jw: v.jw });
+      }
+      return block;
+    }
+    v.jw = 0;
+    for (const t of tiles) for (const c of t.cells.keys()) this._claim(c, v, t.h0, t.h1, t.straight);
+    return null;
+  }
+
+  // Is v one of a ring of vehicles each waiting for the next (by), none of
+  // which can ever move (a coach turning across one coming the other way,
+  // each a whisker into the other's way)? 1 if so: they squeeze by, as close
+  // as they can without touching; 3 if they still can't and v is the
+  // youngest of them: it backs up a little (see _clear), to let the others
+  // by; 2 if even that doesn't do and v is the oldest: it goes on regardless.
+  _ring(v) {
+    if (v.wait < RING_WAIT) return 0;
+    let u = v.by, oldest = v, youngest = v;
+    for (let k = 0; u && u.wait >= RING_WAIT && k < 16; k++) {
+      if (u === v) return v.wait <= RING_WAIT * 4 ? 1 : youngest === v ? 3 : oldest === v && v.wait > RING_WAIT * 8 ? 2 : 1;
+      if (u.n < oldest.n) oldest = u;
+      if (u.n > youngest.n) youngest = u;
+      u = u.by;
+    }
+    return 0;
+  }
+
+  // The youngest of a ring of vehicles stuck waiting for each other backs up
+  // (a negative step), BACK at most, so long as nothing stands behind it.
+  _backUp(v, kind, step, t, px, pz, hx, hz) {
+    v.wait += t;
+    const [f, b, w0] = BODY[kind], back = Math.min(step * 0.5, BACK - (v.backed || 0));
+    if (back <= 0 || (!v.line && v.s < back)) return 0;
+    for (const o of this.bodies) {
+      if (o.owner === v || o.air) continue;
+      const rx = o.x - px, rz = o.z - pz, along = -(rx * hx + rz * hz);
+      if (along <= 0 || Math.abs(rx) + Math.abs(rz) > b + 1.2) continue;   // (the one it backs away from, ahead of it)
+      // (the corridor behind it, as the one ahead in _clear, turned round)
+      const c = -(o.hx * hx + o.hz * hz), sn = -(o.hx * hz - o.hz * hx), mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2;
+      const ca = along + mid * c, cl = -(rx * hz - rz * hx) + mid * sn;
+      const ea = Math.abs(c) * half + Math.abs(sn) * o.w, el = Math.abs(sn) * half + Math.abs(c) * o.w;
+      if (Math.abs(cl) < el + w0 + 0.01 && ca - ea < b + back + GAP) return 0;
+    }
+    v.backed = (v.backed || 0) + back;
+    return -back;
+  }
+
+  // How far vehicle v (its front piece m, a kind of BODY) may go this frame,
+  // at most step, without coming within GAP of another vehicle or GAP_FOOT of
+  // a villager ahead of it, or into a junction another is in. One held up
+  // long gives up waiting for villagers (who should have stepped aside);
+  // vehicles queue for as long as it takes, but for a ring of them each
+  // waiting for the next (see _ring). Held up, it keeps how long (v.wait),
+  // for whom (v.by: a vehicle, or null for a villager) and what for (v.why,
+  // which the collision playtest tallies).
+  _clear(v, m, kind, step, t, route = null, s0 = 0) {
+    if (step <= 0) return step;
+    const [f, , w0] = BODY[kind], hx = Math.sin(m.rotation.y), hz = Math.cos(m.rotation.y), px = m.position.x, pz = m.position.z, py = m.position.y;
+    const look = step + GAP + 0.04, air = kind === 'cabin';
+    // (in a ring of vehicles each waiting for the next: closer)
+    let ring = this._ring(v);
+    if (ring === 3 && air) ring = 1;
+    if (ring === 3) return this._backUp(v, kind, step, t, px, pz, hx, hz);
+    const give = ring ? -0.015 : 0.01;
+    let room = Infinity, by = null, why = '';
+    for (const o of this.bodies) {
+      if (o.owner === v || o.air !== air || (air && Math.abs(o.y - py) > 0.25) || ring === 2) continue;
+      const rx = o.x - px, rz = o.z - pz;
+      if (Math.abs(rx) + Math.abs(rz) > look + f + 1) continue;
+      const c = o.hx * hx + o.hz * hz, sn = o.hx * hz - o.hz * hx, mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2;
+      const ca = rx * hx + rz * hz + mid * c, cl = rx * hz - rz * hx + mid * sn;
+      const ea = Math.abs(c) * half + Math.abs(sn) * o.w, el = Math.abs(sn) * half + Math.abs(c) * o.w;
+      if (Math.abs(cl) >= el + w0 + give || ca - ea >= f + look) continue;
+      // (already overlapping one ahead of its middle, or level with it and
+      // the older: wait till it's clear)
+      if (ca + ea <= f) { if (ca - ea < f && (ca > 0.02 || (ca > -0.02 && o.owner.n < v.n))) { room = Math.min(room, 0); by = o.owner; why = 'touching'; } continue; }
+      const gap = Math.max(0, ca - ea - f) - (ring ? 0.01 : GAP);
+      if (gap < room) { room = gap; by = o.owner; why = 'behind'; }
+    }
+    // round a bend: points along its way just ahead, against every other
+    // vehicle (and villager) there
+    if (route && ring !== 2) {
+      const ag = !air && v.wait <= 4 && this.game.agents.near ? this.game.agents : null;
+      for (let d = 0.05; d <= look + 1e-6 && d < room + GAP; d += 0.05) {
+        const q = this._sample(route, s0 + f + d), qy = air ? q.y : py;
+        let hit = false;
+        for (const o of this.bodies) {
+          if (o.owner === v || o.air !== air || (air && Math.abs(o.y - qy) > 0.25)) continue;
+          const mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2, rx = q.x - (o.x + o.hx * mid), rz = q.z - (o.z + o.hz * mid);
+          if (Math.abs(rx) + Math.abs(rz) > half + o.w + w0 + 0.2) continue;
+          // (as wide as it is across the other's length, turned across it)
+          const sn = Math.abs(Math.sin(q.heading) * o.hz - Math.cos(q.heading) * o.hx);
+          if (Math.abs(rx * o.hx + rz * o.hz) < half + w0 * sn + 0.01 && Math.abs(rx * o.hz - rz * o.hx) < o.w + w0 + give - 0.01) { hit = o.owner; break; }
+        }
+        if (!hit && ag) for (const p of ag.near(q.x, q.z, w0 + 0.08)) {
+          if (Math.abs(p.y - py) > 0.15) continue;
+          const dq = Math.hypot(p.x - q.x, p.z - q.z);
+          if (dq < w0 || (p.moving && !(p.hold > 0.1) && dq < w0 + 0.07 && (q.x - p.x) * Math.sin(p.heading) + (q.z - p.z) * Math.cos(p.heading) > 0.3 * dq)) { hit = 'foot'; break; }
+        }
+        if (hit) { if (Math.max(0, d - GAP) < room) { room = Math.max(0, d - GAP); by = hit === 'foot' ? null : hit; why = hit === 'foot' ? 'a villager' : 'round a bend'; } break; }
+      }
+    }
+    // a junction or a turning place just ahead that another is in, or about
+    // to go into: wait short of it (standing clear of another's back swinging
+    // round as it turns there), or claim the way through it
+    if (!air && route && ring !== 2) {
+      const r = this._through(v, route, s0 + f, look + 0.15, t);
+      if (r && r.room < room) { room = r.room; by = r.by; why = r.why; }
+    }
+    // villagers in the way (not for a cabin), unless held up a while: just
+    // ahead of it, crossing in front of its middle or about to (not those on
+    // the pavement beside it, clear of its side)
+    if (!air && v.wait <= 4) {
+      const ag = this.game.agents;
+      for (const p of ag.near ? ag.near(px + hx * (f + look) / 2, pz + hz * (f + look) / 2, (f + look) / 2 + w0 + 0.1) : []) {
+        if (Math.abs(p.y - py) > 0.15) continue;
+        const rx = p.x - px, rz = p.z - pz, along = rx * hx + rz * hz, lat = rx * hz - rz * hx;
+        // (and one just aside of its way, stepping into it, not waiting for it)
+        const into = p.moving && !(p.hold > 0.1) && Math.abs(lat) < w0 + 0.07 && (Math.sin(p.heading) * hz - Math.cos(p.heading) * hx) * Math.sign(lat) < -0.3;
+        if ((Math.abs(lat) >= w0 && !into) || along <= 0 || along - 0.034 >= f + look) continue;
+        const gap = Math.max(0, along - 0.034 - f) - GAP_FOOT;
+        if (gap < room) { room = gap; by = null; why = 'a villager'; }
+      }
+    }
+    if (room >= step) { v.wait = 0; v.by = null; v.backed = 0; return step; }
+    v.wait += t;
+    v.by = by; v.why = why;
+    return Math.max(0, room);
   }
 
   // ---------------------------------------------------------------- carts
@@ -1049,13 +1470,13 @@ export class Transit {
     if (!A.access || !B.access) return false;
     const tiles = this.game.paths.road(A.access.x, A.access.z, B.access.x, B.access.z);
     if (!tiles || tiles.length < 2) return false;
-    const pts = smoothPolyline(tilePolyline(tiles, 0.17), 0.3, 3);
+    const pts = smoothPolyline(tilePolyline(tiles, LANE, null, null, this._curve), 0.3, 3);
     const cum = [0];
     for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
     const mesh = new THREE.Mesh(this._geo('cartmaterials', () => cartModel('materials')), MAT.building);
     mesh.castShadow = true;
     this.group.add(mesh);
-    this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id, cb: onArrive });
+    this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id, cb: onArrive, n: ++serial, wait: 0, by: null, placed: false });
     return true;
   }
 
@@ -1070,19 +1491,26 @@ export class Transit {
         if (!A || !B || !A.access || !B.access || this.carts.length > 30) continue;
         const tiles = this.game.paths.road(A.access.x, A.access.z, B.access.x, B.access.z);
         if (!tiles || tiles.length < 2) continue;
-        const pts = smoothPolyline(tilePolyline(tiles, 0.17), 0.3, 3);
+        const pts = smoothPolyline(tilePolyline(tiles, LANE, null, null, this._curve), 0.3, 3);
         const cum = [0];
         for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+        // (not on top of another vehicle: it waits till the road there is clear)
+        const p0 = pts[0];
+        if (this.bodies && this.bodies.some(o => !o.air && Math.hypot(o.x - p0[0], o.z - p0[1]) < 0.6)) { this.cartPlan.push(c); continue; }
         const cargo = CARGO[A.type] || 'crates';
         const mesh = new THREE.Mesh(this._geo('cart' + cargo, () => cartModel(cargo)), MAT.building);
         mesh.castShadow = true;
         this.group.add(mesh);
-        this.carts.push({ route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id });
+        const cart = { route: { pts, cum, length: cum[cum.length - 1] }, s: 0, mesh, legs: this._horseLegs(mesh, CART_HORSE), gait: 0, to: B.id, n: ++serial, wait: 0, by: null, placed: false };
+        this.carts.push(cart);
+        // (on the road from now: the next to set off waits for it)
+        const h = Math.atan2(pts[1][0] - p0[0], pts[1][1] - p0[1]);
+        if (this.bodies) this.bodies.push({ x: p0[0], y: 0, z: p0[1], hx: Math.sin(h), hz: Math.cos(h), f: BODY.cart[0], b: BODY.cart[1], w: BODY.cart[2], owner: cart, air: false });
       }
     }
     for (let i = this.carts.length - 1; i >= 0; i--) {
       const c = this.carts[i];
-      const step = dt * speed * CONFIG.CART_SPEED;
+      const step = c.placed ? this._clear(c, c.mesh, 'cart', dt * speed * CONFIG.CART_SPEED, dt * speed, c.route, c.s) : dt * speed * CONFIG.CART_SPEED;
       c.s += step;
       c.gait += step * GAIT_PER_TILE;
       if (c.s >= c.route.length) {
@@ -1097,10 +1525,11 @@ export class Transit {
         }
         continue;
       }
-      const p = this._sample(c.route, Math.min(c.s, c.route.length - 1e-3));
+      const p = this._pose(c.route, Math.min(c.s, c.route.length - 1e-3), BODY.cart[0], BODY.cart[1]);
       c.mesh.position.set(p.x, this._height('coach', p.x, p.z), p.z);
       c.mesh.rotation.y = p.heading;
-      this._poseLegs(c.legs, c.gait, speed > 0, dt * speed);
+      c.placed = true;
+      this._poseLegs(c.legs, c.gait, speed > 0 && step > 0, dt * speed);
     }
   }
 

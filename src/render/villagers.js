@@ -135,7 +135,9 @@ export function lookOf(r, dress = null) {
   const hatRoll = g.chance(child ? 0.1 : 0.32);
   if (hatRoll) g.next();
   const scale = child ? 0.5 + Math.min(1, yearsOf(r) / 17) * 0.3 : elder ? 0.86 : 0.88 + g.next() * 0.08;
-  const lane = 0.07 + g.next() * 0.13;
+  // (how far right of the middle of the road they walk: at its edge, clear
+  // of the coaches and carts, short of the fronts of the houses)
+  const lane = 0.26 + g.next() * 0.04;
   const speed = (elder ? 0.72 : child ? 1.15 : 1) * (0.9 + g.next() * 0.2);
   // ...and the rest from a stream of their own: first the body, which a new
   // job leaves alone...

@@ -98,7 +98,7 @@ export class Agents {
     this.game = game;
     this.world = game.world;
     // villagers cut a corner along the road's curve (not on a bridge ramp)
-    this._curve = (x, z) => curvesAt(this.world, x, z);
+    this._curve = (x, z, outside) => curvesAt(this.world, x, z, outside);
     this.walkers = new Set();
     this.plannedDay = -1;
     const scene = game.renderer.scene;
@@ -106,6 +106,9 @@ export class Agents {
     this._grids = new WeakMap();   // a drawn model → the way about its plot (plotNav)
     this._stairs = new WeakMap();  // a drawn model → the steps up to its door
     this._seated = new Map();      // a bench seat at a gondola station → who has it
+    this._grid = new Map();        // who stands where, by CELL (see _spread)
+    this._doorNext = new Map();    // a building → when the next may come out of its door
+    this._in = [];                 // those in the crowd this frame
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.95, depthWrite: false }));
     this.ring.renderOrder = 8;
     this.ring.visible = false;
@@ -379,7 +382,13 @@ export class Agents {
     // the shopping carried home, and a satchel on the way to and from school
     wk.carry = carryFrom(A, r, this.world.day);
     wk.bag = r.school != null && (A.id === r.school || B.id === r.school);
-    if (out) wk.delay = Math.random() * 0.25;
+    // out of a door one after another, a moment apart (a big block's
+    // morning rush not held up more than a few seconds for it)
+    if (out) {
+      const now = this._clock || 0, next = Math.max(now, this._doorNext.get(A.id) || 0);
+      wk.delay = Math.min(next - now, 8) + Math.random() * 0.15;
+      this._doorNext.set(A.id, now + wk.delay + DOOR_GAP);
+    }
     wk.r = r;
     r.walk = wk;
     r.loc = 'walk';
@@ -387,6 +396,7 @@ export class Agents {
   }
 
   _makeWalker(lk, pts, onArrive) {
+    this._made = (this._made || 0) + 1;
     // every walker has all its fields from the start: one object shape keeps
     // the loops over hundreds of them each frame quick
     const wk = {
@@ -394,15 +404,156 @@ export class Agents {
       heading: 0, phase: Math.random() * 6, mode: 'path', onArrive, idle: 0, speedK: lk.speed,
       r: null, dest: null, delay: 0, doorOut: 0, doorIn: 0, moving: false, ghost: false, hand: false,
       area: null, ring: false, baseY: 0, working: false, tool: null, target: null, route: null, floorIn: null, floorOut: null, stairsIn: null, stairsOut: null, plotOut: 0, plotY: 0,
-      ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null,
+      ys: null, standY: null, cabin: null, seat: 0, doorRef: null, sit: false, seatOf: null, side: 0, hold: 0, narrow: false,
       carry: null, bag: false, lamp: false, lx: null, ly: null, lz: null, _i: 0,
     };
     if (pts.length > 1) wk.heading = Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+    wk._n = this._made;
     this.walkers.add(wk);
     return wk;
   }
 
   _drop(wk) { this._unseat(wk); this.walkers.delete(wk); if (wk.r && wk.r.walk === wk) wk.r.walk = null; }
+
+  // ----------------------------------------------------------- the crowd
+  // Villagers keep out of each other's way and out of the vehicles': after
+  // everyone has moved, any two closer than a body's width (BODY_D) move
+  // apart, those walking a street by stepping to one side (wk.side, so they
+  // keep their place along it), those standing about in the street by
+  // shuffling over (never off it, into a wall), and those sitting, riding,
+  // somewhere narrow or about a plot not at all (those strolling or at work
+  // go round what stands there, and pick somewhere nobody stands); and
+  // anyone in a coach's, a cart's or a train's way, or just ahead of it,
+  // steps aside.
+  // Only those drawn (crowds thinned on screen leave the rest to themselves).
+  // Files everyone by CELL for near() (the vehicles look out for them).
+  _spread(t) {
+    const grid = this._grid, list = this._in;
+    for (const l of grid.values()) l.length = 0;
+    list.length = 0;
+    for (const wk of this.walkers) {
+      if (wk.delay > 0 || wk.mode === 'ride' || wk.shown === false) continue;
+      list.push(wk);
+      const k = cellKey(wk.x, wk.z);
+      let l = grid.get(k);
+      if (!l) grid.set(k, l = []);
+      l.push(wk);
+    }
+    if (!t) return;
+    const still = (wk) => wk.sit || (wk.mode === 'path' && wk.narrow);
+    const hidden = (wk) => inside(wk);
+    const W = this.world, road = (x, z) => { const tx = Math.floor(x), tz = Math.floor(z); return W.inBounds(tx, tz) && !!W.roadAt(tx, tz); };
+    const shove = (wk, px, pz) => {
+      if (still(wk)) return;
+      if (wk.mode === 'path') {
+        // sideways only, as a step to one side of their way
+        const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1] || a, L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-6) return;
+        const nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L, d = px * nx + pz * nz;
+        const was = wk.side;
+        wk.side = Math.max(-SIDE_IN, Math.min(SIDE_OUT, wk.side + d));
+        wk.x += nx * (wk.side - was); wk.z += nz * (wk.side - was);
+      } else if (road(wk.x, wk.z) && road(wk.x + px, wk.z + pz)) { wk.x += px; wk.z += pz; }   // (on the street, never into a wall)
+    };
+    for (const a of list) {
+      const cx = Math.floor(a.x / CELL), cz = Math.floor(a.z / CELL);
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const l = grid.get((cx + dx) * 65536 + (cz + dz));
+        if (!l) continue;
+        for (const b of l) {
+          if (b === a || b._n < a._n || Math.abs(a.y - b.y) > 0.2 || hidden(a) || hidden(b)) continue;
+          const rx = b.x - a.x, rz = b.z - a.z, d = Math.hypot(rx, rz);
+          if (d >= BODY_D || (still(a) && still(b))) continue;
+          const ux = d > 1e-6 ? rx / d : Math.cos(a._n), uz = d > 1e-6 ? rz / d : Math.sin(a._n);
+          const o = BODY_D - d, ka = still(a) ? 0 : still(b) ? 1 : 0.5, kb = 1 - ka;
+          shove(a, -ux * o * ka, -uz * o * ka);
+          shove(b, ux * o * kb, uz * o * kb);
+        }
+      }
+    }
+    // out of the way of the vehicles on the ground, and of one coming on
+    const bodies = this.game.transit && this.game.transit.bodies;
+    if (bodies) for (const o of bodies) {
+      if (o.air) continue;
+      const mid = (o.f - o.b) / 2, cx = o.x + o.hx * mid, cz = o.z + o.hz * mid, half = (o.f + o.b) / 2;
+      for (const wk of this.near(cx + o.hx * 0.12, cz + o.hz * 0.12, half + 0.3)) {
+        if (Math.abs(wk.y - o.y) > 0.15 || still(wk)) continue;
+        const rx = wk.x - cx, rz = wk.z - cz, along = rx * o.hx + rz * o.hz, lat = rx * o.hz - rz * o.hx;
+        const clear = o.w + 0.02;   // (not those on the pavement beside it)
+        if (Math.abs(lat) >= clear || along < -half - 0.04 || along > half + 0.2) continue;
+        const s = lat >= 0 ? 1 : -1, need = (clear - Math.abs(lat)) * (along > half ? Math.min(1, t * 3) : 1);
+        shove(wk, o.hz * s * need, -o.hx * s * need);
+      }
+    }
+  }
+
+  // The walkers (in the crowd this frame) within about r of (x, z).
+  near(x, z, r) {
+    const out = [], c0 = Math.floor((x - r) / CELL), c1 = Math.floor((x + r) / CELL), d0 = Math.floor((z - r) / CELL), d1 = Math.floor((z + r) / CELL);
+    for (let cx = c0; cx <= c1; cx++) for (let cz = d0; cz <= d1; cz++) {
+      const l = this._grid.get(cx * 65536 + cz);
+      if (l) for (const wk of l) if (Math.abs(wk.x - x) <= r && Math.abs(wk.z - z) <= r) out.push(wk);
+    }
+    return out;
+  }
+
+  // How far a walker can go before closing within a body's width of whoever
+  // is walking ahead of it going the same way (or, somewhere narrow, any way
+  // but straight at it), from where everyone stood last frame (not minding
+  // the people, only the vehicles, if not people).
+  _ahead(wk, people = true) {
+    const hx = Math.sin(wk.heading), hz = Math.cos(wk.heading);
+    let best = Infinity;
+    if (people) for (const o of this.near(wk.x + hx * 0.06, wk.z + hz * 0.06, 0.13)) {
+      if (o === wk || o.mode === 'ride' || Math.abs(o.y - wk.y) > 0.2) continue;
+      // (behind someone walking: on a street, going the same way; somewhere
+      // narrow, any way but straight at them, whom they pass; and someone
+      // going in waits for someone coming out of the door. Not behind
+      // someone standing about: they're nudged aside, see _spread)
+      if (o.mode !== 'path') continue;
+      const same = Math.sin(o.heading) * hx + Math.cos(o.heading) * hz;
+      const giveWay = wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1 && o.doorOut && o.seg < o.doorOut;
+      if (!giveWay && (wk.narrow ? same < -0.5 : same <= 0.5)) continue;
+      const rx = o.x - wk.x, rz = o.z - wk.z, along = rx * hx + rz * hz, lat = rx * hz - rz * hx;
+      // (level with each other, the one who set off first goes first)
+      if (along > 0.13 || Math.abs(lat) > 0.05 || along < -0.002 || (along <= 0.002 && o._n > wk._n)) continue;
+      best = Math.min(best, along - BODY_D);
+    }
+    // a vehicle across their way (a coach waiting, a cart coming as they
+    // cross): they wait for it to go by, stopping short of it and of the
+    // stretch just ahead of one on the move (not those on the pavement
+    // beside it, clear of its side)
+    for (const o of this._vehiclesNear(wk.x, wk.z)) {
+      if (Math.abs(o.y - wk.y) > 0.15) continue;
+      const v = o.owner, on = v.state !== 'dwell' && !v.wait ? 0.3 : 0;
+      const mid = (o.f - o.b) / 2, half = (o.f + o.b) / 2, cx = o.x + o.hx * mid, cz = o.z + o.hz * mid;
+      const inBox = (x, z) => { const rx = x - cx, rz = z - cz, u = rx * o.hx + rz * o.hz; return u > -half - BODY_D / 2 && u < half + BODY_D / 2 + on && Math.abs(rx * o.hz - rz * o.hx) < o.w; };
+      if (inBox(wk.x, wk.z)) continue;   // (in it already: out the way they're going)
+      for (const d of [0.03, 0.07, 0.11]) if (inBox(wk.x + hx * d, wk.z + hz * d)) { best = Math.min(best, d - 0.03); break; }
+    }
+    return best;
+  }
+
+  // The vehicles on the ground near (x, z) (transit.bodies, filed by tile
+  // once a frame).
+  _vehiclesNear(x, z) {
+    const T = this.game.transit, bodies = T && T.bodies;
+    if (!bodies) return [];
+    if (this._vmapOf !== bodies) {
+      this._vmapOf = bodies;
+      const m = this._vmap = new Map();
+      for (const o of bodies) {
+        if (o.air) continue;
+        for (let tz = Math.floor(o.z - 0.45); tz <= Math.floor(o.z + 0.45); tz++) for (let tx = Math.floor(o.x - 0.45); tx <= Math.floor(o.x + 0.45); tx++) {
+          const k = tx * 65536 + tz;
+          let l = m.get(k);
+          if (!l) m.set(k, l = []);
+          l.push(o);
+        }
+      }
+    }
+    return this._vmap.get(Math.floor(x) * 65536 + Math.floor(z)) || [];
+  }
 
   // A free seat on one of a gondola station's benches (stop.seats), or null.
   _freeSeat(stop) {
@@ -472,10 +623,11 @@ export class Agents {
     if (this._visiting(r, B) && Number.isFinite(visitorCap(B)) && (this._occupancy().get(B.id) || 0) > visitorCap(B) && r.walk) {
       this._occ = null;
       r.at = destId;
-      r.loc = 'out';
-      const next = this._roomFor(r, null, B);
+      // (from a step inside, so out of the door again as anyone comes out)
+      r.loc = 'in';
+      const was = r.walk, next = this._roomFor(r, null, B);
       this.go(r, next ?? r.home);
-      if (r.loc === 'out') { if (r.walk) this._drop(r.walk); r.loc = 'in'; r.at = r.home; }
+      if (r.walk === was) { if (r.walk) this._drop(r.walk); r.at = r.home; }
       return;
     }
     if (def.shop || (def.leisure && !def.park) || (def.park && visitOf(B) && this._visiting(r, B))) {
@@ -762,7 +914,18 @@ export class Agents {
         // door moved): on to where its door is now
         if (wk.doorRef && wk.seg >= wk.pts.length - wk.doorIn - 3 && wk.seg < wk.pts.length - wk.doorIn - 1) this._redoor(wk);
         const atDoor = (wk.doorOut && wk.seg < wk.doorOut - 1) || (wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1);
+        // where there's no room to step aside (a doorway, stairs, a deck, the
+        // way off a plot) they keep to their line and take their turn
+        wk.narrow = atDoor || !!(wk.ys && (wk.ys[wk.seg] != null || wk.ys[wk.seg + 1] != null)) || (wk.plotOut && wk.seg < wk.plotOut);
         let rem = move * wk.speedK * (atDoor ? 0.45 : 1);
+        // no nearer than a body's width to whoever is ahead going the same
+        // way (or, somewhere narrow, anyone ahead), not for ever, though; and
+        // not into a vehicle's way, for as long as it takes
+        const limit = inside(wk) ? Infinity : wk.narrow ? HOLD_NARROW : HOLD, people = wk.hold < limit;
+        const gap = wk.inView === false ? Infinity : this._ahead(wk, people);   // (nobody sees those out of view)
+        if (gap < rem) { rem = Math.max(0, gap); if (rem === 0) wk.hold += dt * speed; }
+        else if (people) wk.hold = 0;
+        else if ((wk.hold += dt * speed) > limit + 1) wk.hold = 0;
         const want = rem;
         while (rem > 0 && wk.seg < wk.pts.length - 1) {
           const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
@@ -782,6 +945,14 @@ export class Agents {
         const a = wk.pts[wk.seg], b = wk.pts[wk.seg + 1];
         wk.x = a[0] + (b[0] - a[0]) * wk.t;
         wk.z = a[1] + (b[1] - a[1]) * wk.t;
+        // a step to one side to pass someone or let a coach by (wk.side, to
+        // their right), eased back to their lane; none where it's narrow
+        wk.side *= Math.max(0, 1 - dt * speed * (wk.narrow ? 6 : 0.25));
+        if (wk.side) {
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+          wk.x += (-(b[1] - a[1]) / L) * wk.side;
+          wk.z += ((b[0] - a[0]) / L) * wk.side;
+        }
         if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) > 1e-4) wk.heading += angDiff(Math.atan2(b[0] - a[0], b[1] - a[1]), wk.heading) * Math.min(1, dt * 12);
         wk.y = walkY(w, wk);
         wk.phase += (want - rem) / strideLen(wk.lk.scale);
@@ -792,7 +963,7 @@ export class Agents {
         if (!wk.target && wk.route && wk.route.length) wk.target = wk.route.shift();
         if (!wk.target) {
           const [x0, z0, x1, z1] = wk.area;
-          const pick = () => {
+          const somewhere = () => {
             if (wk.ring) {
               // builders work their way round the scaffolding
               const wx = x1 - x0, wz = z1 - z0, t = Math.random() * 2 * (wx + wz);
@@ -804,6 +975,9 @@ export class Agents {
             }
             return [x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0)];
           };
+          // (not where someone stands already, if there's anywhere else)
+          const taken = (p) => this.near(p[0], p[1], BODY_D).some(o => o !== wk && Math.hypot(o.x - p[0], o.z - p[1]) < BODY_D);
+          const pick = () => { let p = somewhere(); for (let k = 0; k < 3 && taken(p); k++) p = somewhere(); return p; };
           wk.target = pick();
           // the way there round the buildings, sheds and stalls on the plot;
           // somewhere else if there's no way to it (shut in by railings, say)
@@ -841,6 +1015,8 @@ export class Agents {
       wk.lamp = night > 0.55 && wk.mode === 'path' && !wk.ghost && wk.lk.scale > 0.8 && ((wk.r?.look ?? 1) & 3) === 0;
       if (wk.lamp) this.lanterns.push(wk);
     }
+    this._clock = (this._clock || 0) + dt * speed;
+    this._spread(dt * speed);
     this._render(dt);
   }
 
@@ -849,7 +1025,8 @@ export class Agents {
   // and of those, as the Performance settings ask (settings.villagers), only
   // some where crowds gather ('crowds', the default), all, about half, or
   // only those near the middle of the view. The selected villager always
-  // shows. Sets wk.shown, which their lanterns follow.
+  // shows. Sets wk.shown, which their lanterns follow (and wk.inView, in
+  // view at all: only those keep out of each other's way, see _ahead).
   _drawList() {
     const out = this._shown || (this._shown = []);
     out.length = 0;
@@ -858,7 +1035,7 @@ export class Agents {
     const c = cam && g.renderer.rig.target, sel = this.selected;
     const crowd = mode === 'crowds' ? this._crowds() : null;
     for (const wk of this.walkers) {
-      let show = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
+      let show = wk.inView = !cam || _fr.intersectsSphere(_sp.set(_v.set(wk.x, wk.y, wk.z), 1));
       if (show && mode !== 'all' && !(sel && wk.r === sel)) {
         // the same half of the town every frame (the lane is each villager's own)
         if (mode === 'some') show = (wk.lk.lane * 997) % 1 < 0.5;
@@ -979,6 +1156,22 @@ function plotRect(B) {
 export function siteArea(B) {
   return [B.x + 0.1, B.z + 0.1, B.x + fw(B) - 0.1, B.z + fd(B) - 0.1];
 }
+
+// The crowd (see Agents._spread): a villager is about BODY_D across; they're
+// filed by CELL; a step aside goes up to SIDE_IN towards the middle of the
+// road (no further: the coaches and carts go by there) or SIDE_OUT towards
+// its edge.
+const BODY_D = 0.064, CELL = 0.25, SIDE_IN = 0.02, SIDE_OUT = 0.03;
+// how long one villager takes to clear a doorway (a body's width at the slow
+// pace through a door), so the next one out waits that long
+const DOOR_GAP = 1.1;
+// how long a villager waits behind someone before walking on regardless: on
+// a street, and somewhere narrow (a doorway's queue keeps moving, if slowly)
+const HOLD = 6, HOLD_NARROW = 25;
+const cellKey = (x, z) => Math.floor(x / CELL) * 65536 + Math.floor(z / CELL);
+// Is a walker still inside a building's walls (the step between a door and
+// the inside, in or out)?
+const inside = (wk) => wk.mode === 'path' && ((wk.doorOut && wk.seg === 0) || (wk.doorIn && wk.seg >= wk.pts.length - 2));
 
 // Where a rider stands in a gondola cabin at (at.x, at.z) heading at.heading:
 // two across and three deep, seat 0 and 1 in the middle, then the front,

@@ -128,9 +128,10 @@ export class PathFinder {
 }
 
 // Turn a tile path into a smooth world-space polyline offset to the right-hand side.
-// round(x, z), if given, says whether a turn on that tile may follow the
-// road's curve: a quarter circle round the inside tile corner (as the road
-// surface is laid), tighter on the inside lane and wider on the outside.
+// round(x, z, outside), if given, says whether a turn on that tile may
+// follow the road's curve: a quarter circle round the inside tile corner (as
+// the road surface is laid), tighter on the inside lane and wider on the
+// outside (a turn across the other lane, outside true).
 // A step across a corner (a diagonal street) runs straight from centre to
 // centre; turns onto and off it are mitred.
 export function tilePolyline(tiles, offset = 0, start = null, end = null, round = null) {
@@ -169,7 +170,7 @@ export function tilePolyline(tiles, offset = 0, start = null, end = null, round 
     else if (d1[0] === -d2[0] && d1[1] === -d2[1]) {
       pts.push([cx + r1[0] * offset + d1[0] * offset, cz + r1[1] * offset + d1[1] * offset]);
       pts.push([cx + r2[0] * offset + d1[0] * offset, cz + r2[1] * offset + d1[1] * offset]);
-    } else if (round && round(x, z)) {
+    } else if (round && round(x, z, !(d2[0] === r1[0] && d2[1] === r1[1]))) {
       const ox = cx + (d2[0] - d1[0]) * 0.5, oz = cz + (d2[1] - d1[1]) * 0.5;
       const R = 0.5 + (d2[0] === r1[0] && d2[1] === r1[1] ? -offset : offset);
       const a0 = Math.atan2(cz - d1[1] * 0.5 + r1[1] * offset - oz, cx - d1[0] * 0.5 + r1[0] * offset - ox);

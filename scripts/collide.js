@@ -7,13 +7,15 @@
 //  - building models reaching out of their plots, onto a road or into a
 //    neighbour's;
 //  - coaches, carts and trains through a building; gondola cabins and cables
-//    through a roof.
+//    through a roof;
+//  - villagers walking into each other, vehicles into each other, and
+//    villagers into vehicles (counted, over every moment of the days played).
 // Besides what the villagers and vehicles happen to do over a few days, it
 // sweeps every way in to every door, every stroll between a park's walks and
 // seats, every outdoor work area and every gondola route, so nothing is left
 // to luck. No starter has a gondola, so each town gets two lines strung
 // across its busiest part first.
-// Usage: node scripts/collide.js [towns=all] [days=2] [--verbose] [--probe=id,x,z]
+// Usage: node scripts/collide.js [towns=all] [days=2] [--verbose] [--probe=id,x,z] [--seed=n] [--everyone]
 //   towns: starter ids, comma-separated ('all': every starter but the heavy
 //   Metropolis, and 'diagonal'; 'scale': a big town grown by the demo bot;
 //   'diagonal': the market town with diagonal streets laid out of it, lined
@@ -21,6 +23,8 @@
 //   every building turned and nudged on its plot)
 //   --probe: the solid parts of building id over point (x, z), its door, and
 //   the way villagers walk in to it
+//   --seed: the same run every time; --everyone: every villager drawn, not
+//   the crowd thinned where it gathers, as the game draws it by default
 
 import * as THREE from 'three';
 import { GeoBuilder } from '../src/render/geo.js';
@@ -42,6 +46,10 @@ import { BUILDINGS } from '../src/defs.js';
 
 const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const VERBOSE = process.argv.includes('--verbose');
+const EVERYONE = process.argv.includes('--everyone');
+// --seed=n: the same run every time (Math.random a seeded stream)
+const SEED = process.argv.find(a => a.startsWith('--seed='));
+if (SEED) Math.random = mulberry(Number(SEED.slice(7)));
 const DAYS = Number(args[1] || 2);
 const which = (args[0] || 'all').split(',');
 const TRACE = Number((process.argv.find(a => a.startsWith('--probe=')) || '--probe=-1').slice(8).split(',')[0]);
@@ -385,6 +393,68 @@ function sweepCables(game, S, F) {
   }
 }
 
+// Villagers, vehicles and villagers and vehicles running into each other,
+// this moment: counted into bump.
+function crowdCheck(game, bump) {
+  const ag = game.agents, T = game.transit, D = 0.05;
+  // (those drawn: the crowd on screen)
+  const list = [...ag.walkers].filter(wk => wk.delay <= 0 && wk.mode !== 'ride' && wk.shown !== false && !(wk.mode === 'path' && ((wk.doorOut && wk.seg === 0) || (wk.doorIn && wk.seg >= wk.pts.length - 2))));
+  const grid = new Map(), key = (x, z) => Math.floor(x / 0.25) * 65536 + Math.floor(z / 0.25);
+  for (const wk of list) { const k = key(wk.x, wk.z); (grid.get(k) || grid.set(k, []).get(k)).push(wk); }
+  bump.pairs += list.length;
+  for (const a of list) {
+    const cx = Math.floor(a.x / 0.25), cz = Math.floor(a.z / 0.25);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) for (const b of grid.get((cx + dx) * 65536 + cz + dz) || []) {
+      if (b === a || b._n < a._n || (a.sit && b.sit) || Math.abs(a.y - b.y) > 0.2 || Math.hypot(a.x - b.x, a.z - b.z) >= D) continue;
+      const kind = (wk) => wk.sit ? 'sitting' : wk.mode === 'path' ? (wk.narrow ? (wk.ys ? 'on a way up' : wk.doorIn && wk.seg >= wk.pts.length - wk.doorIn - 1 ? 'going in' : wk.doorOut && wk.seg < wk.doorOut ? 'coming out' : 'off a plot') : 'walking') : wk.mode;
+      const pk = [kind(a), kind(b)].sort().join(' + ');
+      (bump.kinds ||= new Map()).set(pk, (bump.kinds.get(pk) || 0) + 1);
+      if ((a.mode === 'path' && a.narrow) || (b.mode === 'path' && b.narrow)) bump.narrow++;
+      else { bump.street++; bump.streetAt ||= [a.x, a.z]; }
+    }
+  }
+  const bodies = T._bodies(), ground = bodies.filter(o => !o.air);
+  // two boxes overlap (separating axes, with a little give)
+  const corners = (o) => { const c = []; for (const [u, l] of [[o.f, o.w], [o.f, -o.w], [-o.b, -o.w], [-o.b, o.w]]) c.push([o.x + o.hx * u + o.hz * l, o.z + o.hz * u - o.hx * l]); return c; };
+  const sep = (A, B) => {
+    for (const P of [A, B]) for (let i = 0; i < 4; i++) {
+      const [ax, az] = P[i], [bx, bz] = P[(i + 1) % 4], nx = -(bz - az), nz = bx - ax;
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const [x, z] of A) { const d = x * nx + z * nz; a0 = Math.min(a0, d); a1 = Math.max(a1, d); }
+      for (const [x, z] of B) { const d = x * nx + z * nz; b0 = Math.min(b0, d); b1 = Math.max(b1, d); }
+      const L = Math.hypot(nx, nz) || 1;
+      if (a1 < b0 + 0.02 * L || b1 < a0 + 0.02 * L) return true;
+    }
+    return false;
+  };
+  for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    const a = bodies[i], b = bodies[j];
+    if (a.owner === b.owner || a.air !== b.air || Math.abs(a.y - b.y) > 0.25 || Math.hypot(a.x - b.x, a.z - b.z) > 0.9) continue;
+    if (sep(corners(a), corners(b))) continue;
+    const k = [a, b].map(o => o.air ? 'cabin' : o.owner.line ? o.owner.line.name : 'cart').sort().join(' and ');
+    if (VERBOSE && !bump.carAt) for (const o of [a, b]) { const v = o.owner; console.log(`      first run-in: ${o.air ? 'cabin' : v.line ? v.line.name : 'cart'} at ${at(o.x, o.z)} heading ${Math.atan2(o.hx, o.hz).toFixed(2)} ${v.state || ''} s ${(v.s || 0).toFixed(2)} wait ${(v.wait || 0).toFixed(2)} by ${v.by ? (v.by.line ? v.by.line.name : 'cart') : '-'}`); }
+    bump.cars.set(k, (bump.cars.get(k) || 0) + 1);
+    bump.carAt ||= [a.x, a.z];
+  }
+  for (const o of ground) for (const wk of ag.near(o.x, o.z, 0.5)) {
+    if (wk.mode === 'ride' || Math.abs(wk.y - o.y) > 0.15) continue;
+    const rx = wk.x - o.x, rz = wk.z - o.z, along = rx * o.hx + rz * o.hz, lat = rx * o.hz - rz * o.hx;
+    if (Math.abs(lat) < o.w && along < o.f && along > -o.b) {
+      bump.feet++; bump.feetAt ||= [wk.x, wk.z];
+      const v = o.owner, k = `${wk.sit ? 'sitting' : wk.mode === 'path' ? (wk.narrow ? 'narrow' : 'walking') : wk.mode} in a ${v.line ? 'coach' : 'cart'} ${v.state === 'dwell' ? 'at a stop' : v.wait > 0 ? 'waiting' : 'moving'}`;
+      (bump.feetKinds ||= new Map()).set(k, (bump.feetKinds.get(k) || 0) + 1);
+    }
+  }
+  // (and how long vehicles are held up in traffic, and why)
+  for (const v of [...T.vehicles, ...T.carts]) {
+    if (v.wait > (bump.maxWait || 0)) { bump.maxWait = v.wait; bump.maxWaitAt = v; }
+    if (v.wait <= 20) continue;
+    bump.longWaits = (bump.longWaits || 0) + 1;
+    const k = (v.why || '?') + (v.by ? (v.by.state === 'dwell' ? ' (one at a stop)' : v.by.wait > 0 ? ' (one held up)' : ' (one moving)') : '');
+    (bump.whys ||= new Map()).set(k, (bump.whys.get(k) || 0) + 1);
+  }
+}
+
 // Gondola lines across the busiest part of the town (no starter has one):
 // stations on open ground by a road, as far apart as a line goes, with as many
 // buildings under the cable as can be found; one line of two stations and one
@@ -412,19 +482,23 @@ function gondolas(game) {
   };
   const made = [];
   for (const n of [2, 3]) {
-    let best = null;
+    const tries = [];
     for (let k = 0; k < 600 && open.length > 2; k++) {
       const pts = [open[(rng() * open.length) | 0]];
       for (let j = 1; j < n; j++) pts.push(open[(rng() * open.length) | 0]);
       let ok = true, score = 0;
       for (let j = 1; j < n && ok; j++) { const L = Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]); if (L < 8 || L > 22) ok = false; else score += under(pts[j - 1], pts[j]); }
-      if (ok && (!best || score > best.score)) best = { pts, score };
+      if (ok) tries.push({ pts, score });
     }
-    if (!best) continue;
-    const st = best.pts.map(station);
-    if (st.some(s => !s)) { for (const s of st) if (s) w.removeBuilding(s.id, 0); continue; }
-    const r = game.transit.createLine('gondola', st.map(s => s.id));
-    if (r.ok) { game.transit.setVehicles(r.line.id, 6); made.push(r.line); }
+    // (the best that the game lets be built: not one whose cable runs along
+    // the other's, say)
+    tries.sort((a, b) => b.score - a.score);
+    for (const best of tries.slice(0, 12)) {
+      const st = best.pts.map(station);
+      const r = st.every(Boolean) ? game.transit.createLine('gondola', st.map(s => s.id)) : { ok: false };
+      if (r.ok) { game.transit.setVehicles(r.line.id, 6); made.push(r.line); break; }
+      for (const s of st) if (s) w.removeBuilding(s.id, 0);
+    }
   }
   game.transit.rebuild();
   // each line, how long its spans are and the pylons holding them up
@@ -442,7 +516,12 @@ function play(label, w) {
   const F = new Findings();
   const scene = { add() {}, remove() {} };
   const game = {
-    speed: 8, env: { night: 0 }, renderer: { scene, worldToScreen: () => ({ x: 0, y: 0 }) }, view: { smoke: { emit() {} }, items: null },
+    // (at 2×, as it's played; at 8× everyone moves further than their own
+    // width in a step of the test, and nobody could keep out of anyone's way)
+    speed: 2, env: { night: 0 }, renderer: { scene, worldToScreen: () => ({ x: 0, y: 0 }) }, view: { smoke: { emit() {} }, items: null },
+    // (the crowd as it's drawn by default, thinned where it gathers; with
+    // --everyone, every villager drawn, the busiest the streets can look)
+    settings: { villagers: EVERYONE ? 'all' : 'crowds' },
     _ev: {}, on(e, f) { (this._ev[e] ||= []).push(f); }, emit(e, d) { for (const f of this._ev[e] || []) f(d); },
   };
   game.world = w;
@@ -474,7 +553,7 @@ function play(label, w) {
   }
 
   // what every building stands in, and every way about it
-  const lanes = [0.07, 0.135, 0.2];
+  const lanes = [0.26, 0.28, 0.3];
   sweepPlots(game, S, F);
   sweepDoors(game, S, F, lanes);
   sweepGrounds(game, S, F);
@@ -486,11 +565,18 @@ function play(label, w) {
   const start = w.day;
   let steps = 0, samples = 0;
   const rode = new Set(), climbed = new Set(), sat = new Set();   // who rode a gondola, who climbed up to one, who sat down to wait
+  // villagers into each other (on the street, and in a doorway or on stairs
+  // where they take turns), vehicles into each other, villagers into vehicles
+  const bump = { street: 0, narrow: 0, pairs: 0, cars: new Map(), feet: 0, feetAt: null, carAt: null, streetAt: null };
+  const cost = { agents: 0, transit: 0 };   // (the time the villagers and the vehicles take a step)
   while (w.day < start + DAYS && steps < 400000) {
-    const g = game.sim.update(0.1);
+    const g = game.sim.update(0.1), t1 = performance.now();
     game.agents.update(0.1, g);
+    const t2 = performance.now();
     game.construction.update(0.1, g);
+    const t3 = performance.now();
     game.transit.update(0.1);
+    cost.agents += t2 - t1; cost.transit += performance.now() - t3;
     game.animals.update(0.1, game.speed);
     steps++;
     for (const wk of game.agents.walkers) {
@@ -505,9 +591,11 @@ function play(label, w) {
       let skip = null, where = wk.mode;
       if (wk.mode === 'path') {
         const n = wk.pts.length;
-        // the step through the wall to the inside, in or out
-        if (wk.doorIn && wk.seg >= n - 2) continue;
-        if (wk.doorOut && wk.seg === 0) continue;
+        // the step through the wall to the inside, in or out (from the
+        // doorway itself, a whisker short of it, on)
+        const near = (p) => Math.hypot(wk.x - p[0], wk.z - p[1]) < 0.01;
+        if (wk.doorIn && (wk.seg >= n - 2 || near(wk.pts[n - 2]))) continue;
+        if (wk.doorOut && (wk.seg === 0 || near(wk.pts[1]))) continue;
         where = wk.doorIn && wk.seg >= n - wk.doorIn - 2 ? 'going in a door' : wk.doorOut && wk.seg < wk.doorOut ? 'coming out of a door' : 'on the street';
         const tx = Math.floor(wk.x), tz = Math.floor(wk.z);
         if (w.inBounds(tx, tz) && w.terrain.isWater(tx, tz) && !w.roadAt(tx, tz) && !w.buildingOn(tx, tz) && once(wk, { id: 'water' + w.idx(tx, tz) })) F.add('villager walks on the water', where, at(wk.x, wk.z));
@@ -544,7 +632,27 @@ function play(label, w) {
         if (h && h.kind === 'wall') F.add('cart through a building', `the ${name(h.p.b)}`, `${at(p.x, p.z)} #${h.p.b.id}`);
       }
     }
+    crowdCheck(game, bump);
   }
+  // how often they ran into each other, in every thousand villager
+  // positions: on the street, more than ten is a crowd that doesn't make
+  // room (a busy city's pavements, with everyone drawn, come to five to
+  // eight, mostly overtaking and at crossings; a village's to under one);
+  // in doorways and on stairs, where they take turns, more than thirty; and
+  // more than one in a thousand inside a coach or a cart is one that runs
+  // them down, or a crowd that walks through it
+  const rate = (n) => (1000 * n) / Math.max(1, bump.pairs);
+  if (bump.pairs) {
+    const st = rate(bump.street), na = rate(bump.narrow);
+    if (st > 1 || na > 5) F.add('villagers walk into each other', `on the street ${st.toFixed(2)} and in doorways or on stairs ${na.toFixed(2)} in every thousand moments`, bump.streetAt ? at(bump.streetAt[0], bump.streetAt[1]) : '-', st > 10 || na > 30);
+  }
+  if (bump.feet) F.add('villagers inside a vehicle', `${bump.feet} moments, ${rate(bump.feet).toFixed(2)} in every thousand`, bump.feetAt ? at(bump.feetAt[0], bump.feetAt[1]) : '-', rate(bump.feet) > 1 && bump.feet > 40);
+  if (bump.maxWait > 60) F.add('vehicles held up in traffic', `the longest ${bump.maxWait.toFixed(0)} s (${bump.maxWaitAt.line ? bump.maxWaitAt.line.name : 'a cart'}), ${bump.longWaits || 0} vehicle-moments over 20 s`, '-', false);
+  if (VERBOSE) console.log(`      a step takes: the villagers ${(cost.agents / steps).toFixed(2)} ms, the vehicles ${(cost.transit / steps).toFixed(2)} ms`);
+  if (VERBOSE && bump.whys) console.log('      held up over 20 s, waiting for: ' + [...bump.whys].sort((x, y) => y[1] - x[1]).map(([k, n]) => k + ' ' + n).join(' · '));
+  if (VERBOSE && bump.feetKinds) console.log('      villagers inside vehicles: ' + [...bump.feetKinds].sort((x, y) => y[1] - x[1]).map(([k, n]) => k + ' ' + n).join(' · '));
+  if (VERBOSE && bump.kinds) console.log('      villagers into each other: ' + [...bump.kinds].sort((x, y) => y[1] - x[1]).slice(0, 8).map(([k, n]) => `${k} ${n}`).join(' · '));
+  for (const [k, n] of bump.cars) if (n > 2) F.add('vehicles run into each other', k, `×${n} ${bump.carAt ? at(bump.carAt[0], bump.carAt[1]) : ''}`);
   // what changed while they played (sites finished, upgrades): sweep again
   sweepPlots(game, S, F);
   sweepCables(game, S, F);

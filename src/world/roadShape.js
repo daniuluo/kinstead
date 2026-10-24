@@ -348,8 +348,10 @@ export function surfaceAt(w, px, pz) {
 
 // Whether someone turning a corner on tile (x, z) may cut it along the
 // road's curve: any land road tile that isn't a ramp up to a bridge (where
-// diagonals meet, they turn at a point).
-export function curvesAt(w, x, z) {
+// diagonals meet, they turn at a point); turning across the other lane
+// (outside), only where the road bends: in a junction that would take them
+// through its middle, so they keep to its edge and turn at its far corner.
+export function curvesAt(w, x, z, outside = false) {
   const s = roadTile(w, x, z);
-  return !!s && !s.bridge.some(Boolean) && !s.sdf;
+  return !!s && !s.bridge.some(Boolean) && !s.sdf && (!outside || s.bend >= 0);
 }
