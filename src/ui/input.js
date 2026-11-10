@@ -95,7 +95,7 @@ export class Input {
 
   // -------------------------------------------------------------- pointer
   onDown(e) {
-    if (!this.game.world || this.game.demo) return;
+    if (!this.game.world || this.game.demo || this.game.observer) return;
     this.canvas.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
@@ -127,7 +127,7 @@ export class Input {
   }
 
   onMove(e) {
-    if (!this.game.world || this.game.demo) return;
+    if (!this.game.world || this.game.demo || this.game.observer) return;
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const d = this.drag;
     if (d && d.type === 'pinch' && this.pointers.size === 2) {
@@ -197,6 +197,7 @@ export class Input {
   }
 
   onUp(e) {
+    if (this.game.observer) return;
     this.pointers.delete(e.pointerId);
     const d = this.drag;
     if (!d || !this.game.world) return;
@@ -244,6 +245,7 @@ export class Input {
   }
 
   onWheel(e) {
+    if (this.game.observer) return;
     e.preventDefault();
     if (!this.game.world) return;
     const f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0016));
@@ -572,6 +574,7 @@ export class Input {
 
   // -------------------------------------------------------------- keyboard
   onKey(e, down) {
+    if (this.game.observer) return;
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const k = e.key.toLowerCase();
@@ -655,7 +658,7 @@ export class Input {
   }
 
   update(dt) {
-    if (!this.game.world || this.game.demo || this.ui.modalOpen) return;
+    if (!this.game.world || this.game.demo || this.game.observer || this.ui.modalOpen) return;
     const k = this.keys;
     let dx = 0, dy = 0;
     if (k.has('a') || k.has('arrowleft')) dx += 1;

@@ -22,7 +22,7 @@ const missingList = (arr) => (arr.length ? `: ${arr.slice(0, 12).join(', ')}${ar
 
 // 1. every local file each page loads exists ------------------------------
 console.log('Files');
-for (const page of ['index.html', 'play/index.html', 'wiki/index.html']) {
+for (const page of ['index.html', 'play/index.html', 'window/index.html', 'wiki/index.html']) {
   const html = read(page), dir = path.dirname(page);
   const refs = [...html.matchAll(/\b(?:src|href)="([^"]+)"/g)].map(m => m[1])
     .filter(u => !/^(https?:|data:|mailto:|#|javascript:)/.test(u));

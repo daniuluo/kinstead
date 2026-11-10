@@ -32,13 +32,18 @@ import { RemoteCursors } from './net/cursors.js';
 const SETTINGS_KEY = 'hearthvale.settings';   // storage keys keep the game's old name so saves and settings carry over
 
 export class Game {
-  constructor() {
+  constructor({ observer = false } = {}) {
+    // The Living Window shares the engine, but not the builder's controls,
+    // save slots or settings.  It is deliberately a presentation mode rather
+    // than a second copy of the simulation.
+    this.observer = !!observer;
+    this.settingsKey = this.observer ? 'living-window.settings.v1' : SETTINGS_KEY;
     this.THREE = THREE;
     this.renderer = new Renderer(document.getElementById('app'));
     this.sky = new Sky(this.renderer);
     this.settings = { shadows: true, ao: true, pixelArt: true, pixelSize: 2, autosave: true, sound: true, popCoins: true, popToasts: true, popTips: true, popLabels: true, issuesOpen: true, music: true, musicVol: 0.5, tiltShift: 'off', tiltBand: 'normal', alwaysDay: false, camera: 'iso', fov: 45, v: 4, ...PERF_DEFAULTS };
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch {}
+    try { saved = JSON.parse(localStorage.getItem(this.settingsKey) || '{}') || {}; } catch {}
     Object.assign(this.settings, saved);
     // The pixel-art look at 2× is the game's look: settings saved before
     // version 3 start from it once (a later choice of the smooth look or
@@ -47,6 +52,7 @@ export class Game {
     // and busy streets thinned out, as from version 4, unless only some or
     // only the nearest villagers were already being drawn
     if ((saved.v || 0) < 4) Object.assign(this.settings, { villagers: this.settings.villagers === 'some' || this.settings.villagers === 'near' ? this.settings.villagers : 'crowds', v: 4 });
+    if (this.observer) Object.assign(this.settings, { sound: false, music: false, popCoins: false, popToasts: false, popTips: false, popLabels: false, issuesOpen: false });
     this.speed = 1;
     this.prevSpeed = 1;
     this.env = { hours: 7, night: 0, season: 0, snowing: false };
@@ -159,6 +165,11 @@ export class Game {
   // at once in single-player and by a host, or sent to the host by a guest.
   // done(result) runs when it has been applied (for a guest, when the host answers).
   cmd(c, done = null) {
+    if (this.observer) {
+      const r = { ok: false, error: 'Living Window is read-only.' };
+      if (done) done(r);
+      return r;
+    }
     if (this.isGuest) { this.net.request(c, done); return null; }
     const r = runCommand(this, c);
     if (done) done(r);
@@ -176,6 +187,10 @@ export class Game {
     this.view = new WorldView(world, this.renderer);
     this.sim = replica ? new ReplicaSim(this) : new Sim(this);
     this.transit = new Transit(this);
+    // The ordinary builder deliberately gives each new town a different
+    // founding family.  The observer's named seed instead needs the same
+    // first residents whenever its separate snapshot is created.
+    if (fresh && this.observer) this.sim.rng = new RNG(world.seed);
     if (fresh) this.sim.seedFounders(); else this.sim.recompute();
     this.agents = new Agents(this);
     this.animals = new Animals(this);
@@ -191,12 +206,12 @@ export class Game {
     for (const b of world.buildings.values()) if (BUILDINGS[b.type].seat) focus = { x: b.x + fw(b) / 2, z: b.z + fd(b) / 2 };
     this.renderer.lookAt(focus.x, focus.z, true);
     this._demoFocus = focus;
-    this.renderer.rig.zoom = this.renderer.rig.zoomT = demo ? 1.25 : 1.7;
+    this.renderer.rig.zoom = this.renderer.rig.zoomT = demo ? 1.25 : this.observer ? Math.max(this.renderer.rig.minZoom, 0.62) : 1.7;
     this.overlayMode = null;
     this.follow = null;
     this.speed = 1;
     this.view.setSeason(this.sky.season, this.sky.seasonW);
-    document.getElementById('hud').classList.toggle('hidden', demo);
+    document.getElementById('hud').classList.toggle('hidden', demo || this.observer);
     this.ui.inspect(null);
     this.ui.closeFlyout();
     this.ui.setLegend(null);
@@ -226,6 +241,7 @@ export class Game {
   }
 
   newGame({ name, seed, N, sandbox, starter = null, relief = 'hilly' }) {
+    if (this.observer) return false;
     this.endNet();
     const w = starter ? loadStarter(starter, { name, sandbox }) : World.createNew({ N, seed, name, sandbox, relief });
     w.townId = newTownId();   // every game from the same starter is a town of its own
@@ -238,6 +254,7 @@ export class Game {
   }
 
   loadData(data) {
+    if (this.observer) return false;
     const w = deserialize(data);
     this.endNet();
     this.ui.closeAllWindows();
@@ -246,6 +263,7 @@ export class Game {
   }
 
   toTitle() {
+    if (this.observer) return false;
     this.autosave();
     this.endNet();
     this.startDemo();
@@ -297,7 +315,7 @@ export class Game {
 
   // --------------------------------------------------------------- saving
   saveLocal(id, quiet = false) {
-    if (!this.world || this.demo) return false;
+    if (!this.world || this.demo || this.observer) return false;
     try {
       const data = serialize(this.world);
       if (id === 'autosave') data.name = this.world.townName;
@@ -311,13 +329,16 @@ export class Game {
     }
   }
 
-  quickSave() { this.saveLocal('quick'); }
+  quickSave() { if (!this.observer) this.saveLocal('quick'); }
 
   // The town as it stands, to the autosave slot: at the turn of every day,
   // every AUTOSAVE_SECONDS of real time (a day is long, and never ends while
   // paused), when the tab is hidden or closed, and before leaving the town.
   // Never a guest's copy of someone else's town.
   autosave() {
+    if (this.observer) {
+      try { return this.observerAutosave?.() || false; } catch (e) { console.warn('Living Window save failed:', e); return false; }
+    }
     if (!this.world || this.demo || this.replica || !this.settings.autosave) return;
     // a different town is about to take the autosave slot: the one there
     // moves to the "previous town" slot, so starting a new village or loading
@@ -329,13 +350,14 @@ export class Game {
 
   // Plain .json download of the current town.
   downloadSave() {
-    if (!this.world || this.demo) return;
+    if (!this.world || this.demo || this.observer) return;
     downloadJSON(serialize(this.world), saveFileName(this.world));
     this.ui.toast('Save file downloaded', 'good', '⬇');
   }
 
   // Drop a .json save anywhere on the page to load it.
   _bindFileDrop() {
+    if (this.observer) return;
     window.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
     window.addEventListener('drop', async (e) => {
       const f = e.dataTransfer?.files?.[0];
@@ -399,7 +421,7 @@ export class Game {
 
   // ------------------------------------------------------------- controls
   // The clock belongs to the town (in multiplayer the host's), so speed is a command too.
-  setSpeed(s) { this.cmd({ t: 'speed', s }); }
+  setSpeed(s) { if (!this.observer) this.cmd({ t: 'speed', s }); }
 
   applySpeed(s) {
     if (s === 0 && this.speed) this.prevSpeed = this.speed;
@@ -413,7 +435,7 @@ export class Game {
   }
 
   rotateView(dir) {
-    if (!this.world || this.demo) return;
+    if (!this.world || this.demo || this.observer) return;
     this.renderer.rotate(dir, this._centerGround());
   }
 
@@ -421,11 +443,11 @@ export class Game {
   // when it begins, so the view turns around the ground at the middle of the
   // screen, then orbit() as it goes (see Renderer.orbit).
   orbitStart() {
-    if (!this.world || this.demo) return;
+    if (!this.world || this.demo || this.observer) return;
     this.renderer._pivotOn(this._centerGround());
   }
   orbit(dTurn, dElev, at = null) {
-    if (!this.world || this.demo) return;
+    if (!this.world || this.demo || this.observer) return;
     const was = this.renderer.rig.topDown;
     this.renderer.orbit(dTurn, dElev, at);
     if (this.renderer.rig.topDown !== was) this.ui.syncToolbar();
@@ -434,7 +456,7 @@ export class Game {
   // Home: back to the classic isometric view, from any angle or tilt, the
   // 2D map or the perspective camera.
   classicView() {
-    if (!this.world || this.demo) return;
+    if (!this.world || this.demo || this.observer) return;
     if (this.settings.camera === 'perspective') { this.settings.camera = 'iso'; this.applySettings(); }
     this.renderer.classicView(this._centerGround());
     this.ui.syncToolbar();
@@ -460,11 +482,13 @@ export class Game {
   }
 
   toggleTopDown() {
+    if (this.observer) return;
     this.renderer.setTopDown(!this.renderer.rig.topDown, this.world && !this.demo ? this._centerGround() : null);
     this.ui.syncToolbar();
   }
 
   setFollow(id) {
+    if (this.observer) return;
     if (this.follow === id) return;
     this.follow = id;
     if (this.ui.selection && this.ui.selection.kind === 'resident') this.ui.renderInspector(true);
@@ -509,7 +533,7 @@ export class Game {
       this.renderer.setGraphics({ pixelArt: s.pixelArt, pixelSize: s.pixelSize, ao: s.ao, scale, tilt, tiltBand: s.tiltBand, persp, fov });
     }
     this.view?.setEffects(s.effects);
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch {}
+    try { localStorage.setItem(this.settingsKey, JSON.stringify(this.settings)); } catch {}
   }
 
   // ------------------------------------------------------------- overlays

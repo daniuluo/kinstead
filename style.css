@@ -286,6 +286,12 @@ table.budget tr.tot td { border-bottom: 0; font-weight: 700; background: #e8e8e8
 .title-foot { margin-top: 12px; font-size: 11px; color: var(--ink-2); }
 .title-links { margin-top: 4px; font-size: 12px; color: var(--ink-2); }
 .title-links a { color: var(--navy); }
+.file-protocol-note { display: none; margin: 0 0 12px; padding: 10px; text-align: left; background: #fff6dc; border: 1px solid #c38b1a; box-shadow: var(--field); color: #4a3216; font-size: 12px; line-height: 1.4; }
+.file-protocol-note b, .file-protocol-note span { display: block; }
+.file-protocol-note code { display: block; margin: 6px 0; padding: 4px 5px; overflow-wrap: anywhere; background: #fff; color: var(--navy); font-size: 11px; }
+.file-protocol-note a { color: var(--navy); font-weight: 700; }
+html.file-protocol .file-protocol-note { display: block; }
+html.file-protocol .title-card .btn { display: none; }
 
 @media (max-width: 900px) {
   .stats { gap: 8px !important; }

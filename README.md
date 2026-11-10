@@ -195,6 +195,7 @@ The site at https://daniuluo.github.io/kinstead/ (GitHub Pages, from `main`) has
 
   Its figures (buildings, levels, research projects, shops, joins and estates, and the Battery saver's settings) are read from `src/defs.js` and `src/config.js`, so they change with the game. It loads no other game code. Its pictures are small WebP files at the art's own resolution, scaled up crisply.
 - **The game** (`play/`) was moved off the root. Its page loads `../style.css`, `../src/main.js` and the same importmap. Saves are kept per site (origin), not per page, so towns saved at the old address carry on.
+- **Living Window (P1)** (`window/`) is a minimal, read-only local observer for one simulated town. It uses a separate versioned local save and never modifies builder saves; see [`LIVING_WINDOW.md`](LIVING_WINDOW.md) for its exact behavior and intentional limits.
 - **Wiki** (`wiki/`): one page that shows one wiki page at a time, addressed by the hash.
   - Addresses: `#taxes` is a page, `#taxes/who` a section, `#homes/villa` a building, `#homes/villa.1` one of its levels and `#research/carpentry` a research project. `#villa` or `#carpentry` on their own find their way too.
   - A search box covers pages, sections, buildings, every level and research projects (`/` jumps to it). On a phone the contents fold away.
